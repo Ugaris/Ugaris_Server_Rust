@@ -5141,14 +5141,11 @@ Unlocks every quest NPC. Do these before any P4 area work.
   collapsed to a single `has_skill_mod: bool`) before any real per-skill
   delta can be applied - also unstarted. `speed_ticks`'s other ~25
   non-walking call sites (attack/spell/heal/use durations in
-  `do_action.rs`/`actions.rs`/`npc_fight.rs`/`spells.rs`) still call the
-  weather-unaware `speed_ticks` wrapper (100% = no-op) rather than
-  `speed_ticks_with_weather_movement`, since most of those `do_*` functions
-  don't take a `MapGrid` parameter yet (needed for the indoor-tile check)
-  - a real gap vs. C (which folds the same modifier into every `speed()`
-  call, not just walking), left as a documented simplification pending a
-  future slice that threads `map`/weather through those signatures too.
-  Lightning strikes (`handle_lightning_strike`) were ported in iteration
+  `do_action.rs`/`actions.rs`/`npc_fight.rs`/`spells.rs`/`npc_idle.rs`/
+  `janitor.rs`) were all wired to `speed_ticks_with_weather_movement` in
+  iteration 129 - see Progress Log; this item is now fully closed except
+  for the still-dead `modify_visibility_range`/`modify_skill_value` noted
+  above. Lightning strikes (`handle_lightning_strike`) were ported in iteration
   127 - see Progress Log. `modify_visibility_range`/`modify_skill_value`
   are additionally confirmed **permanently dead code in C**, not just
   unwired: verified with a full-tree grep (`grep -rln
@@ -5425,6 +5422,53 @@ Unlocks every quest NPC. Do these before any P4 area work.
   failures), `cargo build -p ugaris-server` clean with zero warnings,
   10s boot-smoke confirmed "entering Rust game loop" with no panics
   (this iteration touches player and NPC combat action setup).
+  Progress Log (iteration 129): closed the last `speed_ticks`
+  non-walking/non-attack call sites named in iteration 128's REMAINING
+  note - confirmed via `do.c` grep that every one of them (`take_item`/
+  `use_item`/`drop_item` at `do.c:232,290,367`, and all 13 spell-cast/
+  heal/bless functions at `do.c:630` through `1205`) calls the same
+  unconditional `speed(cn, ...)` as `do_walk`/`do_attack`, so C's weather
+  multiplier applies to every player/NPC action, not just movement and
+  melee. Added a shared `do_action::resolve_weather_movement_percent`
+  helper (the indoor-tile-override check factored out of `do_walk`'s/
+  `do_attack`'s existing inline copies, not applied retroactively to
+  those two to avoid touching already-passing call sites) and threaded
+  a `map: &MapGrid, weather_movement_percent: i32` pair (or just the
+  percent, for the 3 functions that already took `map`) through
+  `do_take`/`do_use`/`do_drop` (via `set_timed_item_action`),
+  `do_magicshield`/`do_pulse`/`do_warcry`/`do_freeze`/`do_flash`/
+  `do_firering`/`do_fireball`/`do_ball`/`do_earthrain`/`do_earthmud`
+  (via `do_earth_spell`)/`do_heal`/`do_bless` - every one now calls
+  `speed_ticks_with_weather_movement` instead of the weather-blind
+  `speed_ticks`. Updated all real call sites: `crates/ugaris-core/src/
+  world/actions.rs` (player take/use/drop/spell dispatch, both the
+  immediate-action and queued-task match arms), `world/spells.rs`
+  (`setup_fireball_character`/`setup_ball_character`/
+  `setup_bless_spell`/`setup_heal_spell`), `world/janitor.rs` (janitor
+  NPC use/take/drop), and `world/npc_fight.rs`/`world/npc_idle.rs`
+  (simple-baddy spell attacks/self-buffs/fireball/firering, including
+  widening the shared `setup_simple_baddy_spell_action` closure helper's
+  signature to also pass `&MapGrid`/the percent through). All of these
+  read the same   `self.settings.weather_movement_percent` field
+  `do_walk`/`do_attack` already use. 4 new tests in `do_action.rs`
+  mirroring the existing `do_walk`/`do_attack` weather-percent pairs:
+  `do_take_applies_weather_movement_percent_outdoors_but_not_indoors`,
+  `do_magicshield_applies_weather_movement_percent_outdoors_but_not_
+  indoors`, `do_heal_applies_weather_movement_percent_to_self_and_other_
+  target_durations` (both branches), `do_fireball_applies_weather_
+  movement_percent` - plus updated every existing direct test call site
+  (`do_take`/`do_use`/`do_drop`/`do_fireball`/`do_earthrain`/
+  `do_earthmud` in `do_action.rs`, plus the two `effect_tick.rs`
+  earthrain/earthmud completion tests) for the new parameters (`100` =
+  no-op, preserving original assertions unchanged). This closes the
+  weather-driver task's `speed_ticks` REMAINING item entirely - the only
+  gaps left are the confirmed-dead-in-C visibility/skill-value/combat
+  modifiers and the unported `apply_elemental_debuffs` flavor-text-only
+  function, both noted above. `cargo fmt --all`, `cargo test --workspace`
+  (1731 ugaris-core [+4] + 55 db + 3 net + 40 protocol + 580 server, all
+  green, zero failures), `cargo build -p ugaris-server` clean with zero
+  warnings, 10s boot-smoke confirmed "entering Rust game loop" with no
+  panics (this iteration touches player/NPC action and spell dispatch).
 
 - [ ] **Events (`src/module/events/**`)** - recurring boosted-rate events
   and seasonal events (christmas partially ported). Port the scheduler +

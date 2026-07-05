@@ -4096,15 +4096,49 @@
         ".ok_or(DoError::IllegalCoords)?;",
         "let target_tile = map.tile(target_x, target_y).ok_or(DoError::IllegalCoords)?;"
       ]
+    },
+    {
+      "iteration": 129,
+      "startedAt": "2026-07-05T02:11:12.164Z",
+      "endedAt": "2026-07-05T02:35:56.336Z",
+      "durationMs": 1483583,
+      "agent": "opencode",
+      "model": "anthropic/claude-sonnet-5",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "PORTING_TODO.md",
+        "crates/ugaris-core/src/do_action.rs",
+        "crates/ugaris-core/src/world/actions.rs",
+        "crates/ugaris-core/src/world/janitor.rs",
+        "crates/ugaris-core/src/world/npc_fight.rs",
+        "crates/ugaris-core/src/world/npc_idle.rs",
+        "crates/ugaris-core/src/world/spells.rs",
+        "crates/ugaris-core/src/world/tests/effect_tick.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "Core builds. Now let's run tests to find failures in test code (which call these functions directly):",
+        "All 1731+55+3+40+580 tests pass, zero failures. Now build the server and check warnings:",
+        "Everything is green: `cargo fmt --all`, `cargo test --workspace` (all 2409 tests pass, zero failures), `cargo build -p ugaris-server` (zero warnings), and boot-smoke confirms \"entering Rust game loop\"",
+        "test result: ok. 580 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "return Err(DoError::IllegalDirection);",
+        "return Err(DoError::Dead);",
+        "let direction = Direction::try_from(direction).map_err(|_| DoError::IllegalDirection)?;",
+        "let target_x = offset(current_x, dx).ok_or(DoError::IllegalCoords)?;",
+        "let target_y = offset(current_y, dy).ok_or(DoError::IllegalCoords)?;"
+      ]
     }
   ],
-  "totalDurationMs": 140731040,
+  "totalDurationMs": 142214623,
   "struggleIndicators": {
     "repeatedErrors": {
       "1011 (up from 998 earlier) - all passing, zero failures. Now let's build the server binary and run a": 1,
       "Everything is green: `cargo fmt --all` clean, full workspace test suite passing (1011 core tests + o": 1,
       "test result: ok. 327 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 4,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 128,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 129,
       "test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 998 filtered out; finished in 0.00s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1010 filtered out; finished in 0.00s": 1,
       "error: could not compile `ugaris-db` (lib test) due to 1 previous error": 3,
@@ -4319,7 +4353,7 @@
       "test result: ok. 1183 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1,
       "test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 1183 filtered out; finished in 0.00s": 1,
       "5. Verified: `cargo fmt --all` clean, `cargo test --workspace` (1215+27+3+33+374, zero failures/warn": 1,
-      "return Err(DoError::Dead);": 3,
+      "return Err(DoError::Dead);": 4,
       "return Err(DoError::IllegalCoords);": 2,
       "return Err(DoError::NoItem);": 1,
       "return Err(DoError::Confused);": 1,
@@ -4482,7 +4516,7 @@
       "test result: ok. 489 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s": 1,
       "252:- `IDR_FLASK` finished-potion use now follows the C `mixer_use` application path instead of the ": 1,
       "-| `src/module/achievements/achievement.c` / `achievement.h` | `crates/ugaris-core/src/achievement.r": 1,
-      "return Err(DoError::IllegalDirection);": 3,
+      "return Err(DoError::IllegalDirection);": 4,
       "test clan::tests::both_want_better_relation_deescalates_immediately ... FAILED": 1,
       "test clan::tests::war_ends_only_when_both_want_better ... FAILED": 1,
       "test result: FAILED. 35 passed; 2 failed; 0 ignored; 0 measured; 1390 filtered out; finished in 0.00": 1,
@@ -4664,9 +4698,13 @@
       "test result: FAILED. 573 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s": 1,
       "test result: ok. 1718 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s": 1,
       "test result: ok. 580 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s": 1,
-      "let direction = Direction::try_from(direction).map_err(|_| DoError::IllegalDirection)?;": 1,
-      "let target_x = offset(current_x, dx).ok_or(DoError::IllegalCoords)?;": 1,
-      "let target_y = offset(current_y, dy).ok_or(DoError::IllegalCoords)?;": 1
+      "let direction = Direction::try_from(direction).map_err(|_| DoError::IllegalDirection)?;": 2,
+      "let target_x = offset(current_x, dx).ok_or(DoError::IllegalCoords)?;": 2,
+      "let target_y = offset(current_y, dy).ok_or(DoError::IllegalCoords)?;": 2,
+      "Core builds. Now let's run tests to find failures in test code (which call these functions directly)": 1,
+      "All 1731+55+3+40+580 tests pass, zero failures. Now build the server and check warnings:": 1,
+      "Everything is green: `cargo fmt --all`, `cargo test --workspace` (all 2409 tests pass, zero failures": 1,
+      "test result: ok. 580 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

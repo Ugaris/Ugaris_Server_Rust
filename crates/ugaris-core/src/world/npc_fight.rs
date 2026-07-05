@@ -326,7 +326,15 @@ impl World {
         let Some(character) = self.characters.get_mut(&character_id) else {
             return false;
         };
-        do_use(character, &self.map, item, direction as u8, 0).is_ok()
+        do_use(
+            character,
+            &self.map,
+            item,
+            direction as u8,
+            0,
+            self.settings.weather_movement_percent,
+        )
+        .is_ok()
     }
 
     pub(crate) fn setup_simple_baddy_attack_driver(
@@ -499,10 +507,20 @@ impl World {
         }
 
         let (target_x, target_y) = simple_baddy_earth_spell_target(target);
+        let weather_movement_percent = self.settings.weather_movement_percent;
         let Some(character) = self.characters.get_mut(&character_id) else {
             return false;
         };
-        if do_earthmud(character, target_x, target_y, strength).is_err() {
+        if do_earthmud(
+            character,
+            &self.map,
+            target_x,
+            target_y,
+            strength,
+            weather_movement_percent,
+        )
+        .is_err()
+        {
             return false;
         }
         if let Some(CharacterDriverState::SimpleBaddy(data)) = character.driver_state.as_mut() {
@@ -561,9 +579,12 @@ impl World {
         if !self.simple_baddy_can_heal_self(&target) {
             return false;
         }
-        self.setup_simple_baddy_spell_action(character_id, |character, _items, _tick| {
-            do_heal(character, &target, None)
-        })
+        self.setup_simple_baddy_spell_action(
+            character_id,
+            |character, _items, _tick, map, weather_movement_percent| {
+                do_heal(character, &target, None, map, weather_movement_percent)
+            },
+        )
     }
 
     pub(crate) fn simple_baddy_can_magicshield_self(&self, character: &Character) -> bool {
@@ -583,9 +604,12 @@ impl World {
         if !self.simple_baddy_can_magicshield_self(&character) {
             return false;
         }
-        self.setup_simple_baddy_spell_action(character_id, |character, _items, _tick| {
-            do_magicshield(character)
-        })
+        self.setup_simple_baddy_spell_action(
+            character_id,
+            |character, _items, _tick, map, weather_movement_percent| {
+                do_magicshield(character, map, weather_movement_percent)
+            },
+        )
     }
 
     pub(crate) fn simple_baddy_can_bless_self(&self, character: &Character) -> bool {
@@ -604,9 +628,20 @@ impl World {
         if !self.simple_baddy_can_bless_self(&target) {
             return false;
         }
-        self.setup_simple_baddy_spell_action(character_id, |character, items, tick| {
-            do_bless(character, &target, items, tick, None)
-        })
+        self.setup_simple_baddy_spell_action(
+            character_id,
+            |character, items, tick, map, weather_movement_percent| {
+                do_bless(
+                    character,
+                    &target,
+                    items,
+                    tick,
+                    None,
+                    map,
+                    weather_movement_percent,
+                )
+            },
+        )
     }
 
     pub(crate) fn simple_baddy_needs_regeneration(&self, character: &Character) -> bool {
@@ -694,9 +729,12 @@ impl World {
         {
             return false;
         }
-        self.setup_simple_baddy_spell_action(character_id, |character, _items, _tick| {
-            do_freeze(character)
-        })
+        self.setup_simple_baddy_spell_action(
+            character_id,
+            |character, _items, _tick, map, weather_movement_percent| {
+                do_freeze(character, map, weather_movement_percent)
+            },
+        )
     }
 
     pub(crate) fn setup_simple_baddy_ball_attack(
@@ -709,9 +747,20 @@ impl World {
             + usize::try_from(random(3).min(2)).unwrap_or(0);
         let target_y = usize::from(target.y).saturating_sub(1)
             + usize::try_from(random(3).min(2)).unwrap_or(0);
-        self.setup_simple_baddy_spell_action(character_id, |character, items, tick| {
-            do_ball(character, items, target_x, target_y, tick)
-        })
+        self.setup_simple_baddy_spell_action(
+            character_id,
+            |character, items, tick, map, weather_movement_percent| {
+                do_ball(
+                    character,
+                    items,
+                    target_x,
+                    target_y,
+                    tick,
+                    map,
+                    weather_movement_percent,
+                )
+            },
+        )
     }
 
     pub(crate) fn simple_baddy_calc_ball_steps(
@@ -782,9 +831,12 @@ impl World {
         {
             return false;
         }
-        self.setup_simple_baddy_spell_action(character_id, |character, items, tick| {
-            do_flash(character, items, tick)
-        })
+        self.setup_simple_baddy_spell_action(
+            character_id,
+            |character, items, tick, map, weather_movement_percent| {
+                do_flash(character, items, tick, map, weather_movement_percent)
+            },
+        )
     }
 
     pub(crate) fn simple_baddy_can_warcry(&self, attacker: &Character, target: &Character) -> bool {
@@ -815,9 +867,12 @@ impl World {
         if !self.simple_baddy_can_warcry(&attacker, target) {
             return false;
         }
-        self.setup_simple_baddy_spell_action(character_id, |character, items, _tick| {
-            do_warcry(character, items)
-        })
+        self.setup_simple_baddy_spell_action(
+            character_id,
+            |character, items, _tick, map, weather_movement_percent| {
+                do_warcry(character, items, map, weather_movement_percent)
+            },
+        )
     }
 
     #[allow(dead_code)]
@@ -1289,10 +1344,11 @@ impl World {
             return false;
         }
 
+        let weather_movement_percent = self.settings.weather_movement_percent;
         let Some(character) = self.characters.get_mut(&character_id) else {
             return false;
         };
-        if do_pulse(character).is_err() {
+        if do_pulse(character, &self.map, weather_movement_percent).is_err() {
             return false;
         }
         if let Some(CharacterDriverState::SimpleBaddy(data)) = character.driver_state.as_mut() {
@@ -1724,6 +1780,7 @@ impl World {
             predicted_fireball_target(&attacker, target)
         };
 
+        let weather_movement_percent = self.settings.weather_movement_percent;
         let Some(attacker_mut) = self.characters.get_mut(&character_id) else {
             return false;
         };
@@ -1733,6 +1790,8 @@ impl World {
             target_x,
             target_y,
             self.tick.0 as u32,
+            &self.map,
+            weather_movement_percent,
         )
         .is_err()
         {
@@ -1771,6 +1830,7 @@ impl World {
             return false;
         }
 
+        let weather_movement_percent = self.settings.weather_movement_percent;
         let Some(attacker_mut) = self.characters.get_mut(&character_id) else {
             return false;
         };
@@ -1780,6 +1840,8 @@ impl World {
             usize::from(attacker.x),
             usize::from(attacker.y),
             self.tick.0 as u32,
+            &self.map,
+            weather_movement_percent,
         )
         .is_err()
         {
@@ -2054,10 +2116,12 @@ impl World {
                 character_value(target, CharacterValue::Cold),
             );
             if modifier < -10 {
-                return self
-                    .setup_simple_baddy_spell_action(character_id, |character, _items, _tick| {
-                        do_freeze(character)
-                    });
+                return self.setup_simple_baddy_spell_action(
+                    character_id,
+                    |character, _items, _tick, map, weather_movement_percent| {
+                        do_freeze(character, map, weather_movement_percent)
+                    },
+                );
             }
         }
 
@@ -2078,19 +2142,31 @@ impl World {
                     + usize::try_from(random(3).min(2)).unwrap_or(0);
                 let target_y = usize::from(target.y).saturating_sub(1)
                     + usize::try_from(random(3).min(2)).unwrap_or(0);
-                return self
-                    .setup_simple_baddy_spell_action(character_id, |character, items, tick| {
-                        do_ball(character, items, target_x, target_y, tick)
-                    });
+                return self.setup_simple_baddy_spell_action(
+                    character_id,
+                    |character, items, tick, map, weather_movement_percent| {
+                        do_ball(
+                            character,
+                            items,
+                            target_x,
+                            target_y,
+                            tick,
+                            map,
+                            weather_movement_percent,
+                        )
+                    },
+                );
             }
 
             if tile_distance < 4
                 && may_add_spell(&attacker, &self.items, IDR_FLASH, current_tick).is_some()
             {
-                return self
-                    .setup_simple_baddy_spell_action(character_id, |character, items, tick| {
-                        do_flash(character, items, tick)
-                    });
+                return self.setup_simple_baddy_spell_action(
+                    character_id,
+                    |character, items, tick, map, weather_movement_percent| {
+                        do_flash(character, items, tick, map, weather_movement_percent)
+                    },
+                );
             }
         }
 
@@ -2115,10 +2191,12 @@ impl World {
                     && attacker.lifeshield
                         < character_value(&attacker, CharacterValue::Warcry) * POWERSCALE / 4;
             if target_accepts_warcry || caster_needs_shield {
-                return self
-                    .setup_simple_baddy_spell_action(character_id, |character, items, _tick| {
-                        do_warcry(character, items)
-                    });
+                return self.setup_simple_baddy_spell_action(
+                    character_id,
+                    |character, items, _tick, map, weather_movement_percent| {
+                        do_warcry(character, items, map, weather_movement_percent)
+                    },
+                );
             }
         }
 
@@ -2132,12 +2210,23 @@ impl World {
             &mut Character,
             &HashMap<ItemId, Item>,
             u32,
+            &MapGrid,
+            i32,
         ) -> Result<(), crate::do_action::DoError>,
     ) -> bool {
+        let weather_movement_percent = self.settings.weather_movement_percent;
         let Some(character) = self.characters.get_mut(&character_id) else {
             return false;
         };
-        if action(character, &self.items, self.tick.0 as u32).is_err() {
+        if action(
+            character,
+            &self.items,
+            self.tick.0 as u32,
+            &self.map,
+            weather_movement_percent,
+        )
+        .is_err()
+        {
             return false;
         }
         if let Some(CharacterDriverState::SimpleBaddy(data)) = character.driver_state.as_mut() {

@@ -1330,7 +1330,7 @@ fn earthrain_action_completion_creates_legacy_area_effect() {
     caster.flags.insert(CharacterFlags::PLAYER);
     caster.hp = 10 * POWERSCALE;
 
-    crate::do_action::do_earthrain(&mut caster, 12, 10, 7).unwrap();
+    crate::do_action::do_earthrain(&mut caster, &world.map, 12, 10, 7, 100).unwrap();
     caster.duration = 1;
     world.spawn_character(caster, 10, 10);
 
@@ -1356,7 +1356,7 @@ fn earthmud_action_completion_creates_legacy_area_effect() {
     let mut caster = character(1);
     caster.hp = 10 * POWERSCALE;
 
-    crate::do_action::do_earthmud(&mut caster, 12, 10, 4).unwrap();
+    crate::do_action::do_earthmud(&mut caster, &world.map, 12, 10, 4, 100).unwrap();
     caster.duration = 1;
     world.spawn_character(caster, 10, 10);
 

@@ -178,6 +178,29 @@ pub fn speed_ticks_with_weather_movement(
     ((ticks as f64 / f) as i32).clamp(2, 255)
 }
 
+/// Resolves the effective weather movement percent for `character`'s
+/// *current* tile, mirroring C `modify_movement_speed`'s
+/// (`module/weather/weather.c:477-493`) indoor check
+/// (`map[m].flags & MF_INDOORS` -> no speed reduction) that every
+/// `speed(cn, ...)` call site in `do.c` relies on (`cn > 0` unconditionally
+/// applies the weather multiplier, not just for movement/melee) - see
+/// `do_walk`/`do_attack` above for the two call sites that already inline
+/// this same check.
+fn resolve_weather_movement_percent(
+    character: &Character,
+    map: &MapGrid,
+    weather_movement_percent: i32,
+) -> i32 {
+    let indoors = map
+        .tile(usize::from(character.x), usize::from(character.y))
+        .is_some_and(|tile| tile.flags.contains(MapFlags::INDOORS));
+    if indoors {
+        100
+    } else {
+        weather_movement_percent
+    }
+}
+
 pub fn speed_ticks_inverse(speedy: i32, mode: SpeedMode, ticks: i32) -> i32 {
     let mut speedy = if speedy > 0 {
         speedy / 2
@@ -303,6 +326,7 @@ pub fn do_take(
     item: &Item,
     direction: u8,
     can_carry: bool,
+    weather_movement_percent: i32,
 ) -> Result<(), DoError> {
     if character.flags.contains(CharacterFlags::DEAD) {
         return Err(DoError::Dead);
@@ -325,7 +349,17 @@ pub fn do_take(
         return Err(DoError::NotTakeable);
     }
 
-    set_timed_item_action(character, action::TAKE, item, direction, DUR_MISC_ACTION, 0);
+    let weather_movement_percent =
+        resolve_weather_movement_percent(character, map, weather_movement_percent);
+    set_timed_item_action(
+        character,
+        action::TAKE,
+        item,
+        direction,
+        DUR_MISC_ACTION,
+        0,
+        weather_movement_percent,
+    );
     Ok(())
 }
 
@@ -335,6 +369,7 @@ pub fn do_use(
     item: &Item,
     direction: u8,
     spec: i32,
+    weather_movement_percent: i32,
 ) -> Result<(), DoError> {
     if character.flags.contains(CharacterFlags::DEAD) {
         return Err(DoError::Dead);
@@ -354,6 +389,8 @@ pub fn do_use(
         return Err(DoError::NotUsable);
     }
 
+    let weather_movement_percent =
+        resolve_weather_movement_percent(character, map, weather_movement_percent);
     set_timed_item_action(
         character,
         action::USE,
@@ -361,6 +398,7 @@ pub fn do_use(
         direction,
         DUR_USE_ACTION,
         spec,
+        weather_movement_percent,
     );
     Ok(())
 }
@@ -370,6 +408,7 @@ pub fn do_drop(
     map: &MapGrid,
     item: &Item,
     direction: u8,
+    weather_movement_percent: i32,
 ) -> Result<(), DoError> {
     if character.flags.contains(CharacterFlags::DEAD) {
         return Err(DoError::Dead);
@@ -397,7 +436,17 @@ pub fn do_drop(
         return Err(DoError::Blocked);
     }
 
-    set_timed_item_action(character, action::DROP, item, direction, DUR_MISC_ACTION, 0);
+    let weather_movement_percent =
+        resolve_weather_movement_percent(character, map, weather_movement_percent);
+    set_timed_item_action(
+        character,
+        action::DROP,
+        item,
+        direction,
+        DUR_MISC_ACTION,
+        0,
+        weather_movement_percent,
+    );
     Ok(())
 }
 
@@ -458,7 +507,11 @@ pub fn do_attack(
     Ok(())
 }
 
-pub fn do_magicshield(character: &mut Character) -> Result<(), DoError> {
+pub fn do_magicshield(
+    character: &mut Character,
+    map: &MapGrid,
+    weather_movement_percent: i32,
+) -> Result<(), DoError> {
     if character.flags.contains(CharacterFlags::DEAD) {
         return Err(DoError::Dead);
     }
@@ -483,10 +536,11 @@ pub fn do_magicshield(character: &mut Character) -> Result<(), DoError> {
     character.mana -= spend.mana_cost;
     character.action = action::MAGICSHIELD;
     character.act1 = spend.amount;
-    character.duration = speed_ticks(
+    character.duration = speed_ticks_with_weather_movement(
         character_value(character, CharacterValue::Speed),
         character.speed_mode,
         DUR_MAGIC_ACTION,
+        resolve_weather_movement_percent(character, map, weather_movement_percent),
     );
     if character.speed_mode == SpeedMode::Fast {
         character.endurance -= endurance_cost(character);
@@ -495,7 +549,11 @@ pub fn do_magicshield(character: &mut Character) -> Result<(), DoError> {
     Ok(())
 }
 
-pub fn do_pulse(character: &mut Character) -> Result<(), DoError> {
+pub fn do_pulse(
+    character: &mut Character,
+    map: &MapGrid,
+    weather_movement_percent: i32,
+) -> Result<(), DoError> {
     if character.flags.contains(CharacterFlags::DEAD) {
         return Err(DoError::Dead);
     }
@@ -519,10 +577,11 @@ pub fn do_pulse(character: &mut Character) -> Result<(), DoError> {
     character.mana -= spend.mana_cost;
     character.action = action::PULSE;
     character.act1 = spend.amount;
-    character.duration = speed_ticks(
+    character.duration = speed_ticks_with_weather_movement(
         character_value(character, CharacterValue::Speed),
         character.speed_mode,
         DUR_MAGIC_ACTION,
+        resolve_weather_movement_percent(character, map, weather_movement_percent),
     );
     if character.speed_mode == SpeedMode::Fast {
         character.endurance -= endurance_cost(character);
@@ -531,7 +590,12 @@ pub fn do_pulse(character: &mut Character) -> Result<(), DoError> {
     Ok(())
 }
 
-pub fn do_warcry(character: &mut Character, items: &HashMap<ItemId, Item>) -> Result<(), DoError> {
+pub fn do_warcry(
+    character: &mut Character,
+    items: &HashMap<ItemId, Item>,
+    map: &MapGrid,
+    weather_movement_percent: i32,
+) -> Result<(), DoError> {
     if character.flags.contains(CharacterFlags::DEAD) {
         return Err(DoError::Dead);
     }
@@ -555,10 +619,11 @@ pub fn do_warcry(character: &mut Character, items: &HashMap<ItemId, Item>) -> Re
 
     character.endurance -= warcry_endurance_cost;
     character.action = action::WARCRY;
-    character.duration = speed_ticks(
+    character.duration = speed_ticks_with_weather_movement(
         character_value(character, CharacterValue::Speed),
         character.speed_mode,
         DUR_MAGIC_ACTION,
+        resolve_weather_movement_percent(character, map, weather_movement_percent),
     );
     if character.speed_mode == SpeedMode::Fast {
         character.endurance -= endurance_cost(character);
@@ -575,7 +640,11 @@ fn warcried(character: &Character, items: &HashMap<ItemId, Item>) -> bool {
         .is_some_and(|item| item.modifier_value[0] < -100)
 }
 
-pub fn do_freeze(character: &mut Character) -> Result<(), DoError> {
+pub fn do_freeze(
+    character: &mut Character,
+    map: &MapGrid,
+    weather_movement_percent: i32,
+) -> Result<(), DoError> {
     if character.flags.contains(CharacterFlags::DEAD) {
         return Err(DoError::Dead);
     }
@@ -593,10 +662,11 @@ pub fn do_freeze(character: &mut Character) -> Result<(), DoError> {
 
     character.mana -= FREEZE_COST;
     character.action = action::FREEZE;
-    character.duration = speed_ticks(
+    character.duration = speed_ticks_with_weather_movement(
         character_value(character, CharacterValue::Speed),
         character.speed_mode,
         DUR_MAGIC_ACTION,
+        resolve_weather_movement_percent(character, map, weather_movement_percent),
     );
     if character.speed_mode == SpeedMode::Fast {
         character.endurance -= endurance_cost(character);
@@ -609,6 +679,8 @@ pub fn do_flash(
     character: &mut Character,
     items: &HashMap<ItemId, Item>,
     current_tick: u32,
+    map: &MapGrid,
+    weather_movement_percent: i32,
 ) -> Result<(), DoError> {
     if character.flags.contains(CharacterFlags::DEAD) {
         return Err(DoError::Dead);
@@ -630,10 +702,11 @@ pub fn do_flash(
 
     character.mana -= FLASH_COST;
     character.action = action::FLASH;
-    character.duration = speed_ticks(
+    character.duration = speed_ticks_with_weather_movement(
         character_value(character, CharacterValue::Speed),
         character.speed_mode,
         DUR_MAGIC_ACTION,
+        resolve_weather_movement_percent(character, map, weather_movement_percent),
     );
     if character.speed_mode == SpeedMode::Fast {
         character.endurance -= endurance_cost(character);
@@ -646,6 +719,8 @@ pub fn do_firering(
     character: &mut Character,
     items: &HashMap<ItemId, Item>,
     current_tick: u32,
+    map: &MapGrid,
+    weather_movement_percent: i32,
 ) -> Result<(), DoError> {
     if character.flags.contains(CharacterFlags::DEAD) {
         return Err(DoError::Dead);
@@ -670,10 +745,11 @@ pub fn do_firering(
 
     character.mana -= FIREBALL_COST;
     character.action = action::FIRERING;
-    character.duration = speed_ticks(
+    character.duration = speed_ticks_with_weather_movement(
         character_value(character, CharacterValue::Speed),
         character.speed_mode,
         DUR_MAGIC_ACTION,
+        resolve_weather_movement_percent(character, map, weather_movement_percent),
     );
     if character.speed_mode == SpeedMode::Fast {
         character.endurance -= endurance_cost(character);
@@ -688,6 +764,8 @@ pub fn do_fireball(
     target_x: usize,
     target_y: usize,
     current_tick: u32,
+    map: &MapGrid,
+    weather_movement_percent: i32,
 ) -> Result<(), DoError> {
     if character.flags.contains(CharacterFlags::DEAD) {
         return Err(DoError::Dead);
@@ -710,6 +788,8 @@ pub fn do_fireball(
         return Err(DoError::ManaLow);
     }
 
+    let weather_movement_percent =
+        resolve_weather_movement_percent(character, map, weather_movement_percent);
     let direction = offset_to_direction(
         usize::from(character.x),
         usize::from(character.y),
@@ -720,10 +800,11 @@ pub fn do_fireball(
         character.action = action::FIREBALL1;
         character.act1 = target_x as i32;
         character.act2 = target_y as i32;
-        character.duration = speed_ticks(
+        character.duration = speed_ticks_with_weather_movement(
             character_value(character, CharacterValue::Speed),
             character.speed_mode,
             DUR_MAGIC_ACTION / 2,
+            weather_movement_percent,
         );
         character.dir = direction as u8;
     } else {
@@ -731,10 +812,11 @@ pub fn do_fireball(
             return Err(DoError::AlreadyWorking);
         }
         character.action = action::FIRERING;
-        character.duration = speed_ticks(
+        character.duration = speed_ticks_with_weather_movement(
             character_value(character, CharacterValue::Speed),
             character.speed_mode,
             DUR_MAGIC_ACTION,
+            weather_movement_percent,
         );
         character.dir = bigdir(character.dir);
     }
@@ -752,6 +834,8 @@ pub fn do_ball(
     target_x: usize,
     target_y: usize,
     current_tick: u32,
+    map: &MapGrid,
+    weather_movement_percent: i32,
 ) -> Result<(), DoError> {
     if character.flags.contains(CharacterFlags::DEAD) {
         return Err(DoError::Dead);
@@ -774,6 +858,8 @@ pub fn do_ball(
         return Err(DoError::ManaLow);
     }
 
+    let weather_movement_percent =
+        resolve_weather_movement_percent(character, map, weather_movement_percent);
     let direction = offset_to_direction(
         usize::from(character.x),
         usize::from(character.y),
@@ -784,10 +870,11 @@ pub fn do_ball(
         character.action = action::BALL1;
         character.act1 = target_x as i32;
         character.act2 = target_y as i32;
-        character.duration = speed_ticks(
+        character.duration = speed_ticks_with_weather_movement(
             character_value(character, CharacterValue::Speed),
             character.speed_mode,
             DUR_MAGIC_ACTION / 2,
+            weather_movement_percent,
         );
         character.dir = direction as u8;
     } else {
@@ -795,10 +882,11 @@ pub fn do_ball(
             return Err(DoError::AlreadyWorking);
         }
         character.action = action::FLASH;
-        character.duration = speed_ticks(
+        character.duration = speed_ticks_with_weather_movement(
             character_value(character, CharacterValue::Speed),
             character.speed_mode,
             DUR_MAGIC_ACTION,
+            weather_movement_percent,
         );
         character.dir = bigdir(character.dir);
     }
@@ -812,28 +900,50 @@ pub fn do_ball(
 
 pub fn do_earthrain(
     character: &mut Character,
+    map: &MapGrid,
     target_x: usize,
     target_y: usize,
     strength: i32,
+    weather_movement_percent: i32,
 ) -> Result<(), DoError> {
-    do_earth_spell(character, target_x, target_y, strength, action::EARTHRAIN)
+    do_earth_spell(
+        character,
+        map,
+        target_x,
+        target_y,
+        strength,
+        action::EARTHRAIN,
+        weather_movement_percent,
+    )
 }
 
 pub fn do_earthmud(
     character: &mut Character,
+    map: &MapGrid,
     target_x: usize,
     target_y: usize,
     strength: i32,
+    weather_movement_percent: i32,
 ) -> Result<(), DoError> {
-    do_earth_spell(character, target_x, target_y, strength, action::EARTHMUD)
+    do_earth_spell(
+        character,
+        map,
+        target_x,
+        target_y,
+        strength,
+        action::EARTHMUD,
+        weather_movement_percent,
+    )
 }
 
 fn do_earth_spell(
     character: &mut Character,
+    map: &MapGrid,
     target_x: usize,
     target_y: usize,
     strength: i32,
     action_id: u16,
+    weather_movement_percent: i32,
 ) -> Result<(), DoError> {
     if character.flags.contains(CharacterFlags::DEAD) {
         return Err(DoError::Dead);
@@ -857,10 +967,11 @@ fn do_earth_spell(
     character.action = action_id;
     character.act1 = (target_x + target_y * MAX_MAP) as i32;
     character.act2 = strength;
-    character.duration = speed_ticks(
+    character.duration = speed_ticks_with_weather_movement(
         character_value(character, CharacterValue::Speed),
         character.speed_mode,
         DUR_MAGIC_ACTION,
+        resolve_weather_movement_percent(character, map, weather_movement_percent),
     );
     if character.speed_mode == SpeedMode::Fast {
         character.endurance -= endurance_cost(character);
@@ -873,6 +984,8 @@ pub fn do_heal(
     caster: &mut Character,
     target: &Character,
     direction: Option<u8>,
+    map: &MapGrid,
+    weather_movement_percent: i32,
 ) -> Result<(), DoError> {
     if caster.flags.contains(CharacterFlags::DEAD) {
         return Err(DoError::Dead);
@@ -901,23 +1014,27 @@ pub fn do_heal(
         });
     };
 
+    let weather_movement_percent =
+        resolve_weather_movement_percent(caster, map, weather_movement_percent);
     caster.mana -= spend.mana_cost;
     caster.act1 = target.id.0 as i32;
     caster.act2 = spend.amount;
     caster.dir = direction.unwrap_or_else(|| bigdir(caster.dir));
     if caster.id == target.id {
         caster.action = action::HEAL_SELF;
-        caster.duration = speed_ticks(
+        caster.duration = speed_ticks_with_weather_movement(
             character_value(caster, CharacterValue::Speed),
             caster.speed_mode,
             DUR_MAGIC_ACTION,
+            weather_movement_percent,
         );
     } else {
         caster.action = action::HEAL1;
-        caster.duration = speed_ticks(
+        caster.duration = speed_ticks_with_weather_movement(
             character_value(caster, CharacterValue::Speed),
             caster.speed_mode,
             DUR_MAGIC_ACTION / 2,
+            weather_movement_percent,
         );
     }
     if caster.speed_mode == SpeedMode::Fast {
@@ -932,6 +1049,8 @@ pub fn do_bless(
     items: &HashMap<ItemId, Item>,
     current_tick: u32,
     direction: Option<u8>,
+    map: &MapGrid,
+    weather_movement_percent: i32,
 ) -> Result<(), DoError> {
     if caster.flags.contains(CharacterFlags::DEAD) {
         return Err(DoError::Dead);
@@ -967,22 +1086,26 @@ pub fn do_bless(
         return Err(DoError::IllegalAttack);
     }
 
+    let weather_movement_percent =
+        resolve_weather_movement_percent(caster, map, weather_movement_percent);
     caster.mana -= BLESS_COST;
     caster.act1 = target.id.0 as i32;
     caster.dir = direction.unwrap_or_else(|| bigdir(caster.dir));
     if caster.id == target.id {
         caster.action = action::BLESS_SELF;
-        caster.duration = speed_ticks(
+        caster.duration = speed_ticks_with_weather_movement(
             character_value(caster, CharacterValue::Speed),
             caster.speed_mode,
             DUR_MAGIC_ACTION,
+            weather_movement_percent,
         );
     } else {
         caster.action = action::BLESS1;
-        caster.duration = speed_ticks(
+        caster.duration = speed_ticks_with_weather_movement(
             character_value(caster, CharacterValue::Speed),
             caster.speed_mode,
             DUR_MAGIC_ACTION / 2,
+            weather_movement_percent,
         );
     }
     if caster.speed_mode == SpeedMode::Fast {
@@ -1487,14 +1610,16 @@ fn set_timed_item_action(
     direction: u8,
     duration: i32,
     act2: i32,
+    weather_movement_percent: i32,
 ) {
     character.action = action_id;
     character.act1 = item.id.0 as i32;
     character.act2 = act2;
-    character.duration = speed_ticks(
+    character.duration = speed_ticks_with_weather_movement(
         character_value(character, CharacterValue::Speed),
         character.speed_mode,
         duration,
+        weather_movement_percent,
     );
     if character.speed_mode == SpeedMode::Fast {
         character.endurance -= endurance_cost(character);
@@ -1803,6 +1928,54 @@ mod tests {
     }
 
     #[test]
+    fn do_take_applies_weather_movement_percent_outdoors_but_not_indoors() {
+        // C `take_item` (`system/do.c:290`)'s `speed(cn, ..., DUR_MISC_ACTION)`
+        // call folds `modify_movement_speed` in unconditionally, same as
+        // `do_walk`/`do_attack` above - not just movement/melee.
+        let mut map = MapGrid::new(20, 20);
+        let mut character = character();
+        character.x = 10;
+        character.y = 10;
+        character.values[0][CharacterValue::Speed as usize] = 100;
+        let item = item(7, ItemFlags::USED | ItemFlags::TAKE);
+        map.tile_mut(11, 10).unwrap().item = item.id.0;
+
+        do_take(
+            &mut character,
+            &map,
+            &item,
+            Direction::Right as u8,
+            true,
+            70,
+        )
+        .unwrap();
+        assert_eq!(
+            character.duration,
+            speed_ticks_with_weather_movement(100, SpeedMode::Normal, DUR_MISC_ACTION, 70)
+        );
+        assert_ne!(
+            character.duration,
+            speed_ticks(100, SpeedMode::Normal, DUR_MISC_ACTION)
+        );
+
+        map.set_flags(10, 10, MapFlags::INDOORS);
+        character.cursor_item = None;
+        do_take(
+            &mut character,
+            &map,
+            &item,
+            Direction::Right as u8,
+            true,
+            70,
+        )
+        .unwrap();
+        assert_eq!(
+            character.duration,
+            speed_ticks(100, SpeedMode::Normal, DUR_MISC_ACTION)
+        );
+    }
+
+    #[test]
     fn do_take_validates_cursor_item_and_takeable_flag() {
         let mut map = MapGrid::new(20, 20);
         let mut character = character();
@@ -1811,7 +1984,15 @@ mod tests {
         let item = item(7, ItemFlags::USED | ItemFlags::TAKE);
         map.tile_mut(11, 10).unwrap().item = item.id.0;
 
-        do_take(&mut character, &map, &item, Direction::Right as u8, true).unwrap();
+        do_take(
+            &mut character,
+            &map,
+            &item,
+            Direction::Right as u8,
+            true,
+            100,
+        )
+        .unwrap();
         assert_eq!(character.action, action::TAKE);
         assert_eq!(character.act1, 7);
         assert_eq!(
@@ -1821,7 +2002,14 @@ mod tests {
 
         character.cursor_item = Some(item.id);
         assert_eq!(
-            do_take(&mut character, &map, &item, Direction::Right as u8, true),
+            do_take(
+                &mut character,
+                &map,
+                &item,
+                Direction::Right as u8,
+                true,
+                100
+            ),
             Err(DoError::HaveCursorItem)
         );
     }
@@ -1835,13 +2023,13 @@ mod tests {
         let mut item = item(7, ItemFlags::USED | ItemFlags::USE);
         map.tile_mut(11, 10).unwrap().item = item.id.0;
 
-        do_use(&mut character, &map, &item, Direction::Right as u8, 42).unwrap();
+        do_use(&mut character, &map, &item, Direction::Right as u8, 42, 100).unwrap();
         assert_eq!(character.action, action::USE);
         assert_eq!((character.act1, character.act2), (7, 42));
 
         item.flags.remove(ItemFlags::USE);
         assert_eq!(
-            do_use(&mut character, &map, &item, Direction::Right as u8, 0),
+            do_use(&mut character, &map, &item, Direction::Right as u8, 0, 100),
             Err(DoError::NotUsable)
         );
     }
@@ -1855,18 +2043,18 @@ mod tests {
         let item = item(7, ItemFlags::USED | ItemFlags::TAKE);
 
         assert_eq!(
-            do_drop(&mut character, &map, &item, Direction::Right as u8),
+            do_drop(&mut character, &map, &item, Direction::Right as u8, 100),
             Err(DoError::NoCursorItem)
         );
 
         character.cursor_item = Some(item.id);
-        do_drop(&mut character, &map, &item, Direction::Right as u8).unwrap();
+        do_drop(&mut character, &map, &item, Direction::Right as u8, 100).unwrap();
         assert_eq!(character.action, action::DROP);
         assert_eq!(character.act1, 7);
 
         map.tile_mut(11, 10).unwrap().item = 99;
         assert_eq!(
-            do_drop(&mut character, &map, &item, Direction::Right as u8),
+            do_drop(&mut character, &map, &item, Direction::Right as u8, 100),
             Err(DoError::HaveItem)
         );
     }
@@ -2528,12 +2716,13 @@ mod tests {
 
     #[test]
     fn do_fireball_sets_targeted_legacy_action() {
+        let map = MapGrid::new(20, 20);
         let items = HashMap::new();
         let mut character = character();
         character.values[0][CharacterValue::Fireball as usize] = 50;
         character.mana = FIREBALL_COST;
 
-        do_fireball(&mut character, &items, 15, 10, 0).unwrap();
+        do_fireball(&mut character, &items, 15, 10, 0, &map, 100).unwrap();
 
         assert_eq!(character.action, action::FIREBALL1);
         assert_eq!(character.act1, 15);
@@ -2548,13 +2737,14 @@ mod tests {
 
     #[test]
     fn do_fireball_same_tile_sets_firering_action() {
+        let map = MapGrid::new(20, 20);
         let items = HashMap::new();
         let mut character = character();
         character.values[0][CharacterValue::Fireball as usize] = 50;
         character.mana = FIREBALL_COST;
         character.dir = Direction::RightUp as u8;
 
-        do_fireball(&mut character, &items, 10, 10, 0).unwrap();
+        do_fireball(&mut character, &items, 10, 10, 0, &map, 100).unwrap();
 
         assert_eq!(character.action, action::FIRERING);
         assert_eq!(character.dir, Direction::Right as u8);
@@ -2567,11 +2757,12 @@ mod tests {
 
     #[test]
     fn do_earthrain_sets_legacy_action_and_hp_cost() {
+        let map = MapGrid::new(20, 20);
         let mut character = character();
         character.hp = 10 * POWERSCALE;
         character.speed_mode = SpeedMode::Fast;
 
-        do_earthrain(&mut character, 12, 10, 15).unwrap();
+        do_earthrain(&mut character, &map, 12, 10, 15, 100).unwrap();
 
         assert_eq!(character.action, action::EARTHRAIN);
         assert_eq!(character.act1, (12 + 10 * MAX_MAP) as i32);
@@ -2587,16 +2778,106 @@ mod tests {
 
     #[test]
     fn do_earthmud_rejects_self_and_low_hp_like_c() {
+        let map = MapGrid::new(20, 20);
         let mut character = character();
         character.hp = 2 * POWERSCALE;
 
         assert_eq!(
-            do_earthmud(&mut character, 10, 10, 1),
+            do_earthmud(&mut character, &map, 10, 10, 1, 100),
             Err(DoError::SelfTarget)
         );
         assert_eq!(
-            do_earthmud(&mut character, 11, 10, 11),
+            do_earthmud(&mut character, &map, 11, 10, 11, 100),
             Err(DoError::ManaLow)
+        );
+    }
+
+    #[test]
+    fn do_magicshield_applies_weather_movement_percent_outdoors_but_not_indoors() {
+        // C `magicshield_spell` (`system/do.c:630`)'s `speed(cn, ...)` call
+        // folds weather in unconditionally, same as every other `speed(cn,`
+        // call site (`tool.c:118-160`).
+        let mut map = MapGrid::new(20, 20);
+        let mut character = character();
+        character.x = 10;
+        character.y = 10;
+        character.values[0][CharacterValue::Speed as usize] = 100;
+        character.values[0][CharacterValue::MagicShield as usize] = 50;
+        character.mana = POWERSCALE * 10;
+
+        do_magicshield(&mut character, &map, 70).unwrap();
+        assert_eq!(
+            character.duration,
+            speed_ticks_with_weather_movement(100, SpeedMode::Normal, DUR_MAGIC_ACTION, 70)
+        );
+        assert_ne!(
+            character.duration,
+            speed_ticks(100, SpeedMode::Normal, DUR_MAGIC_ACTION)
+        );
+
+        map.set_flags(10, 10, MapFlags::INDOORS);
+        character.mana = POWERSCALE * 10;
+        character.lifeshield = 0;
+        do_magicshield(&mut character, &map, 70).unwrap();
+        assert_eq!(
+            character.duration,
+            speed_ticks(100, SpeedMode::Normal, DUR_MAGIC_ACTION)
+        );
+    }
+
+    #[test]
+    fn do_heal_applies_weather_movement_percent_to_self_and_other_target_durations() {
+        // C `heal_spell` (`system/do.c:816,825`)'s two `speed(cn, ...)` call
+        // sites (self vs. other target, halved duration) both fold weather
+        // in identically.
+        let map = MapGrid::new(20, 20);
+        let mut caster = character();
+        caster.x = 10;
+        caster.y = 10;
+        caster.values[0][CharacterValue::Speed as usize] = 100;
+        caster.values[0][CharacterValue::Heal as usize] = 50;
+        caster.values[0][CharacterValue::Hp as usize] = 10;
+        caster.mana = POWERSCALE * 10;
+        caster.hp = POWERSCALE;
+
+        let self_target = caster.clone();
+        do_heal(&mut caster, &self_target, None, &map, 70).unwrap();
+        assert_eq!(
+            caster.duration,
+            speed_ticks_with_weather_movement(100, SpeedMode::Normal, DUR_MAGIC_ACTION, 70)
+        );
+
+        caster.mana = POWERSCALE * 10;
+        caster.hp = POWERSCALE;
+        let mut other_target = caster.clone();
+        other_target.id = CharacterId(2);
+        do_heal(&mut caster, &other_target, None, &map, 70).unwrap();
+        assert_eq!(
+            caster.duration,
+            speed_ticks_with_weather_movement(100, SpeedMode::Normal, DUR_MAGIC_ACTION / 2, 70)
+        );
+    }
+
+    #[test]
+    fn do_fireball_applies_weather_movement_percent() {
+        let map = MapGrid::new(20, 20);
+        let items = HashMap::new();
+        let mut character = character();
+        character.x = 10;
+        character.y = 10;
+        character.values[0][CharacterValue::Speed as usize] = 200;
+        character.values[0][CharacterValue::Fireball as usize] = 50;
+        character.mana = FIREBALL_COST;
+
+        do_fireball(&mut character, &items, 15, 10, 0, &map, 70).unwrap();
+
+        assert_eq!(
+            character.duration,
+            speed_ticks_with_weather_movement(200, SpeedMode::Normal, DUR_MAGIC_ACTION / 2, 70)
+        );
+        assert_ne!(
+            character.duration,
+            speed_ticks(200, SpeedMode::Normal, DUR_MAGIC_ACTION / 2)
         );
     }
 

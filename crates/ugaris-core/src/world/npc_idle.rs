@@ -369,6 +369,8 @@ impl World {
         };
         let current_tick = self.tick.0 as u32;
 
+        let weather_movement_percent = self.settings.weather_movement_percent;
+
         if character_value(&character, CharacterValue::Bless) > 0
             && character.mana >= BLESS_COST
             && may_add_spell(&character, &self.items, IDR_BLESS, current_tick).is_some()
@@ -377,7 +379,16 @@ impl World {
                 .characters
                 .get_mut(&character_id)
                 .is_some_and(|caster| {
-                    do_bless(caster, &character, &self.items, current_tick, None).is_ok()
+                    do_bless(
+                        caster,
+                        &character,
+                        &self.items,
+                        current_tick,
+                        None,
+                        &self.map,
+                        weather_movement_percent,
+                    )
+                    .is_ok()
                 });
         }
 
@@ -388,7 +399,9 @@ impl World {
             return self
                 .characters
                 .get_mut(&character_id)
-                .is_some_and(|character| do_magicshield(character).is_ok());
+                .is_some_and(|character| {
+                    do_magicshield(character, &self.map, weather_movement_percent).is_ok()
+                });
         }
 
         if character_value(&character, CharacterValue::Heal) > 0
@@ -398,7 +411,16 @@ impl World {
             return self
                 .characters
                 .get_mut(&character_id)
-                .is_some_and(|caster| do_heal(caster, &character, None).is_ok());
+                .is_some_and(|caster| {
+                    do_heal(
+                        caster,
+                        &character,
+                        None,
+                        &self.map,
+                        weather_movement_percent,
+                    )
+                    .is_ok()
+                });
         }
 
         false

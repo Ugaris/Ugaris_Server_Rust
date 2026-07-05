@@ -410,7 +410,16 @@ impl World {
                         return false;
                     };
 
-                    if do_take(character, &self.map, item, direction as u8, true).is_ok() {
+                    if do_take(
+                        character,
+                        &self.map,
+                        item,
+                        direction as u8,
+                        true,
+                        self.settings.weather_movement_percent,
+                    )
+                    .is_ok()
+                    {
                         true
                     } else {
                         self.set_player_idle(player, character_id)
@@ -457,7 +466,15 @@ impl World {
                         return false;
                     };
 
-                    if do_drop(character, &self.map, item, direction as u8).is_ok() {
+                    if do_drop(
+                        character,
+                        &self.map,
+                        item,
+                        direction as u8,
+                        self.settings.weather_movement_percent,
+                    )
+                    .is_ok()
+                    {
                         true
                     } else {
                         self.set_player_idle(player, character_id)
@@ -516,7 +533,16 @@ impl World {
                         return self.set_player_idle(player, character_id);
                     };
 
-                    if do_use(character, &self.map, item, direction as u8, 0).is_ok() {
+                    if do_use(
+                        character,
+                        &self.map,
+                        item,
+                        direction as u8,
+                        0,
+                        self.settings.weather_movement_percent,
+                    )
+                    .is_ok()
+                    {
                         true
                     } else {
                         self.set_player_idle(player, character_id)
@@ -630,6 +656,7 @@ impl World {
                     item,
                     direction as u8,
                     player.action.arg1 + 1,
+                    self.settings.weather_movement_percent,
                 )
                 .is_ok()
                 {
@@ -710,34 +737,57 @@ impl World {
                 }
             }
             PlayerActionCode::MagicShield => {
+                let weather_movement_percent = self.settings.weather_movement_percent;
                 self.characters
                     .get_mut(&character_id)
-                    .is_some_and(|character| do_magicshield(character).is_ok())
+                    .is_some_and(|character| {
+                        do_magicshield(character, &self.map, weather_movement_percent).is_ok()
+                    })
                     || self.set_player_idle(player, character_id)
             }
             PlayerActionCode::Pulse => {
+                let weather_movement_percent = self.settings.weather_movement_percent;
                 self.characters
                     .get_mut(&character_id)
-                    .is_some_and(|character| do_pulse(character).is_ok())
+                    .is_some_and(|character| {
+                        do_pulse(character, &self.map, weather_movement_percent).is_ok()
+                    })
                     || self.set_player_idle(player, character_id)
             }
             PlayerActionCode::Warcry => {
+                let weather_movement_percent = self.settings.weather_movement_percent;
                 self.characters
                     .get_mut(&character_id)
-                    .is_some_and(|character| do_warcry(character, &self.items).is_ok())
+                    .is_some_and(|character| {
+                        do_warcry(character, &self.items, &self.map, weather_movement_percent)
+                            .is_ok()
+                    })
                     || self.set_player_idle(player, character_id)
             }
             PlayerActionCode::Freeze => {
+                let weather_movement_percent = self.settings.weather_movement_percent;
                 self.characters
                     .get_mut(&character_id)
-                    .is_some_and(|character| do_freeze(character).is_ok())
+                    .is_some_and(|character| {
+                        do_freeze(character, &self.map, weather_movement_percent).is_ok()
+                    })
                     || self.set_player_idle(player, character_id)
             }
             PlayerActionCode::Flash => {
                 let current_tick = self.tick.0 as u32;
+                let weather_movement_percent = self.settings.weather_movement_percent;
                 self.characters
                     .get_mut(&character_id)
-                    .is_some_and(|character| do_flash(character, &self.items, current_tick).is_ok())
+                    .is_some_and(|character| {
+                        do_flash(
+                            character,
+                            &self.items,
+                            current_tick,
+                            &self.map,
+                            weather_movement_percent,
+                        )
+                        .is_ok()
+                    })
                     || self.set_player_idle(player, character_id)
             }
             PlayerActionCode::Fireball => {
@@ -747,11 +797,20 @@ impl World {
                     return self.set_player_idle(player, character_id);
                 };
                 let current_tick = self.tick.0 as u32;
+                let weather_movement_percent = self.settings.weather_movement_percent;
                 self.characters
                     .get_mut(&character_id)
                     .is_some_and(|character| {
-                        do_fireball(character, &self.items, target_x, target_y, current_tick)
-                            .is_ok()
+                        do_fireball(
+                            character,
+                            &self.items,
+                            target_x,
+                            target_y,
+                            current_tick,
+                            &self.map,
+                            weather_movement_percent,
+                        )
+                        .is_ok()
                     })
                     || self.set_player_idle(player, character_id)
             }
@@ -771,10 +830,20 @@ impl World {
                     return self.set_player_idle(player, character_id);
                 };
                 let current_tick = self.tick.0 as u32;
+                let weather_movement_percent = self.settings.weather_movement_percent;
                 self.characters
                     .get_mut(&character_id)
                     .is_some_and(|character| {
-                        do_ball(character, &self.items, target_x, target_y, current_tick).is_ok()
+                        do_ball(
+                            character,
+                            &self.items,
+                            target_x,
+                            target_y,
+                            current_tick,
+                            &self.map,
+                            weather_movement_percent,
+                        )
+                        .is_ok()
                     })
                     || self.set_player_idle(player, character_id)
             }
@@ -879,47 +948,85 @@ impl World {
                 let target_id = CharacterId(entry.arg1 as u32);
                 started(self.setup_heal_spell(character_id, target_id))
             }
-            PlayerActionCode::MagicShield => started(
-                self.characters
-                    .get_mut(&character_id)
-                    .is_some_and(|character| do_magicshield(character).is_ok()),
-            ),
-            PlayerActionCode::Freeze => started(
-                self.characters
-                    .get_mut(&character_id)
-                    .is_some_and(|character| do_freeze(character).is_ok()),
-            ),
-            PlayerActionCode::Flash => {
-                let current_tick = self.tick.0 as u32;
+            PlayerActionCode::MagicShield => {
+                let weather_movement_percent = self.settings.weather_movement_percent;
                 started(
                     self.characters
                         .get_mut(&character_id)
                         .is_some_and(|character| {
-                            do_flash(character, &self.items, current_tick).is_ok()
+                            do_magicshield(character, &self.map, weather_movement_percent).is_ok()
                         }),
                 )
             }
-            PlayerActionCode::Warcry => started(
-                self.characters
-                    .get_mut(&character_id)
-                    .is_some_and(|character| do_warcry(character, &self.items).is_ok()),
-            ),
-            PlayerActionCode::Pulse => started(
-                self.characters
-                    .get_mut(&character_id)
-                    .is_some_and(|character| do_pulse(character).is_ok()),
-            ),
+            PlayerActionCode::Freeze => {
+                let weather_movement_percent = self.settings.weather_movement_percent;
+                started(
+                    self.characters
+                        .get_mut(&character_id)
+                        .is_some_and(|character| {
+                            do_freeze(character, &self.map, weather_movement_percent).is_ok()
+                        }),
+                )
+            }
+            PlayerActionCode::Flash => {
+                let current_tick = self.tick.0 as u32;
+                let weather_movement_percent = self.settings.weather_movement_percent;
+                started(
+                    self.characters
+                        .get_mut(&character_id)
+                        .is_some_and(|character| {
+                            do_flash(
+                                character,
+                                &self.items,
+                                current_tick,
+                                &self.map,
+                                weather_movement_percent,
+                            )
+                            .is_ok()
+                        }),
+                )
+            }
+            PlayerActionCode::Warcry => {
+                let weather_movement_percent = self.settings.weather_movement_percent;
+                started(
+                    self.characters
+                        .get_mut(&character_id)
+                        .is_some_and(|character| {
+                            do_warcry(character, &self.items, &self.map, weather_movement_percent)
+                                .is_ok()
+                        }),
+                )
+            }
+            PlayerActionCode::Pulse => {
+                let weather_movement_percent = self.settings.weather_movement_percent;
+                started(
+                    self.characters
+                        .get_mut(&character_id)
+                        .is_some_and(|character| {
+                            do_pulse(character, &self.map, weather_movement_percent).is_ok()
+                        }),
+                )
+            }
             PlayerActionCode::Fireball => {
                 let Some((target_x, target_y)) = valid_map_coords(entry.arg1, entry.arg2) else {
                     return QueuedTaskResult::Discard;
                 };
                 let current_tick = self.tick.0 as u32;
+                let weather_movement_percent = self.settings.weather_movement_percent;
                 started(
                     self.characters
                         .get_mut(&character_id)
                         .is_some_and(|character| {
-                            do_fireball(character, &self.items, target_x, target_y, current_tick)
-                                .is_ok()
+                            do_fireball(
+                                character,
+                                &self.items,
+                                target_x,
+                                target_y,
+                                current_tick,
+                                &self.map,
+                                weather_movement_percent,
+                            )
+                            .is_ok()
                         }),
                 )
             }
@@ -936,12 +1043,21 @@ impl World {
                     return QueuedTaskResult::Discard;
                 };
                 let current_tick = self.tick.0 as u32;
+                let weather_movement_percent = self.settings.weather_movement_percent;
                 started(
                     self.characters
                         .get_mut(&character_id)
                         .is_some_and(|character| {
-                            do_ball(character, &self.items, target_x, target_y, current_tick)
-                                .is_ok()
+                            do_ball(
+                                character,
+                                &self.items,
+                                target_x,
+                                target_y,
+                                current_tick,
+                                &self.map,
+                                weather_movement_percent,
+                            )
+                            .is_ok()
                         }),
                 )
             }
@@ -1118,7 +1234,15 @@ impl World {
         else {
             return false;
         };
-        do_use(character, &self.map, item, direction as u8, 0).is_ok()
+        do_use(
+            character,
+            &self.map,
+            item,
+            direction as u8,
+            0,
+            weather_movement_percent,
+        )
+        .is_ok()
     }
 
     pub fn walk_swap_or_use_driver(
@@ -1169,7 +1293,15 @@ impl World {
         else {
             return false;
         };
-        do_use(character, &self.map, item, direction as u8, 0).is_ok()
+        do_use(
+            character,
+            &self.map,
+            item,
+            direction as u8,
+            0,
+            weather_movement_percent,
+        )
+        .is_ok()
     }
 
     pub fn char_swap(&mut self, character_id: CharacterId) -> bool {

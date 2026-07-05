@@ -51,8 +51,18 @@ impl World {
 
         let (target_x, target_y) = predicted_fireball_target(&caster, &target);
         let current_tick = self.tick.0 as u32;
+        let weather_movement_percent = self.settings.weather_movement_percent;
         self.characters.get_mut(&caster_id).is_some_and(|caster| {
-            do_fireball(caster, &self.items, target_x, target_y, current_tick).is_ok()
+            do_fireball(
+                caster,
+                &self.items,
+                target_x,
+                target_y,
+                current_tick,
+                &self.map,
+                weather_movement_percent,
+            )
+            .is_ok()
         })
     }
 
@@ -73,6 +83,7 @@ impl World {
         }
 
         let current_tick = self.tick.0 as u32;
+        let weather_movement_percent = self.settings.weather_movement_percent;
         self.characters.get_mut(&caster_id).is_some_and(|caster| {
             do_ball(
                 caster,
@@ -80,6 +91,8 @@ impl World {
                 usize::from(target.x),
                 usize::from(target.y),
                 current_tick,
+                &self.map,
+                weather_movement_percent,
             )
             .is_ok()
         })
@@ -90,13 +103,23 @@ impl World {
         caster_id: CharacterId,
         target_id: CharacterId,
     ) -> bool {
+        let weather_movement_percent = self.settings.weather_movement_percent;
         if caster_id == target_id {
             let Some(target) = self.characters.get(&target_id).cloned() else {
                 return false;
             };
             let current_tick = self.tick.0 as u32;
             return self.characters.get_mut(&caster_id).is_some_and(|caster| {
-                do_bless(caster, &target, &self.items, current_tick, None).is_ok()
+                do_bless(
+                    caster,
+                    &target,
+                    &self.items,
+                    current_tick,
+                    None,
+                    &self.map,
+                    weather_movement_percent,
+                )
+                .is_ok()
             });
         }
 
@@ -123,6 +146,8 @@ impl World {
                 &self.items,
                 current_tick,
                 Some(direction as u8),
+                &self.map,
+                weather_movement_percent,
             )
             .is_ok()
         })
@@ -133,14 +158,14 @@ impl World {
         caster_id: CharacterId,
         target_id: CharacterId,
     ) -> bool {
+        let weather_movement_percent = self.settings.weather_movement_percent;
         if caster_id == target_id {
             let Some(target) = self.characters.get(&target_id).cloned() else {
                 return false;
             };
-            return self
-                .characters
-                .get_mut(&caster_id)
-                .is_some_and(|caster| do_heal(caster, &target, None).is_ok());
+            return self.characters.get_mut(&caster_id).is_some_and(|caster| {
+                do_heal(caster, &target, None, &self.map, weather_movement_percent).is_ok()
+            });
         }
 
         let Some(target) = self.characters.get(&target_id).cloned() else {
@@ -158,9 +183,16 @@ impl World {
             return false;
         };
 
-        self.characters
-            .get_mut(&caster_id)
-            .is_some_and(|caster| do_heal(caster, &target, Some(direction as u8)).is_ok())
+        self.characters.get_mut(&caster_id).is_some_and(|caster| {
+            do_heal(
+                caster,
+                &target,
+                Some(direction as u8),
+                &self.map,
+                weather_movement_percent,
+            )
+            .is_ok()
+        })
     }
 
     pub(crate) fn complete_bless(

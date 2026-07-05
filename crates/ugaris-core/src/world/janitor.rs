@@ -216,7 +216,15 @@ impl World {
             let Some(janitor) = self.characters.get_mut(&janitor_id) else {
                 return false;
             };
-            do_use(janitor, &self.map, &item, direction as u8, 0).is_ok()
+            do_use(
+                janitor,
+                &self.map,
+                &item,
+                direction as u8,
+                0,
+                self.settings.weather_movement_percent,
+            )
+            .is_ok()
         } else {
             self.setup_walk_toward_use_item(
                 janitor_id,
@@ -252,7 +260,15 @@ impl World {
             let Some(janitor) = self.characters.get_mut(&janitor_id) else {
                 return false;
             };
-            do_take(janitor, &self.map, &item, direction as u8, true).is_ok()
+            do_take(
+                janitor,
+                &self.map,
+                &item,
+                direction as u8,
+                true,
+                self.settings.weather_movement_percent,
+            )
+            .is_ok()
         } else {
             self.setup_walk_toward(
                 janitor_id,
@@ -293,7 +309,14 @@ impl World {
             let Some(janitor) = self.characters.get_mut(&janitor_id) else {
                 return false;
             };
-            do_drop(janitor, &self.map, &item, direction as u8).is_ok()
+            do_drop(
+                janitor,
+                &self.map,
+                &item,
+                direction as u8,
+                self.settings.weather_movement_percent,
+            )
+            .is_ok()
         } else {
             self.setup_walk_toward(janitor_id, tx, ty, 1, area_id, false)
         }
