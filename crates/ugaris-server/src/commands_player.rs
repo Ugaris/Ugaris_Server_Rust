@@ -39,6 +39,11 @@ pub(crate) struct KeyringCommandResult {
     pub(crate) inventory_changed: bool,
     pub(crate) name_changed: bool,
     pub(crate) name_refresh: Vec<CharacterId>,
+    /// Set when the command moved the character to a new mirror (C
+    /// `ch[cn].mirror = m` in `/goto`/`/jump`, `command.c`). The call site
+    /// must send the client a `mirror` packet, matching the same-area
+    /// transport-travel mirror-change path.
+    pub(crate) mirror_changed: Option<u32>,
 }
 
 pub(crate) fn legacy_light_red_text_bytes(message: &str) -> Vec<u8> {

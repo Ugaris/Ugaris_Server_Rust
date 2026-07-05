@@ -1465,6 +1465,26 @@ async fn main() -> anyhow::Result<()> {
                                 if result.name_changed {
                                     command_name_refresh.push(character_id);
                                 }
+                                if let Some(mirror) = result.mirror_changed {
+                                    // C `/goto`/`/jump` (`command.c`):
+                                    // `ch[cn].mirror = m;` takes effect
+                                    // immediately, matching the same-area
+                                    // transport-travel mirror-change path
+                                    // above (not deferred to next tick).
+                                    if let Some(player) =
+                                        runtime.player_for_character_mut(character_id)
+                                    {
+                                        player.set_current_mirror(mirror);
+                                    }
+                                    let mut builder = PacketBuilder::new();
+                                    builder.mirror(mirror);
+                                    let payload = builder.into_payload();
+                                    for (session_id, _) in
+                                        runtime.sessions_for_character(character_id)
+                                    {
+                                        runtime.send_to_session(session_id, payload.clone());
+                                    }
+                                }
                                 continue;
                             }
                             if let Some(result) = apply_achievement_command(

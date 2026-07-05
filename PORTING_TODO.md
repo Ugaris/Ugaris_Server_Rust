@@ -6889,12 +6889,64 @@ Unlocks every quest NPC. Do these before any P4 area work.
   confirmed "entering Rust game loop" with no panic and the pre-existing
   `loaded loot tables ... tables_added=9` log line unchanged.
 
-- [ ] **Remaining `/` and `#` text commands** - diff
+- [~] **Remaining `/` and `#` text commands** - diff
   `src/system/command.c` against `crates/ugaris-server/src/commands_*.rs`
   and port what's missing (there are dozens; make a checklist in the PR
   note as you go). Priority: `/help` completeness, `/who` variants,
   `/allow`/clan invite commands, admin teleports (`/goto`), `/mirror`,
-  `/seen`, `/top`.
+  `/seen`, `/top`. REMAINING: admin teleports done (`/goto`, `/jump`,
+  `/gotolist`, `/gotosearch`); still unported: `/summon`, `/summonall`,
+  `/office`, `/allow`/clan invite commands, `/mirror`, `/seen`
+  (`lastseen`), `/top`, and the rest of the dozens of `/`/`#` commands not
+  yet cross-referenced against `command.c` (see the Progress Log entries
+  below for what's been checked off so far).
+
+  Progress Log (iteration 158): ported the admin-teleport family -
+  `/goto` (`command.c:8453-8567`, gated on `is_lqmaster`), `/jump`
+  (`command.c:8570-8626`, `CF_STAFF|CF_GOD`), `/gotolist`
+  (`command.c:236-245`/`8815-8822`) and `/gotosearch`
+  (`command.c:248-269`/`8823-8829`), both `CF_GOD`-only - into
+  `apply_admin_character_command` (`commands_admin.rs`), extending the
+  existing dispatcher rather than adding a new one. Added the `gl[]`
+  shortcut table (`command.c:132-207`, all 79 entries transcribed digit
+  for digit) plus `resolve_goto_jump_args`, which reproduces the C
+  pointer-stepping exactly, including the genuine bug/quirk that a
+  name-lookup (`gl[]` shortcut or online-character name) compares the
+  *entire* remaining argument string against candidate names, so a
+  trailing mirror argument after a name silently breaks the match; and
+  the fact that requesting a mirror (`m`) always forces the `a` (area)
+  branch non-zero even when the target area equals the caller's own
+  current area, so it always resolves through the (unported) cross-area
+  `change_area` handoff, exactly like C. Non-`CF_GOD` `is_lqmaster`
+  callers (`CF_EVENTMASTER`, or `CF_LQMASTER` in area 20) get `a` forced
+  to 0 (C `if (!(ch[cn].flags & CF_GOD)) a = 0;`), so they always land
+  locally using the resolved x/y even when the shortcut nominally lives
+  in a different area - copied as-is. `/jump` has no such `CF_GOD`
+  restriction on its own cross-area branch (also copied as-is, a real
+  asymmetry vs `/goto`). Cross-area resolution (`change_area`) itself
+  isn't ported (see the `Cross-area transfer` task below) so it resolves
+  to the same "Nothing happens - target area server is down." message
+  used by every other cross-area teleport in this codebase, while still
+  setting the mirror (matching C, which mutates `ch[cn].mirror`
+  unconditionally before attempting the handoff). Added
+  `World::teleport_char_driver` (`world/teleport.rs`, C
+  `teleport_char_driver`, `drvlib.c:2651-2673`) as the canonical port,
+  refactoring `arena.rs`'s previously-private, near-identical
+  `arena_teleport_char_driver` to delegate to it instead of duplicating
+  the distance-check logic. Added `KeyringCommandResult::mirror_changed`
+  and wired it at the `main.rs` call site to send the same
+  `mirror`-packet + `PlayerRuntime::set_current_mirror` update the
+  same-area transport-travel path already does. 15 new tests in
+  `tests/commands_admin.rs` covering permission gates, numeric/named/
+  direction-shorthand/player-name resolution, the same-area
+  normalization and cross-area no-op paths for both commands, the
+  busy/"Pant, pant" guard, `/jump`'s cross-area asymmetry, `/gotolist`'s
+  full listing, and `/gotosearch`'s case-sensitive (C `strstr`, not
+  `strcasestr`) substring match. `cargo fmt --all`, `cargo test
+  --workspace` (1973 ugaris-core + 55 db + 3 net + 40 protocol + 645
+  server [+15], all green, zero failures), `cargo build -p ugaris-server`
+  / `cargo build --workspace` clean with zero warnings, 10s boot-smoke
+  confirmed "entering Rust game loop" with no panic.
 
 - [ ] **Cross-area transfer** - the big multi-server feature. Every
   cross-area teleport currently returns "target server down". Decide the

@@ -6703,3 +6703,36 @@ db + 3 net + 40 protocol + 630 server [+1], all green, zero failures),
 warnings, 10s boot-smoke confirmed "entering Rust game loop" with no
 panics and the pre-existing `loaded loot tables ... tables_added=9`
 startup log line unchanged.
+
+- Player/staff text commands now cover the admin-teleport family from
+  `src/system/command.c`: `/goto` (`is_lqmaster`-gated: `CF_GOD`,
+  `CF_EVENTMASTER`, or `CF_LQMASTER` in area 20), `/jump`
+  (`CF_STAFF|CF_GOD`-gated), `/gotolist`, and `/gotosearch` (both
+  `CF_GOD`-only), added to `apply_admin_character_command`
+  (`commands_admin.rs`). The `gl[]` shortcut table (79 entries) is
+  transcribed digit for digit; `resolve_goto_jump_args` reproduces C's
+  exact pointer-stepping quirks, including that a name lookup compares
+  the *entire* remaining argument string (so a trailing mirror argument
+  after a name silently fails to match), and that supplying a mirror
+  always forces the resolved area non-zero (even when it equals the
+  caller's current area), routing through the same unported cross-area
+  `change_area` no-op ("Nothing happens - target area server is down.")
+  as every other cross-area teleport in this codebase, while still
+  mutating the mirror (matching C's unconditional `ch[cn].mirror = m`
+  before the handoff attempt). Non-`CF_GOD` `is_lqmaster` callers get the
+  resolved area forced to 0 (C `if (!(ch[cn].flags & CF_GOD)) a = 0;`),
+  so they always land locally on the resolved x/y even for a
+  different-area shortcut name - copied as-is, a real quirk not a bug.
+  `/jump` has no such `CF_GOD` restriction on its own cross-area branch
+  (a genuine asymmetry vs `/goto`, also copied as-is). Added
+  `World::teleport_char_driver` (`world/teleport.rs`, C
+  `teleport_char_driver`, `drvlib.c:2651-2673`) as the canonical port and
+  refactored `arena.rs`'s previously-private, near-identical
+  `arena_teleport_char_driver` to delegate to it. Added
+  `KeyringCommandResult::mirror_changed`, wired at the `main.rs` call
+  site to send the same `mirror` packet + `PlayerRuntime::
+  set_current_mirror` update the same-area transport-travel path already
+  performs. 15 new focused tests in `tests/commands_admin.rs`. Remaining
+  admin-teleport gaps: `/summon`, `/summonall`, and `/office` (still
+  unported); real cross-area `change_area` handoff (tracked separately as
+  the `Cross-area transfer` P3 task).

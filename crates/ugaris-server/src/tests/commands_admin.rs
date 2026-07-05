@@ -3538,3 +3538,375 @@ fn admin_subhelp_commands_match_legacy_privilege_gates_and_text() {
         .messages
         .contains(&"/penthelp - Show this help".to_string()));
 }
+
+fn goto_test_world() -> World {
+    let mut world = World::default();
+    world.map = ugaris_core::map::MapGrid::new(300, 300);
+    // Past the `/jump` busy window (`ticker - ch[cn].regen_ticker < TICKS *
+    // 3`) so freshly logged-in test characters (`regen_ticker: 0`) aren't
+    // considered "still catching their breath".
+    world.tick.0 = TICKS_PER_SECOND * 10;
+    world
+}
+
+#[test]
+fn goto_command_requires_lqmaster_permission() {
+    let mut world = goto_test_world();
+    let character_id = CharacterId(1);
+    assert!(world.spawn_character(
+        login_character(character_id, &login_block("Ralph"), 1, 10, 10),
+        10,
+        10
+    ));
+    let mut runtime = ServerRuntime::default();
+
+    assert!(apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        character_id,
+        "/goto 50 60",
+        1
+    )
+    .is_none());
+    assert_eq!(world.characters.get(&character_id).unwrap().x, 10);
+
+    world
+        .characters
+        .get_mut(&character_id)
+        .unwrap()
+        .flags
+        .insert(CharacterFlags::GOD);
+    assert!(apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        character_id,
+        "/goto 50 60",
+        1
+    )
+    .is_some());
+}
+
+#[test]
+fn goto_command_numeric_coordinates_teleport_same_area() {
+    let mut world = goto_test_world();
+    let character_id = CharacterId(1);
+    let mut character = login_character(character_id, &login_block("Ralph"), 1, 10, 10);
+    character.flags.insert(CharacterFlags::GOD);
+    assert!(world.spawn_character(character, 10, 10));
+    let mut runtime = ServerRuntime::default();
+
+    let result =
+        apply_admin_character_command(&mut world, &mut runtime, character_id, "/goto 50 60", 1)
+            .expect("god goto command should be recognized");
+    assert!(result.messages.is_empty());
+    assert_eq!(result.mirror_changed, None);
+    let character = world.characters.get(&character_id).unwrap();
+    assert_eq!((character.x, character.y), (50, 60));
+}
+
+#[test]
+fn goto_command_named_location_normalizes_to_same_area() {
+    let mut world = goto_test_world();
+    let character_id = CharacterId(1);
+    let mut character = login_character(character_id, &login_block("Ralph"), 1, 10, 10);
+    character.flags.insert(CharacterFlags::GOD);
+    assert!(world.spawn_character(character, 10, 10));
+    let mut runtime = ServerRuntime::default();
+
+    // "fort" is gl[]'s (126,179,1); area_id 1 matches the caller's current
+    // area so C's `if (a == areaID && !m) a = 0;` normalizes this to a
+    // plain same-area teleport (not a `change_area` handoff).
+    let result =
+        apply_admin_character_command(&mut world, &mut runtime, character_id, "/goto fort", 1)
+            .expect("god goto command should be recognized");
+    assert!(result.messages.is_empty());
+    let character = world.characters.get(&character_id).unwrap();
+    assert_eq!((character.x, character.y), (126, 179));
+}
+
+#[test]
+fn goto_command_named_location_cross_area_reports_server_down() {
+    let mut world = goto_test_world();
+    let character_id = CharacterId(1);
+    let mut character = login_character(character_id, &login_block("Ralph"), 1, 10, 10);
+    character.flags.insert(CharacterFlags::GOD);
+    assert!(world.spawn_character(character, 10, 10));
+    let mut runtime = ServerRuntime::default();
+
+    // "aston" is gl[]'s (167,188,3); the caller is in area 1, so C would
+    // call `change_area(cn, 3, 167, 188)` - real cross-process area
+    // handoff isn't ported, so this resolves to the same no-op message
+    // as every other cross-area teleport in this codebase.
+    let result =
+        apply_admin_character_command(&mut world, &mut runtime, character_id, "/goto aston", 1)
+            .expect("god goto command should be recognized");
+    assert_eq!(
+        result.messages,
+        vec!["Nothing happens - target area server is down.".to_string()]
+    );
+    let character = world.characters.get(&character_id).unwrap();
+    assert_eq!((character.x, character.y), (10, 10));
+}
+
+#[test]
+fn goto_command_non_god_lqmaster_ignores_cross_area_and_uses_local_coords() {
+    let mut world = goto_test_world();
+    let character_id = CharacterId(1);
+    let mut character = login_character(character_id, &login_block("Ralph"), 1, 10, 10);
+    character.flags.insert(CharacterFlags::EVENTMASTER);
+    assert!(world.spawn_character(character, 10, 10));
+    let mut runtime = ServerRuntime::default();
+
+    // C `if (!(ch[cn].flags & CF_GOD)) a = 0;` forces non-GOD `is_lqmaster`
+    // callers (here: `CF_EVENTMASTER`) to always land locally, using the
+    // resolved x/y but ignoring the resolved area entirely - even though
+    // "aston" nominally lives in a different area.
+    let result =
+        apply_admin_character_command(&mut world, &mut runtime, character_id, "/goto aston", 1)
+            .expect("eventmaster goto command should be recognized");
+    assert!(result.messages.is_empty());
+    let character = world.characters.get(&character_id).unwrap();
+    assert_eq!((character.x, character.y), (167, 188));
+}
+
+#[test]
+fn goto_command_looks_up_online_character_by_name() {
+    let mut world = goto_test_world();
+    let caller_id = CharacterId(1);
+    let mut caller = login_character(caller_id, &login_block("Ralph"), 1, 10, 10);
+    caller.flags.insert(CharacterFlags::GOD);
+    assert!(world.spawn_character(caller, 10, 10));
+    let target_id = CharacterId(2);
+    assert!(world.spawn_character(
+        login_character(target_id, &login_block("Lisa"), 1, 77, 88),
+        77,
+        88
+    ));
+    let mut runtime = ServerRuntime::default();
+
+    let result =
+        apply_admin_character_command(&mut world, &mut runtime, caller_id, "/goto Lisa", 1)
+            .expect("god goto command should be recognized");
+    assert!(result.messages.is_empty());
+    let caller = world.characters.get(&caller_id).unwrap();
+    // Target's own tile is occupied, so `drop_char`'s neighbor fallback
+    // (matching C's own `teleport_char_driver`) lands the caller on an
+    // adjacent tile rather than exactly on top of the target.
+    let dx = i32::from(caller.x) - 77;
+    let dy = i32::from(caller.y) - 88;
+    assert!(dx.abs() <= 1 && dy.abs() <= 1 && (dx, dy) != (0, 0));
+}
+
+#[test]
+fn goto_command_direction_shorthand_offsets_from_caller_position() {
+    let mut world = goto_test_world();
+    let character_id = CharacterId(1);
+    let mut character = login_character(character_id, &login_block("Ralph"), 1, 100, 100);
+    character.flags.insert(CharacterFlags::GOD);
+    assert!(world.spawn_character(character, 100, 100));
+    let mut runtime = ServerRuntime::default();
+
+    let result =
+        apply_admin_character_command(&mut world, &mut runtime, character_id, "/goto 10 n", 1)
+            .expect("god goto command should be recognized");
+    assert!(result.messages.is_empty());
+    let character = world.characters.get(&character_id).unwrap();
+    assert_eq!((character.x, character.y), (90, 90));
+}
+
+#[test]
+fn goto_command_mirror_argument_always_forces_cross_area_handoff() {
+    let mut world = goto_test_world();
+    let character_id = CharacterId(1);
+    let mut character = login_character(character_id, &login_block("Ralph"), 1, 10, 10);
+    character.flags.insert(CharacterFlags::GOD);
+    assert!(world.spawn_character(character, 10, 10));
+    let mut runtime = ServerRuntime::default();
+
+    // C sets `ch[cn].mirror = m` unconditionally and forces `a = areaID`
+    // when it was still 0, which then *fails* the `a == areaID && !m`
+    // same-area normalization (because `m != 0`) - so requesting a mirror
+    // always routes through `change_area`, even when the area number is
+    // literally the caller's own current area. Copied as-is (a real C
+    // quirk, not a Rust bug): the mirror still gets set even though the
+    // teleport itself becomes a same-area-server-down no-op.
+    let result =
+        apply_admin_character_command(&mut world, &mut runtime, character_id, "/goto 50 60 0 3", 1)
+            .expect("god goto command should be recognized");
+    assert_eq!(
+        result.messages,
+        vec!["Nothing happens - target area server is down.".to_string()]
+    );
+    assert_eq!(result.mirror_changed, Some(3));
+    let character = world.characters.get(&character_id).unwrap();
+    assert_eq!((character.x, character.y), (10, 10));
+}
+
+#[test]
+fn jump_command_requires_staff_or_god() {
+    let mut world = goto_test_world();
+    let character_id = CharacterId(1);
+    assert!(world.spawn_character(
+        login_character(character_id, &login_block("Ralph"), 1, 10, 10),
+        10,
+        10
+    ));
+    let mut runtime = ServerRuntime::default();
+
+    assert!(
+        apply_admin_character_command(&mut world, &mut runtime, character_id, "/jump fort", 1)
+            .is_none()
+    );
+}
+
+#[test]
+fn jump_command_refuses_while_busy() {
+    let mut world = goto_test_world();
+    let character_id = CharacterId(1);
+    let mut character = login_character(character_id, &login_block("Ralph"), 1, 10, 10);
+    character.flags.insert(CharacterFlags::STAFF);
+    character.action = 1;
+    assert!(world.spawn_character(character, 10, 10));
+    let mut runtime = ServerRuntime::default();
+
+    let result =
+        apply_admin_character_command(&mut world, &mut runtime, character_id, "/jump fort", 1)
+            .expect("staff jump command should be recognized");
+    assert_eq!(result.messages, vec!["Pant, pant. Too tired.".to_string()]);
+    let character = world.characters.get(&character_id).unwrap();
+    assert_eq!((character.x, character.y), (10, 10));
+}
+
+#[test]
+fn jump_command_moves_staff_to_gotolist_entry_in_same_area() {
+    let mut world = goto_test_world();
+    let character_id = CharacterId(1);
+    let mut character = login_character(character_id, &login_block("Ralph"), 1, 10, 10);
+    character.flags.insert(CharacterFlags::STAFF);
+    assert!(world.spawn_character(character, 10, 10));
+    let mut runtime = ServerRuntime::default();
+
+    let result =
+        apply_admin_character_command(&mut world, &mut runtime, character_id, "/jump fort", 1)
+            .expect("staff jump command should be recognized");
+    assert!(result.messages.is_empty());
+    let character = world.characters.get(&character_id).unwrap();
+    assert_eq!((character.x, character.y), (126, 179));
+}
+
+#[test]
+fn jump_command_cross_area_is_not_restricted_to_god() {
+    let mut world = goto_test_world();
+    let character_id = CharacterId(1);
+    let mut character = login_character(character_id, &login_block("Ralph"), 1, 10, 10);
+    character.flags.insert(CharacterFlags::STAFF);
+    assert!(world.spawn_character(character, 10, 10));
+    let mut runtime = ServerRuntime::default();
+
+    // Unlike `/goto`, C's `/jump` has no `CF_GOD`-only restriction on the
+    // cross-area branch - a plain `CF_STAFF` caller jumping to a
+    // different-area `gl[]` entry ("aston" is area 3) still reaches
+    // `change_area` in C, so it gets the same server-down no-op here.
+    let result =
+        apply_admin_character_command(&mut world, &mut runtime, character_id, "/jump aston", 1)
+            .expect("staff jump command should be recognized");
+    assert_eq!(
+        result.messages,
+        vec!["Nothing happens - target area server is down.".to_string()]
+    );
+    let character = world.characters.get(&character_id).unwrap();
+    assert_eq!((character.x, character.y), (10, 10));
+}
+
+#[test]
+fn jump_command_unknown_location_reports_hu() {
+    let mut world = goto_test_world();
+    let character_id = CharacterId(1);
+    let mut character = login_character(character_id, &login_block("Ralph"), 1, 10, 10);
+    character.flags.insert(CharacterFlags::STAFF);
+    assert!(world.spawn_character(character, 10, 10));
+    let mut runtime = ServerRuntime::default();
+
+    let result =
+        apply_admin_character_command(&mut world, &mut runtime, character_id, "/jump nowhere", 1)
+            .expect("staff jump command should be recognized");
+    assert_eq!(result.messages, vec!["hu?".to_string()]);
+}
+
+#[test]
+fn gotolist_command_is_god_only_and_lists_every_shortcut() {
+    let mut world = goto_test_world();
+    let character_id = CharacterId(1);
+    assert!(world.spawn_character(
+        login_character(character_id, &login_block("Ralph"), 1, 10, 10),
+        10,
+        10
+    ));
+    let mut runtime = ServerRuntime::default();
+
+    assert!(
+        apply_admin_character_command(&mut world, &mut runtime, character_id, "/gotolist", 1)
+            .is_none()
+    );
+
+    world
+        .characters
+        .get_mut(&character_id)
+        .unwrap()
+        .flags
+        .insert(CharacterFlags::GOD);
+    let result =
+        apply_admin_character_command(&mut world, &mut runtime, character_id, "/gotolist", 1)
+            .expect("god gotolist command should be recognized");
+    assert_eq!(result.messages[0], "Available /goto locations:");
+    assert!(result
+        .messages
+        .contains(&"aston (x:167, y:188, area:3)".to_string()));
+    assert!(result
+        .messages
+        .contains(&"teufelearthgambler (x:248, y:238, area:34)".to_string()));
+    assert_eq!(result.messages.len(), 1 + 79);
+}
+
+#[test]
+fn gotosearch_command_is_case_sensitive_like_c_strstr() {
+    let mut world = goto_test_world();
+    let character_id = CharacterId(1);
+    let mut character = login_character(character_id, &login_block("Ralph"), 1, 10, 10);
+    character.flags.insert(CharacterFlags::GOD);
+    assert!(world.spawn_character(character, 10, 10));
+    let mut runtime = ServerRuntime::default();
+
+    let result = apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        character_id,
+        "/gotosearch teufel",
+        1,
+    )
+    .expect("god gotosearch command should be recognized");
+    assert_eq!(result.messages[0], "Matching /goto locations:");
+    assert!(result
+        .messages
+        .contains(&"teufelicegambler (x:84, y:186, area:34)".to_string()));
+    assert!(result
+        .messages
+        .contains(&"Found 5 matching locations.".to_string()));
+
+    // C `strstr`, not `strcasestr` - an uppercase term matches nothing.
+    let result = apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        character_id,
+        "/gotosearch TEUFEL",
+        1,
+    )
+    .expect("god gotosearch command should be recognized");
+    assert_eq!(
+        result.messages,
+        vec![
+            "Matching /goto locations:".to_string(),
+            "No matching locations found.".to_string()
+        ]
+    );
+}

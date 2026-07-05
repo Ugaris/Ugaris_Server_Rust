@@ -220,26 +220,17 @@ impl World {
         }
     }
 
-    /// C `teleport_char_driver` (`src/system/drvlib.c:2651-2673`): a no-op
-    /// when already within Manhattan distance `1` of the target, otherwise
-    /// remove-and-redrop trying the exact tile then its 8 neighbors (C's
-    /// `drop_char`, matching [`World::teleport_character`]'s non-extended
-    /// mode exactly - *not* the exact-tile-only
-    /// [`World::teleport_character_exact`], since `manager_driver`'s own
-    /// `leave` handler teleports onto the manager NPC's own occupied
-    /// tile, `ch[cn].x, ch[cn].y` - a real case this needs the neighbor
-    /// fallback for), falling back to the old position if every candidate
-    /// tile is blocked/occupied.
+    /// Thin wrapper around the canonical [`World::teleport_char_driver`]
+    /// (C `teleport_char_driver`, `src/system/drvlib.c:2651-2673`), kept as
+    /// a named call site so `manager_driver`'s callers below read the same
+    /// as their C counterparts. Note this is the neighbor-fallback
+    /// [`World::teleport_character`] mode (*not* the exact-tile-only
+    /// [`World::teleport_character_exact`]), since `manager_driver`'s own
+    /// `leave` handler teleports onto the manager NPC's own occupied tile,
+    /// `ch[cn].x, ch[cn].y` - a real case this needs the neighbor fallback
+    /// for.
     fn arena_teleport_char_driver(&mut self, character_id: CharacterId, x: u16, y: u16) -> bool {
-        let Some(character) = self.characters.get(&character_id) else {
-            return false;
-        };
-        let dx = i32::from(character.x) - i32::from(x);
-        let dy = i32::from(character.y) - i32::from(y);
-        if dx.abs() + dy.abs() < 2 {
-            return false;
-        }
-        self.teleport_character(character_id, x, y, false)
+        self.teleport_char_driver(character_id, x, y)
     }
 
     /// C `add_contender` (`arena.c:257-287`), the `register` command's

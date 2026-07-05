@@ -107,4 +107,22 @@ impl World {
     ) -> bool {
         self.teleport_character(character_id, x, y, extended)
     }
+
+    /// C `teleport_char_driver` (`src/system/drvlib.c:2651-2673`): a no-op
+    /// when already within Manhattan distance `1` of the target, otherwise
+    /// remove-and-redrop trying the exact tile then its 8 neighbors (C's
+    /// `drop_char`, matching [`World::teleport_character`]'s non-extended
+    /// mode), falling back to the old position if every candidate tile is
+    /// blocked/occupied. Returns whether the character actually moved.
+    pub fn teleport_char_driver(&mut self, character_id: CharacterId, x: u16, y: u16) -> bool {
+        let Some(character) = self.characters.get(&character_id) else {
+            return false;
+        };
+        let dx = i32::from(character.x) - i32::from(x);
+        let dy = i32::from(character.y) - i32::from(y);
+        if dx.abs() + dy.abs() < 2 {
+            return false;
+        }
+        self.teleport_character(character_id, x, y, false)
+    }
 }
