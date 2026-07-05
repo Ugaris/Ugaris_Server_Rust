@@ -6950,7 +6950,7 @@ Unlocks every quest NPC. Do these before any P4 area work.
   anticheat, `macro*` macro-detection, plus one-off commands like
   `/keyring`, `/depotsort`/`/accountdepotsort`, `/swap`, `/steal`,
   `/thief`, `/logout`, `/complain`, `/kick`, `/punish`, `/shutdown`,
-  `/rename`, `/showppd`/`/showflags`/`/showvalues`, `/orbs`/`/tunnels`/
+  `/rename`, `/showppd`/`/showvalues`, `/orbs`/`/tunnels`/
   `/treasures`/`/demonlords`, various pentagram `setpent*`/`resetpent`
   admin commands, and clan/tunnel/shrine editors like `/changetunnel`/
   `/settunnel`/`/cleartunnel`/`/setrd`/`/clearrd`/`/solverd`) not yet
@@ -6959,7 +6959,15 @@ Unlocks every quest NPC. Do these before any P4 area work.
   `cmdcmp(ptr, "...")` name in `command.c` against
   `crates/ugaris-server/src/commands_*.rs`/`weather.rs`/`clan_command.rs`
   is recommended before picking the next slice, since this note has
-  drifted out of sync with actual progress more than once).
+  drifted out of sync with actual progress more than once). `/showflags`/
+  `/toggleflag` done (see iteration 168); `/showppd` is NOT done (it
+  needs many more named `area1_ppd`/`area3_ppd` field accessors than
+  currently exist in `player.rs` - see that iteration's note).
+  `punish`/`shutup`/`rename`/`lockname`/`unlockname`/`unpunish` are all
+  blocked on the unported async offline-name-lookup cache (`lookup_name`/
+  `lookup.c`) and DB task-queue (`task_punish_player`/`do_rename`/etc.,
+  `task.c`), not just `server_chat` - do not attempt a small slice of
+  these without that infra first.
 
   Progress Log (iteration 158): ported the admin-teleport family -
   `/goto` (`command.c:8453-8567`, gated on `is_lqmaster`), `/jump`
@@ -7371,6 +7379,48 @@ Unlocks every quest NPC. Do these before any P4 area work.
   server [+7], all green, zero failures), `cargo build -p ugaris-server`
   / `cargo build --workspace` clean with zero warnings, 10s boot-smoke
   confirmed "entering Rust game loop" with no panic.
+
+  Progress Log (iteration 168): ported `/showflags` (`command.c:8798-
+  8805`, `cmd_show_flags`, `command.c:4839-5061`) and `/toggleflag`
+  (`command.c:8807-8814`, `cmd_toggle_flag`, `command.c:4784-4837`), both
+  `CF_GOD`-gated and full-word-only (`minlen` equals each command's own
+  length, matched with `lower == "..."` rather than `starts_with`), into
+  `apply_admin_character_command` (`commands_admin.rs`). Added the
+  shared `SHOW_FLAGS_ORDER` table (61 `(CharacterFlags, &str)` pairs,
+  transcribed in C's exact `if (flags & CF_X)` declaration order,
+  `command.c:4871-5059`, deliberately omitting `CF_SPY` since C never
+  checks it there either) and `character_flag_by_name` (C
+  `get_flag_by_name`, `command.c:4590-4782`, same 61-name set, same
+  omission), reusing `commands_player::find_online_character_by_name`
+  for the by-name lookup (C `getfirst_char`/`getnext_char`, no
+  `CF_PLAYER` filter - matches every loaded character, not just online
+  players) and `take_legacy_alpha_name` for the `isalpha`-only name
+  token. `/toggleflag`'s flag-name token is parsed as C's `!isspace`-only
+  scan (may contain digits/punctuation, unlike the name), so an absent
+  argument yields an empty string and the same "Sorry, unknown flag: "
+  message C would print. Documented one accepted, narrow gap: C's
+  `cmd_toggle_flag` also calls `update_char(co)` immediately whenever the
+  toggled bit is `CF_UPDATE`/`CF_ITEMS`/`CF_PROF`, forcing a client
+  refresh even on the *clearing* transition; this port only flips the
+  in-memory bit (the normal per-tick pipeline already reacts whenever it
+  becomes set), so the immediate refresh on a bare "turn this off" is
+  not replicated - acceptable for this rarely-used raw-flag debug
+  command. Also updated the task note's stale "not yet cross-referenced"
+  list (dropped `/showflags`, added an explicit blocker note for
+  `/showppd` needing many more `area1_ppd`/`area3_ppd` named field
+  accessors, and for `punish`/`shutup`/`rename`/`lockname`/`unlockname`/
+  `unpunish` needing the unported async `lookup_name` cache and DB
+  task-queue, not just `server_chat`). 7 new tests in
+  `tests/commands_admin.rs`: permission/full-word gates for both
+  commands, "no one by that name" for an unloaded target, declaration-
+  order-not-insertion-order flag listing with `CF_SPY` proven absent,
+  unknown-flag rejection (both a real bogus name and a missing
+  argument) leaving flags untouched, and case-insensitive on-then-off
+  round-trip. `cargo fmt --all`, `cargo test --workspace` (1986
+  ugaris-core + 55 db + 3 net + 40 protocol + 694 server [+7], all
+  green, zero failures), `cargo build -p ugaris-server` / `cargo build
+  --workspace` clean with zero warnings, 10s boot-smoke confirmed
+  "entering Rust game loop" with no panic.
 
 - [ ] **Cross-area transfer** - the big multi-server feature. Every
   cross-area teleport currently returns "target server down". Decide the

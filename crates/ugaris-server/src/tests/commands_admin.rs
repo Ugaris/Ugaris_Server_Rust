@@ -4858,3 +4858,229 @@ fn god_global_command_dumps_every_setting_like_c() {
         .messages
         .contains(&"Rare golem chance: 42".to_string()));
 }
+
+#[test]
+fn showflags_requires_god_and_full_word() {
+    // C `cmdcmp(ptr, "showflags", 9)`: `minlen == "showflags".len()`, so
+    // no abbreviation is accepted.
+    let mut world = World::default();
+    let caller_id = CharacterId(1);
+    let caller = login_character(caller_id, &login_block("Caller"), 1, 10, 10);
+    world.add_character(caller);
+    let mut runtime = ServerRuntime::default();
+
+    assert!(apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        caller_id,
+        "/showflags Caller",
+        1
+    )
+    .is_none());
+    assert!(apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        caller_id,
+        "/showflag Caller",
+        1
+    )
+    .is_none());
+
+    world.characters.get_mut(&caller_id).unwrap().flags |= CharacterFlags::GOD;
+    assert!(apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        caller_id,
+        "/showflag Caller",
+        1
+    )
+    .is_none());
+}
+
+#[test]
+fn showflags_reports_no_one_by_that_name_for_an_unloaded_character() {
+    let mut world = World::default();
+    let god_id = CharacterId(1);
+    let mut god = login_character(god_id, &login_block("Godmode"), 1, 10, 10);
+    god.flags.insert(CharacterFlags::GOD);
+    world.add_character(god);
+    let mut runtime = ServerRuntime::default();
+
+    let result =
+        apply_admin_character_command(&mut world, &mut runtime, god_id, "/showflags Nobodyhome", 1)
+            .expect("showflags command should be recognized");
+    assert_eq!(
+        result.messages,
+        vec!["Sorry, no one by the name Nobodyhome around.".to_string()]
+    );
+}
+
+#[test]
+fn showflags_lists_every_set_flag_in_legacy_declaration_order() {
+    let mut world = World::default();
+    let god_id = CharacterId(1);
+    let mut god = login_character(god_id, &login_block("Godmode"), 1, 10, 10);
+    god.flags.insert(CharacterFlags::GOD);
+    world.add_character(god);
+    let target_id = CharacterId(2);
+    let mut target = login_character(target_id, &login_block("Target"), 1, 20, 20);
+    // Set flags out of declaration order to prove the output is
+    // re-sorted into C's fixed `if (flags & CF_X)` order, not insertion
+    // order. `CF_SPY` is set too, to prove it is never reported (C never
+    // checks it in `cmd_show_flags`).
+    target.flags |= CharacterFlags::NOLEVEL
+        | CharacterFlags::USED
+        | CharacterFlags::PLAYER
+        | CharacterFlags::SPY;
+    world.add_character(target);
+    let mut runtime = ServerRuntime::default();
+
+    // Trailing non-alpha text after the name is ignored, matching C's
+    // `isalpha`-only name scan.
+    let result =
+        apply_admin_character_command(&mut world, &mut runtime, god_id, "/showflags Target99", 1)
+            .expect("showflags command should be recognized");
+    // `login_character` sets `CF_ALIVE` by default (living being), so it
+    // shows up too, in its correct declaration-order slot.
+    assert_eq!(
+        result.messages,
+        vec![
+            "Flags for player Target:".to_string(),
+            "USED".to_string(),
+            "PLAYER".to_string(),
+            "ALIVE".to_string(),
+            "NOLEVEL".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn toggleflag_requires_god_and_full_word() {
+    let mut world = World::default();
+    let caller_id = CharacterId(1);
+    let caller = login_character(caller_id, &login_block("Caller"), 1, 10, 10);
+    world.add_character(caller);
+    let mut runtime = ServerRuntime::default();
+
+    assert!(apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        caller_id,
+        "/toggleflag Caller NOEXP",
+        1
+    )
+    .is_none());
+    assert!(apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        caller_id,
+        "/toggleflagg Caller NOEXP",
+        1
+    )
+    .is_none());
+}
+
+#[test]
+fn toggleflag_reports_no_one_by_that_name_for_an_unloaded_character() {
+    let mut world = World::default();
+    let god_id = CharacterId(1);
+    let mut god = login_character(god_id, &login_block("Godmode"), 1, 10, 10);
+    god.flags.insert(CharacterFlags::GOD);
+    world.add_character(god);
+    let mut runtime = ServerRuntime::default();
+
+    let result = apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        god_id,
+        "/toggleflag Nobodyhome NOEXP",
+        1,
+    )
+    .expect("toggleflag command should be recognized");
+    assert_eq!(
+        result.messages,
+        vec!["Sorry, no one by the name Nobodyhome around.".to_string()]
+    );
+}
+
+#[test]
+fn toggleflag_reports_unknown_flag_and_leaves_flags_untouched() {
+    let mut world = World::default();
+    let god_id = CharacterId(1);
+    let mut god = login_character(god_id, &login_block("Godmode"), 1, 10, 10);
+    god.flags.insert(CharacterFlags::GOD);
+    world.add_character(god);
+    let target_id = CharacterId(2);
+    let target = login_character(target_id, &login_block("Target"), 1, 20, 20);
+    let before_flags = target.flags;
+    world.add_character(target);
+    let mut runtime = ServerRuntime::default();
+
+    let result = apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        god_id,
+        "/toggleflag Target NOTAREALFLAG",
+        1,
+    )
+    .expect("toggleflag command should be recognized");
+    assert_eq!(
+        result.messages,
+        vec!["Sorry, unknown flag: NOTAREALFLAG".to_string()]
+    );
+    assert_eq!(world.characters[&target_id].flags, before_flags);
+
+    // C's flag-name token is a non-whitespace scan, not alpha-only, so a
+    // missing argument yields an empty `flag_name` and the same
+    // "unknown flag" message with a trailing empty name.
+    let result =
+        apply_admin_character_command(&mut world, &mut runtime, god_id, "/toggleflag Target", 1)
+            .expect("toggleflag command should be recognized");
+    assert_eq!(result.messages, vec!["Sorry, unknown flag: ".to_string()]);
+}
+
+#[test]
+fn toggleflag_toggles_named_flag_on_then_off_case_insensitively() {
+    let mut world = World::default();
+    let god_id = CharacterId(1);
+    let mut god = login_character(god_id, &login_block("Godmode"), 1, 10, 10);
+    god.flags.insert(CharacterFlags::GOD);
+    world.add_character(god);
+    let target_id = CharacterId(2);
+    let target = login_character(target_id, &login_block("Target"), 1, 20, 20);
+    assert!(!target.flags.contains(CharacterFlags::NOEXP));
+    world.add_character(target);
+    let mut runtime = ServerRuntime::default();
+
+    let result = apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        god_id,
+        "/toggleflag Target noexp",
+        1,
+    )
+    .expect("toggleflag command should be recognized");
+    assert_eq!(
+        result.messages,
+        vec!["Flag noexp turned ON for Target".to_string()]
+    );
+    assert!(world.characters[&target_id]
+        .flags
+        .contains(CharacterFlags::NOEXP));
+
+    let result = apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        god_id,
+        "/toggleflag Target noexp",
+        1,
+    )
+    .expect("toggleflag command should be recognized");
+    assert_eq!(
+        result.messages,
+        vec!["Flag noexp turned OFF for Target".to_string()]
+    );
+    assert!(!world.characters[&target_id]
+        .flags
+        .contains(CharacterFlags::NOEXP));
+}

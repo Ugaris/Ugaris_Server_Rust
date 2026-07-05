@@ -7050,3 +7050,55 @@ startup log line unchanged.
   zero failures), `cargo build -p ugaris-server`/`cargo build --workspace`
   clean with zero warnings, 10s boot-smoke confirmed "entering Rust game
   loop" with no panic.
+
+- Iteration 168 ported `/showflags` (`src/system/command.c:8798-8805`,
+  `cmd_show_flags`, `command.c:4839-5061`) and `/toggleflag`
+  (`command.c:8807-8814`, `cmd_toggle_flag`, `command.c:4784-4837`), both
+  `CF_GOD`-gated debug commands operating on any *loaded* character (not
+  just online players, per C's `getfirst_char`/`getnext_char` scan) by
+  raw `CharacterFlags` name. Added `SHOW_FLAGS_ORDER`
+  (`crates/ugaris-server/src/commands_admin.rs`), a 61-entry
+  `(CharacterFlags, &str)` table transcribed in C's exact `if (flags &
+  CF_X)` declaration order (`command.c:4871-5059`) - `CF_SPY` is
+  deliberately absent, matching C, which never checks it in either
+  `cmd_show_flags` or `get_flag_by_name` - and `character_flag_by_name`
+  (C `get_flag_by_name`, `command.c:4590-4782`, same 61-name set),
+  implemented as a linear scan over the same table rather than a second
+  duplicated match. Both commands are full-word-only (`cmdcmp`'s
+  `minlen` equals each command's own length), matched with `lower ==
+  "..."`. Reused `commands_player::find_online_character_by_name` (no
+  `CF_PLAYER` filter, so NPCs can be targeted too) and
+  `take_legacy_alpha_name` (C's `isalpha`-only name-token scan,
+  trailing non-alpha text silently ignored). `/toggleflag`'s flag-name
+  token is parsed as C's `!isspace`-only scan (digits/punctuation
+  allowed, unlike the name token), so a missing argument yields an empty
+  flag name and the same "Sorry, unknown flag: " (trailing-empty)
+  message C would print. Documented one accepted, narrow gap: C's
+  `cmd_toggle_flag` also calls `update_char(co)` immediately whenever
+  the toggled bit is `CF_UPDATE`/`CF_ITEMS`/`CF_PROF`, forcing an
+  immediate client refresh even on the *clearing* transition; this port
+  only flips the in-memory bit (already sufficient for the normal
+  per-tick pipeline to react whenever one of those three bits becomes
+  *set*), so the immediate refresh specifically on a bare "turn this
+  off" transition is not replicated - acceptable for this rarely-used
+  raw-flag debug command, called out in both this bullet and the P3 task
+  note. Also updated that task note's stale "not yet cross-referenced"
+  list: dropped `/showflags`/`/toggleflag`, and added explicit blockers
+  for two commonly-mis-picked neighbors - `/showppd` (needs many more
+  named `area1_ppd`/`area3_ppd` field accessors in `player.rs` than
+  exist today, since `cmd_showppd` reads 39 distinct `area1_ppd` ints)
+  and the `punish`/`shutup`/`rename`/`lockname`/`unlockname`/`unpunish`
+  family (blocked on the unported async offline-name-lookup cache,
+  `lookup_name`/`src/system/lookup.c`, and DB task-queue,
+  `task_punish_player`/`do_rename`/etc., `src/system/task.c` - not just
+  the already-known `server_chat` gap). 7 new tests in
+  `tests/commands_admin.rs`: permission/full-word gates for both
+  commands, "no one by that name" for an unloaded target, declaration-
+  order-not-insertion-order flag listing with `CF_SPY` proven absent,
+  unknown-flag rejection (both a real bogus name and a missing
+  argument) leaving flags untouched, and a case-insensitive on-then-off
+  round-trip. `cargo fmt --all`, `cargo test --workspace` (1986
+  ugaris-core + 55 db + 3 net + 40 protocol + 694 server [+7], all
+  green, zero failures), `cargo build -p ugaris-server`/`cargo build
+  --workspace` clean with zero warnings, 10s boot-smoke confirmed
+  "entering Rust game loop" with no panic.
