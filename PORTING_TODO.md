@@ -4077,7 +4077,7 @@ Unlocks every quest NPC. Do these before any P4 area work.
     unported systems (club.c, the dungeon/raid + alchemy-potion
     systems).
 
-- [~] **Military ranks (`src/module/military.c`)** - military points exist
+- [x] **Military ranks (`src/module/military.c`)** - military points exist
   on `Character`; port rank thresholds, `#rank` style commands, mission
   PPD (`mission_ppd.h`) and the governor mission flow (`check_military_solve`
   is referenced by the death path - port it there when this lands).
@@ -4184,13 +4184,14 @@ Unlocks every quest NPC. Do these before any P4 area work.
   `SV_QUEST_EXT` mod-packet half of `sendquestlog` (and the unrelated
   `mod_send_info_sync` call it also makes) remain unported - cosmetic
   only, the progress state itself is correct and visible via the standard
-  quest log; and `complete_mission`'s own reward text still goes through
-  `World::queue_system_text`/`queue_system_text_bytes` instead of
-  `npc_quiet_say` from the Master NPC (a pre-existing simplification from
-  an earlier iteration, not tightened this iteration to avoid touching
-  its already-tested behavior - functionally correct, just delivered as
-  a system message rather than an NPC speech bubble). A player-facing
-  `#rank`-style status command was
+  quest log, and out of scope per the same mod-protocol-is-a-logged-no-op
+  precedent the P1 "Client command audit completion" task already
+  established. `complete_mission`'s "Well done"/promotion lines and qa
+  code 21's ("promote") promotion line now go through `npc_quiet_say`
+  from the Master NPC instead of a private `queue_system_text`, closed in
+  iteration 123 (see Progress Log) - the one remaining item from this
+  note is now only the cosmetic `SV_QUEST_EXT`/`mod_send_info_sync`
+  mod-packet gap above. A player-facing `#rank`-style status command was
    also not added (there is no such command anywhere in the
    current C `command.c` tree either - checked; only the admin-only
     `/milinfo`/`/milpoints`/`/milstats`, none of which are player-facing -
@@ -4235,6 +4236,47 @@ Unlocks every quest NPC. Do these before any P4 area work.
     `sendquestlog`, and `complete_mission`/`promote`'s reward/promotion
     text still going through `queue_system_text` rather than
     `npc_quiet_say`.
+  Progress Log (iteration 123): closed the last real gap the previous
+    iteration's REMAINING note flagged - `complete_mission`/`promote`'s
+    reward/promotion text now goes through NPC speech instead of a
+    private system message. Split `World::give_military_pts` into a
+    private `give_military_pts_core` (the shared point/rank math + the
+    above-Sergeant-Major server broadcast, identical in both C variants)
+    plus two public wrappers matching C's two distinct functions exactly:
+    `give_military_pts` (C `give_military_pts_no_npc`, `tool.c:
+    3281-3306`: private "You've been promoted to X!" system text, no
+    name - used by `/milexp` and the Area 25 `warpbonus_driver`) and the
+    new `give_military_pts_from_npc` (C `give_military_pts`, `tool.c:
+    3250-3277`: the Military Master NPC's own `say(cn, ...)` - "You've
+    been promoted to X. Congratulations, NAME!" - ported as
+    `npc_quiet_say(master_id, ...)`, matching every other line in this
+    NPC's driver). Found and fixed a latent text bug while doing this:
+    the previous single `give_military_pts` had the NPC variant's
+    "Congratulations, NAME!" text but the no-npc variant's private
+    delivery mechanism, matching neither real C function's exact output.
+    Rewired qa code 21 ("promote", `military.c:2083-2089`, which C
+    itself calls via the NPC-announcing `give_military_pts(cn, co, 100,
+    1)`) from `give_military_pts` onto `give_military_pts_from_npc`.
+    Fixed `World::complete_mission` itself (`military.c:1394,1418`'s
+    `say(cn, ...)` calls): its "Well done"/promotion lines now go
+    through `self.npc_quiet_say(master_id, ...)` instead of
+    `self.queue_system_text(character_id, ...)` - the mercenary
+    gold-received line stays a private system message since that one
+    genuinely is `give_money`'s own `log_char` (`tool.c:1470-1471`).
+    Updated 3 existing tests in `world/tests/military.rs` whose
+    `master_id` was a nonexistent `CharacterId` (so `npc_quiet_say`
+    silently no-op'd) to spawn a real NPC and assert on
+    `drain_pending_area_texts` instead of `drain_pending_system_texts`
+    for the NPC-speech lines; 2 new tests for
+    `give_military_pts_from_npc`. REMAINING for "Military ranks" now:
+    only the cosmetic `SV_QUEST_EXT`/`mod_send_info_sync` mod-packet
+    halves of `sendquestlog` - confirmed out of scope, matching the P1
+    "Client command audit completion" task's own mod-protocol-is-a-
+    logged-no-op precedent, so not tracked as an open gap anymore.
+    `cargo fmt --all`, `cargo test --workspace` (1709 ugaris-core [+2] +
+    55 db + 3 net + 37 protocol + 557 server, all green, zero failures),
+    `cargo build -p ugaris-server` clean with zero warnings, 10s
+    boot-smoke confirmed "entering Rust game loop" with no panics.
   Progress Log (iteration 121): closed the wealth-achievement ladder gap
     the previous iteration's REMAINING note flagged - C's `complete_
     mission` pays its mercenary bonus gold through `give_money`

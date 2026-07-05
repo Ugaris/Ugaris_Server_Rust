@@ -329,44 +329,36 @@ impl MilitaryPointsAward {
 }
 
 impl World {
-    /// C `give_military_pts_no_npc(co, pts, exps)` (`tool.c:3279-3306`):
-    /// awards `exps` via the shared [`World::give_exp`] (already applies
-    /// the hardcore normal-exp bonus + `exp_modifier`), records the raw
-    /// `exps` onto `Character.military_normal_exp` (C's `ppd->normal_exp
-    /// += exps`, independent of whatever bonus `give_exp` applied to the
-    /// real exp total), applies the *military*-specific hardcore bonus
-    /// (`hardcore_military_exp_bonus`, distinct from the normal-exp one)
-    /// to `pts` before adding it to `Character.military_points`, and - if
-    /// the resulting rank increased - queues the "You've been promoted to
-    /// X. Congratulations, NAME!" system-text feedback plus, for ranks
-    /// above Sergeant Major (index 9), the server-wide "Grats: NAME is a
-    /// X now!" channel-6 broadcast, matching C exactly.
-    ///
-    /// This is the "no_npc" C variant - the only one with a live Rust
-    /// call site today (`/milexp` and the Area 25 `warpbonus_driver`
-    /// reward). C's other form, `give_military_pts` (says the promotion
-    /// line to a specific NPC-driven `cn` via `say` instead of straight to
-    /// the target), has no C call site outside the still-unported
-    /// mission-advisor driver; port it alongside that driver, reusing
-    /// this function's point/rank math.
-    pub fn give_military_pts(
+    /// Shared point/rank math for both C `give_military_pts` variants
+    /// (`tool.c:3250-3306`): awards `exps` via the shared [`World::
+    /// give_exp`] (already applies the hardcore normal-exp bonus +
+    /// `exp_modifier`), records the raw `exps` onto `Character.
+    /// military_normal_exp` (C's `ppd->normal_exp += exps`, independent of
+    /// whatever bonus `give_exp` applied to the real exp total), applies
+    /// the *military*-specific hardcore bonus (`hardcore_military_exp_
+    /// bonus`, distinct from the normal-exp one) to `pts` before adding it
+    /// to `Character.military_points`, and - if the resulting rank
+    /// increased - queues the server-wide "Grats: NAME is a X now!"
+    /// channel-6 broadcast for ranks above Sergeant Major (index 9),
+    /// identically in both C variants. Returns the character's name (for
+    /// callers' own promotion text) and the award; callers are
+    /// responsible for the variant-specific promotion-announcement text
+    /// (`give_military_pts`'s NPC `say()` vs `give_military_pts_no_npc`'s
+    /// `log_char`).
+    fn give_military_pts_core(
         &mut self,
         character_id: CharacterId,
         pts: i32,
         exps: i32,
         area_id: u32,
-    ) -> MilitaryPointsAward {
-        let Some(character) = self.characters.get(&character_id) else {
-            return MilitaryPointsAward::default();
-        };
+    ) -> Option<(String, MilitaryPointsAward)> {
+        let character = self.characters.get(&character_id)?;
         let is_hardcore = character.flags.contains(CharacterFlags::HARDCORE);
         let old_rank = army_rank_for_points(character.military_points);
 
         self.give_exp(character_id, i64::from(exps), area_id);
 
-        let Some(character) = self.characters.get_mut(&character_id) else {
-            return MilitaryPointsAward::default();
-        };
+        let character = self.characters.get_mut(&character_id)?;
         character.military_normal_exp = character.military_normal_exp.saturating_add(exps);
 
         let mut awarded_pts = pts;
@@ -378,26 +370,78 @@ impl World {
         let name = character.name.clone();
         let new_rank = army_rank_for_points(character.military_points);
 
-        if new_rank > old_rank {
+        if new_rank > old_rank && new_rank > 9 {
+            let mut broadcast = b"0000000000".to_vec();
+            broadcast.extend_from_slice(crate::text::COL_CHAT_GRATS);
+            broadcast.extend_from_slice(
+                format!("Grats: {name} is a {} now!", army_rank_name(new_rank)).as_bytes(),
+            );
+            self.queue_channel_broadcast(6, broadcast);
+        }
+
+        Some((name, MilitaryPointsAward { old_rank, new_rank }))
+    }
+
+    /// C `give_military_pts_no_npc(co, pts, exps)` (`tool.c:3281-3306`):
+    /// [`World::give_military_pts_core`]'s point/rank math plus, on
+    /// promotion, the private "You've been promoted to X!" system-text
+    /// feedback (`log_char`, no name, unlike the NPC variant's `say()`
+    /// text). Call sites: `/milexp` (`commands_admin.rs`) and the Area 25
+    /// `warpbonus_driver` reward (`main.rs`) - neither has a live NPC to
+    /// speak from.
+    pub fn give_military_pts(
+        &mut self,
+        character_id: CharacterId,
+        pts: i32,
+        exps: i32,
+        area_id: u32,
+    ) -> MilitaryPointsAward {
+        let Some((_name, award)) = self.give_military_pts_core(character_id, pts, exps, area_id)
+        else {
+            return MilitaryPointsAward::default();
+        };
+        if award.promoted() {
             self.queue_system_text(
                 character_id,
                 format!(
-                    "You've been promoted to {}. Congratulations, {}!",
-                    army_rank_name(new_rank),
-                    name
+                    "You've been promoted to {}!",
+                    army_rank_name(award.new_rank)
                 ),
             );
-            if new_rank > 9 {
-                let mut broadcast = b"0000000000".to_vec();
-                broadcast.extend_from_slice(crate::text::COL_CHAT_GRATS);
-                broadcast.extend_from_slice(
-                    format!("Grats: {name} is a {} now!", army_rank_name(new_rank)).as_bytes(),
-                );
-                self.queue_channel_broadcast(6, broadcast);
-            }
         }
+        award
+    }
 
-        MilitaryPointsAward { old_rank, new_rank }
+    /// C `give_military_pts(cn, co, pts, exps)` (`tool.c:3250-3277`): same
+    /// [`World::give_military_pts_core`] math, but on promotion the
+    /// Military Master NPC (`master_id`) itself announces it via its own
+    /// speech - "You've been promoted to X. Congratulations, NAME!" - via
+    /// [`World::npc_quiet_say`] (matching every other line in this NPC's
+    /// driver, ported as `npc_quiet_say` regardless of whether C used
+    /// `say` or `quiet_say` at that particular call site). Only live call
+    /// site: qa code 21 ("promote", admin-only, `military.c:2083-2089`).
+    pub fn give_military_pts_from_npc(
+        &mut self,
+        character_id: CharacterId,
+        master_id: CharacterId,
+        pts: i32,
+        exps: i32,
+        area_id: u32,
+    ) -> MilitaryPointsAward {
+        let Some((name, award)) = self.give_military_pts_core(character_id, pts, exps, area_id)
+        else {
+            return MilitaryPointsAward::default();
+        };
+        if award.promoted() {
+            self.npc_quiet_say(
+                master_id,
+                &format!(
+                    "You've been promoted to {}. Congratulations, {name}!",
+                    army_rank_name(award.new_rank)
+                ),
+            );
+        }
+        award
     }
 }
 
@@ -1361,11 +1405,16 @@ impl World {
     /// `hardcore_military_exp_bonus` to `pts`, and the exp was already
     /// awarded above, so reusing it would double-grant exp and misapply
     /// the hardcore bonus), and the identical rank-promotion
-    /// message/broadcast pattern. Queues the "Well done, %s. You've solved
-    /// your mission!" and (mercenary-only) gold-received text via
-    /// [`World::queue_system_text`]/[`World::queue_system_text_bytes`],
-    /// matching `check_military_solve`'s own wiring pattern (no NPC driver
-    /// needed for plain system text). Also bumps `dat->storage_data.
+    /// message/broadcast pattern. C's "Well done, %s. You've solved your
+    /// mission!" and "You've been promoted to X. Congratulations, %s!"
+    /// lines are the Master NPC's own `say(cn, ...)` (`military.c:
+    /// 1394,1418`), ported as [`World::npc_quiet_say`] from `master_id`
+    /// (matching every other line in this NPC's driver, all of which are
+    /// uniformly ported as `npc_quiet_say` regardless of whether C used
+    /// `say` or `quiet_say` at that call site); the (mercenary-only)
+    /// gold-received text is a genuine private system message
+    /// (`give_money`'s own `log_char`, `tool.c:1470-1471`), so it stays on
+    /// [`World::queue_system_text_bytes`]. Also bumps `dat->storage_data.
     /// quests_solved/pts_given/exp_given[difficulty]` on the Military
     /// Master NPC identified by `master_id` (`military.c:1382,1407,1411`) -
     /// a no-op if `master_id` isn't a live `CDR_MILITARY_MASTER` NPC.
@@ -1461,15 +1510,21 @@ impl World {
             message.extend_from_slice(b". It has been placed in your gold pouch.");
             self.queue_system_text_bytes(character_id, message);
         }
-        self.queue_system_text(
-            character_id,
-            format!("Well done, {name}. You've solved your mission!"),
+        // C `complete_mission`'s "Well done"/promotion lines are the
+        // Military Master NPC's own `say(cn, ...)` (`military.c:1394,1418`),
+        // not a private system message to the player - matches every other
+        // line in this driver, which is uniformly ported as `npc_quiet_say`
+        // from `master_id` (see this module's server-crate call site,
+        // `apply_military_master_nearby_player`).
+        self.npc_quiet_say(
+            master_id,
+            &format!("Well done, {name}. You've solved your mission!"),
         );
 
         let promoted_to = if new_rank > old_rank {
-            self.queue_system_text(
-                character_id,
-                format!(
+            self.npc_quiet_say(
+                master_id,
+                &format!(
                     "You've been promoted to {}. Congratulations, {name}!",
                     army_rank_name(new_rank)
                 ),

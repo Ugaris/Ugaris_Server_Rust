@@ -72,13 +72,56 @@ fn give_military_pts_promotes_and_queues_feedback_text() {
     assert_eq!(award.new_rank, 2);
     let feedback = world.drain_pending_system_texts();
     assert_eq!(feedback.len(), 1);
+    // C `give_military_pts_no_npc`'s own `log_char` text has no name,
+    // unlike the NPC-announced `give_military_pts` variant's `say()` text
+    // (see `give_military_pts_from_npc_announces_via_npc_speech_with_
+    // congratulations_text` below).
     assert_eq!(
         feedback[0].message,
-        "You've been promoted to Private First Class. Congratulations, Character!"
+        "You've been promoted to Private First Class!"
     );
     // Rank 2 is below the Sergeant Major (index 9) announce threshold, so
     // no server-wide broadcast is queued.
     assert!(world.drain_pending_channel_broadcasts().is_empty());
+}
+
+// C `give_military_pts(cn, co, pts, exps)` (`tool.c:3250-3277`): the
+// NPC-announcing variant says the promotion via the Master NPC's own
+// speech ("You've been promoted to X. Congratulations, NAME!"), not a
+// private system message - only live call site is qa code 21 ("promote").
+#[test]
+fn give_military_pts_from_npc_announces_via_npc_speech_with_congratulations_text() {
+    let mut world = World::default();
+    let player = character(1);
+    assert!(world.spawn_character(player, 10, 10));
+    let mut master = character(2);
+    master.name = "Sarge".to_string();
+    assert!(world.spawn_character(master, 11, 10));
+
+    let award = world.give_military_pts_from_npc(CharacterId(1), CharacterId(2), 8, 0, 3);
+
+    assert!(award.promoted());
+    assert_eq!(award.new_rank, 2);
+    // No private system text - the promotion is announced as NPC speech.
+    assert!(world.drain_pending_system_texts().is_empty());
+    let texts = world.drain_pending_area_texts();
+    assert_eq!(texts.len(), 1);
+    assert!(texts[0].message.contains("Sarge"));
+    assert!(texts[0]
+        .message
+        .contains("You've been promoted to Private First Class. Congratulations, Character!"));
+}
+
+// Unknown character is a no-op, same as `give_military_pts`.
+#[test]
+fn give_military_pts_from_npc_on_unknown_character_is_a_no_op() {
+    let mut world = World::default();
+    let master = character(2);
+    assert!(world.spawn_character(master, 11, 10));
+
+    let award = world.give_military_pts_from_npc(CharacterId(99), CharacterId(2), 100, 5, 3);
+    assert_eq!(award, MilitaryPointsAward::default());
+    assert!(world.drain_pending_area_texts().is_empty());
 }
 
 // C: `if (get_army_rank_int(co) > 9)` gates the server-wide "Grats: NAME
@@ -667,6 +710,7 @@ fn complete_mission_no_active_mission_is_a_no_op() {
 fn complete_mission_awards_exp_and_points_for_non_mercenary() {
     let mut world = World::default();
     world.add_character(character(1));
+    world.add_character(character(999));
     let mut player = PlayerRuntime::connected(1, 0);
     player.set_military_took_mission(1); // difficulty 0
     player.set_military_took_yday(50);
@@ -695,7 +739,11 @@ fn complete_mission_awards_exp_and_points_for_non_mercenary() {
     assert_eq!(player.military_took_yday(), 0);
     assert_eq!(player.military_solved_yday(), 50);
 
-    let texts = world.drain_pending_system_texts();
+    // C `complete_mission`'s "Well done"/promotion lines are the Master
+    // NPC's own speech (`say(cn, ...)`), not a private system message -
+    // see `World::complete_mission`'s doc comment.
+    assert!(world.drain_pending_system_texts().is_empty());
+    let texts = world.drain_pending_area_texts();
     assert!(texts.iter().any(|t| t.message.contains("Well done")));
     assert!(texts
         .iter()
@@ -710,6 +758,7 @@ fn complete_mission_awards_gold_bonus_for_mercenary() {
     let mut merc = character(1);
     merc.professions[profession::MERCENARY] = 10;
     world.add_character(merc);
+    world.add_character(character(999));
     let mut player = PlayerRuntime::connected(1, 0);
     player.set_military_took_mission(1);
     player.set_military_solved_mission(true);
@@ -729,9 +778,12 @@ fn complete_mission_awards_gold_bonus_for_mercenary() {
     assert_eq!(character.military_points, 181);
     assert!(character.flags.contains(CharacterFlags::ITEMS));
 
-    let texts = world.drain_pending_system_texts();
+    // The gold-received line stays a private system message (`give_money`'s
+    // own `log_char`), but the "Well done" line is NPC speech.
     let text_bytes = world.drain_pending_system_text_bytes();
     assert_eq!(text_bytes.len(), 1);
+    assert!(world.drain_pending_system_texts().is_empty());
+    let texts = world.drain_pending_area_texts();
     assert!(texts.iter().any(|t| t.message.contains("Well done")));
 }
 
@@ -743,6 +795,7 @@ fn complete_mission_awards_gold_bonus_for_mercenary() {
 fn complete_mission_promotes_and_queues_feedback() {
     let mut world = World::default();
     world.add_character(character(1));
+    world.add_character(character(999));
     let mut player = PlayerRuntime::connected(1, 0);
     player.set_military_took_mission(1);
     player.set_military_solved_mission(true);
@@ -756,7 +809,8 @@ fn complete_mission_promotes_and_queues_feedback() {
     };
     assert_eq!(outcome.promoted_to, Some(2));
 
-    let texts = world.drain_pending_system_texts();
+    assert!(world.drain_pending_system_texts().is_empty());
+    let texts = world.drain_pending_area_texts();
     assert!(texts
         .iter()
         .any(|t| t.message.contains("You've been promoted")));

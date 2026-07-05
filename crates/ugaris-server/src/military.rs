@@ -316,10 +316,10 @@ async fn apply_military_master_nearby_player(
         player.set_master_state(2);
     }
 
-    // C `complete_mission`'s own reward text already goes through
-    // `World::queue_system_text`/`queue_system_text_bytes` (see that
-    // function's doc comment) rather than `npc_quiet_say` from this NPC -
-    // a pre-existing simplification, not tightened here.
+    // C `complete_mission`'s "Well done"/promotion lines are the Master
+    // NPC's own speech (`npc_quiet_say` from `master_id`, see that
+    // function's doc comment); only the mercenary gold-received line is a
+    // private system message, matching C's `give_money`.
     let outcome = world.complete_mission(player_id, player, u32::from(area_id), master_id);
 
     // C `complete_mission`'s mercenary bonus gold goes through `give_money`
@@ -703,13 +703,11 @@ fn apply_military_master_raise(runtime: &mut ServerRuntime, player_id: Character
 }
 
 /// C qa code 21 ("promote", admin-only, `military.c:2083-2089`):
-/// `give_military_pts(cn, co, 100, 1)` - reuses [`World::
-/// give_military_pts`]'s point/rank math (the promotion-announcement
-/// text goes through `World::queue_system_text` rather than this NPC's
-/// own `npc_quiet_say`, the same pre-existing simplification already
-/// documented on [`World::give_military_pts`] and on `complete_mission`'s
-/// reward text - functionally correct promotion, just delivered as a
-/// system message instead of an NPC speech bubble).
+/// `give_military_pts(cn, co, 100, 1)` - the NPC-announcing C variant, so
+/// this uses [`World::give_military_pts_from_npc`] (the Master NPC itself
+/// announces the promotion via its own speech, matching `say(cn, ...)`),
+/// not [`World::give_military_pts`] (the private, no-NPC form used by
+/// `/milexp` and the Area 25 warp bonus).
 fn apply_military_master_promote(
     world: &mut World,
     runtime: &mut ServerRuntime,
@@ -723,7 +721,7 @@ fn apply_military_master_promote(
     if world.characters.get(&master_id).is_none() {
         return false;
     }
-    world.give_military_pts(player_id, 100, 1, u32::from(area_id));
+    world.give_military_pts_from_npc(player_id, master_id, 100, 1, u32::from(area_id));
     true
 }
 

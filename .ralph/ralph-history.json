@@ -3900,15 +3900,45 @@
         "test error::tests::error_constants_match_legacy_header ... ok",
         "test error::tests::error_strings_match_legacy_table ... ok"
       ]
+    },
+    {
+      "iteration": 123,
+      "startedAt": "2026-07-05T00:07:50.697Z",
+      "endedAt": "2026-07-05T00:20:37.789Z",
+      "durationMs": 766463,
+      "agent": "opencode",
+      "model": "anthropic/claude-sonnet-5",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "PORTING_TODO.md",
+        "crates/ugaris-core/src/world/military.rs",
+        "crates/ugaris-core/src/world/tests/military.rs",
+        "crates/ugaris-server/src/military.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "These use `master_npc_with_storage(2, 9)` which spawns a real character, so `npc_quiet_say` will work fine (or fail silently for the last one with CharacterId(999) not spawned, which is fine since it ",
+        "test result: ok. 557 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "The arguments provided to the tool are invalid: Invalid input for tool read: JSON parsing failed: Text: {\"filePath\": \"/home/eddow/Development/UgarisProjects/Ugaris_Server_Rust/crates/ugaris-core/src/w",
+        "Error message: JSON Parse error: Property name must be a string literal",
+        "assertion failed: texts.iter().any(|t| t.message.contains(\"Well done\"))",
+        "assertion failed: texts.iter().any(|t| t.message.contains(\"You've been promoted\"))",
+        "test result: FAILED. 1706 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s",
+        "error: test failed, to rerun pass `-p ugaris-core --lib`",
+        "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&1 | grep -E \"test result|FAILED|error\\[\""
+      ]
     }
   ],
-  "totalDurationMs": 133354438,
+  "totalDurationMs": 134120901,
   "struggleIndicators": {
     "repeatedErrors": {
       "1011 (up from 998 earlier) - all passing, zero failures. Now let's build the server binary and run a": 1,
       "Everything is green: `cargo fmt --all` clean, full workspace test suite passing (1011 core tests + o": 1,
       "test result: ok. 327 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 4,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 122,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 123,
       "test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 998 filtered out; finished in 0.00s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1010 filtered out; finished in 0.00s": 1,
       "error: could not compile `ugaris-db` (lib test) due to 1 previous error": 3,
@@ -3917,7 +3947,7 @@
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 43,
       "1020 tests pass (up from 1011), zero failures. Now build for warnings check:": 1,
       "test result: ok. 327 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 6,
-      "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&": 38,
+      "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&": 39,
       "test error::tests::error_constants_match_legacy_header ... ok": 24,
       "test error::tests::error_strings_match_legacy_table ... ok": 19,
       "test error::tests::out_of_range_errors_use_c_fallback_string ... ok": 13,
@@ -3925,13 +3955,13 @@
       "Verified: `cargo fmt --all`, `cargo test --workspace` (1030 ugaris-core tests + all others, 0 failur": 1,
       "error: could not compile `ugaris-server` (bin \"ugaris-server\") due to 1 previous error": 7,
       "test result: FAILED. 1019 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s": 1,
-      "error: test failed, to rerun pass `-p ugaris-core --lib`": 20,
+      "error: test failed, to rerun pass `-p ugaris-core --lib`": 21,
       "test result: ok. 1030 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1,
       "+  - Full workspace suite (1030 ugaris-core tests, up from 1020, + others, 0 failed), `cargo fmt --a": 1,
       "All green: 1035+9+3+31+327 tests pass, zero failures, fmt clean, build clean, boot-smoke clean. This": 1,
       "Verified: `cargo fmt --all` (clean), `cargo test --workspace` (1035+9+3+31+327 passed, 0 failed), `c": 1,
-      "The arguments provided to the tool are invalid: Invalid input for tool read: JSON parsing failed: Te": 45,
-      "Error message: JSON Parse error: Property name must be a string literal": 39,
+      "The arguments provided to the tool are invalid: Invalid input for tool read: JSON parsing failed: Te": 46,
+      "Error message: JSON Parse error: Property name must be a string literal": 40,
       "assertion failed: saved.flags.contains(CharacterFlags::ALIVE)": 1,
       "test result: FAILED. 1034 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1,
       "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 1035 filtered out; finished in 0.00s": 1,
@@ -4445,7 +4475,11 @@
       "No failures or warnings. Let's build the server and boot-smoke test since this touches the runtime/k": 1,
       "All green: 1707 + 55 + 3 + 37 + 557 = 2359 tests passing, zero failures. Build already confirmed cle": 1,
       "**Verification:** `cargo fmt --all`, `cargo test --workspace` (2359 tests total, all green, zero fai": 1,
-      "test result: ok. 557 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s": 1
+      "test result: ok. 557 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s": 2,
+      "These use `master_npc_with_storage(2, 9)` which spawns a real character, so `npc_quiet_say` will wor": 1,
+      "assertion failed: texts.iter().any(|t| t.message.contains(\"Well done\"))": 1,
+      "assertion failed: texts.iter().any(|t| t.message.contains(\"You've been promoted\"))": 1,
+      "test result: FAILED. 1706 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0
