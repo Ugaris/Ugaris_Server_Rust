@@ -241,6 +241,26 @@ pub trait CharacterRepository: Send + Sync {
     /// `"**deleted**"` placeholder strings - the caller substitutes its
     /// own fallback text).
     async fn find_name_by_id(&self, character_id: CharacterId) -> anyhow::Result<Option<String>>;
+    /// C `exterminate`/`db_exterminate` (`database_admin.c:29-95,503-507`):
+    /// `/exterminate <name>`'s DB half. Resolves `name` (case-insensitive,
+    /// like every other by-name lookup in this file) to its owning
+    /// account, locks that account (C's `subscriber.locked = 'Y'`, already
+    /// enforced by `begin_login_tx`'s `account_locked` gate) and bans
+    /// every distinct IP that account has ever logged in from (C's
+    /// `INSERT ipban SELECT ip FROM iplog WHERE sID = ...`, this
+    /// codebase's `login_sessions.ip_address` history standing in for
+    /// `iplog` - see `migrations/0019_ip_bans.sql`). Returns `None` when
+    /// no character has that name (C's "Player '%s' not found." branch);
+    /// `Some(ExterminateOutcome)` otherwise, whose counts drive the
+    /// "Locked %d accounts and %d IP addresses." reply.
+    async fn exterminate_account(&self, name: &str) -> anyhow::Result<Option<ExterminateOutcome>>;
+}
+
+/// See [`CharacterRepository::exterminate_account`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct ExterminateOutcome {
+    pub locked_accounts: u64,
+    pub banned_ips: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -472,6 +492,47 @@ impl CharacterRepository for PgCharacterRepository {
             .fetch_optional(&self.pool)
             .await?;
         Ok(row.map(|(name,)| name))
+    }
+
+    async fn exterminate_account(&self, name: &str) -> anyhow::Result<Option<ExterminateOutcome>> {
+        let mut tx = self.pool.begin().await?;
+        let account_id: Option<(i64,)> =
+            sqlx::query_as("select account_id from characters where lower(name) = lower($1)")
+                .bind(name)
+                .fetch_optional(&mut *tx)
+                .await?;
+        let Some((account_id,)) = account_id else {
+            return Ok(None);
+        };
+
+        let locked = sqlx::query("update accounts set locked = true where id = $1")
+            .bind(account_id)
+            .execute(&mut *tx)
+            .await?
+            .rows_affected();
+
+        // C's own `INSERT ipban SELECT ... FROM iplog` inserts one row
+        // per matching log entry (duplicates included); `distinct` here
+        // avoids piling up redundant rows for a repeat visitor from the
+        // same address, a deliberate simplification (documented, not
+        // silent) since this codebase has no other consumer counting
+        // `ip_bans` rows the way C's own admin tooling might count
+        // `ipban` rows.
+        let banned_ips = sqlx::query(
+            "insert into ip_bans(ip, banned_until) \
+             select distinct ip_address, now() + interval '28 days' \
+             from login_sessions where account_id = $1",
+        )
+        .bind(account_id)
+        .execute(&mut *tx)
+        .await?
+        .rows_affected();
+
+        tx.commit().await?;
+        Ok(Some(ExterminateOutcome {
+            locked_accounts: locked,
+            banned_ips,
+        }))
     }
 }
 
@@ -754,7 +815,14 @@ async fn begin_login_tx(
     if character_locked || account_locked {
         return Ok(LoginOutcome::Locked);
     }
-    if ip_locked {
+    // C `isbanned_iplog(login.ip) && (!row[5] || row[5][0] != 'N')`
+    // (`database_character.c:660`): the real mechanism is keyed on the
+    // *connecting* IP address, independent of which account is logging
+    // in - `ip_locked` (the pre-existing static per-account flag) only
+    // approximated this; `is_ip_banned` below checks the genuine
+    // `ip_bans` table `/exterminate` populates (see that migration's doc
+    // comment), so either gate rejects.
+    if ip_locked || is_ip_banned(tx, request.ip).await? {
         return Ok(LoginOutcome::IpLocked);
     }
     if !fixed {
@@ -867,6 +935,23 @@ async fn is_ip_rate_limited(pool: &PgPool, ip: u32) -> anyhow::Result<bool> {
 /// day) can be unit-tested without a live database.
 fn is_badpass_counts_rate_limited(recent_minute: i64, recent_hour: i64, recent_day: i64) -> bool {
     recent_minute > 3 || recent_hour > 8 || recent_day > 25
+}
+
+/// Matches C `isbanned_iplog` (`database_character.c:1821-1830`): an IP
+/// is banned if it has an unexpired row in `ip_bans` (populated by
+/// `/exterminate`, see `migrations/0019_ip_bans.sql`). C treats a query
+/// failure as "assume banned" (`database_character.c:1828`); this codebase
+/// instead surfaces the error via `?` like every other query here, so a
+/// DB hiccup rejects the whole login attempt (`begin_login_tx` propagates
+/// the error) rather than silently failing open.
+async fn is_ip_banned(tx: &mut Transaction<'_, Postgres>, ip: u32) -> anyhow::Result<bool> {
+    let banned: bool = sqlx::query_scalar(
+        "select exists(select 1 from ip_bans where ip = $1 and banned_until > now())",
+    )
+    .bind(ip as i32)
+    .fetch_one(&mut **tx)
+    .await?;
+    Ok(banned)
 }
 
 /// Matches C `add_badpass_ip` (`src/system/badip.c:78-85`): records one
@@ -1405,6 +1490,40 @@ mod tests {
             assert_eq!(outcome, LoginOutcome::IpLocked);
         }
 
+        /// The real, `/exterminate`-populated gate (C `isbanned_iplog`):
+        /// unlike `rejects_ip_locked_account` above (the static
+        /// per-account flag), this account has `ip_locked = false` - only
+        /// a matching unexpired `ip_bans` row for the *connecting* IP
+        /// (`request`'s fixed `0x0a00_0001`) blocks the login.
+        #[tokio::test]
+        async fn rejects_login_from_a_banned_ip() {
+            let Some(pool) = connect().await else {
+                return;
+            };
+            let mut tx = locked_tx(&pool, 2045).await;
+            let account_id = insert_account(
+                &mut tx,
+                AccountOpts {
+                    username: "ipbanned_acct",
+                    ..Default::default()
+                },
+            )
+            .await;
+            insert_character(&mut tx, account_id, "Ipbanned", false, 0, 3, 1, 0).await;
+            sqlx::query(
+                "insert into ip_bans(ip, banned_until) values ($1, now() + interval '28 days')",
+            )
+            .bind(0x0a00_0001i32)
+            .execute(&mut *tx)
+            .await
+            .expect("insert ip_bans row");
+
+            let outcome = begin_login_tx(&mut tx, request("Ipbanned", "secret"))
+                .await
+                .expect("begin_login_tx");
+            assert_eq!(outcome, LoginOutcome::IpLocked);
+        }
+
         #[tokio::test]
         async fn rejects_unfixed_account() {
             let Some(pool) = connect().await else {
@@ -1625,6 +1744,172 @@ mod tests {
                     .await
                     .expect("fetch login_sessions row");
             assert_eq!(got_login_session_id, row_id);
+        }
+    }
+
+    /// Live-database tests for [`CharacterRepository::exterminate_account`]
+    /// and [`is_ip_banned`]. Unlike `live_login`'s tests, both real
+    /// methods under test commit through the repository's own pool
+    /// connection (no externally-supplied transaction to roll back), so
+    /// this module follows `auction.rs`'s `mod live` precedent instead:
+    /// unique per-test usernames/IPs, a real commit, explicit row cleanup
+    /// at the end of every test.
+    mod live_exterminate {
+        use super::*;
+        use sqlx::PgPool;
+
+        async fn connect() -> Option<PgPool> {
+            let url = std::env::var("DATABASE_URL").ok()?;
+            match PgPool::connect(&url).await {
+                Ok(pool) => Some(pool),
+                Err(err) => {
+                    eprintln!("skipping live DB test: could not connect to DATABASE_URL: {err}");
+                    None
+                }
+            }
+        }
+
+        async fn insert_account_and_character(pool: &PgPool, name: &str) -> (i64, i64) {
+            let account_id: i64 = sqlx::query_scalar(
+                "insert into accounts(username, password_hash) values ($1, 'x') returning id",
+            )
+            .bind(format!("{name}_acct"))
+            .fetch_one(pool)
+            .await
+            .expect("insert account");
+            let character_id: i64 = sqlx::query_scalar(
+                "insert into characters(account_id, name) values ($1, $2) returning id",
+            )
+            .bind(account_id)
+            .bind(name)
+            .fetch_one(pool)
+            .await
+            .expect("insert character");
+            (account_id, character_id)
+        }
+
+        async fn insert_login_session(pool: &PgPool, account_id: i64, character_id: i64, ip: i32) {
+            sqlx::query(
+                "insert into login_sessions(character_id, account_id, character_name, ip_address, area_id, mirror_id) \
+                 values ($1, $2, 'x', $3, 1, 1)",
+            )
+            .bind(character_id)
+            .bind(account_id)
+            .bind(ip)
+            .execute(pool)
+            .await
+            .expect("insert login_session");
+        }
+
+        async fn cleanup(pool: &PgPool, account_id: i64, character_id: i64, ips: &[i32]) {
+            sqlx::query("delete from login_sessions where account_id = $1")
+                .bind(account_id)
+                .execute(pool)
+                .await
+                .ok();
+            for ip in ips {
+                sqlx::query("delete from ip_bans where ip = $1")
+                    .bind(ip)
+                    .execute(pool)
+                    .await
+                    .ok();
+            }
+            sqlx::query("delete from characters where id = $1")
+                .bind(character_id)
+                .execute(pool)
+                .await
+                .ok();
+            sqlx::query("delete from accounts where id = $1")
+                .bind(account_id)
+                .execute(pool)
+                .await
+                .ok();
+        }
+
+        #[tokio::test]
+        async fn exterminate_locks_the_account_and_bans_every_distinct_login_ip() {
+            let Some(pool) = connect().await else {
+                return;
+            };
+            let (account_id, character_id) =
+                insert_account_and_character(&pool, "extermtarget").await;
+            // Two sessions from the same IP plus one from a second IP: the
+            // ported query dedupes via `select distinct`, so this must
+            // yield exactly 2 banned IPs, not 3 log rows.
+            insert_login_session(&pool, account_id, character_id, 0x0102_0304).await;
+            insert_login_session(&pool, account_id, character_id, 0x0102_0304).await;
+            insert_login_session(&pool, account_id, character_id, 0x0506_0708).await;
+
+            let repo = PgCharacterRepository::new(pool.clone());
+            let outcome = repo
+                .exterminate_account("ExtermTarget")
+                .await
+                .expect("exterminate_account")
+                .expect("character should be found");
+            assert_eq!(outcome.locked_accounts, 1);
+            assert_eq!(outcome.banned_ips, 2);
+
+            let (locked,): (bool,) = sqlx::query_as("select locked from accounts where id = $1")
+                .bind(account_id)
+                .fetch_one(&pool)
+                .await
+                .expect("fetch account");
+            assert!(locked);
+
+            let mut tx = pool.begin().await.expect("begin tx");
+            assert!(is_ip_banned(&mut tx, 0x0102_0304u32)
+                .await
+                .expect("is_ip_banned"));
+            assert!(is_ip_banned(&mut tx, 0x0506_0708u32)
+                .await
+                .expect("is_ip_banned"));
+            assert!(!is_ip_banned(&mut tx, 0x0a0a_0a0au32)
+                .await
+                .expect("is_ip_banned"));
+            tx.rollback().await.ok();
+
+            cleanup(&pool, account_id, character_id, &[0x0102_0304, 0x0506_0708]).await;
+        }
+
+        #[tokio::test]
+        async fn exterminate_reports_not_found_for_an_unknown_name() {
+            let Some(pool) = connect().await else {
+                return;
+            };
+            let repo = PgCharacterRepository::new(pool.clone());
+            let outcome = repo
+                .exterminate_account("NoSuchExterminateTarget")
+                .await
+                .expect("exterminate_account");
+            assert_eq!(outcome, None);
+        }
+
+        #[tokio::test]
+        async fn expired_ip_ban_no_longer_rejects_login() {
+            let Some(pool) = connect().await else {
+                return;
+            };
+            let ip: i32 = 0x0b0b_0b0b;
+            sqlx::query(
+                "insert into ip_bans(ip, banned_until) values ($1, now() - interval '1 day')",
+            )
+            .bind(ip)
+            .execute(&pool)
+            .await
+            .expect("insert expired ban");
+
+            let mut tx = pool.begin().await.expect("begin tx");
+            let banned = is_ip_banned(&mut tx, ip as u32)
+                .await
+                .expect("is_ip_banned");
+            tx.rollback().await.ok();
+            assert!(!banned, "an expired ip_bans row must not still block login");
+
+            sqlx::query("delete from ip_bans where ip = $1")
+                .bind(ip)
+                .execute(&pool)
+                .await
+                .ok();
         }
     }
 

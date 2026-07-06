@@ -33,6 +33,7 @@ mod dungeon_master;
 mod effect_tick;
 mod effects;
 mod exp;
+mod exterminate;
 mod gate_fight;
 mod gatekeeper;
 mod helpers;
@@ -94,6 +95,7 @@ pub(crate) use effect_tick::*;
 #[allow(unused_imports)]
 pub(crate) use effects::*;
 pub use exp::*;
+pub use exterminate::*;
 pub use gatekeeper::*;
 pub(crate) use helpers::*;
 pub use hurt::*;
@@ -479,6 +481,9 @@ pub struct World {
     /// differs from this area server's own `area_id` - see
     /// `world/dungeon_master.rs`'s module doc comment.
     pending_dungeon_eviction_transfers: Vec<DungeonEvictionTransfer>,
+    /// `/exterminate <name>` async DB round trips - see
+    /// `world/exterminate.rs`'s module doc comment.
+    pending_exterminate_requests: Vec<ExterminateRequest>,
 }
 
 impl Default for Tick {

@@ -10194,6 +10194,117 @@ fn unpunish_command_abbreviation_is_not_recognized() {
     .is_none());
 }
 
+// C `/exterminate <name>` (`command.c:9657-9662` dispatch ->
+// `cmd_exterminate`, `command.c:2639-2651`), `CF_STAFF|CF_GOD`-gated,
+// full-word only.
+
+#[test]
+fn exterminate_command_requires_god_or_staff() {
+    let mut world = goto_test_world();
+    let caller_id = CharacterId(1);
+    let caller = login_character(caller_id, &login_block("Ralph"), 3, 10, 10);
+    assert!(world.spawn_character(caller, 10, 10));
+    let mut runtime = ServerRuntime::default();
+
+    assert!(apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        caller_id,
+        "/exterminate Baddie",
+        3
+    )
+    .is_none());
+    assert!(world.drain_pending_exterminate_requests().is_empty());
+}
+
+#[test]
+fn exterminate_command_accepts_staff_alone_and_queues_the_parsed_name() {
+    let mut world = goto_test_world();
+    let caller_id = CharacterId(1);
+    let mut caller = login_character(caller_id, &login_block("Ralph"), 3, 10, 10);
+    caller.flags.insert(CharacterFlags::STAFF);
+    assert!(world.spawn_character(caller, 10, 10));
+    let mut runtime = ServerRuntime::default();
+
+    let result = apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        caller_id,
+        "/exterminate Baddie",
+        3,
+    )
+    .expect("staff exterminate command should be recognized");
+    assert!(result.messages.is_empty());
+    let queued = world.drain_pending_exterminate_requests();
+    assert_eq!(queued.len(), 1);
+    assert_eq!(queued[0].caller_id, caller_id);
+    assert_eq!(queued[0].target_name, "Baddie");
+}
+
+#[test]
+fn exterminate_command_accepts_god_alone() {
+    let mut world = goto_test_world();
+    let caller_id = CharacterId(1);
+    let mut caller = login_character(caller_id, &login_block("Ralph"), 3, 10, 10);
+    caller.flags.insert(CharacterFlags::GOD);
+    assert!(world.spawn_character(caller, 10, 10));
+    let mut runtime = ServerRuntime::default();
+
+    let result = apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        caller_id,
+        "/exterminate Baddie",
+        3,
+    )
+    .expect("god exterminate command should be recognized");
+    assert!(result.messages.is_empty());
+    assert_eq!(world.drain_pending_exterminate_requests().len(), 1);
+}
+
+#[test]
+fn exterminate_command_abbreviation_is_not_recognized() {
+    // C `cmdcmp(ptr, "exterminate", 11)` requires the full eleven-letter
+    // word.
+    let mut world = goto_test_world();
+    let caller_id = CharacterId(1);
+    let mut caller = login_character(caller_id, &login_block("Ralph"), 3, 10, 10);
+    caller.flags.insert(CharacterFlags::GOD);
+    assert!(world.spawn_character(caller, 10, 10));
+    let mut runtime = ServerRuntime::default();
+
+    assert!(apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        caller_id,
+        "/extermina Baddie",
+        3
+    )
+    .is_none());
+}
+
+#[test]
+fn exterminate_command_truncates_the_name_at_the_first_non_alpha_character() {
+    let mut world = goto_test_world();
+    let caller_id = CharacterId(1);
+    let mut caller = login_character(caller_id, &login_block("Ralph"), 3, 10, 10);
+    caller.flags.insert(CharacterFlags::GOD);
+    assert!(world.spawn_character(caller, 10, 10));
+    let mut runtime = ServerRuntime::default();
+
+    apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        caller_id,
+        "/exterminate Bad123die",
+        3,
+    )
+    .expect("god exterminate command should be recognized");
+    let queued = world.drain_pending_exterminate_requests();
+    assert_eq!(queued.len(), 1);
+    assert_eq!(queued[0].target_name, "Bad");
+}
+
 // C `/look <name>` (`command.c:8990-9019`), `CF_GOD|CF_STAFF`-gated,
 // full-word only.
 

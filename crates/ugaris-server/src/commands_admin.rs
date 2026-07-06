@@ -4840,6 +4840,33 @@ pub(crate) fn apply_admin_character_command(
         });
     }
 
+    // C `/exterminate <name>` (`command.c:9657-9662` dispatch ->
+    // `cmd_exterminate`, `command.c:2639-2651`), `CF_STAFF|CF_GOD`-gated,
+    // full-word only (`cmdcmp`'s `minlen` is 11, the full length of
+    // "exterminate", no abbreviation accepted). Parses an `isalpha`-only
+    // name token, truncated to the 79-byte buffer cap (C does no other
+    // validation before handing off - see `World::queue_exterminate_
+    // command`'s doc comment). Always returns a `default()` result
+    // immediately; the real reply arrives later via `World::
+    // queue_system_text` (same fire-and-forget async pattern as
+    // `/punish`/`/unpunish` above) once `ugaris-server`'s `world_events.
+    // rs::apply_exterminate_events` resolves the DB round trip.
+    if lower == "exterminate" {
+        let Some(caller) = world.characters.get(&character_id) else {
+            return Some(KeyringCommandResult::default());
+        };
+        if !caller
+            .flags
+            .intersects(CharacterFlags::STAFF | CharacterFlags::GOD)
+        {
+            return None;
+        }
+        let (name, _remainder) = take_legacy_alpha_name(rest.trim_start());
+        let name = &name[..name.len().min(79)];
+        world.queue_exterminate_command(character_id, name);
+        return Some(KeyringCommandResult::default());
+    }
+
     // C `/look <name>` (`command.c:8990-9019`), `CF_GOD|CF_STAFF`-gated,
     // full-word only (`cmdcmp`'s `minlen` is 4, the full length of
     // "look", no abbreviation accepted). Unlike `/punish`'s `take_legacy_

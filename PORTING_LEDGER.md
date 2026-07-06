@@ -226,14 +226,20 @@ DB-touching half).
 **What's still missing, in priority order for whoever picks this up
 next:**
 
-1. **The remaining mid-game teleport call sites.** `attempt_cross_area_
-   transfer` (`crates/ugaris-server/src/cross_area.rs`) now exists and is
-   proven at one call site (transport points); every other current
-   `TransportTravelResult::CrossArea`/`area_id != config.area_id` site (`/
-   office`+`/goto` in `commands_admin.rs`, mine gateway, clan-spawn exit
-   in `main.rs`, jail/unjail in `world/jail.rs`, dungeon-master rescue in
-   `world/dungeon_master.rs`) still only ever sends the "down" message
-   and needs switching over to the same helper, one call site at a time.
+1. ~~The remaining mid-game teleport call sites.~~ **Done (iterations
+   221-225).** `attempt_cross_area_transfer` (`crates/ugaris-server/src/
+   cross_area.rs`) is now wired at every `area_id != config.area_id` call
+   site: transport-point travel, `/office`+`/goto`/`/jump`
+   (`commands_admin.rs`), mine gateway, clan-spawn exit (`main.rs`),
+   `/jail`/`/unjail` (via `World::pending_jail_cross_area_transfers` +
+   `world_events.rs::apply_jail_cross_area_transfers`), and the
+   dungeon-master eviction rescue (via `World::
+   pending_dungeon_eviction_transfers` + `apply_dungeon_eviction_
+   transfers`) - see the "Cross-area transfer" `PORTING_TODO.md` entry's
+   iteration 222-225 Progress Log notes for each site's own detail. (This
+   bullet was stale until iteration 227 corrected it - the strikethrough
+   above was missing even though the todo file already recorded every
+   site as wired.)
 2. ~~Periodic `mark_alive` heartbeat.~~ **Done (iteration 226).** C's own
    `area_alive(0)` is re-run from `maintenance_60s_task` every 85 seconds
    (`server.c:600`); `main.rs` now has a matching `world.tick.0 %
@@ -249,11 +255,36 @@ next:**
    process crashes without running its shutdown `mark_down` path, which
    is a smaller/rarer risk than in C and left as a future hardening step
    if it ever proves necessary in practice.
-3. **The three blocked text commands** (`/exterminate`, `/values`/
-   `/showvalues`, `/allow`) still need a `server_chat`-equivalent
-   multi-node broadcast/query design of their own once (1) lands enough
-   that a real multi-process deployment is meaningfully testable - not
-   needed for (1) itself.
+3. ~~The three blocked text commands.~~ **`/exterminate` done (iteration
+   227); `/values`/`/showvalues`/`/allow` still open.** Re-reading
+   `cmd_exterminate`'s full C call chain
+   (`database_admin.c:29-95,503-507`) found it is a **direct DB
+   mutation** (lock the target's account, ban its IP history), not a
+   `server_chat` relay at all - `server_chat(31, ...)` in
+   `cmd_exterminate` is only a same-message staff broadcast, unrelated to
+   the command's actual effect. Ported as `CharacterRepository::
+   exterminate_account` (`crates/ugaris-db/src/character.rs`) + new
+   `ip_bans` table (`migrations/0019_ip_bans.sql`, this codebase's
+   `iplog`/`ipban` stand-in, populated from the existing `login_
+   sessions.ip_address` history) + `world/exterminate.rs` (`ugaris-core`)
+   + `world_events.rs::apply_exterminate_events`. Also closed a related
+   pre-existing gap: `LoginOutcome::IpLocked` was only driven by a static
+   per-account `accounts.ip_locked` flag nothing ever set; `begin_login_
+   tx` now also checks the new `ip_bans` table for the *connecting* IP
+   (`is_ip_banned`, matching C's real `isbanned_iplog` semantics -
+   independent of which account is logging in), `||`-ed with the old
+   flag. `/values`/`/showvalues` (`look_values`/`show_values`,
+   `command.c:499-533`) and `/allow` (`allow_body`/`allow_body_db`,
+   `death.c:1013-1063`) are genuinely different from `/exterminate` -
+   they really do need to reach a character's live in-memory state
+   (values, corpse containers) or, wherever it currently is, which
+   could be a different area-server process - and remain open; see the
+   "Cross-area transfer" `PORTING_TODO.md` entry's iteration 227
+   Progress Log for the recommended pragmatic single-process-only slice
+   (resolve the name via a direct `characters` table query, act only if
+   the resolved character happens to be loaded in *this* process's
+   `World`, leave cross-process reach as an explicit gap like every
+   other cross-area chat-routing gap already documented in this file).
 
 ### Current Runnable State
 
@@ -7393,3 +7424,4 @@ startup log line unchanged.
  - Iteration 224 wired the next remaining `attempt_cross_area_transfer` call site the iteration-223 note flagged as missing: `/jail`/`/unjail` (`crates/ugaris-core/src/world/jail.rs`, C `jail_player`/`unjail_player`, `src/system/tool.c:4392-4425`'s tail). Unlike `/office`/`/goto` (synchronous `fn`, deferred via a `KeyringCommandResult` field), `World::apply_jail_action` runs inside the *async* `resolve_jail_lookup` DB-lookup path with no `ServerRuntime`/DB handle either, so it now pushes a new `JailCrossAreaTransfer { caller_id, target_id, target_area, target_x, target_y }` onto a new `World::pending_jail_cross_area_transfers` queue instead of sending the "down" message eagerly. A new `world_events.rs::apply_jail_cross_area_transfers` (called from `main.rs` right after the pre-existing `apply_jail_events`) drains that queue once per tick and calls the shared `attempt_cross_area_transfer` helper with `target_mirror = u32::from(config.mirror_id)` (matching C's `change_area` reading `ch[cn].mirror`, the target's own current mirror - always this process's `mirror_id` under the single-process-per-area-mirror stance, same as the `ClanSpawnExit`/`MineGateway` sites), falling back to the "Nothing happens" message only on failure. Updated 1 existing `ugaris-core` unit test to assert the queued transfer instead of the eager message; added 2 new `ugaris-server` tests for `apply_jail_cross_area_transfers` (empty-queue no-op; missing-repository-pair fallback, mirroring `attempt_cross_area_transfer`'s own `tests/cross_area.rs` coverage). `cargo fmt --all`, `cargo test --workspace` (2108 ugaris-core + 73 db + 3 net + 45 protocol + 1058 server [+2], all green, zero failures), `cargo build -p ugaris-server` clean with zero warnings, 10s boot-smoke confirmed "entering Rust game loop" with no panic. Only the dungeon-master eviction rescue (`world/dungeon_master.rs`) remains among the originally-listed `area_id != config.area_id` call sites.
  - Iteration 225 wired the last remaining `attempt_cross_area_transfer` call site the iteration-224 note flagged as missing: the dungeon-master eviction rescue (`crates/ugaris-core/src/world/dungeon_master.rs::build_remove_tile`, C `build_remove` in `src/area/13/dungeon.c:743-786`'s tail, `change_area(cn, ch[cn].resta, ch[cn].restx, ch[cn].resty)` falling back to `exit_char(cn)`). A new `DungeonEvictionTransfer { character_id, target_area, target_x, target_y }` plus `World::pending_dungeon_eviction_transfers`/`drain_pending_dungeon_eviction_transfers` mirrors `JailCrossAreaTransfer`'s shape exactly; a differing-area rest point now queues a transfer instead of calling `remove_character` immediately (the same-area branch is unchanged - still an immediate `teleport_character_same_area`, falling back to `remove_character` only if that single teleport itself fails). A new `world_events.rs::apply_dungeon_eviction_transfers` (called from `main.rs` right after `apply_jail_cross_area_transfers`) drains the queue once per tick and calls the shared helper with `target_mirror = u32::from(config.mirror_id)` - but since this call site has no direct command caller to notify (C's own fallback here is a silent `exit_char(cn)`, unlike every prior site's "down" message), a failed hand-off calls `World::remove_character` directly instead of queuing player-facing text. Updated 1 existing `ugaris-core` test to assert the queued transfer instead of immediate removal; added 2 new `ugaris-server` tests for `apply_dungeon_eviction_transfers` (empty-queue no-op; missing-repository-pair falls back to `remove_character`, exercised via a real `build_remove_tile` call rather than reaching into the private queue). `cargo fmt --all`, `cargo test --workspace` (2108 ugaris-core + 73 db + 3 net + 45 protocol + 1060 server [+2], all green, zero failures), `cargo build -p ugaris-server`/`cargo build --workspace` clean with zero warnings, 10s boot-smoke confirmed "entering Rust game loop" with no panic. Every originally-listed `area_id != config.area_id` call site is now wired; the "Cross-area transfer" task stays `[~]` since a periodic `mark_alive` heartbeat and the three `server_chat`-blocked commands (`/exterminate`/`/values`+`/showvalues`/`/allow`) remain open.
  - Iteration 226 closed the last non-blocked gap in the "Cross-area transfer" task: the **periodic `mark_alive` heartbeat**. C's `area_alive(0)` (`src/system/database/database_area.c:31-75`) re-runs every 85 seconds from `maintenance_60s_task` (`add_scheduled_task(maintenance_60s_task, 85, "Maintenance", true)`, `server.c:600`, where C's `TICKS` = 24 matches this codebase's own `TICKS_PER_SECOND`), not just once at startup (`server.c:586`). Extracted the previously startup-only inline `mark_alive` block in `main.rs` into a new shared `mark_area_alive` helper (unchanged IPv4-only address-encoding logic and `mark_alive` call), invoked once at startup exactly as before plus from a new `world.tick.0 % (TICKS_PER_SECOND * 85) == 0` gate inserted into the tick loop right before the existing once-a-minute auction-cleanup gate, matching that gate's and the clan-registry/military-storage save gates' established style (`world.tick.0` starts at `0` and `World::advance()` bumps it to `1` before any of these gates run each iteration, so the new gate never double-fires alongside the pre-loop startup call). No new tests: like every other periodic in-loop DB-maintenance gate already in `main.rs`, the tick-loop body has no extracted/testable function of its own, and `mark_area_alive` takes a concrete `&PgAreaRepository` rather than the `AreaRepository` trait `attempt_cross_area_transfer`'s tests mock against, so it can only be exercised against a live Postgres pool - same untested gap as the rest of the save+redirect path (tracked separately, unchanged). `cargo fmt --all`, `cargo test --workspace` (2108 ugaris-core + 73 db + 3 net + 45 protocol + 1060 server, all green, zero failures, unchanged counts), `cargo build -p ugaris-server` clean with zero warnings, 10s boot-smoke confirmed "legacy TCP listener ready", "loaded area zone map", "entering Rust game loop", no panics (ran with no `DATABASE_URL`, so `area_repository` is `None` and the new gate is a no-op in that run, same as the pre-existing startup call). Only the three `server_chat`-blocked commands (`/exterminate`/`/values`+`/showvalues`/`/allow`) and the live-Postgres test gap for the save+redirect path remain open on this task.
+- Iteration 227 closed the `/exterminate` third of the "Cross-area transfer" task's blocked-commands gap - see that `PORTING_TODO.md` entry's iteration 227 Progress Log for the full detail (re-reading `cmd_exterminate`/`db_exterminate` found it is a direct DB mutation with no real `server_chat` dependency at all, unlike `/values`+`/showvalues`/`/allow` which genuinely are cross-area broadcasts and remain open). New `migrations/0019_ip_bans.sql` (`ip_bans` table, this codebase's `iplog`/`ipban` stand-in populated from the existing `login_sessions.ip_address` history); new `CharacterRepository::exterminate_account` (`crates/ugaris-db/src/character.rs`) locks the target's owning account and bans every distinct IP it has logged in from for 28 days; new `is_ip_banned` helper wires a genuine per-connecting-IP check into `begin_login_tx` (`||`-ed alongside the pre-existing static `accounts.ip_locked` flag, which nothing had ever set - this closes a real, related gap in `LoginOutcome::IpLocked`'s own C fidelity, since `isbanned_iplog` is keyed on the connecting IP independent of account, not a per-account static flag). New `crates/ugaris-core/src/world/exterminate.rs` (`ExterminateRequest`, `World::queue_exterminate_command`/`drain_pending_exterminate_requests` - no synchronous validation before queuing, matching C's own lack of one) and `world_events.rs::apply_exterminate_events` (C's exact "Locked %d accounts and %d IP addresses."/"Player '%s' not found." reply text). Dispatch wired in `commands_admin.rs` right after `/unpunish`, `CF_STAFF|CF_GOD`-gated full-word-only matching C's `cmdcmp(ptr, "exterminate", 11)`. Verified against a real throwaway `postgres:16-alpine` Docker container with every migration `0001`-`0019` applied fresh: new live tests cover `exterminate_account` (account lock, distinct-IP dedup across repeat logins, not-found path), `is_ip_banned` (unexpired vs. expired ban rows), and a full `begin_login_tx` rejection from a banned IP with the old `ip_locked` flag left `false` (proving the new gate doesn't just piggyback on the old one) - confirmed the one pre-existing `character::tests::live_login::exempts_account_id_one_from_duplicate_login_check` failure already reproduces identically on the unmodified tree (a `accounts_id_seq`/committed-row ordering flake unrelated to this change, left untouched). `cargo fmt --all`, `cargo test --workspace` (2112 ugaris-core [+4] + 77 db [+4] + 3 net + 45 protocol + 1067 server [+7], all green, zero failures), `cargo build -p ugaris-server`/`cargo build --workspace` clean with zero warnings, 10s boot-smoke confirmed "entering Rust game loop" with no panic. Remaining on the "Cross-area transfer" task: `/values`+`/showvalues`/`/allow` (genuine cross-area broadcasts, need their own local-process-only pragmatic slice - see the todo entry's note) and the still-untested live-Postgres save+redirect path.

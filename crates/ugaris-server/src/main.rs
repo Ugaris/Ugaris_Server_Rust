@@ -7179,6 +7179,19 @@ async fn main() -> anyhow::Result<()> {
                         "applied /unpunish events"
                     );
                 }
+                // `/exterminate <name>`'s async DB round trip (C
+                // `exterminate`/`db_exterminate`, `src/system/database/
+                // database_admin.c:29-95,503-507`), queued by
+                // `World::queue_exterminate_command` above.
+                let exterminate_events_applied =
+                    apply_exterminate_events(&mut world, &character_repository).await;
+                if exterminate_events_applied != 0 {
+                    info!(
+                        exterminate_events_applied,
+                        tick = world.tick.0,
+                        "applied /exterminate events"
+                    );
+                }
                 // `/look <name>`'s async DB round trip (C `read_notes`/
                 // `db_read_notes`/`list_punishment`), queued by
                 // `World::queue_look_command` above.

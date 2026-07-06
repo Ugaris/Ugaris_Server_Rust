@@ -4245,6 +4245,62 @@ pub(crate) async fn apply_unlockname_events(
     applied
 }
 
+/// `/exterminate <name>`'s async DB round trip (C `exterminate`/
+/// `db_exterminate`, `src/system/database/database_admin.c:29-95,
+/// 503-507`) - see `world/exterminate.rs`'s module doc comment for why
+/// this is a direct account lock + IP ban rather than a `server_chat`
+/// relay.
+///
+/// - target not found -> "Player '%s' not found." (C's exact text,
+///   `database_admin.c:92`).
+/// - query error -> "Failed to exterminate %s." (this codebase's own
+///   error-path convention, matching `apply_lockname_events`/
+///   `apply_rename_events` - C has no equivalent distinct message since
+///   `db_exterminate` only ever `elog`s and returns on a query failure).
+/// - success -> "Locked %d accounts and %d IP addresses." (C's exact
+///   wording, `database_admin.c:83`, `nrc`/`nrb` renamed to this
+///   codebase's `locked_accounts`/`banned_ips`).
+pub(crate) async fn apply_exterminate_events(
+    world: &mut World,
+    character_repository: &Option<ugaris_db::PgCharacterRepository>,
+) -> usize {
+    let requests = world.drain_pending_exterminate_requests();
+    if requests.is_empty() {
+        return 0;
+    }
+    let Some(repository) = character_repository else {
+        return 0;
+    };
+    let mut applied = 0;
+    for request in requests {
+        match repository.exterminate_account(&request.target_name).await {
+            Ok(Some(outcome)) => {
+                world.queue_system_text(
+                    request.caller_id,
+                    format!(
+                        "Locked {} accounts and {} IP addresses.",
+                        outcome.locked_accounts, outcome.banned_ips
+                    ),
+                );
+            }
+            Ok(None) => {
+                world.queue_system_text(
+                    request.caller_id,
+                    format!("Player '{}' not found.", request.target_name),
+                );
+            }
+            Err(_) => {
+                world.queue_system_text(
+                    request.caller_id,
+                    format!("Failed to exterminate {}.", request.target_name),
+                );
+            }
+        }
+        applied += 1;
+    }
+    applied
+}
+
 #[cfg(test)]
 mod lastseen_tests {
     use super::*;
@@ -5616,6 +5672,31 @@ mod lockname_tests {
         assert_eq!(applied, 0);
         assert!(world.drain_pending_system_texts().is_empty());
         assert!(world.drain_pending_unlockname_lookups().is_empty());
+    }
+}
+
+#[cfg(test)]
+mod exterminate_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn no_requests_queued_is_a_cheap_no_op() {
+        let mut world = World::default();
+        let applied = apply_exterminate_events(&mut world, &None).await;
+        assert_eq!(applied, 0);
+        assert!(world.drain_pending_system_texts().is_empty());
+    }
+
+    #[tokio::test]
+    async fn missing_repository_drains_the_queue_without_a_reply() {
+        let mut world = World::default();
+        world.queue_exterminate_command(CharacterId(1), "Baddie");
+        assert!(world.drain_pending_system_texts().is_empty());
+
+        let applied = apply_exterminate_events(&mut world, &None).await;
+        assert_eq!(applied, 0);
+        assert!(world.drain_pending_system_texts().is_empty());
+        assert!(world.drain_pending_exterminate_requests().is_empty());
     }
 }
 

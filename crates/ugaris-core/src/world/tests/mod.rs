@@ -23,6 +23,7 @@ mod dungeon_master;
 mod effect_tick;
 mod effects;
 mod exp;
+mod exterminate;
 mod gate_fight;
 mod gatekeeper;
 mod hurt;

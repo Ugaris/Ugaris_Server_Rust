@@ -10723,6 +10723,76 @@ Unlocks every quest NPC. Do these before any P4 area work.
   only remaining gap for the whole "Cross-area transfer" task besides
   (2), since every `area_id != config.area_id` call site is wired and
   the liveness heartbeat now matches C's own cadence.
+  REMAINING (iteration 227): closed the `/exterminate` third of gap (2)
+  by re-reading its full C call chain (`cmd_exterminate`, `command.c:
+  2639-2651` -> `exterminate`/`db_exterminate`,
+  `src/system/database/database_admin.c:29-95,503-507`) and discovering
+  it is **not** actually a `server_chat` cross-area feature at all - C's
+  own `db_exterminate` is a direct, synchronous DB mutation (lock the
+  target's `subscriber` row, `INSERT ipban SELECT ip FROM iplog WHERE
+  sID=...`, mark `banned='I'`) with no cross-process messaging in its
+  real effect path; `server_chat(31, ...)` in `cmd_exterminate` itself
+  is only a same-message staff-broadcast echo, and `tell_chat`'s
+  `send_chat`/`rec_chat` fallback already runs locally with no relay
+  server connected (confirmed by re-reading `chat.c`'s `send_chat`) -
+  so this command needed no design work, only a real port. New
+  migration `migrations/0019_ip_bans.sql` adds an `ip_bans` table (this
+  codebase's `iplog`+`ipban` stand-in, populated from the existing
+  `login_sessions.ip_address` history); `CharacterRepository::
+  exterminate_account` (`crates/ugaris-db/src/character.rs`) resolves a
+  character name to its account, sets `accounts.locked = true` (already
+  enforced by `begin_login_tx`'s pre-existing `account_locked` gate),
+  and bans every distinct IP that account ever logged in from for 28
+  days (C's exact `time_now + 60*60*24*7*4`). Also closed a real,
+  related pre-existing gap while in this code: the `LoginOutcome::
+  IpLocked`/`accounts.ip_locked` column was only ever a static
+  per-account flag nothing wrote to - C's actual `isbanned_iplog` check
+  (`database_character.c:660`) is keyed on the *connecting* IP,
+  independent of which account is logging in, which is the real
+  mechanism `/exterminate`'s ban needs to have any teeth (otherwise a
+  banned player could just make a new account from the same address);
+  `begin_login_tx` now also calls a new `is_ip_banned` helper querying
+  `ip_bans` for the connecting IP, `||`-ed with the pre-existing static
+  flag so neither gate regresses. `world/exterminate.rs` (`ugaris-core`)
+  ports `cmd_exterminate`'s parse (full-word `CF_STAFF|CF_GOD` gate,
+  `isalpha` name token, no other synchronous validation - unlike
+  `/lockname`, C does none) and queues a `World`-independent
+  `ExterminateRequest`; `ugaris-server`'s `world_events.rs::
+  apply_exterminate_events` resolves it, replying with C's exact
+  "Locked %d accounts and %d IP addresses."/"Player '%s' not found."
+  text (skipping only the untracked `sendmail` notification and the
+  `server_chat(31, ...)` cross-area staff echo, matching this
+  codebase's established skip-untracked-C-side-effect convention).
+  Verified against a real throwaway `postgres:16-alpine` Docker
+  container (all migrations `0001`-`0019` applied fresh): new live tests
+  cover `exterminate_account` locking the account, deduping repeat-IP
+  login history into exactly one ban row per distinct IP, the
+  not-found path, `is_ip_banned` respecting an unexpired vs. expired
+  row, and a full `begin_login_tx` rejection from a banned IP with
+  `ip_locked` left `false` (proving the new gate is independent of the
+  old one) - plus offline/no-repository and dispatch-gating/parsing
+  tests requiring no database. `cargo fmt --all`, `cargo test
+  --workspace` (2112 ugaris-core [+4] + 77 db [+4] + 3 net + 45 protocol
+  + 1067 server [+7], all green, zero failures), `cargo build -p
+  ugaris-server`/`--workspace` clean with zero warnings, 10s boot-smoke
+  confirmed "entering Rust game loop" with no panic. Still missing: (2)
+  `/values`/`/showvalues` (`look_values`/`show_values`, `command.c:
+  499-533`) and `/allow` (`allow_body`/`allow_body_db`, `death.c:
+  1013-1063`) remain - unlike `/exterminate`, these two genuinely
+  broadcast to *every* area server (`server_chat(1026/1027/1037, ...)`)
+  since the target's live in-memory state (loaded character values,
+  corpse containers) could be on any of them; the pragmatic single-
+  process slice is to resolve the name via a direct `characters` table
+  query (already portable, no relay needed - see `lookup_name`/
+  `db_lookup_name`'s C source, itself also just a synchronous DB query
+  with an in-memory LRU this codebase has no equivalent of) and then
+  only act if the resolved character happens to be loaded in *this*
+  process's `World`, leaving genuine cross-process reach as an explicit
+  gap (matching the many existing "cross-area/offline chat routing"
+  gaps already documented elsewhere in this file, e.g. the `/tell`/chat
+  rows) rather than inventing a real message-bus design nobody has
+  asked for yet; (3) the DB-backed save+redirect path (the original,
+  unrelated cross-area-transfer gap) still has no live-Postgres test.
 
 - [ ] **Player-side fight-driver auto-combat (lostcon self-defense +
   no*/auto* toggle family)** - `fight_driver_attack_enemy`/
