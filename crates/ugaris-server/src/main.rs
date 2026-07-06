@@ -6844,6 +6844,35 @@ async fn main() -> anyhow::Result<()> {
                         "applied /unpunish events"
                     );
                 }
+                // `/look <name>`'s async DB round trip (C `read_notes`/
+                // `db_read_notes`/`list_punishment`), queued by
+                // `World::queue_look_command` above.
+                let look_events_applied =
+                    apply_look_events(&mut world, &character_repository, &notes_repository).await;
+                if look_events_applied != 0 {
+                    info!(
+                        look_events_applied,
+                        tick = world.tick.0,
+                        "applied /look events"
+                    );
+                }
+                // `/klog`'s async DB round trip (C `karmalog`/
+                // `db_karmalog`/`karmalog_s`), queued by
+                // `World::queue_klog_command` above.
+                let klog_events_applied = apply_klog_events(
+                    &mut world,
+                    &character_repository,
+                    &notes_repository,
+                    current_unix_time(),
+                )
+                .await;
+                if klog_events_applied != 0 {
+                    info!(
+                        klog_events_applied,
+                        tick = world.tick.0,
+                        "applied /klog events"
+                    );
+                }
                 // C `military_master_driver`: the mission-giving Military
                 // Master NPC (`src/module/military.c`).
                 world.process_military_master_actions(config.area_id, current_unix_time());

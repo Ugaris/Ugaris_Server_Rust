@@ -9656,6 +9656,85 @@ Unlocks every quest NPC. Do these before any P4 area work.
   separate, unported gap) remain open; next iteration should pick one of
   those.
 
+  Progress Log (iteration 208): closed gap (c) - ported `/look <name>`
+  (`command.c:8990-9019`, `CF_GOD|CF_STAFF`-gated inline handler,
+  `read_notes`/`db_read_notes`/`list_punishment`) and `/klog`
+  (`command.c:9022-9024` -> `karmalog`/`db_karmalog`/`karmalog_s`, also
+  `CF_GOD|CF_STAFF`-gated, no argument) in full, including the
+  previously-unported reverse ID->name lookup (C `lookup_ID`/
+  `db_lookup_id`, `src/system/lookup.c:98-135` + `src/system/database/
+  database_lookup.c:20-48`) both commands' note-creator/note-target name
+  display needs. Added `CharacterRepository::find_name_by_id`
+  (`crates/ugaris-db/src/character.rs`, a plain `select name from
+  characters where id = $1` - this codebase has no analogue of C's
+  4096-entry/1-hour LRU cache, since every lookup here is already a
+  per-tick deferred DB round trip, not a synchronous in-memory read) and
+  two new `NotesRepository` methods on the `notes` table iteration 207
+  added (`crates/ugaris-db/src/notes.rs`): `list_notes_for_character`
+  (`db_read_notes`'s `SELECT ... WHERE uID=%d`, ordered by `id`, for
+  `/look`) and `list_recent_notes` (`db_karmalog`'s `SELECT ... WHERE
+  date >= %d ORDER BY date DESC LIMIT 60`, for `/klog`'s rolling 24-hour
+  window), both returning a shared `NoteRow` struct. New `ugaris-core`
+  module `world/look.rs`: `World::queue_look_command`/
+  `drain_pending_look_requests` (name-shape validation reusing
+  `world/lastseen.rs`'s `is_valid_lookup_name`, exactly mirroring C's
+  synchronous `lookup_name == -1` fast path, before ever queuing) and
+  `World::queue_klog_command`/`drain_pending_klog_requests` (no
+  validation at all - `/klog` takes no argument in C either). New
+  `ugaris-server` functions `apply_look_events`/`apply_klog_events`
+  (`world_events.rs`) resolve the deferred DB round trips and reply via
+  `World::queue_system_text`, reusing `world/punish.rs`'s existing
+  `PunishmentNote`/`decode_punishment_note`/`PUNISHMENT_NOTE_KIND` to
+  decode each `kind = 1` row (every other note `kind` is silently
+  skipped, matching C's own `default: xlog(...)` branch never reaching
+  the player) - plus two pure, unit-tested formatting helpers
+  (`format_look_note_line`/`format_klog_line`) reproducing
+  `list_punishment`'s full-date-and-time line and `karmalog_s`'s
+  time-only line byte for byte, using the pre-existing `xmas.rs`
+  `civil_from_unix_seconds` UTC-approximation helper `clan_log.rs`
+  already established as this workspace's `chrono`-free `localtime`
+  convention. C's `ID == 0` ("Character lookup is in progress")
+  intermediate state has no analogue here (documented in `world/look.rs`'s
+  module doc comment) since this codebase's name resolution is a single
+  deferred-to-next-tick round trip, never a multi-tick cache-fill from
+  the caller's point of view. Wired both commands into
+  `apply_admin_character_command` (`commands_admin.rs`) right after
+  `/unpunish`, and both event functions into `main.rs`'s tick loop right
+  after `apply_unpunish_events`. 4 new `ugaris-core` tests
+  (`world/tests/look.rs`: empty-argument/invalid-shape immediate replies,
+  valid-shape queuing for `/look`, unconditional queuing for `/klog`), 7
+  new `ugaris-db` tests (`character.rs`: 1 SQL-shape test for
+  `find_name_by_id`; `notes.rs`: 2 SQL-shape tests plus 2 new
+  `DATABASE_URL`-gated live round-trip tests for the two new methods,
+  reusing a dedicated `LIST_TEST_CHARACTER` id distinct from `punish`'s
+  own `TEST_CHARACTER` so the two modules' live tests can't collide), 13
+  new `ugaris-server` tests (8 in `tests/commands_admin.rs`: permission
+  gates, valid queuing, `/look`'s empty-argument immediate reply, and
+  full-word-only abbreviation rejection for both commands; 5 in
+  `world_events.rs`'s new `look_tests`/`klog_tests`: the two pure
+  formatting functions plus no-requests/missing-repository no-op pairs).
+  `cargo fmt --all`, `cargo test --workspace` (2094 ugaris-core [+4] + 67
+  db [+5] + 3 net + 44 protocol + 958 server [+13], all green, zero
+  failures), `cargo build -p ugaris-server` / `cargo build --workspace`
+  clean with zero warnings, 10s boot-smoke confirmed "entering Rust game
+  loop" with no panic. This closes gap (c) entirely. REMAINING: gap (a)
+  (`ac*` subscriber_id/aggregate-query/multi-account/signature-management
+  sub-gaps) and the `values`/`showvalues` half of what used to be gap (c)
+  are still open - `values`/`showvalues` (`look_values`/`show_values`,
+  `command.c:501-534`) are a different pair of commands from `/look`/
+  `/klog` (confirmed by re-reading iteration 195's note): both resolve
+  their target via `lookup_name` (now unblocked by this iteration's own
+  `find_login_target`/`find_name_by_id` work) but then broadcast via
+  `server_chat` (packets 1027/1037) to sync a values-display request
+  across every area server - the same cross-area relay infra `/allow` is
+  still blocked on, so they remain unported; also still open:
+  `shutup`/`exterminate` (gap (b)'s remainder, blocked on
+  `subscriber_id`/`server_chat` per iteration 205's note). Next iteration
+  should pick gap (a) (the only remaining slice with no known cross-area/
+  schema blocker) or re-run the full `cmdcmp` cross-reference pass
+  (iteration 191's recipe, last done fresh at iteration 195) to confirm
+  no other gap has quietly become unblocked.
+
 - [ ] **Cross-area transfer** - the big multi-server feature. Every
   cross-area teleport currently returns "target server down". Decide the
   single-process stance first (likely: run multiple areas in one process

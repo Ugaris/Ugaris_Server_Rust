@@ -45,6 +45,7 @@ mod lab2_undead;
 mod lastseen;
 mod light;
 mod lockname;
+mod look;
 mod loot;
 mod lostcon;
 mod lq;
@@ -105,6 +106,7 @@ pub(crate) use lab2_undead::*;
 pub use lastseen::*;
 pub(crate) use light::*;
 pub use lockname::*;
+pub use look::*;
 pub use loot::*;
 pub use lq::*;
 pub use merchant::*;
@@ -407,6 +409,14 @@ pub struct World {
     /// `/unpunish <name> <note id>` async DB round trips - see
     /// `world/punish.rs`'s module doc comment.
     pending_unpunish_requests: Vec<UnpunishRequest>,
+    /// `#look <name>` async DB round trips (name resolution, then a
+    /// per-character notes list) - see `world/look.rs`'s module doc
+    /// comment.
+    pending_look_requests: Vec<LookRequest>,
+    /// `#klog` async DB round trips (no name to resolve - just the
+    /// caller's own id to reply to) - see `world/look.rs`'s module doc
+    /// comment.
+    pending_klog_requests: Vec<CharacterId>,
 }
 
 impl Default for Tick {

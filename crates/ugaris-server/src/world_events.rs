@@ -2972,6 +2972,213 @@ pub(crate) async fn apply_unpunish_events(
     applied
 }
 
+/// `/look <name>`'s async DB round trip (C `command.c:8990-9019`'s inline
+/// handler + `read_notes`/`db_read_notes`/`list_punishment`,
+/// `src/system/database/database_lookup.c:116-124` + `database_notes.c:
+/// 164-215` + `src/system/punish.c:26-38`): resolves every `World::
+/// drain_pending_look_requests` entry (queued by `World::
+/// queue_look_command`) by name via `find_login_target` (C's synchronous
+/// `lookup_name`), then lists every `kind = 1` note filed against the
+/// resolved character, each row's creator name resolved via
+/// `find_name_by_id` (C `lookup_ID`).
+///
+/// - no matching character -> "No character by the name %s." (folds C's
+///   `ID == -1` case; C's `ID == 0` "lookup in progress" case has no
+///   analogue here, see `World::queue_look_command`'s doc comment).
+/// - a match -> "Looking up character: %s (ID: %d)" (C's own immediate
+///   confirmation line, `command.c:9016`), then "Start of Notes:", one
+///   `format_look_note_line` per `kind = 1` row (oldest first, matching
+///   `NotesRepository::list_notes_for_character`'s `order by id`), then
+///   "End of Notes" - every other note `kind` is silently skipped (C's
+///   own `default: xlog(...)` branch never reaches the player either).
+///
+/// No-ops entirely (silent, but still drains the queue) when either
+/// `character_repository` or `notes_repository` is unconfigured.
+pub(crate) async fn apply_look_events(
+    world: &mut World,
+    character_repository: &Option<ugaris_db::PgCharacterRepository>,
+    notes_repository: &Option<ugaris_db::PgNotesRepository>,
+) -> usize {
+    let requests = world.drain_pending_look_requests();
+    if requests.is_empty() {
+        return 0;
+    }
+    let Some(character_repository) = character_repository else {
+        return 0;
+    };
+    let Some(notes_repository) = notes_repository else {
+        return 0;
+    };
+    let mut applied = 0;
+    for request in requests {
+        let Ok(Some(summary)) = character_repository
+            .find_login_target(&request.target_name)
+            .await
+        else {
+            world.queue_system_text(
+                request.requester_id,
+                format!("No character by the name {}.", request.target_name),
+            );
+            continue;
+        };
+        world.queue_system_text(
+            request.requester_id,
+            format!(
+                "Looking up character: {} (ID: {})",
+                summary.name, summary.id.0
+            ),
+        );
+        let Ok(notes) = notes_repository.list_notes_for_character(summary.id).await else {
+            continue;
+        };
+        world.queue_system_text(request.requester_id, "Start of Notes:".to_string());
+        for note in &notes {
+            if note.kind != PUNISHMENT_NOTE_KIND {
+                continue;
+            }
+            let Some(punishment) = decode_punishment_note(&note.content) else {
+                continue;
+            };
+            let creator_name = match character_repository.find_name_by_id(note.creator_id).await {
+                Ok(Some(name)) => name,
+                _ => "*unknown*".to_string(),
+            };
+            world.queue_system_text(
+                request.requester_id,
+                format_look_note_line(note.id, &punishment, &creator_name, note.created_at),
+            );
+        }
+        world.queue_system_text(request.requester_id, "End of Notes".to_string());
+        applied += 1;
+    }
+    applied
+}
+
+/// Pure message-formatting half of [`apply_look_events`], split out so
+/// the date arithmetic can be unit-tested without a live database. C
+/// `list_punishment` (`src/system/punish.c:26-38`)'s `localtime` is
+/// approximated in UTC, matching this codebase's established convention
+/// (see `clan_log.rs`'s `format_clan_log_entries` doc comment) since no
+/// `chrono`/timezone-database dependency exists in this workspace.
+fn format_look_note_line(
+    note_id: i64,
+    note: &PunishmentNote,
+    creator_name: &str,
+    created_at: i64,
+) -> String {
+    let (year, month, day) = civil_from_unix_seconds(created_at.max(0) as u64);
+    let seconds_of_day = created_at.max(0) as u64 % 86_400;
+    let hour = seconds_of_day / 3600;
+    let minute = (seconds_of_day % 3600) / 60;
+    let second = seconds_of_day % 60;
+    format!(
+        "P{note_id}: Level: {}, Exp: {}, Karma: {}, Creator: {creator_name}, Date: {month:02}/{day:02}/{year:04} {hour:02}:{minute:02}:{second:02}, Reason: {}",
+        note.level, note.exp, note.karma, note.reason
+    )
+}
+
+/// `/klog`'s async DB round trip (C `command.c:9022-9024` -> `karmalog`
+/// -> `db_karmalog`/`karmalog_s`, `src/system/database/database_notes.c:
+/// 230-275`): resolves every `World::drain_pending_klog_requests` entry
+/// (queued by `World::queue_klog_command`, which takes no argument -
+/// unlike `/look`, there is nothing to validate before queuing) against
+/// a single shared `NotesRepository::list_recent_notes` query (the last
+/// 24 hours, matching C's `date >= now - 86400` cutoff), reused across
+/// every requester in the drained batch rather than re-querying per
+/// caller.
+///
+/// Replies "Karmalog:", one `format_klog_line` per `kind = 1` row (newest
+/// first, matching `list_recent_notes`'s `order by date desc`), then
+/// "---" (C's own trailing separator, `database_notes.c:273`) - every
+/// other note `kind` is silently skipped, same as `/look`. A row whose
+/// target or creator id no longer resolves to a name falls back to
+/// `"*unknown*"`, matching C `lookup_ID`'s own `"*unknown*"` fallback for
+/// a cache slot with no name recorded (this codebase has no analogue of
+/// C's separate `"**deleted**"` case, since it has no in-memory
+/// name/ID cache to distinguish "never resolved" from "resolved to a
+/// numeric placeholder" - see `CharacterRepository::find_name_by_id`'s
+/// doc comment).
+///
+/// No-ops entirely (silent, but still drains the queue) when either
+/// `character_repository` or `notes_repository` is unconfigured.
+pub(crate) async fn apply_klog_events(
+    world: &mut World,
+    character_repository: &Option<ugaris_db::PgCharacterRepository>,
+    notes_repository: &Option<ugaris_db::PgNotesRepository>,
+    now_unix: i64,
+) -> usize {
+    let requesters = world.drain_pending_klog_requests();
+    if requesters.is_empty() {
+        return 0;
+    }
+    let Some(character_repository) = character_repository else {
+        return 0;
+    };
+    let Some(notes_repository) = notes_repository else {
+        return 0;
+    };
+    let since_unix = now_unix - 60 * 60 * 24;
+    let Ok(notes) = notes_repository.list_recent_notes(since_unix).await else {
+        return 0;
+    };
+    let mut applied = 0;
+    for requester_id in requesters {
+        world.queue_system_text(requester_id, "Karmalog:".to_string());
+        for note in &notes {
+            if note.kind != PUNISHMENT_NOTE_KIND {
+                continue;
+            }
+            let Some(target_id) = note.target_id else {
+                continue;
+            };
+            let Some(punishment) = decode_punishment_note(&note.content) else {
+                continue;
+            };
+            let offender_name = match character_repository.find_name_by_id(target_id).await {
+                Ok(Some(name)) => name,
+                _ => "*unknown*".to_string(),
+            };
+            let creator_name = match character_repository.find_name_by_id(note.creator_id).await {
+                Ok(Some(name)) => name,
+                _ => "*unknown*".to_string(),
+            };
+            world.queue_system_text(
+                requester_id,
+                format_klog_line(
+                    &offender_name,
+                    punishment.karma,
+                    &creator_name,
+                    &punishment.reason,
+                    note.created_at,
+                ),
+            );
+        }
+        world.queue_system_text(requester_id, "---".to_string());
+        applied += 1;
+    }
+    applied
+}
+
+/// Pure message-formatting half of [`apply_klog_events`] - see that
+/// function's doc comment. C `karmalog_s` (`database_notes.c:227-244`)
+/// prints only the time of day, not the full date (unlike
+/// [`format_look_note_line`]'s sibling `list_punishment` format).
+fn format_klog_line(
+    offender_name: &str,
+    karma: i32,
+    creator_name: &str,
+    reason: &str,
+    created_at: i64,
+) -> String {
+    let seconds_of_day = created_at.max(0) as u64 % 86_400;
+    let hour = seconds_of_day / 3600;
+    let minute = (seconds_of_day % 3600) / 60;
+    let second = seconds_of_day % 60;
+    format!(
+        "{offender_name}, {karma} Karma from {creator_name} for {reason} at {hour:02}:{minute:02}:{second:02}."
+    )
+}
+
 /// `/rename <from> <to>`'s async DB round trip (C `do_rename`/
 /// `db_rename`, `src/system/database/database_admin.c:291-355`):
 /// resolves every `World::drain_pending_rename_lookups` entry (queued by
@@ -3720,5 +3927,81 @@ mod punish_tests {
         assert_eq!(applied, 0);
         assert!(world.drain_pending_system_texts().is_empty());
         assert!(world.drain_pending_unpunish_requests().is_empty());
+    }
+}
+
+#[cfg(test)]
+mod look_tests {
+    use super::*;
+
+    #[test]
+    fn format_look_note_line_matches_c_list_punishment_shape() {
+        let note = PunishmentNote {
+            level: 3,
+            exp: 400,
+            karma: 4,
+            reason: "being mean".to_string(),
+        };
+        // 1_000_000_000 unix seconds = 2001-09-09 01:46:40 UTC.
+        let line = format_look_note_line(7, &note, "Godmode", 1_000_000_000);
+        assert_eq!(
+            line,
+            "P7: Level: 3, Exp: 400, Karma: 4, Creator: Godmode, Date: 09/09/2001 01:46:40, Reason: being mean"
+        );
+    }
+
+    #[tokio::test]
+    async fn no_look_requests_queued_is_a_cheap_no_op() {
+        let mut world = World::default();
+        let applied = apply_look_events(&mut world, &None, &None).await;
+        assert_eq!(applied, 0);
+        assert!(world.drain_pending_system_texts().is_empty());
+    }
+
+    #[tokio::test]
+    async fn missing_repository_drains_the_look_queue_without_a_reply() {
+        let mut world = World::default();
+        world.queue_look_command(CharacterId(1), "Baddie");
+        assert!(world.drain_pending_system_texts().is_empty());
+
+        let applied = apply_look_events(&mut world, &None, &None).await;
+        assert_eq!(applied, 0);
+        assert!(world.drain_pending_system_texts().is_empty());
+        assert!(world.drain_pending_look_requests().is_empty());
+    }
+}
+
+#[cfg(test)]
+mod klog_tests {
+    use super::*;
+
+    #[test]
+    fn format_klog_line_matches_c_karmalog_s_shape_time_only_no_date() {
+        // 1_000_000_000 unix seconds = 2001-09-09 01:46:40 UTC.
+        let line = format_klog_line("Baddie", -4, "Godmode", "being mean", 1_000_000_000);
+        assert_eq!(
+            line,
+            "Baddie, -4 Karma from Godmode for being mean at 01:46:40."
+        );
+    }
+
+    #[tokio::test]
+    async fn no_klog_requests_queued_is_a_cheap_no_op() {
+        let mut world = World::default();
+        let applied = apply_klog_events(&mut world, &None, &None, 1_000).await;
+        assert_eq!(applied, 0);
+        assert!(world.drain_pending_system_texts().is_empty());
+    }
+
+    #[tokio::test]
+    async fn missing_repository_drains_the_klog_queue_without_a_reply() {
+        let mut world = World::default();
+        world.queue_klog_command(CharacterId(1));
+        assert!(world.drain_pending_system_texts().is_empty());
+
+        let applied = apply_klog_events(&mut world, &None, &None, 1_000).await;
+        assert_eq!(applied, 0);
+        assert!(world.drain_pending_system_texts().is_empty());
+        assert!(world.drain_pending_klog_requests().is_empty());
     }
 }

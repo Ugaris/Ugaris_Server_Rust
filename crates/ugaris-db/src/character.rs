@@ -226,6 +226,21 @@ pub trait CharacterRepository: Send + Sync {
         character_id: CharacterId,
         locked: bool,
     ) -> anyhow::Result<()>;
+    /// C `db_lookup_id`/`lookup_ID` (`src/system/database/database_lookup.c:
+    /// 20-48` + `src/system/lookup.c:98-135`): reverse ID->name
+    /// resolution, used by `/look`'s note-creator-name display and
+    /// `/klog`'s karmalog target/creator names (`list_punishment`/
+    /// `karmalog_s`, `src/system/punish.c:26-38` + `database_notes.c:
+    /// 227-244`). C caches this behind a 4096-entry, 1-hour LRU
+    /// (`lookup.c`'s `MAXLOOK`/`lookup_ID`); this codebase has no such
+    /// in-memory cache (every lookup here is already a per-tick deferred
+    /// DB round trip, see `world/lastseen.rs`'s module doc comment), so
+    /// this queries `characters` directly on every call. Returns `None`
+    /// for an unknown id, matching C's `lookup_ID` returning `-1` with no
+    /// row found (this codebase has no analogue of C's `"*unknown*"`/
+    /// `"**deleted**"` placeholder strings - the caller substitutes its
+    /// own fallback text).
+    async fn find_name_by_id(&self, character_id: CharacterId) -> anyhow::Result<Option<String>>;
 }
 
 #[derive(Debug, Clone)]
@@ -450,7 +465,17 @@ impl CharacterRepository for PgCharacterRepository {
             .await?;
         Ok(())
     }
+
+    async fn find_name_by_id(&self, character_id: CharacterId) -> anyhow::Result<Option<String>> {
+        let row = sqlx::query_as::<_, (String,)>(FIND_NAME_BY_ID_SQL)
+            .bind(character_id.0 as i64)
+            .fetch_optional(&self.pool)
+            .await?;
+        Ok(row.map(|(name,)| name))
+    }
 }
+
+const FIND_NAME_BY_ID_SQL: &str = "select name from characters where id = $1";
 
 const SAVE_CHARACTER_BACKUP_SQL: &str = "update characters set \
 name = $1, description = $2, flags_bits = $3, speed_mode = $4, \
@@ -974,6 +999,14 @@ mod tests {
         assert!(SAVE_CHARACTER_LOGOUT_SQL.contains("logout_time = now()"));
         assert!(SAVE_CHARACTER_LOGOUT_SQL
             .contains("where id = $36 and current_area = $37 and current_mirror = $38"));
+    }
+
+    #[test]
+    fn find_name_by_id_sql_looks_up_by_bare_id() {
+        assert_eq!(
+            FIND_NAME_BY_ID_SQL,
+            "select name from characters where id = $1"
+        );
     }
 
     #[test]

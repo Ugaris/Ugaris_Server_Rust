@@ -9013,3 +9013,118 @@ fn unpunish_command_abbreviation_is_not_recognized() {
     )
     .is_none());
 }
+
+// C `/look <name>` (`command.c:8990-9019`), `CF_GOD|CF_STAFF`-gated,
+// full-word only.
+
+#[test]
+fn look_command_requires_god_or_staff() {
+    let mut world = goto_test_world();
+    let caller_id = CharacterId(1);
+    let caller = login_character(caller_id, &login_block("Ralph"), 3, 10, 10);
+    assert!(world.spawn_character(caller, 10, 10));
+    let mut runtime = ServerRuntime::default();
+
+    assert!(
+        apply_admin_character_command(&mut world, &mut runtime, caller_id, "/look Baddie", 3)
+            .is_none()
+    );
+}
+
+#[test]
+fn look_command_accepts_staff_alone_and_queues_a_request() {
+    let mut world = goto_test_world();
+    let caller_id = CharacterId(1);
+    let mut caller = login_character(caller_id, &login_block("Ralph"), 3, 10, 10);
+    caller.flags.insert(CharacterFlags::STAFF);
+    assert!(world.spawn_character(caller, 10, 10));
+    let mut runtime = ServerRuntime::default();
+
+    let result =
+        apply_admin_character_command(&mut world, &mut runtime, caller_id, "/look Baddie", 3)
+            .expect("staff look command should be recognized");
+    assert!(result.messages.is_empty());
+    let queued = world.drain_pending_look_requests();
+    assert_eq!(queued.len(), 1);
+    assert_eq!(queued[0].target_name, "Baddie");
+}
+
+#[test]
+fn look_command_empty_argument_replies_immediately_without_queuing() {
+    let mut world = goto_test_world();
+    let caller_id = CharacterId(1);
+    let mut caller = login_character(caller_id, &login_block("Ralph"), 3, 10, 10);
+    caller.flags.insert(CharacterFlags::GOD);
+    assert!(world.spawn_character(caller, 10, 10));
+    let mut runtime = ServerRuntime::default();
+
+    apply_admin_character_command(&mut world, &mut runtime, caller_id, "/look", 3)
+        .expect("god look command should be recognized");
+    let texts = world.drain_pending_system_texts();
+    assert_eq!(texts.len(), 1);
+    assert_eq!(texts[0].message, "Expected a character name.");
+    assert!(world.drain_pending_look_requests().is_empty());
+}
+
+#[test]
+fn look_command_abbreviation_is_not_recognized() {
+    // C `cmdcmp(ptr, "look", 4)` requires the full four-letter word.
+    let mut world = goto_test_world();
+    let caller_id = CharacterId(1);
+    let mut caller = login_character(caller_id, &login_block("Ralph"), 3, 10, 10);
+    caller.flags.insert(CharacterFlags::GOD);
+    assert!(world.spawn_character(caller, 10, 10));
+    let mut runtime = ServerRuntime::default();
+
+    assert!(
+        apply_admin_character_command(&mut world, &mut runtime, caller_id, "/loo Baddie", 3)
+            .is_none()
+    );
+}
+
+// C `/klog` (`command.c:9022-9024` -> `karmalog`), `CF_GOD|CF_STAFF`-
+// gated, full-word only, no argument.
+
+#[test]
+fn klog_command_requires_god_or_staff() {
+    let mut world = goto_test_world();
+    let caller_id = CharacterId(1);
+    let caller = login_character(caller_id, &login_block("Ralph"), 3, 10, 10);
+    assert!(world.spawn_character(caller, 10, 10));
+    let mut runtime = ServerRuntime::default();
+
+    assert!(
+        apply_admin_character_command(&mut world, &mut runtime, caller_id, "/klog", 3).is_none()
+    );
+}
+
+#[test]
+fn klog_command_accepts_staff_alone_and_queues_a_request() {
+    let mut world = goto_test_world();
+    let caller_id = CharacterId(1);
+    let mut caller = login_character(caller_id, &login_block("Ralph"), 3, 10, 10);
+    caller.flags.insert(CharacterFlags::STAFF);
+    assert!(world.spawn_character(caller, 10, 10));
+    let mut runtime = ServerRuntime::default();
+
+    let result = apply_admin_character_command(&mut world, &mut runtime, caller_id, "/klog", 3)
+        .expect("staff klog command should be recognized");
+    assert!(result.messages.is_empty());
+    let queued = world.drain_pending_klog_requests();
+    assert_eq!(queued, vec![caller_id]);
+}
+
+#[test]
+fn klog_command_abbreviation_is_not_recognized() {
+    // C `cmdcmp(ptr, "klog", 4)` requires the full four-letter word.
+    let mut world = goto_test_world();
+    let caller_id = CharacterId(1);
+    let mut caller = login_character(caller_id, &login_block("Ralph"), 3, 10, 10);
+    caller.flags.insert(CharacterFlags::GOD);
+    assert!(world.spawn_character(caller, 10, 10));
+    let mut runtime = ServerRuntime::default();
+
+    assert!(
+        apply_admin_character_command(&mut world, &mut runtime, caller_id, "/klo", 3).is_none()
+    );
+}

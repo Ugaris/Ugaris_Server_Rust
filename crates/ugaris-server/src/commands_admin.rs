@@ -4803,6 +4803,50 @@ pub(crate) fn apply_admin_character_command(
         });
     }
 
+    // C `/look <name>` (`command.c:8990-9019`), `CF_GOD|CF_STAFF`-gated,
+    // full-word only (`cmdcmp`'s `minlen` is 4, the full length of
+    // "look", no abbreviation accepted). Unlike `/punish`'s `take_legacy_
+    // alpha_name`, C passes its *entire*, untokenized trimmed remainder
+    // to `lookup_name` (no alpha-only prefix extraction) - see `World::
+    // queue_look_command`'s doc comment for why that's safe to reproduce
+    // as a plain `trim_start()`. Always returns a `default()` result
+    // immediately; every reply line arrives later via `World::
+    // queue_system_text` (same fire-and-forget async pattern as
+    // `/punish`/`/unpunish` above).
+    if lower == "look" {
+        let Some(caller) = world.characters.get(&character_id) else {
+            return Some(KeyringCommandResult::default());
+        };
+        if !caller
+            .flags
+            .intersects(CharacterFlags::STAFF | CharacterFlags::GOD)
+        {
+            return None;
+        }
+        world.queue_look_command(character_id, rest.trim_start());
+        return Some(KeyringCommandResult::default());
+    }
+
+    // C `/klog` (`command.c:9022-9024` -> `karmalog`), `CF_GOD|CF_STAFF`-
+    // gated, full-word only (`cmdcmp`'s `minlen` is 4, the full length of
+    // "klog"). Takes no argument at all. Always returns a `default()`
+    // result immediately; every reply line arrives later via `World::
+    // queue_system_text` (same fire-and-forget async pattern as
+    // `/look` above).
+    if lower == "klog" {
+        let Some(caller) = world.characters.get(&character_id) else {
+            return Some(KeyringCommandResult::default());
+        };
+        if !caller
+            .flags
+            .intersects(CharacterFlags::STAFF | CharacterFlags::GOD)
+        {
+            return None;
+        }
+        world.queue_klog_command(character_id);
+        return Some(KeyringCommandResult::default());
+    }
+
     // C `/showflags` (`command.c:8798-8805`, `cmd_show_flags`,
     // `command.c:4839-5061`), `CF_GOD`-gated, full-word only (`cmdcmp`'s
     // `minlen` is 9, the full length of "showflags", so no abbreviation
