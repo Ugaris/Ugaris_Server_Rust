@@ -7857,3 +7857,82 @@ fn acstats_and_aclist_only_gather_online_players_with_a_known_anticheat_session(
         }]
     );
 }
+
+#[test]
+fn accleanup_is_god_only_unlike_its_staff_accessible_siblings() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (_god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+    let mut staff = login_character(CharacterId(20), &login_block("Staffer"), 1, 12, 10);
+    staff.flags.insert(CharacterFlags::STAFF);
+    world.add_character(staff);
+
+    assert!(
+        apply_admin_character_command(&mut world, &mut runtime, target_id, "#accleanup 30", 1)
+            .is_none()
+    );
+    assert!(apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        CharacterId(20),
+        "#accleanup 30",
+        1
+    )
+    .is_none());
+}
+
+#[test]
+fn accleanup_without_a_days_argument_shows_usage() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+
+    let result = apply_admin_character_command(&mut world, &mut runtime, god_id, "#accleanup", 1)
+        .expect("god accleanup should be recognized");
+    assert_eq!(
+        result.messages,
+        vec![
+            "Usage: #accleanup <days>",
+            "Deletes AC records older than <days> days.",
+        ]
+    );
+    assert!(world.drain_pending_ac_cleanup_lookups().is_empty());
+}
+
+#[test]
+fn accleanup_below_the_seven_day_minimum_is_rejected() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+
+    for days in ["0", "6", "-5", "notanumber"] {
+        let result = apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            god_id,
+            &format!("#accleanup {days}"),
+            1,
+        )
+        .expect("god accleanup should be recognized");
+        assert_eq!(result.messages, vec!["Minimum retention is 7 days."]);
+    }
+    assert!(world.drain_pending_ac_cleanup_lookups().is_empty());
+}
+
+#[test]
+fn accleanup_at_or_above_the_minimum_queues_the_lookup_and_confirms() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+
+    let result = apply_admin_character_command(&mut world, &mut runtime, god_id, "#accleanup 7", 1)
+        .expect("god accleanup should be recognized");
+    assert_eq!(
+        result.messages,
+        vec!["Cleaning up records older than 7 days..."]
+    );
+    let queued = world.drain_pending_ac_cleanup_lookups();
+    assert_eq!(queued.len(), 1);
+    assert_eq!(queued[0].caller_id, god_id);
+    assert_eq!(queued[0].days, 7);
+}

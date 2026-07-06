@@ -80,3 +80,15 @@ fn queue_and_drain_ac_suspicious_lookup_round_trips() {
 fn ac_status_suspicious_constant_matches_c_header() {
     assert_eq!(AC_STATUS_SUSPICIOUS, 2);
 }
+
+#[test]
+fn queue_and_drain_ac_cleanup_lookup_round_trips() {
+    let mut world = World::default();
+    world.queue_ac_cleanup_lookup(CharacterId(3), 30);
+
+    let queued = world.drain_pending_ac_cleanup_lookups();
+    assert_eq!(queued.len(), 1);
+    assert_eq!(queued[0].caller_id, CharacterId(3));
+    assert_eq!(queued[0].days, 30);
+    assert!(world.drain_pending_ac_cleanup_lookups().is_empty());
+}

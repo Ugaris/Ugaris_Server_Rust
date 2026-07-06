@@ -2204,6 +2204,47 @@ pub(crate) async fn apply_ac_suspicious_events(
     applied
 }
 
+/// `#accleanup <days>`'s async DB round trip - see `ugaris-core`'s
+/// `world/anticheat.rs` module doc comment. Reproduces `ac_cmd_cleanup`
+/// (`anticheat.c:1267-1285`): deletes `anticheat_sessions` rows older
+/// than `days` (`AntiCheatRepository::cleanup_old_records`, already
+/// ported in iteration 196) and reports the row count back to the
+/// caller. C also deletes from a separate `ac_heartbeat_log` table
+/// (`db_ac_cleanup_heartbeat_logs`) this codebase has no equivalent of
+/// (heartbeat counters live on the session row itself) - the reported
+/// count for that half is always `0`, matching C's own always-present
+/// "%d heartbeat logs deleted" clause rather than dropping it. A failed
+/// delete (DB error) is silently skipped, matching every other offline-
+/// DB-lookup event in this file - no error message reaches the caller,
+/// same as a vanished session row elsewhere in this module.
+pub(crate) async fn apply_ac_cleanup_events(
+    world: &mut World,
+    anticheat_repository: &Option<ugaris_db::PgAntiCheatRepository>,
+) -> usize {
+    let lookups = world.drain_pending_ac_cleanup_lookups();
+    if lookups.is_empty() {
+        return 0;
+    }
+    let Some(repository) = anticheat_repository else {
+        return 0;
+    };
+    let mut applied = 0;
+    for lookup in lookups {
+        let Ok(deleted) = repository.cleanup_old_records(lookup.days).await else {
+            continue;
+        };
+        let heartbeat_logs_deleted = 0;
+        world.queue_system_text(
+            lookup.caller_id,
+            format!(
+                "Cleanup complete: {deleted} sessions, {heartbeat_logs_deleted} heartbeat logs deleted."
+            ),
+        );
+        applied += 1;
+    }
+    applied
+}
+
 /// `/jail`/`/unjail`'s async DB round trip (C `lookup_name`,
 /// `system/lookup.c:42-98` + `system/database/database_lookup.c:57-83`):
 /// resolves every `World::drain_pending_jail_lookups` entry (queued by a
@@ -2673,6 +2714,30 @@ mod ac_suspicious_tests {
         assert_eq!(applied, 0);
         assert!(world.drain_pending_system_texts().is_empty());
         assert!(world.drain_pending_ac_suspicious_lookups().is_empty());
+    }
+}
+
+#[cfg(test)]
+mod ac_cleanup_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn no_lookups_queued_is_a_cheap_no_op() {
+        let mut world = World::default();
+        let applied = apply_ac_cleanup_events(&mut world, &None).await;
+        assert_eq!(applied, 0);
+        assert!(world.drain_pending_system_texts().is_empty());
+    }
+
+    #[tokio::test]
+    async fn missing_repository_leaves_the_lookup_queued_state_untouched_but_drained() {
+        let mut world = World::default();
+        world.queue_ac_cleanup_lookup(CharacterId(7), 30);
+
+        let applied = apply_ac_cleanup_events(&mut world, &None).await;
+        assert_eq!(applied, 0);
+        assert!(world.drain_pending_system_texts().is_empty());
+        assert!(world.drain_pending_ac_cleanup_lookups().is_empty());
     }
 }
 

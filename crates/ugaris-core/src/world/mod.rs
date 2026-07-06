@@ -370,6 +370,9 @@ pub struct World {
     /// `#acsuspicious` async DB round trips - see `world/anticheat.rs`'s
     /// module doc comment.
     pending_ac_suspicious_lookups: Vec<AcSuspiciousLookup>,
+    /// `#accleanup <days>` async DB round trips - see
+    /// `world/anticheat.rs`'s module doc comment.
+    pending_ac_cleanup_lookups: Vec<AcCleanupLookup>,
 }
 
 impl Default for Tick {

@@ -5038,12 +5038,14 @@ pub(crate) fn apply_admin_character_command(
     // `world/clanmaster.rs`'s sibling helper) plus the
     // `PlayerRuntime::anticheat_session_id` lookup happen here,
     // synchronously, before queuing to `World` for the DB half. Only
-    // these five of the ~20-member family are ported so far (see
+    // these six of the ~20-member family are ported so far (see
     // `PORTING_TODO.md`'s remaining-text-commands task's REMAINING note);
     // `acreset`/`acflag`/`acunflag`/`actrust`/`acuntrust`/`acwatch`/
     // `achistory`/`acsessions`/`acviolations`/`acsharedip`/`acsharedhw`/
     // `achighrisk`/`aclookup`/`acsiglist`/`acsigadd`/`acsigdel`/
-    // `accleanup`/`acwarn` remain unported.
+    // `acwarn` remain unported. `#accleanup` (below, right after this
+    // block) needs no name resolution at all, so it isn't part of this
+    // shared `lower ==` arm.
     if lower == "achelp" {
         let Some(caller) = world.characters.get(&character_id) else {
             return Some(KeyringCommandResult::default());
@@ -5177,6 +5179,48 @@ pub(crate) fn apply_admin_character_command(
             world.queue_ac_suspicious_lookup(character_id, targets);
         }
         return Some(KeyringCommandResult::default());
+    }
+
+    // C `#accleanup <days>` (`command.c:10314-10319` dispatch, `CF_GOD`-
+    // only, unlike its `CF_GOD|CF_STAFF` siblings above; `ac_cmd_cleanup`,
+    // `anticheat.c:1267-1285`). A pure maintenance action with no name to
+    // resolve, so - unlike `#acstatus`/`#acstats`/`#aclist`/`#acsuspicious`
+    // - `days` is parsed and validated entirely synchronously here; only
+    // the delete itself needs the async DB round trip (see
+    // `apply_ac_cleanup_events`). C emits the "Cleaning up..." progress
+    // line synchronously (its DB call is same-thread), so the immediate
+    // reply below stands in for that line; the final "Cleanup complete"
+    // line is queued separately once the async delete finishes.
+    if lower == "accleanup" {
+        let Some(caller) = world.characters.get(&character_id) else {
+            return Some(KeyringCommandResult::default());
+        };
+        if !caller.flags.contains(CharacterFlags::GOD) {
+            return None;
+        }
+        let days_str = rest.trim_start();
+        if days_str.is_empty() {
+            return Some(KeyringCommandResult {
+                messages: vec![
+                    "Usage: #accleanup <days>".to_string(),
+                    "Deletes AC records older than <days> days.".to_string(),
+                ],
+                ..Default::default()
+            });
+        }
+        let days =
+            legacy_atoi_prefix(days_str).clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32;
+        if days < 7 {
+            return Some(KeyringCommandResult {
+                messages: vec!["Minimum retention is 7 days.".to_string()],
+                ..Default::default()
+            });
+        }
+        world.queue_ac_cleanup_lookup(character_id, days);
+        return Some(KeyringCommandResult {
+            messages: vec![format!("Cleaning up records older than {days} days...")],
+            ..Default::default()
+        });
     }
 
     // C `/clearppd <ppdname> [player]` (`command.c:10144-10146` dispatch,

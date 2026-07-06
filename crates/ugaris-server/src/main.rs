@@ -6628,6 +6628,15 @@ async fn main() -> anyhow::Result<()> {
                         "applied #acsuspicious lookups"
                     );
                 }
+                let ac_cleanup_events_applied =
+                    apply_ac_cleanup_events(&mut world, &anticheat_repository).await;
+                if ac_cleanup_events_applied != 0 {
+                    info!(
+                        ac_cleanup_events_applied,
+                        tick = world.tick.0,
+                        "applied #accleanup lookups"
+                    );
+                }
                 // `/jail`/`/unjail <name>`'s async DB round-trip (C
                 // `lookup_name`, `system/lookup.c:42-98` + `system/
                 // database/database_lookup.c:57-83`), queued by

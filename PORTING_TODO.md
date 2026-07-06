@@ -9038,6 +9038,66 @@ Unlocks every quest NPC. Do these before any P4 area work.
   still needs one of the architecture gaps this note and iteration 195's
   already named.
 
+  Progress Log (iteration 199): picked gap (a)'s identified quick win -
+  ported `#accleanup <days>` (`ac_cmd_cleanup`, `anticheat.c:1267-1285`,
+  `command.c:10314-10319` dispatch), `CF_GOD`-only (unlike its
+  `CF_GOD|CF_STAFF` siblings), exact-word only. Unlike every other
+  member of this family, it needs no name/session resolution at all -
+  `days` is parsed with the existing `legacy_atoi_prefix` and validated
+  entirely synchronously in `commands_admin.rs` (empty argument ->
+  two-line usage text; `days < 7` -> "Minimum retention is 7 days.",
+  matching C's own `atoi` semantics where a non-numeric argument silently
+  becomes `0` and hits the same minimum-retention rejection); only the
+  delete itself needs the async DB round trip, reusing
+  `AntiCheatRepository::cleanup_old_records` (already ported in
+  iteration 196, previously uncalled from anywhere in `ugaris-server`).
+  Added `ugaris-core`'s `world/anticheat.rs::AcCleanupLookup` +
+  `queue_ac_cleanup_lookup`/`drain_pending_ac_cleanup_lookups` (plus the
+  matching `pending_ac_cleanup_lookups` field in `world/mod.rs`) and
+  `ugaris-server`'s `world_events.rs::apply_ac_cleanup_events`, wired
+  into `main.rs`'s tick loop right after `apply_ac_suspicious_events`.
+  C also deletes from a separate `ac_heartbeat_log` table
+  (`db_ac_cleanup_heartbeat_logs`) this codebase has no equivalent of -
+  heartbeat counters live directly on the `anticheat_sessions` row
+  instead of a standalone log table - so the reported heartbeat-log
+  count is always `0`, matching C's own always-present "%d heartbeat
+  logs deleted" clause rather than dropping that half of the message.
+  Reproduced C's two-part message flow: the immediate "Cleaning up
+  records older than %d days..." line returns synchronously from the
+  command handler (standing in for C's own same-thread progress line
+  before its blocking DB call), and the final "Cleanup complete: %d
+  sessions, %d heartbeat logs deleted." line is queued separately once
+  the async delete finishes. A failed delete is silently skipped, no
+  error reaches the caller, matching every other offline-DB-lookup event
+  in `world_events.rs`. 1 new test in `ugaris-core`'s
+  `world/tests/anticheat.rs` (queue/drain round trip), 2 new tests in
+  `ugaris-server`'s `world_events.rs` (`ac_cleanup_tests`: no-lookups
+  no-op, missing-repository no-op, same shape as every sibling), 4 new
+  tests in `tests/commands_admin.rs` (`CF_GOD`-only gate rejecting both
+  a plain online target and a `CF_STAFF`-only character - the one real
+  behavioral difference from its `#acstatus`/`#acstats`/`#aclist`/
+  `#acsuspicious` siblings; missing-argument usage text; the `0`/`6`/
+  `-5`/`notanumber` minimum-retention rejection sweep; the `>= 7`
+  success path asserting both the confirmation message and the queued
+  `AcCleanupLookup`). `cargo fmt --all`, `cargo test --workspace` (2054
+  ugaris-core [+1] + 57 db + 3 net + 44 protocol + 871 server [+6], all
+  green, zero failures), `cargo build -p ugaris-server` / `cargo build
+  --workspace` clean with zero warnings, 10s boot-smoke confirmed
+  "entering Rust game loop" with no panic. Task stays `[~]`: this closes
+  gap (a)'s named quick win, but `acreset`/`acflag`/`acunflag`/
+  `actrust`/`acuntrust`/`acwatch`/`achistory`/`acsessions`/
+  `acviolations`/`acsharedip`/`acsharedhw`/`achighrisk`/`aclookup`/
+  `acsiglist`/`acsigadd`/`acsigdel`/`acwarn` are all still unported and
+  none of gaps (b)-(g) from iteration 195's list are touched by this
+  slice. REMAINING: no more quick wins remain in gap (a) without first
+  choosing a scoped-down design for the `subscriber_id`/`subscribers`
+  schema gap (`acflag`/`acunflag`/`actrust`/`acuntrust`) or the new
+  aggregate-query surface (`achistory`/`acsessions`/`acviolations`/
+  multi-account detection/signature management) - the next iteration
+  picking this up should make one of those an explicit design decision
+  (scoped port vs. skip, matching `/kick`'s precedent) rather than
+  looking for another already-solved building block.
+
 - [ ] **Cross-area transfer** - the big multi-server feature. Every
   cross-area teleport currently returns "target server down". Decide the
   single-process stance first (likely: run multiple areas in one process

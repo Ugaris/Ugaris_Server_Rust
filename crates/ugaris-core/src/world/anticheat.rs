@@ -1,11 +1,13 @@
-//! `#acstatus`, `#acstats`, `#aclist`, `#acsuspicious` admin/staff text
-//! commands (C `command.c:10149-10192` dispatch -> `ac_cmd_status`/
-//! `ac_cmd_stats`/`ac_cmd_list`/`ac_cmd_suspicious`,
-//! `src/module/anticheat/anticheat.c:473-543,604-628,721-780`), all
-//! `CF_GOD|CF_STAFF`-gated, exact-word only (`cmdcmp`'s `minlen` equals
-//! each command's full length). `#achelp` (a fifth member of this same
-//! slice) is pure static text and needs no queue at all - it lives
-//! directly in `commands_admin.rs`.
+//! `#acstatus`, `#acstats`, `#aclist`, `#acsuspicious`, `#accleanup`
+//! admin/staff text commands (C `command.c:10149-10192,10314-10319`
+//! dispatch -> `ac_cmd_status`/`ac_cmd_stats`/`ac_cmd_list`/
+//! `ac_cmd_suspicious`/`ac_cmd_cleanup`,
+//! `src/module/anticheat/anticheat.c:473-543,604-628,721-780,1267-1285`),
+//! all `CF_GOD|CF_STAFF`-gated except `#accleanup` (`CF_GOD`-only),
+//! exact-word only (`cmdcmp`'s `minlen` equals each command's full
+//! length). `#achelp` (a sixth member of this same slice) is pure static
+//! text and needs no queue at all - it lives directly in
+//! `commands_admin.rs`.
 //!
 //! C's `ac_cmd_*` family reads its data straight out of the in-memory
 //! `player[nr]->ac` struct, kept live by the detection engine
@@ -72,6 +74,23 @@ pub struct AcSuspiciousLookup {
     pub targets: Vec<AcOnlineTarget>,
 }
 
+/// `#accleanup <days>` (`ac_cmd_cleanup`, `anticheat.c:1267-1285`) - a
+/// pure maintenance action with no name/session resolution at all (unlike
+/// every other member of this module), so it needs no synchronous
+/// pre-gather step in `commands_admin.rs` beyond parsing `days` itself.
+/// C also deletes rows from a separate `ac_heartbeat_log` table
+/// (`db_ac_cleanup_heartbeat_logs`); this codebase folds heartbeat
+/// counters into `anticheat_sessions` itself (see that table's
+/// `heartbeat_violations` column) rather than a standalone log table, so
+/// there is nothing to delete there - `heartbeat_logs_deleted` is always
+/// `0`, reported as such rather than omitted, matching C's own always-
+/// present "%d heartbeat logs deleted" clause.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AcCleanupLookup {
+    pub caller_id: CharacterId,
+    pub days: i32,
+}
+
 impl World {
     pub fn queue_ac_status_lookup(
         &mut self,
@@ -119,6 +138,15 @@ impl World {
 
     pub fn drain_pending_ac_suspicious_lookups(&mut self) -> Vec<AcSuspiciousLookup> {
         self.pending_ac_suspicious_lookups.drain(..).collect()
+    }
+
+    pub fn queue_ac_cleanup_lookup(&mut self, caller_id: CharacterId, days: i32) {
+        self.pending_ac_cleanup_lookups
+            .push(AcCleanupLookup { caller_id, days });
+    }
+
+    pub fn drain_pending_ac_cleanup_lookups(&mut self) -> Vec<AcCleanupLookup> {
+        self.pending_ac_cleanup_lookups.drain(..).collect()
     }
 }
 
