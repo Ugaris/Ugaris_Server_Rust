@@ -1,13 +1,14 @@
-//! `#acstatus`, `#acstats`, `#aclist`, `#acsuspicious`, `#accleanup`
-//! admin/staff text commands (C `command.c:10149-10192,10314-10319`
-//! dispatch -> `ac_cmd_status`/`ac_cmd_stats`/`ac_cmd_list`/
-//! `ac_cmd_suspicious`/`ac_cmd_cleanup`,
-//! `src/module/anticheat/anticheat.c:473-543,604-628,721-780,1267-1285`),
-//! all `CF_GOD|CF_STAFF`-gated except `#accleanup` (`CF_GOD`-only),
-//! exact-word only (`cmdcmp`'s `minlen` equals each command's full
-//! length). `#achelp` (a sixth member of this same slice) is pure static
-//! text and needs no queue at all - it lives directly in
-//! `commands_admin.rs`.
+//! `#acstatus`, `#acstats`, `#aclist`, `#acsuspicious`, `#accleanup`,
+//! `#acreset`, `#acflag` admin/staff text commands (C
+//! `command.c:10149-10192,10314-10319` dispatch -> `ac_cmd_status`/
+//! `ac_cmd_stats`/`ac_cmd_list`/`ac_cmd_suspicious`/`ac_cmd_cleanup`/
+//! `ac_cmd_reset`/`ac_cmd_flag`,
+//! `src/module/anticheat/anticheat.c:473-593,604-628,721-780,1267-1285`),
+//! all `CF_GOD|CF_STAFF`-gated except `#accleanup`/`#acreset`
+//! (`CF_GOD`-only), exact-word only (`cmdcmp`'s `minlen` equals each
+//! command's full length). `#achelp` (an extra member of this same
+//! slice) is pure static text and needs no queue at all - it lives
+//! directly in `commands_admin.rs`.
 //!
 //! C's `ac_cmd_*` family reads its data straight out of the in-memory
 //! `player[nr]->ac` struct, kept live by the detection engine
@@ -104,6 +105,25 @@ pub struct AcResetLookup {
     pub session_id: i64,
 }
 
+/// `#acflag <player>` (`ac_cmd_flag`, `anticheat.c:568-593`),
+/// `CF_GOD|CF_STAFF`-gated (unlike `#acreset`'s `CF_GOD`-only). Same
+/// single-name-target shape as `AcResetLookup`; the DB half sets
+/// `status` to `AC_STATUS_FLAGGED` (`AntiCheatRepository::set_status`)
+/// rather than resetting counters. C's own mutation is a plain
+/// in-memory `player[nr]->ac.status = AC_STATUS_FLAGGED` assignment with
+/// no DB write at all (unlike its `#acunflag` sibling, which does write
+/// through `db_ac_session_set_status`/`db_ac_flag_player`/
+/// `db_ac_log_admin_action`) - this codebase has no in-memory struct to
+/// mutate, so the always-present `anticheat_sessions.status` column
+/// stands in via the same `set_status` mutation `#acstatus` already
+/// reads back from.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AcFlagLookup {
+    pub caller_id: CharacterId,
+    pub target_name: String,
+    pub session_id: i64,
+}
+
 impl World {
     pub fn queue_ac_status_lookup(
         &mut self,
@@ -178,6 +198,23 @@ impl World {
     pub fn drain_pending_ac_reset_lookups(&mut self) -> Vec<AcResetLookup> {
         self.pending_ac_reset_lookups.drain(..).collect()
     }
+
+    pub fn queue_ac_flag_lookup(
+        &mut self,
+        caller_id: CharacterId,
+        target_name: String,
+        session_id: i64,
+    ) {
+        self.pending_ac_flag_lookups.push(AcFlagLookup {
+            caller_id,
+            target_name,
+            session_id,
+        });
+    }
+
+    pub fn drain_pending_ac_flag_lookups(&mut self) -> Vec<AcFlagLookup> {
+        self.pending_ac_flag_lookups.drain(..).collect()
+    }
 }
 
 /// C `ac_status_string` (`anticheat.c:436-449`).
@@ -199,3 +236,7 @@ pub const AC_STATUS_SUSPICIOUS: i32 = 2;
 /// C `AC_STATUS_VERIFIED` (`anticheat.h:83`) - the status `#acreset`
 /// (`ac_cmd_reset`, `anticheat.c:557`) restores a session to.
 pub const AC_STATUS_VERIFIED: i32 = 1;
+
+/// C `AC_STATUS_FLAGGED` (`anticheat.h:85`) - the status `#acflag`
+/// (`ac_cmd_flag`, `anticheat.c:588`) sets a session to.
+pub const AC_STATUS_FLAGGED: i32 = 3;

@@ -5160,12 +5160,12 @@ pub(crate) fn apply_admin_character_command(
     // synchronously, before queuing to `World` for the DB half. Only
     // these six of the ~20-member family are ported so far (see
     // `PORTING_TODO.md`'s remaining-text-commands task's REMAINING note);
-    // `acreset`/`acflag`/`acunflag`/`actrust`/`acuntrust`/`acwatch`/
-    // `achistory`/`acsessions`/`acviolations`/`acsharedip`/`acsharedhw`/
-    // `achighrisk`/`aclookup`/`acsiglist`/`acsigadd`/`acsigdel`/
-    // `acwarn` remain unported. `#accleanup` (below, right after this
-    // block) needs no name resolution at all, so it isn't part of this
-    // shared `lower ==` arm.
+    // `acreset`/`acflag`/`acwatch` are also ported, further below;
+    // `acunflag`/`actrust`/`acuntrust`/`achistory`/`acsessions`/
+    // `acviolations`/`acsharedip`/`acsharedhw`/`achighrisk`/`aclookup`/
+    // `acsiglist`/`acsigadd`/`acsigdel`/`acwarn` remain unported.
+    // `#accleanup` (below, right after this block) needs no name
+    // resolution at all, so it isn't part of this shared `lower ==` arm.
     if lower == "achelp" {
         let Some(caller) = world.characters.get(&character_id) else {
             return Some(KeyringCommandResult::default());
@@ -5394,6 +5394,62 @@ pub(crate) fn apply_admin_character_command(
             });
         };
         world.queue_ac_reset_lookup(character_id, target_name, session_id);
+        return Some(KeyringCommandResult::default());
+    }
+
+    // C `#acflag <player>` (`command.c:10167-10174` dispatch, `CF_GOD|
+    // CF_STAFF`-gated, exact-word; `ac_cmd_flag`, `anticheat.c:568-593`).
+    // Same single-name-target resolution as `#acstatus`/`#acreset` above
+    // (online-`CF_PLAYER`-name scan, ascending-id tiebreak, then
+    // `PlayerRuntime::anticheat_session_id` lookup); the DB half sets
+    // `status` to `AC_STATUS_FLAGGED` rather than resetting counters -
+    // see `apply_ac_flag_events` for the confirmation message, queued
+    // only after the mutation actually succeeds (C's own reply is
+    // unconditional and same-thread, mutating an in-memory struct that
+    // always exists once a connection does).
+    if lower == "acflag" {
+        let Some(caller) = world.characters.get(&character_id) else {
+            return Some(KeyringCommandResult::default());
+        };
+        if !caller
+            .flags
+            .intersects(CharacterFlags::STAFF | CharacterFlags::GOD)
+        {
+            return None;
+        }
+        let name = rest.trim_start();
+        if name.is_empty() {
+            return Some(KeyringCommandResult {
+                messages: vec!["Usage: #acflag <player>".to_string()],
+                ..Default::default()
+            });
+        }
+        let mut candidates: Vec<&Character> = world
+            .characters
+            .values()
+            .filter(|character| {
+                character.flags.contains(CharacterFlags::PLAYER)
+                    && character.name.eq_ignore_ascii_case(name)
+            })
+            .collect();
+        candidates.sort_by_key(|character| character.id.0);
+        let Some(target_id) = candidates.first().map(|character| character.id) else {
+            return Some(KeyringCommandResult {
+                messages: vec![format!("Player '{name}' not found online.")],
+                ..Default::default()
+            });
+        };
+        let target_name = world.characters[&target_id].name.clone();
+        let Some(session_id) = runtime
+            .player_for_character(target_id)
+            .and_then(|player| player.anticheat_session_id)
+        else {
+            return Some(KeyringCommandResult {
+                messages: vec![format!("Player '{target_name}' has no connection data.")],
+                ..Default::default()
+            });
+        };
+        world.queue_ac_flag_lookup(character_id, target_name, session_id);
         return Some(KeyringCommandResult::default());
     }
 

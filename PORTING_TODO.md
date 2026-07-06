@@ -9292,6 +9292,56 @@ Unlocks every quest NPC. Do these before any P4 area work.
   slice - the next iteration picking this task up should pick one of
   those.
 
+  Progress Log (iteration 203): picked another `subscriber_id`-independent
+  member of gap (a) - `#acflag <player>` (`ac_cmd_flag`,
+  `src/module/anticheat/anticheat.c:568-593`, `command.c:10167-10174`
+  dispatch), `CF_GOD|CF_STAFF`-gated, exact-word only. Read
+  `ac_cmd_flag`/`ac_cmd_unflag`/`ac_cmd_trust`/`ac_cmd_untrust` fully
+  first to confirm which of the four `#acflag` actually belongs with:
+  unlike its three siblings (all gated on `get_subscriberId_from_
+  character` succeeding before touching `db_ac_trust_player`/
+  `db_ac_flag_player`/`db_ac_log_admin_action`, the still-missing
+  `subscriber_id`/`subscribers`-adjacent schema iteration 197 flagged),
+  C's `ac_cmd_flag` makes no DB call of any kind - it only assigns
+  `player[nr]->ac.status = AC_STATUS_FLAGGED` in memory, so it needed
+  nothing beyond the already-existing `AntiCheatRepository::set_status`
+  mutation and the exact `#acreset`/`#acstatus` single-name-target
+  resolution pattern (online `CF_PLAYER` scan, ascending-id tiebreak,
+  `PlayerRuntime::anticheat_session_id` lookup). `#acunflag`/`#actrust`/
+  `#acuntrust` remain correctly blocked on the schema gap. Added
+  `ugaris-core`'s `world/anticheat.rs::AcFlagLookup` (+
+  `queue_ac_flag_lookup`/`drain_pending_ac_flag_lookups`, `world/mod.rs`'s
+  matching `pending_ac_flag_lookups` field) and a new
+  `AC_STATUS_FLAGGED = 3` constant (C `anticheat.h:85`); `ugaris-server`'s
+  `commands_admin.rs` dispatches `#acflag` right after `#acreset` (same
+  resolution, `CF_GOD|CF_STAFF` gate matching `#acwatch` rather than
+  `#acreset`'s `CF_GOD`-only), and `world_events.rs::apply_ac_flag_events`
+  calls `set_status(session_id, AC_STATUS_FLAGGED)`, queuing "Manually
+  flagged {name} for review." only once the async update reports a row
+  was actually touched (C's own reply is unconditional and same-thread),
+  wired into `main.rs`'s tick loop right after `apply_ac_reset_events`.
+  `#achelp`'s help text already listed `#acflag`, so no help-text change
+  was needed. 2 new tests in `world_events.rs` (`ac_flag_tests`:
+  no-lookups/missing-repository no-op pair, same shape as every sibling)
+  and 5 in `tests/commands_admin.rs` (God-or-staff gate confirmed to
+  accept staff alone, unlike `#acreset`'s God-only gate; usage/
+  not-found/no-session/successful-queue paths). `cargo fmt --all`,
+  `cargo test --workspace` (2058 ugaris-core + 58 db + 3 net + 44
+  protocol + 898 server [+7], all green, zero failures), `cargo build -p
+  ugaris-server` / `cargo build --workspace` clean with zero warnings,
+  10s boot-smoke confirmed "entering Rust game loop" with no panic.
+  REMAINING: gap (a)'s `subscriber_id`-independent commands are now
+  exhausted (`acstatus`/`acstats`/`aclist`/`acsuspicious`/`accleanup`/
+  `acreset`/`acwatch`/`acflag` all ported); every remaining `ac*` command
+  (`acunflag`/`actrust`/`acuntrust`/`achistory`/`acsessions`/
+  `acviolations`/`acsharedip`/`acsharedhw`/`achighrisk`/`aclookup`/
+  `acsiglist`/`acsigadd`/`acsigdel`/`acwarn`) needs either the
+  `subscriber_id`/`subscribers` schema, a new aggregate-query surface, or
+  the notes/karmalog subsystem (gap (c)) first - the next iteration
+  picking this up should make an explicit scoped-design decision for one
+  of those rather than looking for another already-solved building
+  block, or pick a different lettered gap ((b)/(c)/(e)/(f)/(g)) entirely.
+
 - [ ] **Cross-area transfer** - the big multi-server feature. Every
   cross-area teleport currently returns "target server down". Decide the
   single-process stance first (likely: run multiple areas in one process

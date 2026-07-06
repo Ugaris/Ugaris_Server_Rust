@@ -178,7 +178,8 @@ use ugaris_core::{
         ClubmasterEvent, DungeonRaidBuildRequest, FirstKillCheck, GateWelcomeOutcomeEvent,
         GateWelcomePlayerFacts, LegacyHurtEvent, LookMapRequest, LootKiller, LootRegistry,
         MerchantTradeResult, PendingDeathLootRoll, RaiseSkillOutcome, StealOutcome, StoreWare,
-        TraderEvent, WorldActionCompletion, AC_STATUS_SUSPICIOUS, MERCHANT_STORE_SIZE,
+        TraderEvent, WorldActionCompletion, AC_STATUS_FLAGGED, AC_STATUS_SUSPICIOUS,
+        MERCHANT_STORE_SIZE,
     },
     zone::ZoneLoader,
     ServerConfig, TickRate, World,
@@ -6644,6 +6645,15 @@ async fn main() -> anyhow::Result<()> {
                         ac_reset_events_applied,
                         tick = world.tick.0,
                         "applied #acreset lookups"
+                    );
+                }
+                let ac_flag_events_applied =
+                    apply_ac_flag_events(&mut world, &anticheat_repository).await;
+                if ac_flag_events_applied != 0 {
+                    info!(
+                        ac_flag_events_applied,
+                        tick = world.tick.0,
+                        "applied #acflag lookups"
                     );
                 }
                 // `#querystats`/`/querystats`'s round trip against the

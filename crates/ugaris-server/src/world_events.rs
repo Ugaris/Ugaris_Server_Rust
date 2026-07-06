@@ -2282,6 +2282,43 @@ pub(crate) async fn apply_ac_reset_events(
     applied
 }
 
+/// `#acflag <player>`'s async DB round trip - see `ugaris-core`'s
+/// `world/anticheat.rs` module doc comment. Reproduces `ac_cmd_flag`
+/// (`anticheat.c:568-593`): sets the target session's `status` to
+/// `AC_STATUS_FLAGGED` (`AntiCheatRepository::set_status`). C's
+/// confirmation is unconditional and same-thread; here the "Manually
+/// flagged {name} for review." message is only queued once the async
+/// update actually reports a row was touched, matching every other
+/// offline-DB-mutation event in this file's silent-skip-on-failure
+/// convention.
+pub(crate) async fn apply_ac_flag_events(
+    world: &mut World,
+    anticheat_repository: &Option<ugaris_db::PgAntiCheatRepository>,
+) -> usize {
+    let lookups = world.drain_pending_ac_flag_lookups();
+    if lookups.is_empty() {
+        return 0;
+    }
+    let Some(repository) = anticheat_repository else {
+        return 0;
+    };
+    let mut applied = 0;
+    for lookup in lookups {
+        let Ok(true) = repository
+            .set_status(lookup.session_id, AC_STATUS_FLAGGED)
+            .await
+        else {
+            continue;
+        };
+        world.queue_system_text(
+            lookup.caller_id,
+            format!("Manually flagged {} for review.", lookup.target_name),
+        );
+        applied += 1;
+    }
+    applied
+}
+
 /// `#querystats`/`/querystats`'s async round trip - see `ugaris-core`'s
 /// `world/querystats.rs` module doc comment for exactly which C counters
 /// this scoped-down port tracks (and why the rest are omitted rather than
@@ -2853,6 +2890,30 @@ mod ac_reset_tests {
         assert_eq!(applied, 0);
         assert!(world.drain_pending_system_texts().is_empty());
         assert!(world.drain_pending_ac_reset_lookups().is_empty());
+    }
+}
+
+#[cfg(test)]
+mod ac_flag_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn no_lookups_queued_is_a_cheap_no_op() {
+        let mut world = World::default();
+        let applied = apply_ac_flag_events(&mut world, &None).await;
+        assert_eq!(applied, 0);
+        assert!(world.drain_pending_system_texts().is_empty());
+    }
+
+    #[tokio::test]
+    async fn missing_repository_leaves_the_lookup_queued_state_untouched_but_drained() {
+        let mut world = World::default();
+        world.queue_ac_flag_lookup(CharacterId(7), "Baddie".to_string(), 30);
+
+        let applied = apply_ac_flag_events(&mut world, &None).await;
+        assert_eq!(applied, 0);
+        assert!(world.drain_pending_system_texts().is_empty());
+        assert!(world.drain_pending_ac_flag_lookups().is_empty());
     }
 }
 
