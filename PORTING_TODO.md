@@ -10866,6 +10866,54 @@ Unlocks every quest NPC. Do these before any P4 area work.
   failures), `cargo build -p ugaris-server`/`--workspace` clean with
   zero warnings, 10s boot-smoke confirmed "entering Rust game loop" with
   no panic.
+  REMAINING (iteration 229): ported one of `/values`' three missing-
+  infrastructure gaps the iteration-228 note flagged: **`stats_online_
+  time`** (C `src/system/statistics.c:47-58`, the "Playing for %d
+  hours." line, `tool.c:2917`). C's `struct stats_ppd`
+  (`statistics.h`: a `MAXSTAT`(365)-day rolling ring buffer of daily
+  exp/gold/online samples, updated once a minute per connected player by
+  `stats_update(cn, 1, 0)`, `player.c:3460`, right alongside the
+  already-ported `achievement_add_play_time`) is now a new raw-blob
+  `PlayerRuntime::stats_ppd` PPD (`DRD_STATS_PPD`, wired into the
+  existing `encode_legacy_ppd_blob`/`decode_legacy_ppd_blob` had-flag
+  rewrite-or-append machinery exactly like every sibling PPD -
+  `crates/ugaris-core/src/player.rs`), with `PlayerRuntime::stats_update`/
+  `stats_online_time` reproducing C's day-bucket zero-on-gap-and-wrap
+  `while (lidx != idx) { lidx = (lidx+1) % MAXSTAT; bzero(...); }` loop
+  digit-for-digit (including the subtle case where the forward walk from
+  one update to the next wraps past bucket 0 without either update's
+  `idx` ever landing on it - covered by a dedicated test). Wired the
+  once-a-minute call into `main.rs`'s existing `award_play_time_minute`
+  tick-loop gate. The two sibling `stats_update(cn, 0, price)` call
+  sites (`store.c:381`/`do.c:1282`) feed the `.gold` field, which
+  nothing in this codebase reads anywhere (confirmed by grepping the
+  whole C tree for `.exp`/`.gold` reads outside `statistics.c` itself),
+  so they're deliberately left unwired - only `.online` is ever read, by
+  `stats_online_time`. 6 new `ugaris-core` tests (day-bucket
+  accumulation, advancing to a fresh day without disturbing others,
+  zeroing skipped days after a gap, the bucket-0-wrap edge case, the
+  before-any-update zero default, and the encode/decode/blob-framing
+  round trip). `cargo fmt --all`, `cargo test --workspace` (2128
+  ugaris-core [+7] + 77 db + 3 net + 45 protocol + 1069 server, all
+  green, zero failures), `cargo build -p ugaris-server`/`--workspace`
+  clean with zero warnings, 10s boot-smoke confirmed "entering Rust game
+  loop" with no panic. `/values` itself is still unported: still missing
+  `paid_until` (a DB-only `accounts` column never threaded through to
+  `World`/`Character` - needs a new repository query, likely alongside
+  `find_login_target`) before the full command can be assembled; live
+  `bank_gold` access is NOT actually a remaining gap (session-scoped on
+  `PlayerRuntime`, reachable via the already-threaded `ServerRuntime::
+  player_for_character_mut`, same as `award_play_time_minute` already
+  demonstrates) and `PK`/`Hardcore`/mirror-area-section-name have no gap
+  either (`section_name_by_id`/`section_at` already exist in
+  `area_section.rs`) - so `paid_until` is the only remaining blocker
+  before `/values` can be assembled end to end. Next slice: thread
+  `paid_until` through, then port `world/values.rs`'s sibling
+  `queue_values_command`/`values_lines` + `world_events.rs::
+  apply_values_events`, following `/showvalues`'s queue-then-drain shape
+  but *without* the role swap or a "Sent." confirmation (C's
+  `look_values_bg` sends the resolved target's own info back to the
+  caller, unlike `show_values_bg`'s swapped-roles delivery).
 
 - [ ] **Player-side fight-driver auto-combat (lostcon self-defense +
   no*/auto* toggle family)** - `fight_driver_attack_enemy`/

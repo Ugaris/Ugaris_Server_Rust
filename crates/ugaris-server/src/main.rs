@@ -7484,15 +7484,16 @@ async fn main() -> anyhow::Result<()> {
                     }
                 }
                 // C `player_update` (`player.c:3448-3462`): every player
-                // slot gets `achievement_add_play_time(cn, 1)` (plus
-                // `stats_update`, unported - see PORTING_TODO.md) once
-                // per real-time minute, staggered across ticks via
-                // `nr % (TICKS * 60)`. Rust has no stable per-player slot
-                // index to replicate that stagger, so this fires for all
-                // logged-in characters on the same once-a-minute tick
-                // gate already used for auction cleanup above - same net
-                // rate (1 minute credited per minute of uptime), just
-                // synchronized instead of spread across the 60 ticks.
+                // slot gets `achievement_add_play_time(cn, 1)` plus
+                // `stats_update(cn, 1, 0)` (`src/system/statistics.c:
+                // 23-45`) once per real-time minute, staggered across
+                // ticks via `nr % (TICKS * 60)`. Rust has no stable
+                // per-player slot index to replicate that stagger, so
+                // this fires for all logged-in characters on the same
+                // once-a-minute tick gate already used for auction
+                // cleanup above - same net rate (1 minute credited per
+                // minute of uptime), just synchronized instead of spread
+                // across the 60 ticks.
                 if world.tick.0 % (TICKS_PER_SECOND * 60) == 0 {
                     let play_time_characters: Vec<CharacterId> = runtime
                         .players
@@ -7501,6 +7502,24 @@ async fn main() -> anyhow::Result<()> {
                         .collect();
                     for character_id in play_time_characters {
                         award_play_time_minute(&mut world, &mut runtime, &achievement_repository, character_id).await;
+                        // `stats_update`'s `.online` half (the only field
+                        // this codebase reads anywhere, via `PlayerRuntime::
+                        // stats_online_time`, `/values`' "Playing for %d
+                        // hours." line - not yet wired, see
+                        // `PORTING_TODO.md`'s "Cross-area transfer" task).
+                        // The sibling `stats_update(cn, 0, price)` call
+                        // sites (`store.c:381`/`do.c:1282`) feed `.gold`,
+                        // which nothing in this codebase reads yet, so
+                        // they are left unwired (see `PlayerRuntime::
+                        // stats_update`'s doc comment).
+                        let character_exp = world
+                            .characters
+                            .get(&character_id)
+                            .map(|character| character.exp as i32)
+                            .unwrap_or(0);
+                        if let Some(player) = runtime.player_for_character_mut(character_id) {
+                            player.stats_update(character_exp, 1, 0, current_unix_time());
+                        }
                     }
                 }
                 // C `init_event_system`'s `add_scheduled_task(check_events,

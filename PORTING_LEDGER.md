@@ -301,10 +301,46 @@ next:**
    `owner`/`killer`/`access` loot-ACL this codebase has **no** equivalent
    of at all - the Rust body-container is just a plain `Item` with
    `contained_in` (`world/death.rs`) and `owner_id` is never even set on
-   body creation - so `/allow` needs that whole grave-loot-ownership
-   model designed and wired before the command itself can mean anything;
-   flag it as its own future task once picked up rather than treating it
-   as a same-sized slice of this one.
+    body creation - so `/allow` needs that whole grave-loot-ownership
+    model designed and wired before the command itself can mean anything;
+    flag it as its own future task once picked up rather than treating it
+    as a same-sized slice of this one.
+    Iteration 229 closed one of `/values`' three missing-infrastructure
+    gaps: **`stats_online_time`** (C `src/system/statistics.c:47-58`,
+    the "Playing for %d hours." line, `tool.c:2917`). Ported the whole
+    `struct stats_ppd` (`statistics.h`: a `MAXSTAT`(365)-day rolling ring
+    buffer of daily exp/gold/online samples) as a new raw-blob
+    `PlayerRuntime::stats_ppd` PPD (`DRD_STATS_PPD`, wired into
+    `encode_legacy_ppd_blob`/`decode_legacy_ppd_blob`'s existing
+    had-flag/rewrite-or-append machinery exactly like every sibling PPD),
+    plus `PlayerRuntime::stats_update`/`stats_online_time`
+    (`crates/ugaris-core/src/player.rs`) reproducing C's day-bucket
+    zero-on-gap-and-wrap `while` loop exactly (verified with a dedicated
+    test for the "wraps past bucket 0 without ever revisiting it as
+    `idx`" edge case). Wired the once-a-minute `stats_update(cn, 1, 0)`
+    call (`player.c:3460`) into the same tick-loop gate that already
+    calls `award_play_time_minute` (`main.rs`); the two sibling
+    `stats_update(cn, 0, price)` call sites (`store.c:381`/`do.c:1282`)
+    feed the `.gold` field, which nothing in this codebase reads anywhere
+    (confirmed by grepping the whole C tree), so they're deliberately
+    left unwired. 6 new `ugaris-core` tests. `/values` itself is still
+    unported: still missing `paid_until` (a DB-only `accounts` column
+    never threaded through to `World`/`Character` - `/values`' resolved-
+    target async round trip would need a new repository query for it)
+    and live `bank_gold` access (session-scoped on `PlayerRuntime`,
+    reachable via the already-threaded `ServerRuntime::
+    player_for_character_mut`, so this piece is actually straightforward
+    once the command itself is assembled) - `PK`/`Hardcore` flags and the
+    mirror/area/section-name line (`section_name_by_id`/`section_at`
+    already exist in `area_section.rs`) have no remaining gap. Next slice
+    should thread `paid_until` through (likely a new `CharacterRepository`
+    method returning it alongside `find_login_target`'s existing lookup,
+    or a dedicated query) and then assemble the full `/values` command
+    (`world/values.rs`'s sibling `queue_values_command`/`values_lines`,
+    following `/showvalues`'s established queue-then-drain shape but
+    *without* the role swap - C's `look_values_bg` sends the resolved
+    target's info back to the caller, not the other way around, and has
+    no "Sent." confirmation of its own).
 
 ### Current Runnable State
 

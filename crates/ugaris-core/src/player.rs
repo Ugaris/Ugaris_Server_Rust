@@ -156,6 +156,35 @@ pub const LEGACY_ARKHATA_PPD_SIZE: usize = 25 * 4;
 pub const LEGACY_STAFFER_PPD_SIZE: usize = 25 * 4;
 pub const LEGACY_FARMY_PPD_SIZE: usize = 85 * 4;
 pub const LEGACY_TEUFELRAT_PPD_SIZE: usize = 2 * 4;
+/// C `#define MAXSTAT 365` (`src/system/statistics.h`): the rolling
+/// window's day count for `struct stats_ppd`.
+pub const STATS_PPD_MAXSTAT: usize = 365;
+/// C `#define RESOLUTION (60*60*24)` (`src/system/statistics.h`): one
+/// day, in seconds - the bucket width `stats_update` groups samples by.
+pub const STATS_PPD_RESOLUTION_SECONDS: i64 = 60 * 60 * 24;
+/// C `#define STARTTIME 978303600 // 01/01/2001` (`src/system/date.h`):
+/// `realtime`'s epoch offset (`realtime = time_now - STARTTIME`,
+/// `date.c:271`) - `stats_update`/`stats_online_time` subtract this from
+/// the caller's wall-clock unix seconds before day-bucketing, matching
+/// C's own `realtime` exactly (the offset has no gameplay effect beyond
+/// which wall-clock day lands in bucket 0, but is cheap to reproduce
+/// digit-for-digit).
+pub const STATS_PPD_STARTTIME: i64 = 978_303_600;
+/// One `struct stats { int exp; int gold; int online; }` day-sample
+/// (`src/system/statistics.h`), 3 packed `i32`s.
+const STATS_PPD_DAY_SIZE: usize = 12;
+const STATS_PPD_DAY_EXP_OFFSET: usize = 0;
+const STATS_PPD_DAY_GOLD_OFFSET: usize = 4;
+const STATS_PPD_DAY_ONLINE_OFFSET: usize = 8;
+const STATS_PPD_LAST_UPDATE_OFFSET: usize = 0;
+const STATS_PPD_DAYS_OFFSET: usize = 4;
+fn stats_ppd_day_offset(day: usize) -> usize {
+    STATS_PPD_DAYS_OFFSET + day * STATS_PPD_DAY_SIZE
+}
+/// C `struct stats_ppd { int last_update; struct stats stats[MAXSTAT]; }`
+/// (`src/system/statistics.h`): `4 + 365 * 12` bytes.
+pub const LEGACY_STATS_PPD_SIZE: usize =
+    STATS_PPD_DAYS_OFFSET + STATS_PPD_MAXSTAT * STATS_PPD_DAY_SIZE;
 /// C `struct bank_ppd` (`src/module/bank.h`): a single `int imperial_gold`.
 pub const LEGACY_BANK_PPD_SIZE: usize = 4;
 pub const LEGACY_TWOCITY_PPD_SIZE: usize = 29 * 4;
@@ -272,6 +301,10 @@ pub const DRD_ARKHATA_PPD: u32 = make_drd(DEV_ID_DB, 160 | PERSISTENT_PLAYER_DAT
 pub const DRD_STAFFER_PPD: u32 = make_drd(DEV_ID_DB, 130 | PERSISTENT_PLAYER_DATA);
 pub const DRD_FARMY_PPD: u32 = make_drd(DEV_ID_DB, 77 | PERSISTENT_PLAYER_DATA);
 pub const DRD_TEUFELRAT_PPD: u32 = make_drd(DEV_ID_DB, 157 | PERSISTENT_PLAYER_DATA);
+/// C `#define DRD_STATS_PPD MAKE_DRD(DEV_ID_DB, 27 | PERSISTENT_PLAYER_DATA)`
+/// (`src/system/drdata.h`). See `stats_ppd`/`encode_legacy_stats_ppd` and
+/// `stats_update`/`stats_online_time` (`src/system/statistics.c`).
+pub const DRD_STATS_PPD: u32 = make_drd(DEV_ID_DB, 27 | PERSISTENT_PLAYER_DATA);
 /// The following ids (`src/system/drdata.h`) back systems that are not
 /// modeled on `PlayerRuntime` at all yet (army rank, military points,
 /// arena, sidestory, strategy game, and quest log). They exist here
@@ -822,6 +855,12 @@ pub struct PlayerRuntime {
     pub staffer_ppd: Vec<u8>,
     #[serde(default)]
     pub farmy_ppd: Vec<u8>,
+    /// C `struct stats_ppd` (`src/system/statistics.h`): a `MAXSTAT`(365)
+    /// -day rolling ring buffer of daily exp/gold/online samples, stored
+    /// as the raw legacy blob (see `encode_legacy_stats_ppd`/
+    /// `decode_legacy_stats_ppd`, `stats_update`, `stats_online_time`).
+    #[serde(default)]
+    pub stats_ppd: Vec<u8>,
     #[serde(default)]
     pub teufel_rat_kills: u32,
     #[serde(default)]
@@ -1228,6 +1267,7 @@ impl PlayerRuntime {
             arkhata_ppd: Vec::new(),
             staffer_ppd: Vec::new(),
             farmy_ppd: Vec::new(),
+            stats_ppd: Vec::new(),
             teufel_rat_kills: 0,
             teufel_rat_score: 0,
             bank_gold: 0,
@@ -4719,6 +4759,108 @@ impl PlayerRuntime {
         true
     }
 
+    pub fn encode_legacy_stats_ppd(&self) -> Vec<u8> {
+        let mut bytes = vec![0; LEGACY_STATS_PPD_SIZE];
+        let len = self.stats_ppd.len().min(LEGACY_STATS_PPD_SIZE);
+        bytes[..len].copy_from_slice(&self.stats_ppd[..len]);
+        bytes
+    }
+
+    pub fn decode_legacy_stats_ppd(&mut self, bytes: &[u8]) -> bool {
+        if bytes.len() < LEGACY_STATS_PPD_SIZE {
+            return false;
+        }
+        self.stats_ppd = bytes[..LEGACY_STATS_PPD_SIZE].to_vec();
+        true
+    }
+
+    /// C `stats_update` (`src/system/statistics.c:23-45`): called once per
+    /// real-time minute per connected player (`player_update`, `player.c:
+    /// 3460`, `stats_update(cn, 1, 0)`, ported at `award_play_time_minute`'s
+    /// call site in `ugaris-server`'s `main.rs`) plus on every store sale
+    /// and money-item destruction (`store.c:381`/`do.c:1282`,
+    /// `stats_update(cn, 0, price)` - not yet wired, see `PORTING_TODO.md`'s
+    /// "Cross-area transfer" task's Progress Log: `.gold`/`.exp` are
+    /// write-only fields nothing in this codebase reads yet, unlike
+    /// `.online`, which `stats_online_time` sums). Maintains a
+    /// `STATS_PPD_MAXSTAT`(365)-day rolling ring buffer of daily
+    /// exp/gold/online samples, zeroing every day bucket skipped since the
+    /// last update (a player who was offline for more than 365 days wraps
+    /// all the way around, clearing the whole buffer - matching C's own
+    /// `while (lidx != idx) { lidx = (lidx+1) % MAXSTAT; bzero(...); }`
+    /// loop exactly, run against `self.stats_ppd`'s raw legacy bytes
+    /// in-place rather than a decoded struct). `now`/`last_update` are
+    /// wall-clock unix seconds (the caller's `current_unix_time()`);
+    /// `STATS_PPD_STARTTIME` is subtracted first to match C's own
+    /// `realtime = time_now - STARTTIME` day-bucketing exactly. Lazily
+    /// zero-initializes `self.stats_ppd` on first use, mirroring C's
+    /// `set_data` zero-allocating a fresh `stats_ppd` the first time any
+    /// character calls this.
+    pub fn stats_update(&mut self, character_exp: i32, online_minutes: i32, gold: i32, now: i64) {
+        if self.stats_ppd.len() < LEGACY_STATS_PPD_SIZE {
+            self.stats_ppd = vec![0; LEGACY_STATS_PPD_SIZE];
+        }
+        let real_now = now - STATS_PPD_STARTTIME;
+        let idx = real_now
+            .div_euclid(STATS_PPD_RESOLUTION_SECONDS)
+            .rem_euclid(STATS_PPD_MAXSTAT as i64) as usize;
+        let last_update = i64::from(read_i32(&self.stats_ppd, STATS_PPD_LAST_UPDATE_OFFSET));
+        let mut lidx = last_update
+            .div_euclid(STATS_PPD_RESOLUTION_SECONDS)
+            .rem_euclid(STATS_PPD_MAXSTAT as i64) as usize;
+        while lidx != idx {
+            lidx = (lidx + 1) % STATS_PPD_MAXSTAT;
+            let offset = stats_ppd_day_offset(lidx);
+            write_i32(&mut self.stats_ppd, offset + STATS_PPD_DAY_EXP_OFFSET, 0);
+            write_i32(&mut self.stats_ppd, offset + STATS_PPD_DAY_GOLD_OFFSET, 0);
+            write_i32(&mut self.stats_ppd, offset + STATS_PPD_DAY_ONLINE_OFFSET, 0);
+        }
+        write_i32(
+            &mut self.stats_ppd,
+            STATS_PPD_LAST_UPDATE_OFFSET,
+            real_now as i32,
+        );
+        let offset = stats_ppd_day_offset(idx);
+        write_i32(
+            &mut self.stats_ppd,
+            offset + STATS_PPD_DAY_EXP_OFFSET,
+            character_exp,
+        );
+        let gold_total =
+            read_i32(&self.stats_ppd, offset + STATS_PPD_DAY_GOLD_OFFSET).saturating_add(gold);
+        write_i32(
+            &mut self.stats_ppd,
+            offset + STATS_PPD_DAY_GOLD_OFFSET,
+            gold_total,
+        );
+        let online_total = read_i32(&self.stats_ppd, offset + STATS_PPD_DAY_ONLINE_OFFSET)
+            .saturating_add(online_minutes);
+        write_i32(
+            &mut self.stats_ppd,
+            offset + STATS_PPD_DAY_ONLINE_OFFSET,
+            online_total,
+        );
+    }
+
+    /// C `stats_online_time` (`src/system/statistics.c:47-58`): sums every
+    /// day bucket's `.online` sample across the whole 365-day ring buffer
+    /// (`/values`' "Playing for %d hours." line, `tool.c:2917`, divides
+    /// this by 60). Returns `0` for a character with no `stats_ppd` yet
+    /// (mirrors C's `if (!ppd) return 0;`).
+    pub fn stats_online_time(&self) -> i32 {
+        if self.stats_ppd.len() < LEGACY_STATS_PPD_SIZE {
+            return 0;
+        }
+        (0..STATS_PPD_MAXSTAT)
+            .map(|day| {
+                read_i32(
+                    &self.stats_ppd,
+                    stats_ppd_day_offset(day) + STATS_PPD_DAY_ONLINE_OFFSET,
+                )
+            })
+            .sum()
+    }
+
     pub fn farmy_boss_stage(&self) -> i32 {
         if self.farmy_ppd.len() < LEGACY_FARMY_PPD_SIZE {
             return 0;
@@ -5165,6 +5307,11 @@ impl PlayerRuntime {
                         return false;
                     }
                 }
+                DRD_STATS_PPD => {
+                    if !self.decode_legacy_stats_ppd(block.data) {
+                        return false;
+                    }
+                }
                 DRD_TEUFELRAT_PPD => {
                     if !self.decode_legacy_teufelrat_ppd(block.data) {
                         return false;
@@ -5275,6 +5422,7 @@ impl PlayerRuntime {
         let mut had_arkhata = false;
         let mut had_staffer = false;
         let mut had_farmy = false;
+        let mut had_stats = false;
         let mut had_teufelrat = false;
         let mut had_bank = false;
         let mut had_twocity = false;
@@ -5423,6 +5571,9 @@ impl PlayerRuntime {
             } else if block.id == DRD_FARMY_PPD {
                 had_farmy = true;
                 write_ppd_block(&mut encoded, DRD_FARMY_PPD, &self.encode_legacy_farmy_ppd());
+            } else if block.id == DRD_STATS_PPD {
+                had_stats = true;
+                write_ppd_block(&mut encoded, DRD_STATS_PPD, &self.encode_legacy_stats_ppd());
             } else if block.id == DRD_TEUFELRAT_PPD {
                 had_teufelrat = true;
                 write_ppd_block(
@@ -5706,6 +5857,9 @@ impl PlayerRuntime {
         }
         if !had_farmy && (existing_was_valid || existing.is_empty()) && !self.farmy_ppd.is_empty() {
             write_ppd_block(&mut encoded, DRD_FARMY_PPD, &self.encode_legacy_farmy_ppd());
+        }
+        if !had_stats && (existing_was_valid || existing.is_empty()) && !self.stats_ppd.is_empty() {
+            write_ppd_block(&mut encoded, DRD_STATS_PPD, &self.encode_legacy_stats_ppd());
         }
         if !had_teufelrat && (existing_was_valid || existing.is_empty()) {
             if self.teufel_rat_kills != 0 || self.teufel_rat_score != 0 {
@@ -7953,6 +8107,191 @@ mod tests {
         // "only append if nonzero" PPD block in `encode_legacy_ppd_blob`).
         let zero_balance = PlayerRuntime::connected(4, 0);
         assert!(zero_balance.encode_legacy_ppd_blob(&[]).is_empty());
+    }
+
+    #[test]
+    fn stats_ppd_update_accumulates_the_current_day_bucket() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        let day0 = STATS_PPD_STARTTIME; // real_now == 0 -> day index 0
+        player.stats_update(1_000, 1, 0, day0);
+        player.stats_update(1_050, 1, 50, day0 + 30); // same day, still bucket 0
+        assert_eq!(player.stats_online_time(), 2);
+        assert_eq!(
+            read_i32(
+                &player.stats_ppd,
+                stats_ppd_day_offset(0) + STATS_PPD_DAY_EXP_OFFSET
+            ),
+            1_050
+        );
+        assert_eq!(
+            read_i32(
+                &player.stats_ppd,
+                stats_ppd_day_offset(0) + STATS_PPD_DAY_GOLD_OFFSET
+            ),
+            50
+        );
+        assert_eq!(
+            read_i32(&player.stats_ppd, STATS_PPD_LAST_UPDATE_OFFSET),
+            (day0 + 30 - STATS_PPD_STARTTIME) as i32
+        );
+    }
+
+    #[test]
+    fn stats_ppd_update_advances_to_a_new_day_bucket_without_disturbing_others() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        let day0 = STATS_PPD_STARTTIME;
+        player.stats_update(1_000, 1, 0, day0);
+        let next_day = day0 + STATS_PPD_RESOLUTION_SECONDS;
+        player.stats_update(1_100, 1, 0, next_day);
+        // Both days' `online` samples are summed by `stats_online_time`.
+        assert_eq!(player.stats_online_time(), 2);
+        assert_eq!(
+            read_i32(
+                &player.stats_ppd,
+                stats_ppd_day_offset(0) + STATS_PPD_DAY_ONLINE_OFFSET
+            ),
+            1
+        );
+        assert_eq!(
+            read_i32(
+                &player.stats_ppd,
+                stats_ppd_day_offset(1) + STATS_PPD_DAY_ONLINE_OFFSET
+            ),
+            1
+        );
+    }
+
+    #[test]
+    fn stats_ppd_update_zeroes_skipped_days_when_resuming_after_a_gap() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        let day0 = STATS_PPD_STARTTIME;
+        player.stats_update(1_000, 5, 0, day0);
+        // Resume 3 days later: day 1 and day 2 were skipped and must be
+        // zeroed (C's `while (lidx != idx) { ...; bzero(...); }`), day 0's
+        // sample is untouched, day 3's sample is freshly written.
+        let day3 = day0 + STATS_PPD_RESOLUTION_SECONDS * 3;
+        player.stats_update(1_200, 2, 0, day3);
+        assert_eq!(
+            read_i32(
+                &player.stats_ppd,
+                stats_ppd_day_offset(0) + STATS_PPD_DAY_ONLINE_OFFSET
+            ),
+            5
+        );
+        assert_eq!(
+            read_i32(
+                &player.stats_ppd,
+                stats_ppd_day_offset(1) + STATS_PPD_DAY_ONLINE_OFFSET
+            ),
+            0
+        );
+        assert_eq!(
+            read_i32(
+                &player.stats_ppd,
+                stats_ppd_day_offset(2) + STATS_PPD_DAY_ONLINE_OFFSET
+            ),
+            0
+        );
+        assert_eq!(
+            read_i32(
+                &player.stats_ppd,
+                stats_ppd_day_offset(3) + STATS_PPD_DAY_ONLINE_OFFSET
+            ),
+            2
+        );
+        assert_eq!(player.stats_online_time(), 7);
+    }
+
+    #[test]
+    fn stats_ppd_update_wrapping_past_bucket_zero_clears_it() {
+        // Reproduces C's `while (lidx != idx) { lidx = (lidx+1) % MAXSTAT;
+        // bzero(...); }` walking *forward* (with wraparound) from the
+        // previous update's day bucket to the new one: a gap that crosses
+        // the day-350 -> day-5 boundary clears every skipped bucket in
+        // between, including bucket 0, even though bucket 0 was never
+        // `idx` on either of these two calls.
+        let mut player = PlayerRuntime::connected(1, 0);
+        let day0 = STATS_PPD_STARTTIME;
+        player.stats_update(1_000, 7, 0, day0); // bucket 0 <- online 7
+        let day350 = day0 + STATS_PPD_RESOLUTION_SECONDS * 350;
+        player.stats_update(1_050, 9, 0, day350); // walks 1..=350, bucket 0 untouched
+        assert_eq!(
+            read_i32(
+                &player.stats_ppd,
+                stats_ppd_day_offset(0) + STATS_PPD_DAY_ONLINE_OFFSET
+            ),
+            7
+        );
+        let day5_next_cycle = day350 + STATS_PPD_RESOLUTION_SECONDS * 20; // idx (350+20)%365 == 5
+        player.stats_update(1_100, 3, 0, day5_next_cycle); // walks 351..=364,0..=5
+        assert_eq!(
+            read_i32(
+                &player.stats_ppd,
+                stats_ppd_day_offset(0) + STATS_PPD_DAY_ONLINE_OFFSET
+            ),
+            0,
+            "bucket 0 must be cleared once the forward walk passes through it"
+        );
+        assert_eq!(
+            read_i32(
+                &player.stats_ppd,
+                stats_ppd_day_offset(350) + STATS_PPD_DAY_ONLINE_OFFSET
+            ),
+            9,
+            "bucket 350 is never revisited by this second walk"
+        );
+        assert_eq!(
+            read_i32(
+                &player.stats_ppd,
+                stats_ppd_day_offset(5) + STATS_PPD_DAY_ONLINE_OFFSET
+            ),
+            3
+        );
+        assert_eq!(player.stats_online_time(), 9 + 3);
+    }
+
+    #[test]
+    fn stats_online_time_is_zero_before_any_update() {
+        let player = PlayerRuntime::connected(1, 0);
+        assert_eq!(player.stats_online_time(), 0);
+    }
+
+    #[test]
+    fn stats_ppd_codec_matches_legacy_c_layout() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.stats_update(500, 10, 25, STATS_PPD_STARTTIME);
+
+        let encoded = player.encode_legacy_stats_ppd();
+        assert_eq!(encoded.len(), LEGACY_STATS_PPD_SIZE);
+
+        let mut decoded = PlayerRuntime::connected(2, 0);
+        assert!(decoded.decode_legacy_stats_ppd(&encoded));
+        assert_eq!(decoded.stats_online_time(), 10);
+        assert!(!decoded.decode_legacy_stats_ppd(&encoded[..LEGACY_STATS_PPD_SIZE - 1]));
+    }
+
+    #[test]
+    fn stats_ppd_blob_round_trips_with_legacy_block_framing() {
+        let unknown_id = make_drd(DEV_ID_DB, 223 | PERSISTENT_PLAYER_DATA);
+        let mut existing = Vec::new();
+        write_ppd_block(&mut existing, unknown_id, &[9, 9, 9, 9]);
+
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.stats_update(10, 4, 0, STATS_PPD_STARTTIME);
+
+        let encoded = player.encode_legacy_ppd_blob(&existing);
+        assert_eq!(read_u32(&encoded, 0), unknown_id);
+        assert_eq!(read_u32(&encoded, 12), DRD_STATS_PPD);
+        assert_eq!(read_u32(&encoded, 16), LEGACY_STATS_PPD_SIZE as u32);
+
+        let mut decoded = PlayerRuntime::connected(2, 0);
+        assert!(decoded.decode_legacy_ppd_blob(&encoded));
+        assert_eq!(decoded.stats_online_time(), 4);
+
+        // C: an all-zero (never-updated) stats block is never written out
+        // (matches every other "only append if nonempty" PPD block).
+        let untouched = PlayerRuntime::connected(3, 0);
+        assert!(untouched.encode_legacy_ppd_blob(&[]).is_empty());
     }
 
     #[test]

@@ -7330,15 +7330,44 @@
         "Error message: JSON Parse error: Property name must be a string literal",
         "error: could not compile `ugaris-server` (bin \"ugaris-server\") due to 1 previous error"
       ]
+    },
+    {
+      "iteration": 229,
+      "startedAt": "2026-07-06T11:24:01.293Z",
+      "endedAt": "2026-07-06T11:47:18.363Z",
+      "durationMs": 1396368,
+      "agent": "opencode",
+      "model": "anthropic/claude-sonnet-5",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "PORTING_TODO.md",
+        "crates/ugaris-core/src/player.rs",
+        "crates/ugaris-server/src/main.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "test result: ok. 1069 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "error: could not compile `ugaris-core` (lib) due to 1 previous error",
+        "test player::tests::stats_ppd_update_wraps_the_ring_buffer_after_a_year_of_absence ... FAILED",
+        "test result: FAILED. 5 passed; 1 failed; 0 ignored; 0 measured; 2122 filtered out; finished in 0.00s",
+        "error: test failed, to rerun pass `-p ugaris-core --lib`",
+        "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 2122 filtered out; finished in 0.00s",
+        "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&1 | grep -E \"^test result|FAILED|error\\[\"",
+        "test result: ok. 2128 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s",
+        "test result: ok. 77 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+      ]
     }
   ],
-  "totalDurationMs": 259882642,
+  "totalDurationMs": 261279010,
   "struggleIndicators": {
     "repeatedErrors": {
       "1011 (up from 998 earlier) - all passing, zero failures. Now let's build the server binary and run a": 1,
       "Everything is green: `cargo fmt --all` clean, full workspace test suite passing (1011 core tests + o": 1,
       "test result: ok. 327 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 4,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 228,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 229,
       "test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 998 filtered out; finished in 0.00s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1010 filtered out; finished in 0.00s": 1,
       "error: could not compile `ugaris-db` (lib test) due to 1 previous error": 3,
@@ -7347,7 +7376,7 @@
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 88,
       "1020 tests pass (up from 1011), zero failures. Now build for warnings check:": 1,
       "test result: ok. 327 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 6,
-      "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&": 78,
+      "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&": 79,
       "test error::tests::error_constants_match_legacy_header ... ok": 50,
       "test error::tests::error_strings_match_legacy_table ... ok": 45,
       "test error::tests::out_of_range_errors_use_c_fallback_string ... ok": 39,
@@ -7355,7 +7384,7 @@
       "Verified: `cargo fmt --all`, `cargo test --workspace` (1030 ugaris-core tests + all others, 0 failur": 1,
       "error: could not compile `ugaris-server` (bin \"ugaris-server\") due to 1 previous error": 13,
       "test result: FAILED. 1019 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s": 1,
-      "error: test failed, to rerun pass `-p ugaris-core --lib`": 25,
+      "error: test failed, to rerun pass `-p ugaris-core --lib`": 26,
       "test result: ok. 1030 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1,
       "+  - Full workspace suite (1030 ugaris-core tests, up from 1020, + others, 0 failed), `cargo fmt --a": 1,
       "All green: 1035+9+3+31+327 tests pass, zero failures, fmt clean, build clean, boot-smoke clean. This": 1,
@@ -7400,7 +7429,7 @@
       "assertion failed: world.characters[&CharacterId(3)].driver_messages.is_empty()": 1,
       "test result: FAILED. 1053 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1,
       "test result: ok. 340 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 3,
-      "error: could not compile `ugaris-core` (lib) due to 1 previous error": 8,
+      "error: could not compile `ugaris-core` (lib) due to 1 previous error": 9,
       "test world::tests::actions::complete_walk_does_not_notify_when_walk_fails ... ok": 1,
       "test result: ok. 30 passed; 0 failed; 0 ignored; 0 measured; 1026 filtered out; finished in 0.01s": 1,
       "\u001b[0m$ \u001b[0mgrep -n \"complete_walk_notifies_nearby_characters_with_nt_char\\|complete_walk_skips_notify": 1,
@@ -8307,8 +8336,13 @@
       "Good, confirmed this failure is pre-existing test ordering flakiness, not something I need to fix (i": 1,
       "Verified against a real throwaway `postgres:16-alpine` Docker container (all 19 migrations applied f": 1,
       "test result: ok. 2112 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.18s": 1,
-      "test result: ok. 77 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 1,
-      "test result: ok. 1067 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s": 1
+      "test result: ok. 77 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 2,
+      "test result: ok. 1067 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s": 1,
+      "test result: ok. 1069 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s": 1,
+      "test player::tests::stats_ppd_update_wraps_the_ring_buffer_after_a_year_of_absence ... FAILED": 1,
+      "test result: FAILED. 5 passed; 1 failed; 0 ignored; 0 measured; 2122 filtered out; finished in 0.00s": 1,
+      "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 2122 filtered out; finished in 0.00s": 1,
+      "test result: ok. 2128 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0
