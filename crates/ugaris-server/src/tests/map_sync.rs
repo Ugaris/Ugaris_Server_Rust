@@ -860,3 +860,67 @@ fn cache_shift_replicates_client_memmove_and_drops_scrolled_in_cells() {
         "cells scrolled in from untracked positions are dropped for resend"
     );
 }
+
+/// Manual profiling harness for the deferred "Sector skip optimization
+/// (`skipx_sector`)" P3 task in `PORTING_TODO.md`. C's `plr_map_update`
+/// uses `skipx_sector` to skip re-scanning tiles in map sectors that
+/// haven't changed since the viewer's own last tick, avoiding the
+/// per-tile `char_see_char`/line-of-sight cost for a run of unchanged
+/// tiles. Rust's `map_diff_payloads` has no equivalent skip and always
+/// recomputes every tile in the viewer's diamond every tick. This
+/// harness measures that unconditional recompute cost at a player count
+/// well above any real Ugaris concurrent population, to decide whether
+/// porting the skip is worth the (large, cross-cutting) `set_sector`
+/// call-site integration it would require. Run explicitly with:
+/// `cargo test --release -p ugaris-server profile_map_diff_payloads_cost -- --ignored --nocapture`
+#[test]
+#[ignore = "manual profiling harness, not part of the regular suite - see doc comment"]
+fn profile_map_diff_payloads_cost_at_realistic_player_counts() {
+    use std::time::Instant;
+
+    // Legacy client default view range and a generously high player count
+    // (real Ugaris areas typically see a handful of concurrent players).
+    let view_distance = 15usize;
+    let player_count = 100usize;
+    let ticks = 50usize;
+
+    let mut world = World::default();
+    let login = login_block("Viewer");
+    let mut character_ids = Vec::new();
+    for n in 0..player_count {
+        let x = 40 + (n % 20) * 8;
+        let y = 40 + (n / 20) * 8;
+        let id = CharacterId(100 + n as u32);
+        let mut character = login_character(id, &login, 1, x, y);
+        character.x = x as u16;
+        character.y = y as u16;
+        assert!(world.spawn_character(character, x, y));
+        character_ids.push(id);
+    }
+
+    let pk_relations = PkRelationSnapshot::default();
+    let mut caches: Vec<_> = character_ids
+        .iter()
+        .map(|id| {
+            let character = world.characters.get(id).unwrap();
+            visible_map_cache(&world, character, &pk_relations, view_distance)
+        })
+        .collect();
+
+    let start = Instant::now();
+    for _ in 0..ticks {
+        for (id, cache) in character_ids.iter().zip(caches.iter_mut()) {
+            let character = world.characters.get(id).unwrap();
+            let _ = map_diff_payloads(&world, character, &pk_relations, view_distance, cache);
+        }
+    }
+    let elapsed = start.elapsed();
+    let per_tick_all_players = elapsed / ticks as u32;
+    let per_player_per_tick = elapsed / (ticks * player_count) as u32;
+
+    println!(
+        "profile_map_diff_payloads_cost: {player_count} players, view_distance={view_distance}, \
+         {ticks} ticks -> total={elapsed:?}, per-tick(all players)={per_tick_all_players:?}, \
+         per-player-per-tick={per_player_per_tick:?}"
+    );
+}

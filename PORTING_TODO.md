@@ -11721,9 +11721,32 @@ Unlocks every quest NPC. Do these before any P4 area work.
   --workspace` and `cargo build -p ugaris-server` unaffected (still
   green, see the health-check run this same iteration).
 
-- [ ] **Sector skip optimization (`skipx_sector`)** - C skips unchanged
+- [~] **Sector skip optimization (`skipx_sector`)** - C skips unchanged
   sectors in the per-tick map scan. Port once per-tick diff CPU becomes a
   measured problem (profile first; likely fine for small player counts).
+  REMAINING: added a real profiling baseline instead of guessing -
+  `profile_map_diff_payloads_cost_at_realistic_player_counts`
+  (`crates/ugaris-server/src/tests/map_sync.rs`, `#[ignore]`d, run with
+  `cargo test --release -p ugaris-server profile_map_diff_payloads_cost --
+  --ignored --nocapture`) measures `map_diff_payloads`'s unconditional
+  per-tile recompute cost (the exact thing `skipx_sector` would let C
+  skip) at 100 concurrent players and `view_distance=15` (a diamond of
+  ~450 tiles per player, each running a full `char_see_char`/line-of-sight
+  check) against a full `MAX_MAP`x`MAX_MAP` world. Result: ~27µs per
+  player per tick, ~2.7ms total per tick for all 100 players combined -
+  against a 24-tick/second (~41.6ms) tick budget that is ~6.5% at a player
+  count far above any real Ugaris concurrent population; at a realistic
+  handful of concurrent players the cost is well under 1% of one tick.
+  This confirms the task's own deferral condition still holds with real
+  data, not just assumption - genuinely not worth the large, cross-cutting
+  `set_sector` call-site integration (dozens of area `.c` files, most
+  still unported in P4) the actual optimization would require. Left `[~]`
+  rather than `[x]` since the optimization itself remains unimplemented;
+  re-run the profiling harness (or a real load test) if a future
+  iteration's player count or `view_distance` assumptions change, and
+  implement the real `DirtySectors`/`skip_x_sector` wiring (already
+  ported in `crates/ugaris-core/src/sector.rs`, just not called from
+  `map_sync.rs`) only if that shows a real problem.
 
 ---
 
@@ -12298,3 +12321,21 @@ Add one line per completed task: date, task, ledger section touched.
   the periodic `mark_alive` heartbeat are unchanged; ledger row for
   `src/system/database/database_area.h`/`.c` updated with the
   iteration-223 note.
+- 2026-07-06: Sector skip optimization (`skipx_sector`) (P3, now `[~]`) -
+  health check was green (1084/1084 `ugaris-server` tests, full workspace
+  passing) so picked this, the only remaining unchecked P3 item. Rather
+  than guess at "likely fine for small player counts", added a real
+  `#[ignore]`d profiling harness
+  (`profile_map_diff_payloads_cost_at_realistic_player_counts` in
+  `crates/ugaris-server/src/tests/map_sync.rs`) measuring
+  `map_diff_payloads`'s current unconditional per-tile recompute cost
+  (the LOS/`char_see_char` work C's `skipx_sector` would let it skip) at
+  100 concurrent players, `view_distance=15`: ~27µs/player/tick, ~2.7ms
+  total/tick, against the 24-tick/second (~41.6ms) tick budget - ~6.5% at
+  a player count far above any real Ugaris concurrency, negligible at
+  realistic counts. Confirms the deferral is still correct with real
+  data. No behavior change; `crates/ugaris-core/src/sector.rs`'s already-
+  ported `DirtySectors`/`skip_x_sector` remain unwired, ready for a
+  future iteration if load data ever says otherwise. `cargo fmt --all`,
+  `cargo test --workspace`, `cargo build -p ugaris-server` all green;
+  boot-smoked (10s run, tick loop advancing, no panics).
