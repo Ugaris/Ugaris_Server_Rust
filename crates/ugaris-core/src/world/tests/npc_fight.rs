@@ -271,6 +271,408 @@ fn simple_baddy_fight_tasks_suppress_movement_spacing_when_nomove_like_c() {
     )));
 }
 
+// C `fight_driver_attack_enemy`'s 9 remaining positional `no*` suppression
+// arguments (`src/system/drvlib.c:1682`, beyond the already-tested
+// `nomove`): each gates exactly one task's inclusion in the scored task
+// list. Not wired to any live caller yet (the NPC driver always passes
+// all-`false`; the player/lostcon caller is a separate follow-up task -
+// see `PORTING_TODO.md`), but the generalized `FightDriverSuppressions`
+// engine this exercises is what that follow-up will plug into.
+
+#[test]
+fn simple_baddy_fight_tasks_honor_legacy_nofreeze_gate() {
+    let mut world = World::default();
+    let mut npc = character(1);
+    npc.driver = CDR_SIMPLEBADDY;
+    npc.mana = FREEZE_COST;
+    npc.values[0][CharacterValue::Freeze as usize] = 20;
+    npc.driver_state = Some(CharacterDriverState::SimpleBaddy(
+        SimpleBaddyDriverData::default(),
+    ));
+    let target = character(2);
+    world.spawn_character(npc, 10, 10);
+    world.spawn_character(target, 12, 10);
+
+    let target = world.characters.get(&CharacterId(2)).unwrap();
+    let allowed = world.simple_baddy_fight_tasks(
+        CharacterId(1),
+        target,
+        1,
+        FightDriverSuppressions::default(),
+    );
+    let suppressed = world.simple_baddy_fight_tasks(
+        CharacterId(1),
+        target,
+        1,
+        FightDriverSuppressions {
+            nofreeze: true,
+            ..FightDriverSuppressions::default()
+        },
+    );
+
+    assert!(allowed
+        .iter()
+        .any(|task| task.kind == FightDriverTaskKind::Freeze));
+    assert!(!suppressed
+        .iter()
+        .any(|task| task.kind == FightDriverTaskKind::Freeze));
+}
+
+#[test]
+fn simple_baddy_fight_tasks_honor_legacy_noheal_gate() {
+    let mut world = World::default();
+    let mut npc = character(1);
+    npc.driver = CDR_SIMPLEBADDY;
+    npc.mana = 4 * POWERSCALE;
+    npc.hp = POWERSCALE;
+    npc.values[0][CharacterValue::Heal as usize] = 10;
+    npc.values[0][CharacterValue::Hp as usize] = 10;
+    npc.driver_state = Some(CharacterDriverState::SimpleBaddy(
+        SimpleBaddyDriverData::default(),
+    ));
+    let target = character(2);
+    world.spawn_character(npc, 10, 10);
+    world.spawn_character(target, 20, 20);
+
+    let target = world.characters.get(&CharacterId(2)).unwrap();
+    let allowed = world.simple_baddy_fight_tasks(
+        CharacterId(1),
+        target,
+        1,
+        FightDriverSuppressions::default(),
+    );
+    let suppressed = world.simple_baddy_fight_tasks(
+        CharacterId(1),
+        target,
+        1,
+        FightDriverSuppressions {
+            noheal: true,
+            ..FightDriverSuppressions::default()
+        },
+    );
+
+    assert!(allowed
+        .iter()
+        .any(|task| task.kind == FightDriverTaskKind::Heal));
+    assert!(!suppressed
+        .iter()
+        .any(|task| task.kind == FightDriverTaskKind::Heal));
+}
+
+#[test]
+fn simple_baddy_fight_tasks_honor_legacy_noshield_gate() {
+    let mut world = World::default();
+    let mut npc = character(1);
+    npc.driver = CDR_SIMPLEBADDY;
+    npc.mana = 4 * POWERSCALE;
+    npc.lifeshield = 0;
+    npc.values[0][CharacterValue::MagicShield as usize] = 20;
+    npc.driver_state = Some(CharacterDriverState::SimpleBaddy(
+        SimpleBaddyDriverData::default(),
+    ));
+    let target = character(2);
+    world.spawn_character(npc, 10, 10);
+    world.spawn_character(target, 20, 20);
+
+    let target = world.characters.get(&CharacterId(2)).unwrap();
+    let allowed = world.simple_baddy_fight_tasks(
+        CharacterId(1),
+        target,
+        1,
+        FightDriverSuppressions::default(),
+    );
+    let suppressed = world.simple_baddy_fight_tasks(
+        CharacterId(1),
+        target,
+        1,
+        FightDriverSuppressions {
+            noshield: true,
+            ..FightDriverSuppressions::default()
+        },
+    );
+
+    assert!(allowed
+        .iter()
+        .any(|task| task.kind == FightDriverTaskKind::MagicShield));
+    assert!(!suppressed
+        .iter()
+        .any(|task| task.kind == FightDriverTaskKind::MagicShield));
+}
+
+#[test]
+fn simple_baddy_fight_tasks_honor_legacy_nobless_gate() {
+    let mut world = World::default();
+    let mut npc = character(1);
+    npc.driver = CDR_SIMPLEBADDY;
+    npc.mana = BLESS_COST;
+    npc.values[0][CharacterValue::Bless as usize] = 20;
+    npc.driver_state = Some(CharacterDriverState::SimpleBaddy(
+        SimpleBaddyDriverData::default(),
+    ));
+    let target = character(2);
+    world.spawn_character(npc, 10, 10);
+    world.spawn_character(target, 20, 20);
+
+    let target = world.characters.get(&CharacterId(2)).unwrap();
+    let allowed = world.simple_baddy_fight_tasks(
+        CharacterId(1),
+        target,
+        1,
+        FightDriverSuppressions::default(),
+    );
+    let suppressed = world.simple_baddy_fight_tasks(
+        CharacterId(1),
+        target,
+        1,
+        FightDriverSuppressions {
+            nobless: true,
+            ..FightDriverSuppressions::default()
+        },
+    );
+
+    assert!(allowed
+        .iter()
+        .any(|task| task.kind == FightDriverTaskKind::Bless));
+    assert!(!suppressed
+        .iter()
+        .any(|task| task.kind == FightDriverTaskKind::Bless));
+}
+
+#[test]
+fn simple_baddy_fight_tasks_honor_legacy_nofireball_gate() {
+    let mut world = World::default();
+    let mut npc = character(1);
+    npc.driver = CDR_SIMPLEBADDY;
+    npc.mana = FIREBALL_COST;
+    npc.values[0][CharacterValue::Fireball as usize] = 20;
+    npc.driver_state = Some(CharacterDriverState::SimpleBaddy(
+        SimpleBaddyDriverData::default(),
+    ));
+    let target = character(2);
+    world.spawn_character(npc, 10, 10);
+    world.spawn_character(target, 14, 10);
+    world.map.tile_mut(14, 10).unwrap().light = 255;
+
+    let target = world.characters.get(&CharacterId(2)).unwrap();
+    let allowed = world.simple_baddy_fight_tasks(
+        CharacterId(1),
+        target,
+        1,
+        FightDriverSuppressions::default(),
+    );
+    let suppressed = world.simple_baddy_fight_tasks(
+        CharacterId(1),
+        target,
+        1,
+        FightDriverSuppressions {
+            nofireball: true,
+            ..FightDriverSuppressions::default()
+        },
+    );
+
+    assert!(allowed
+        .iter()
+        .any(|task| task.kind == FightDriverTaskKind::Fireball));
+    assert!(!suppressed.iter().any(|task| matches!(
+        task.kind,
+        FightDriverTaskKind::Fireball | FightDriverTaskKind::FireRing
+    )));
+}
+
+#[test]
+fn simple_baddy_fight_tasks_honor_legacy_noball_gate() {
+    let mut world = World::default();
+    let mut npc = character(1);
+    npc.driver = CDR_SIMPLEBADDY;
+    npc.mana = FLASH_COST;
+    npc.values[0][CharacterValue::Flash as usize] = 20;
+    npc.driver_state = Some(CharacterDriverState::SimpleBaddy(
+        SimpleBaddyDriverData::default(),
+    ));
+    let target = character(2);
+    world.spawn_character(npc, 10, 10);
+    world.spawn_character(target, 16, 10);
+    world.map.tile_mut(16, 10).unwrap().light = 255;
+
+    let target = world.characters.get(&CharacterId(2)).unwrap();
+    let allowed = world.simple_baddy_fight_tasks(
+        CharacterId(1),
+        target,
+        1,
+        FightDriverSuppressions::default(),
+    );
+    let suppressed = world.simple_baddy_fight_tasks(
+        CharacterId(1),
+        target,
+        1,
+        FightDriverSuppressions {
+            noball: true,
+            ..FightDriverSuppressions::default()
+        },
+    );
+
+    assert!(allowed
+        .iter()
+        .any(|task| task.kind == FightDriverTaskKind::Ball));
+    assert!(!suppressed
+        .iter()
+        .any(|task| task.kind == FightDriverTaskKind::Ball));
+}
+
+#[test]
+fn simple_baddy_fight_tasks_honor_legacy_noflash_gate() {
+    let mut world = World::default();
+    let mut npc = character(1);
+    npc.driver = CDR_SIMPLEBADDY;
+    npc.mana = FLASH_COST;
+    npc.values[0][CharacterValue::Flash as usize] = 20;
+    npc.driver_state = Some(CharacterDriverState::SimpleBaddy(
+        SimpleBaddyDriverData::default(),
+    ));
+    let target = character(2);
+    world.spawn_character(npc, 10, 10);
+    world.spawn_character(target, 12, 10);
+    world.map.tile_mut(12, 10).unwrap().light = 255;
+
+    let target = world.characters.get(&CharacterId(2)).unwrap();
+    let allowed = world.simple_baddy_fight_tasks(
+        CharacterId(1),
+        target,
+        1,
+        FightDriverSuppressions::default(),
+    );
+    let suppressed = world.simple_baddy_fight_tasks(
+        CharacterId(1),
+        target,
+        1,
+        FightDriverSuppressions {
+            noflash: true,
+            ..FightDriverSuppressions::default()
+        },
+    );
+
+    assert!(allowed
+        .iter()
+        .any(|task| task.kind == FightDriverTaskKind::Flash));
+    assert!(!suppressed
+        .iter()
+        .any(|task| task.kind == FightDriverTaskKind::Flash));
+}
+
+#[test]
+fn simple_baddy_fight_tasks_honor_legacy_nowarcry_gate() {
+    let mut world = World::default();
+    let mut npc = character(1);
+    npc.driver = CDR_SIMPLEBADDY;
+    npc.endurance = 10 * POWERSCALE;
+    npc.values[0][CharacterValue::Warcry as usize] = 20;
+    npc.driver_state = Some(CharacterDriverState::SimpleBaddy(
+        SimpleBaddyDriverData::default(),
+    ));
+    let target = character(2);
+    world.spawn_character(npc, 10, 10);
+    world.spawn_character(target, 12, 10);
+    world.map.tile_mut(12, 10).unwrap().light = 255;
+
+    let target = world.characters.get(&CharacterId(2)).unwrap();
+    let allowed = world.simple_baddy_fight_tasks(
+        CharacterId(1),
+        target,
+        1,
+        FightDriverSuppressions::default(),
+    );
+    let suppressed = world.simple_baddy_fight_tasks(
+        CharacterId(1),
+        target,
+        1,
+        FightDriverSuppressions {
+            nowarcry: true,
+            ..FightDriverSuppressions::default()
+        },
+    );
+
+    assert!(allowed
+        .iter()
+        .any(|task| task.kind == FightDriverTaskKind::Warcry));
+    assert!(!suppressed
+        .iter()
+        .any(|task| task.kind == FightDriverTaskKind::Warcry));
+}
+
+#[test]
+fn simple_baddy_fight_tasks_honor_legacy_nopulse_gate() {
+    let mut world = World::default();
+    let mut npc = character(1);
+    npc.driver = CDR_SIMPLEBADDY;
+    npc.mana = POWERSCALE + 1;
+    npc.values[0][CharacterValue::Mana as usize] = 1;
+    npc.values[0][CharacterValue::Pulse as usize] = 2_000;
+    npc.driver_state = Some(CharacterDriverState::SimpleBaddy(
+        SimpleBaddyDriverData::default(),
+    ));
+    let mut target = character(2);
+    target.flags.insert(CharacterFlags::ALIVE);
+    target.hp = POWERSCALE + 100;
+    target.lifeshield = 0;
+    target.values[0][CharacterValue::Hp as usize] = 100;
+    world.spawn_character(npc, 10, 10);
+    world.spawn_character(target, 12, 10);
+    world.map.tile_mut(12, 10).unwrap().light = 255;
+
+    let target = world.characters.get(&CharacterId(2)).unwrap();
+    let allowed = world.simple_baddy_fight_tasks(
+        CharacterId(1),
+        target,
+        1,
+        FightDriverSuppressions::default(),
+    );
+    let suppressed = world.simple_baddy_fight_tasks(
+        CharacterId(1),
+        target,
+        1,
+        FightDriverSuppressions {
+            nopulse: true,
+            ..FightDriverSuppressions::default()
+        },
+    );
+
+    assert!(allowed
+        .iter()
+        .any(|task| task.kind == FightDriverTaskKind::Pulse));
+    assert!(!suppressed
+        .iter()
+        .any(|task| task.kind == FightDriverTaskKind::Pulse));
+}
+
+#[test]
+fn simple_baddy_fight_tasks_bool_nomove_still_converts_via_into() {
+    // Every call site that predates `FightDriverSuppressions` passed a bare
+    // `bool` for `nomove`; `From<bool>` keeps them compiling unchanged.
+    let mut world = World::default();
+    let mut npc = character(1);
+    npc.driver = CDR_SIMPLEBADDY;
+    npc.driver_state = Some(CharacterDriverState::SimpleBaddy(
+        SimpleBaddyDriverData::default(),
+    ));
+    let target = character(2);
+    world.spawn_character(npc, 10, 10);
+    world.spawn_character(target, 13, 10);
+
+    let target = world.characters.get(&CharacterId(2)).unwrap();
+    let via_bool = world.simple_baddy_fight_tasks(CharacterId(1), target, 1, true);
+    let via_struct = world.simple_baddy_fight_tasks(
+        CharacterId(1),
+        target,
+        1,
+        FightDriverSuppressions {
+            nomove: true,
+            ..FightDriverSuppressions::default()
+        },
+    );
+
+    assert_eq!(via_bool, via_struct);
+}
+
 #[test]
 fn simple_baddy_attack_action_self_heals_before_offense_when_badly_hurt() {
     let mut world = World::default();

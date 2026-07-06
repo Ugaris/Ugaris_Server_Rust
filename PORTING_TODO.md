@@ -11052,7 +11052,7 @@ Unlocks every quest NPC. Do these before any P4 area work.
    task open indefinitely, matching the iteration-218 precedent for
    closing tasks with only a permanently-deferred infra gap left.
 
-- [ ] **Player-side fight-driver auto-combat (lostcon self-defense +
+- [~] **Player-side fight-driver auto-combat (lostcon self-defense +
   no*/auto* toggle family)** - `fight_driver_attack_enemy`/
   `fight_driver_attack_visible`/`fight_driver_follow_invisible`
   (`src/system/drvlib.c:1682-2320`) already have a substantial Rust port
@@ -11086,6 +11086,47 @@ Unlocks every quest NPC. Do these before any P4 area work.
   a lostcon character defends itself. Reuse the NPC-side engine - do not
   re-port `fight_driver_attack_enemy` from scratch, and do not fold this
   back into the closed text-commands task.
+
+  REMAINING: (iteration 233) generalized the *task-scoring* half of the
+  engine - added `FightDriverSuppressions` (`npc_fight.rs`, the 10
+  positional `nomove`/`nobless`/`noheal`/`noflash`/`nofireball`/`noball`/
+  `noshield`/`nowarcry`/`nofreeze`/`nopulse` args from C's
+  `fight_driver_attack_enemy`) and threaded it through
+  `simple_baddy_fight_tasks`/`simple_baddy_distance3_task_value`/
+  `simple_baddy_distance7_task_value`/the new `setup_weighted_fight_task`
+  (generalization of `setup_simple_baddy_weighted_fight_task`, which now
+  delegates to it with all-`false` suppressions) - each `no*` flag gates
+  exactly the task(s) C guards with it. `simple_baddy_fight_tasks`'s old
+  bare `nomove: bool` parameter became `impl Into<FightDriverSuppressions>`
+  (`From<bool>` maps it to `{ nomove, ..default() }`) so every pre-
+  existing call site (NPC driver + ~10 existing tests) keeps compiling
+  unchanged. 10 new tests, one per `no*` flag, confirm gating; still zero
+  live callers pass anything but all-`false` (or bare `false`/`true` for
+  `nomove`) - this iteration did NOT wire lostcon or player toggles yet.
+  Blocker discovered while implementing: the engine's *enemy-tracking*
+  half (`dat->enemy[]` / C's separate `set_data(cn, DRD_FIGHTDRIVER,...)`
+  slot, independent of `ch[cn].driver`) is ported as
+  `SimpleBaddyDriverData.enemies` - i.e. tightly coupled to
+  `CharacterDriverState::SimpleBaddy`, which a `CDR_LOSTCON` character
+  (`CharacterDriverState::Lostcon`) or a normal playing character does
+  not have. Before the lostcon tick or player no*/auto* toggles can call
+  this engine, that enemy list (plus `stopdist`/`home_x`/`home_y`/
+  `lastfight`/`last_hit`) needs its own storage independent of the
+  character's current driver kind (mirroring C's `set_data`/`DRD_FIGHTDRIVER`
+  independence), e.g. a `fight_driver_data: Option<FightDriverData>` field
+  on `Character` itself, with `refresh_simple_baddy_enemy_tracking`/
+  `sort_simple_baddy_enemies_like_c`/`remove_simple_baddy_enemy`/etc.
+  (`npc_messages.rs`) migrated to read/write it instead of matching on
+  `CharacterDriverState::SimpleBaddy`. Next iteration: do that storage
+  migration first (should be behavior-preserving for the NPC path, since
+  it is a pure relocation), then wire `lostcon.rs`'s tick to call
+  `fight_driver_attack_visible`+`fight_driver_follow_invisible`-equivalent
+  logic with suppressions built from the stashed `PlayerRuntime`'s no*
+  fields, then the low-hp-heal/low-mana-potion/low-shield-magicshield
+  pre-cascade and post-cascade fallback from `lostcon_driver` itself
+  (`lostcon.c:164-220`, not touched this iteration), then finally the
+  normal-player-tick `autobless`/`autopulse` consumers in
+  `player_driver.c:1067-1070`.
 
 - [ ] **Macro-detection engine (`macro_driver`, `src/module/base.c:802-
   1243`, ~800 lines)** - anti-macro/anti-bot detection: activity

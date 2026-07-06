@@ -65,6 +65,42 @@ pub(crate) fn fight_driver_attackback_may_run(tasks: &[FightDriverTask], index: 
         .is_some_and(|task| task.kind == FightDriverTaskKind::Attack)
 }
 
+/// C `fight_driver_attack_enemy`'s 10 positional `no*` suppression
+/// parameters (`src/system/drvlib.c:1682`). The NPC-side `CDR_SIMPLEBADDY`/
+/// `CDR_DUNGEONFIGHTER` callers always pass all-zero (see
+/// `fight_driver_attack_visible`'s `else` branch that calls
+/// `fight_driver_attack_enemy(cn, ..., 0,0,0,0,0,0,0,0,0,0)` when the
+/// attacker has no `lostcon_ppd`), which `Default`/`From<bool>` (mapping a
+/// bare `nomove` bool, matching every existing call site before this type
+/// existed) both reproduce. The player-side caller (`ppd->nobless`, etc.)
+/// is not wired yet - see `PORTING_TODO.md`'s "Player-side fight-driver
+/// auto-combat" task - this type only generalizes the task-scoring engine
+/// so that wiring has somewhere to plug in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) struct FightDriverSuppressions {
+    pub(crate) nomove: bool,
+    pub(crate) nobless: bool,
+    pub(crate) noheal: bool,
+    pub(crate) noflash: bool,
+    pub(crate) nofireball: bool,
+    pub(crate) noball: bool,
+    pub(crate) noshield: bool,
+    pub(crate) nowarcry: bool,
+    pub(crate) nofreeze: bool,
+    pub(crate) nopulse: bool,
+}
+
+impl From<bool> for FightDriverSuppressions {
+    /// Every pre-existing call site only ever suppressed movement
+    /// (`nomove`); keep those call sites compiling unchanged.
+    fn from(nomove: bool) -> Self {
+        Self {
+            nomove,
+            ..Self::default()
+        }
+    }
+}
+
 impl World {
     pub fn process_simple_baddy_attack_action(
         &mut self,
@@ -1374,7 +1410,30 @@ impl World {
         area_id: u16,
         random: &mut impl FnMut(u32) -> u32,
     ) -> bool {
-        let mut tasks = self.simple_baddy_fight_tasks(character_id, target, area_id, false);
+        self.setup_weighted_fight_task(
+            character_id,
+            target,
+            area_id,
+            FightDriverSuppressions::default(),
+            random,
+        )
+    }
+
+    /// C `fight_driver_attack_enemy`: score every applicable task, apply
+    /// the level-based silliness rolls, sort, and run tasks in order until
+    /// one succeeds. `suppressions` generalizes the `nomove`/`nobless`/...
+    /// positional arguments so both the NPC driver (always all-`false`)
+    /// and a future player/lostcon caller (`lostcon_ppd`-backed toggles)
+    /// can share this engine.
+    pub(crate) fn setup_weighted_fight_task(
+        &mut self,
+        character_id: CharacterId,
+        target: &Character,
+        area_id: u16,
+        suppressions: FightDriverSuppressions,
+        random: &mut impl FnMut(u32) -> u32,
+    ) -> bool {
+        let mut tasks = self.simple_baddy_fight_tasks(character_id, target, area_id, suppressions);
         let level = self
             .characters
             .get(&character_id)
@@ -1460,8 +1519,9 @@ impl World {
         character_id: CharacterId,
         target: &Character,
         area_id: u16,
-        nomove: bool,
+        suppressions: impl Into<FightDriverSuppressions>,
     ) -> Vec<FightDriverTask> {
+        let suppressions = suppressions.into();
         let Some(attacker) = self.characters.get(&character_id) else {
             return Vec::new();
         };
@@ -1471,7 +1531,8 @@ impl World {
         let current_tick = self.tick.0 as u32;
         let target_has_tactics = character_value_present(target, CharacterValue::Tactics) != 0;
 
-        if character_value(attacker, CharacterValue::Freeze) > 1
+        if !suppressions.nofreeze
+            && character_value(attacker, CharacterValue::Freeze) > 1
             && attacker.mana >= FREEZE_COST
             && tile_distance < 4
             && may_add_spell(target, &self.items, IDR_FREEZE, current_tick).is_some()
@@ -1482,13 +1543,13 @@ impl World {
                 value: FIGHT_DRIVER_HIGH_PRIO + character_value(attacker, CharacterValue::Freeze),
             });
         }
-        if self.simple_baddy_can_heal_self(attacker) {
+        if !suppressions.noheal && self.simple_baddy_can_heal_self(attacker) {
             tasks.push(FightDriverTask {
                 kind: FightDriverTaskKind::Heal,
                 value: FIGHT_DRIVER_HIGH_PRIO + character_value(attacker, CharacterValue::Heal),
             });
         }
-        if self.simple_baddy_can_magicshield_self(attacker) {
+        if !suppressions.noshield && self.simple_baddy_can_magicshield_self(attacker) {
             tasks.push(FightDriverTask {
                 kind: FightDriverTaskKind::MagicShield,
                 value: FIGHT_DRIVER_HIGH_PRIO
@@ -1506,7 +1567,7 @@ impl World {
                 value: simple_baddy_earth_task_value(earthmud_good),
             });
         }
-        if self.simple_baddy_can_bless_self(attacker) {
+        if !suppressions.nobless && self.simple_baddy_can_bless_self(attacker) {
             tasks.push(FightDriverTask {
                 kind: FightDriverTaskKind::Bless,
                 value: FIGHT_DRIVER_HIGH_PRIO + character_value(attacker, CharacterValue::Bless),
@@ -1518,7 +1579,8 @@ impl World {
             character_value(target, CharacterValue::Tactics),
             target_has_tactics,
         );
-        if character_value(attacker, CharacterValue::Fireball) > 1
+        if !suppressions.nofireball
+            && character_value(attacker, CharacterValue::Fireball) > 1
             && fireball_damage_value >= POWERSCALE
             && attacker.mana >= FIREBALL_COST
         {
@@ -1571,13 +1633,18 @@ impl World {
                 usize::from(target.x),
                 usize::from(target.y),
             ) > i32::from(tile_distance) * 2 - 5;
-            if character_distance > 10 && character_distance < 30 && ball_reaches_target {
+            if !suppressions.noball
+                && character_distance > 10
+                && character_distance < 30
+                && ball_reaches_target
+            {
                 tasks.push(FightDriverTask {
                     kind: FightDriverTaskKind::Ball,
                     value: FIGHT_DRIVER_MED_PRIO + character_value(attacker, CharacterValue::Flash),
                 });
             }
-            if tile_distance < 4
+            if !suppressions.noflash
+                && tile_distance < 4
                 && may_add_spell(attacker, &self.items, IDR_FLASH, current_tick).is_some()
             {
                 tasks.push(FightDriverTask {
@@ -1588,14 +1655,14 @@ impl World {
                 });
             }
         }
-        if self.simple_baddy_can_warcry(attacker, target) {
+        if !suppressions.nowarcry && self.simple_baddy_can_warcry(attacker, target) {
             tasks.push(FightDriverTask {
                 kind: FightDriverTaskKind::Warcry,
                 value: FIGHT_DRIVER_HIGH_PRIO
                     + character_value(attacker, CharacterValue::Warcry) / 2,
             });
         }
-        if !nomove || character_distance == 2 {
+        if !suppressions.nomove || character_distance == 2 {
             tasks.push(FightDriverTask {
                 kind: FightDriverTaskKind::Attack,
                 value: simple_baddy_attack_task_value(attacker, &self.items),
@@ -1607,15 +1674,15 @@ impl World {
                 value: self.simple_baddy_regenerate_task_value(attacker),
             });
         }
-        if !nomove {
-            let distance3 = self.simple_baddy_distance3_task_value(attacker, target);
+        if !suppressions.nomove {
+            let distance3 = self.simple_baddy_distance3_task_value(attacker, target, suppressions);
             if distance3 > 0 {
                 tasks.push(FightDriverTask {
                     kind: FightDriverTaskKind::Distance3,
                     value: distance3,
                 });
             }
-            let distance7 = self.simple_baddy_distance7_task_value(attacker, target);
+            let distance7 = self.simple_baddy_distance7_task_value(attacker, target, suppressions);
             if distance7 > 0 {
                 tasks.push(FightDriverTask {
                     kind: FightDriverTaskKind::Distance7,
@@ -1624,13 +1691,13 @@ impl World {
             }
         }
         let pulse = self.simple_baddy_pulse_value(character_id);
-        if pulse > 0 {
+        if !suppressions.nopulse && pulse > 0 {
             tasks.push(FightDriverTask {
                 kind: FightDriverTaskKind::Pulse,
                 value: FIGHT_DRIVER_HIGH_PRIO + pulse,
             });
         }
-        if !nomove && self.simple_baddy_attackback_value(character_id, target) > 0 {
+        if !suppressions.nomove && self.simple_baddy_attackback_value(character_id, target) > 0 {
             tasks.push(FightDriverTask {
                 kind: FightDriverTaskKind::AttackBack,
                 value: FIGHT_DRIVER_HIGH_PRIO,
@@ -2249,10 +2316,12 @@ impl World {
         &self,
         attacker: &Character,
         target: &Character,
+        suppressions: FightDriverSuppressions,
     ) -> i32 {
         let current_tick = self.tick.0 as u32;
         let mut value = 0;
-        if attacker.mana > POWERSCALE * 3
+        if !suppressions.nofreeze
+            && attacker.mana > POWERSCALE * 3
             && character_value_present(attacker, CharacterValue::Freeze) != 0
             && tile_char_dist(attacker, target) > 3
             && may_add_spell(target, &self.items, IDR_FREEZE, current_tick).is_some()
@@ -2264,7 +2333,8 @@ impl World {
                 FIGHT_DRIVER_MED_PRIO + character_value(attacker, CharacterValue::Freeze)
             };
         }
-        if attacker.mana > POWERSCALE * 3
+        if !suppressions.noflash
+            && attacker.mana > POWERSCALE * 3
             && character_value_present(attacker, CharacterValue::Flash) != 0
             && may_add_spell(attacker, &self.items, IDR_FLASH, current_tick).is_none()
         {
@@ -2281,8 +2351,10 @@ impl World {
         &self,
         attacker: &Character,
         target: &Character,
+        suppressions: FightDriverSuppressions,
     ) -> i32 {
-        if attacker.mana <= FIREBALL_COST
+        if suppressions.nofireball
+            || attacker.mana <= FIREBALL_COST
             || character_value_present(attacker, CharacterValue::Fireball) == 0
             || character_value_present(attacker, CharacterValue::Fireball)
                 <= character_value_present(attacker, CharacterValue::Flash)
