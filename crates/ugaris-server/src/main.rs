@@ -19,6 +19,7 @@ mod commands_chat;
 mod commands_player;
 mod constants;
 mod containers;
+mod cross_area;
 mod depot;
 mod dungeon;
 mod effects_sync;
@@ -53,6 +54,7 @@ pub(crate) use commands_chat::*;
 pub(crate) use commands_player::*;
 pub(crate) use constants::*;
 pub(crate) use containers::*;
+pub(crate) use cross_area::*;
 pub(crate) use depot::*;
 // Only consumed by `tests::dungeon` today - `build_warrior`/`build_mage`/
 // `build_seyan` aren't wired into any runtime call site yet (see that
@@ -3753,9 +3755,26 @@ async fn main() -> anyhow::Result<()> {
                                                     }
                                                     executed += 1;
                                                 }
-                                                TransportTravelResult::CrossArea { .. } => {
-                                                    feedback.push((character_id, "Nothing happens - target area server is down.".to_string()));
-                                                    blocked += 1;
+                                                TransportTravelResult::CrossArea { area, x, y, mirror } => {
+                                                    let transferred = attempt_cross_area_transfer(
+                                                        &mut world,
+                                                        &mut runtime,
+                                                        &character_repository,
+                                                        &area_repository,
+                                                        config.area_id,
+                                                        config.mirror_id,
+                                                        character_id,
+                                                        area,
+                                                        mirror,
+                                                        x,
+                                                        y,
+                                                    ).await;
+                                                    if transferred {
+                                                        executed += 1;
+                                                    } else {
+                                                        feedback.push((character_id, "Nothing happens - target area server is down.".to_string()));
+                                                        blocked += 1;
+                                                    }
                                                 }
                                                 TransportTravelResult::Busy => {
                                                     feedback.push((character_id, "Please try again soon. Target is busy".to_string()));

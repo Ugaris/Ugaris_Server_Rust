@@ -60,3 +60,87 @@ fn logout_save_omits_arkhata_stopwatch_from_cursor_snapshot() {
     assert_eq!(request.character.current_container, None);
     assert!(request.items.is_empty());
 }
+
+#[test]
+fn area_transfer_save_request_writes_destination_coords_and_allowed_area() {
+    // C `change_area` (`database_character.c:343-364`): `kick_char`'s
+    // `save_char(cn, save_area)` writes the *destination* area into
+    // `allowed_area`/`mirror` while the guard columns still check
+    // against this server's own (sending) `current_area`/
+    // `current_mirror` - never the destination's.
+    let mut world = World::default();
+    let character_id = CharacterId(9);
+    let mut character = login_character(character_id, &login_block("Traveler"), 3, 50, 60);
+    character.x = 50;
+    character.y = 60;
+    world.add_character(character.clone());
+
+    let request = character_area_transfer_save_request(
+        &world,
+        &PlayerRuntime::connected(1, 0),
+        &character,
+        None,
+        3,   // sending area_id
+        1,   // sending mirror_id
+        6,   // target area
+        4,   // target mirror
+        139, // target x
+        75,  // target y
+    );
+
+    assert_eq!(request.character.x, 139);
+    assert_eq!(request.character.y, 75);
+    match request.mode {
+        CharacterSaveMode::Logout {
+            expected_current_area,
+            expected_current_mirror,
+            allowed_area,
+            mirror,
+        } => {
+            assert_eq!(expected_current_area, 3);
+            assert_eq!(expected_current_mirror, 1);
+            assert_eq!(allowed_area, 6);
+            assert_eq!(mirror, 4);
+        }
+        other => panic!("expected Logout mode, got {other:?}"),
+    }
+}
+
+#[test]
+fn area_transfer_save_request_also_strips_logout_vanishing_items() {
+    // Reuses `character_logout_snapshot` exactly like a normal
+    // same-area logout save - an arkhata stopwatch on the cursor still
+    // vanishes on a cross-area transfer, since C's `kick_char` runs the
+    // exact same `save_char` codepath regardless of *why* the character
+    // is leaving.
+    let mut world = World::default();
+    let character_id = CharacterId(11);
+    let mut character = login_character(character_id, &login_block("Traveler2"), 37, 10, 10);
+    character.cursor_item = Some(ItemId(20));
+    character.current_container = Some(ItemId(20));
+    world.add_character(character.clone());
+
+    let mut stopwatch = test_item_with_driver(ItemId(20), IDR_ARKHATA);
+    stopwatch.carried_by = Some(character_id);
+    stopwatch.driver_data = vec![1];
+    world.add_item(stopwatch);
+
+    let request = character_area_transfer_save_request(
+        &world,
+        &PlayerRuntime::connected(1, 0),
+        &character,
+        None,
+        37,
+        0,
+        1,
+        1,
+        126,
+        179,
+    );
+
+    assert_eq!(request.character.cursor_item, None);
+    assert_eq!(request.character.current_container, None);
+    assert!(request.items.is_empty());
+    assert_eq!(request.character.x, 126);
+    assert_eq!(request.character.y, 179);
+}

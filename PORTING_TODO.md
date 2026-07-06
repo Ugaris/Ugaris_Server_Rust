@@ -10484,36 +10484,54 @@ Unlocks every quest NPC. Do these before any P4 area work.
   and `#` text commands" task's final Progress Log entry for the
   per-command detail; none of the three need a separate task of their
   own once this one lands.
-  REMAINING (iteration 220): the single-process stance is now decided
-  (see the design plan in `PORTING_LEDGER.md`'s "Continuation Handoff" -
-  N area-server OS processes, one `--area-id`/`--mirror-id` each, DB-
-  mediated handoff via the already-existing `area_servers` table; no in-
-  process multi-area mode) and the login-side half of the redirect is
-  wired: `SV_SERVER` packet encoder
-  (`ugaris-protocol/src/packet.rs::PacketBuilder::server_redirect`),
-  `AreaRepository` wired into `ugaris-server` (startup `mark_alive`/
-  shutdown `mark_down`, new `--public-addr` CLI arg), and
-  `LoginOutcome::NewArea` now redirects a client to a live registered
-  target area server instead of unconditionally rejecting (falls back to
-  the existing "down" reject text only when the target isn't registered
-  or is marked offline). Still missing: (1) the *mid-game* teleport half
-  - every `TransportTravelResult::CrossArea`/`area_id != config.area_id`
-  call site listed in the design plan (transport points, `/office`,
-  `/goto`, mine gateway, clan-spawn exit, jail/unjail, dungeon-master
-  rescue) still only ever sends the "down" message and never calls
-  `AreaRepository::get_area` - porting this needs the character's DB row
-  saved with the *target* area/coords before sending `SV_SERVER` (C's
-  `change_area`+`kick_char`+`save_char(cn, area_number)`), which touches
-  the existing `CharacterSaveMode`/`save_character_snapshot` machinery
-  and hasn't been threaded through yet; (2) a periodic `mark_alive`
-  heartbeat (currently startup-only, so a long-running process whose
-  `area_servers` row falls out of some future staleness window - none
-  exists yet, C's own `time_now - alive < 300` check has no Rust
-  equivalent either - would need a periodic re-mark, though Postgres
-  being the single shared source of truth here makes this far less
-  urgent than C's in-memory `area[]` cache going stale); (3) the three
+  REMAINING (iteration 221): iteration 220 decided the single-process
+  stance and ported the login-side redirect (see prior notes, still
+  accurate). This iteration ported the first slice of the *mid-game*
+  teleport half the prior note flagged as missing: a new reusable
+  `crates/ugaris-server/src/cross_area.rs::attempt_cross_area_transfer`
+  helper reproduces C's real `change_area`/`kick_char`/`player_to_server`
+  sequence end-to-end (`AreaRepository::get_area` lookup ->
+  `CharacterSaveMode::Logout` save with the *destination*
+  area/mirror/coords written via a new
+  `crates/ugaris-server/src/snapshots.rs::character_area_transfer_save_
+  request` builder -> `world.remove_character` despawn -> `SV_SERVER`
+  redirect + session disconnect, matching C's "lookup failure is the
+  only hard abort; a save failure still proceeds to disconnect, exactly
+  like `kick_char` never checking `save_char`'s return value" semantics)
+  and wired it into exactly one call site: transport-point travel
+  (`TransportTravelResult::CrossArea` in `main.rs`'s `TransportTravel`
+  outcome handler - the "most self-contained" starting point the prior
+  iteration's design plan recommended). This codebase's `Character` has
+  no separate `tmpx`/`tmpy`/`tmpa` fields the way C does (see the design
+  plan), so the destination coordinates are written directly into the
+  saved `x`/`y` snapshot fields instead - the receiving server's existing
+  `apply_character_snapshot` already spawns from exactly those fields, so
+  no additional "arrival" state is needed. Still missing, in the same
+  priority order as before: (1) the other 6 `TransportTravelResult::
+  CrossArea`/`area_id != config.area_id` call sites listed in the design
+  plan - clan-spawn exit and mine gateway (both in `main.rs`), `/office`
+  + `/goto` (`commands_admin.rs::finish_goto_jump`), `/jail`/`/unjail`
+  (`world/jail.rs`, currently resolved via `World`-side queued lookups
+  with no DB handle of its own - would need its own wiring path since it
+  can't call the new async helper directly from `ugaris-core`), and the
+  dungeon-master eviction rescue (`world/dungeon_master.rs`) - all still
+  only ever send the "down" message; each should be a switch to calling
+  `attempt_cross_area_transfer` (or, for the `world/`-side callers, a
+  thin `ugaris-server`-side wrapper around it) one at a time; (2) a
+  periodic `mark_alive` heartbeat (still startup-only); (3) the three
   blocked commands (`/exterminate`/`/values`+`/showvalues`/`/allow`)
-  still need their own `server_chat`-equivalent design once (1) lands.
+  still need their own `server_chat`-equivalent design once (1) fully
+  lands. New tests: `crates/ugaris-server/src/tests/snapshots.rs`
+  (`area_transfer_save_request_writes_destination_coords_and_allowed_
+  area`, `area_transfer_save_request_also_strips_logout_vanishing_
+  items` - the pure snapshot-builder half, fully unit-tested without a
+  database) and `crates/ugaris-server/src/tests/cross_area.rs`
+  (`cross_area_transfer_stays_put_without_a_registered_repository_pair`
+  - the no-`DATABASE_URL` fallback path, matching every other DB-optional
+  codepath's test convention in this codebase); the actual DB-backed
+  save+redirect path itself has no live-Postgres test yet (same gap as
+  the login-side redirect it reuses `area_redirect_payload` from), only
+  the 10s boot-smoke this iteration re-ran.
 
 - [ ] **Player-side fight-driver auto-combat (lostcon self-defense +
   no*/auto* toggle family)** - `fight_driver_attack_enemy`/

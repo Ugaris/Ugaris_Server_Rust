@@ -199,6 +199,60 @@ pub(crate) fn character_save_request(
     }
 }
 
+/// C `change_area`'s `kick_char`->`save_char(cn, save_area)` half
+/// (`database_character.c:343-364` combined with `player.c:115-149`):
+/// saves the character exactly like a normal logout
+/// (`character_save_request`), except `allowed_area`/`mirror` are set to
+/// the *destination* area/mirror instead of this server's own
+/// `area_id`/`mirror_id`, and the snapshot's `x`/`y` are overwritten
+/// with the destination coordinates. C models this via separate
+/// `tmpx`/`tmpy`/`tmpa` fields set by `change_area` before `kick_char`
+/// runs and consumed by the *receiving* server's `tick_login`
+/// (`drop_char_extended(cn, ch[cn].tmpx, ch[cn].tmpy, 6)`) - this
+/// codebase's `Character` has no separate tmp-position fields (see the
+/// "Cross-area transfer" `PORTING_TODO.md` task), so the destination
+/// coordinates are written directly into the saved `x`/`y` snapshot
+/// fields the receiving server's own `apply_character_snapshot` already
+/// spawns from, achieving the same net effect with one less field pair.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn character_area_transfer_save_request(
+    world: &World,
+    player: &PlayerRuntime,
+    character: &Character,
+    account_depot: Option<&AccountDepotState>,
+    area_id: u16,
+    mirror_id: u16,
+    target_area_id: u16,
+    target_mirror_id: u16,
+    target_x: u16,
+    target_y: u16,
+) -> CharacterSaveRequest {
+    let (mut snapshot_character, snapshot_items) = character_logout_snapshot(world, character);
+    snapshot_character.x = target_x;
+    snapshot_character.y = target_y;
+    CharacterSaveRequest {
+        character: snapshot_character,
+        items: snapshot_items,
+        ppd_blob: player.encode_legacy_ppd_blob(&player.ppd_blob),
+        subscriber_blob: encode_legacy_achievement_stats_subscriber_blob(
+            &encode_legacy_achievement_data_subscriber_blob(
+                &encode_legacy_account_depot_subscriber_blob(
+                    &player.subscriber_blob,
+                    account_depot,
+                ),
+                &player.achievement_data,
+            ),
+            &player.achievement_stats,
+        ),
+        mode: CharacterSaveMode::Logout {
+            expected_current_area: i32::from(area_id),
+            expected_current_mirror: i32::from(mirror_id),
+            allowed_area: i32::from(target_area_id),
+            mirror: i32::from(target_mirror_id),
+        },
+    }
+}
+
 /// C `save_char(cn, 0)` (`database_character.c:95-...`, the "backup" mode
 /// used by both `backup_players` and `/saveall`): unlike a logout save,
 /// this serializes the character's *entire* live state exactly as-is,

@@ -10,6 +10,7 @@ mod commands_admin;
 mod commands_chat;
 mod commands_player;
 mod containers;
+mod cross_area;
 mod depot;
 mod dungeon;
 mod effects_sync;
