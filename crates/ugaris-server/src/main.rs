@@ -175,15 +175,15 @@ use ugaris_core::{
     tick::TICKS_PER_SECOND,
     world::{
         ac_status_string, apply_punishment, apply_unpunishment, army_rank_for_points,
-        army_rank_name, decode_punishment_note, encode_punishment_note, exp2level,
-        legacy_save_number, level2exp, level2maxitem, level_value, merchant_buy_price,
-        merchant_sales_price, show_values_lines, AcOnlineTarget, ArenaMasterEvent, BankEvent,
-        ClanclerkEvent, ClanmasterEvent, ClubmasterEvent, DungeonRaidBuildRequest, FirstKillCheck,
-        GateWelcomeOutcomeEvent, GateWelcomePlayerFacts, LegacyHurtEvent, LookMapRequest,
-        LootKiller, LootRegistry, MerchantTradeResult, PendingDeathLootRoll, PunishmentNote,
-        RaiseSkillOutcome, StealOutcome, StoreWare, TraderEvent, WorldActionCompletion,
-        AC_STATUS_FLAGGED, AC_STATUS_SUSPICIOUS, AC_STATUS_VERIFIED, MERCHANT_STORE_SIZE,
-        PUNISHMENT_NOTE_KIND,
+        army_rank_name, compute_paid_till, decode_punishment_note, encode_punishment_note,
+        exp2level, legacy_save_number, level2exp, level2maxitem, level_value, merchant_buy_price,
+        merchant_sales_price, show_values_lines, values_lines, AcOnlineTarget, ArenaMasterEvent,
+        BankEvent, ClanclerkEvent, ClanmasterEvent, ClubmasterEvent, DungeonRaidBuildRequest,
+        FirstKillCheck, GateWelcomeOutcomeEvent, GateWelcomePlayerFacts, LegacyHurtEvent,
+        LookMapRequest, LootKiller, LootRegistry, MerchantTradeResult, PendingDeathLootRoll,
+        PunishmentNote, RaiseSkillOutcome, StealOutcome, StoreWare, TraderEvent,
+        WorldActionCompletion, AC_STATUS_FLAGGED, AC_STATUS_SUSPICIOUS, AC_STATUS_VERIFIED,
+        MERCHANT_STORE_SIZE, PUNISHMENT_NOTE_KIND,
     },
     zone::ZoneLoader,
     ServerConfig, TickRate, World,
@@ -7231,6 +7231,25 @@ async fn main() -> anyhow::Result<()> {
                         showvalues_events_applied,
                         tick = world.tick.0,
                         "applied /showvalues events"
+                    );
+                }
+                // `/values <name>`'s async DB round trip (C
+                // `look_values`/`look_values_bg`), queued by `World::
+                // queue_values_command` above.
+                let values_events_applied = apply_values_events(
+                    &mut world,
+                    &mut runtime,
+                    &character_repository,
+                    config.area_id,
+                    config.mirror_id,
+                    current_unix_time(),
+                )
+                .await;
+                if values_events_applied != 0 {
+                    info!(
+                        values_events_applied,
+                        tick = world.tick.0,
+                        "applied /values events"
                     );
                 }
                 // C `military_master_driver`: the mission-giving Military

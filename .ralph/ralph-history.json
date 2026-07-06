@@ -7389,21 +7389,54 @@
         "test result: ok. 2136 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s",
         "test result: ok. 78 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
       ]
+    },
+    {
+      "iteration": 231,
+      "startedAt": "2026-07-06T12:05:32.892Z",
+      "endedAt": "2026-07-06T12:27:05.116Z",
+      "durationMs": 1291480,
+      "agent": "opencode",
+      "model": "anthropic/claude-sonnet-5",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "PORTING_TODO.md",
+        "crates/ugaris-core/src/world/mod.rs",
+        "crates/ugaris-core/src/world/tests/values.rs",
+        "crates/ugaris-core/src/world/values.rs",
+        "crates/ugaris-server/src/commands_admin.rs",
+        "crates/ugaris-server/src/main.rs",
+        "crates/ugaris-server/src/world_events.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "- Added 15 new tests (7 core + 2 server, using existing paid-till test coverage for the rest); full workspace: 2143 core + 78 db + 3 net + 45 protocol + 1071 server, all green, zero failures, zero war",
+        "test result: ok. 1069 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "The arguments provided to the tool are invalid: Invalid input for tool read: JSON parsing failed: Text: {\"filePath\": \"/home/eddow/Development/UgarisProjects/Ugaris_Server_Rust/crates/ugaris-core/src/e",
+        "Error message: JSON Parse error: Property name must be a string literal",
+        "test result: ok. 45 passed; 0 failed; 0 ignored; 0 measured; 2098 filtered out; finished in 0.01s",
+        "test result: ok. 1071 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s",
+        "test result: ok. 2143 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s",
+        "test result: ok. 78 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+      ]
     }
   ],
-  "totalDurationMs": 262366817,
+  "totalDurationMs": 263658297,
   "struggleIndicators": {
     "repeatedErrors": {
       "1011 (up from 998 earlier) - all passing, zero failures. Now let's build the server binary and run a": 1,
       "Everything is green: `cargo fmt --all` clean, full workspace test suite passing (1011 core tests + o": 1,
       "test result: ok. 327 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 4,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 230,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 231,
       "test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 998 filtered out; finished in 0.00s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1010 filtered out; finished in 0.00s": 1,
       "error: could not compile `ugaris-db` (lib test) due to 1 previous error": 3,
       "test result: ok. 1011 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s": 1,
       "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 16,
-      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 88,
+      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 89,
       "1020 tests pass (up from 1011), zero failures. Now build for warnings check:": 1,
       "test result: ok. 327 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 6,
       "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&": 79,
@@ -7419,8 +7452,8 @@
       "+  - Full workspace suite (1030 ugaris-core tests, up from 1020, + others, 0 failed), `cargo fmt --a": 1,
       "All green: 1035+9+3+31+327 tests pass, zero failures, fmt clean, build clean, boot-smoke clean. This": 1,
       "Verified: `cargo fmt --all` (clean), `cargo test --workspace` (1035+9+3+31+327 passed, 0 failed), `c": 1,
-      "The arguments provided to the tool are invalid: Invalid input for tool read: JSON parsing failed: Te": 82,
-      "Error message: JSON Parse error: Property name must be a string literal": 72,
+      "The arguments provided to the tool are invalid: Invalid input for tool read: JSON parsing failed: Te": 83,
+      "Error message: JSON Parse error: Property name must be a string literal": 73,
       "assertion failed: saved.flags.contains(CharacterFlags::ALIVE)": 1,
       "test result: FAILED. 1034 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1,
       "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 1035 filtered out; finished in 0.00s": 1,
@@ -8377,7 +8410,12 @@
       "test result: FAILED. 42 passed; 1 failed; 0 ignored; 0 measured; 2093 filtered out; finished in 0.01": 1,
       "test result: ok. 43 passed; 0 failed; 0 ignored; 0 measured; 2093 filtered out; finished in 0.01s": 1,
       "test result: ok. 2136 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s": 1,
-      "test result: ok. 78 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 1
+      "test result: ok. 78 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 2,
+      "- Added 15 new tests (7 core + 2 server, using existing paid-till test coverage for the rest); full ": 1,
+      "test result: ok. 1069 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s": 1,
+      "test result: ok. 45 passed; 0 failed; 0 ignored; 0 measured; 2098 filtered out; finished in 0.01s": 1,
+      "test result: ok. 1071 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s": 1,
+      "test result: ok. 2143 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

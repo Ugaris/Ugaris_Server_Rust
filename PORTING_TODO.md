@@ -10967,10 +10967,44 @@ Unlocks every quest NPC. Do these before any P4 area work.
   gated, full-word-only `lower == "values"`, modeled on the `/look`/
   `/klog` gating idiom - `/showvalues`'s open-to-everyone gate is not the
   right model here). `cargo fmt --all`, `cargo test --workspace` (2136
-  ugaris-core [+8] + 78 db [+1] + 3 net + 45 protocol + 1069 server, all
-  green, zero failures), `cargo build -p ugaris-server`/`--workspace`
-  clean with zero warnings, 10s boot-smoke confirmed "entering Rust game
-  loop" with no panic.
+   ugaris-core [+8] + 78 db [+1] + 3 net + 45 protocol + 1069 server, all
+   green, zero failures), `cargo build -p ugaris-server`/`--workspace`
+   clean with zero warnings, 10s boot-smoke confirmed "entering Rust game
+   loop" with no panic.
+   REMAINING (iteration 231): closed the entire `/values` slice. New
+   `ugaris-core::world::values::{ValuesRequest, World::
+   queue_values_command, full_skill_name, values_lines}` port
+   `look_values`/`look_values_bg` in full (`command.c:501-519`/
+   `tool.c:2882-2939`): a new full-43-entry `full_skill_name` table
+   (letter-for-letter from `skill[V_MAX]`, separate from both
+   `skill_display_name`'s abridged subset and `CHARACTER_VALUE_NAMES`'s
+   divergent wording) backs the `V_MAX`-loop dump (15 lines, "none"/0/0
+   fallback for the final incomplete group), assembled with the header/
+   desc/paid-till/PK-hardcore/playtime/gold/mirror-area lines and the
+   reused offence/defence summary line (integer-division `AV`, unlike
+   `/showvalues`' `%.2f` armor line). New `world_events.rs::
+   apply_values_events` (modeled on `apply_punish_events`'s
+   `runtime: &mut ServerRuntime` shape) resolves the request via
+   `find_login_target` + `find_paid_until_info`, reads `PlayerRuntime::
+   stats_online_time`/`bank_gold`/`current_mirror_id` via `runtime.
+   player_for_character` (falling back to `0`/`0`/this process's own
+   `mirror_id` when the target has no live session), and delivers every
+   line to the *caller* (no role swap, unlike `/showvalues`), wired into
+   the tick loop right after `apply_showvalues_events`. New
+   `commands_admin.rs` dispatch arm: `lower == "values"` (full-word only,
+   `CF_GOD|CF_STAFF`-gated, modeled on `/look`/`/klog`), placed to mirror
+   C's own adjacent `values`-then-`showvalues` dispatch order. 15 new
+   tests (7 `ugaris-core` + 2 `ugaris-server`, plus 6 already covered by
+   prior iterations' `compute_paid_till`/`paid_player_line` tests reused
+   here unchanged). `cargo fmt --all`, `cargo test --workspace` (2143
+   ugaris-core [+7] + 78 db + 3 net + 45 protocol + 1071 server [+2], all
+   green, zero failures), `cargo build -p ugaris-server`/`--workspace`
+   clean with zero warnings, 10s boot-smoke confirmed "entering Rust game
+   loop" with no panic. Still open on this task: (1) `/allow` (the
+   cross-server corpse-loot-access grant) still needs its own
+   `server_chat`-equivalent design - the last of the three originally-
+   blocked commands; (2) the actual DB-backed save+redirect path itself
+   still has no live-Postgres test (long-standing gap, unchanged).
 
 - [ ] **Player-side fight-driver auto-combat (lostcon self-defense +
   no*/auto* toggle family)** - `fight_driver_attack_enemy`/

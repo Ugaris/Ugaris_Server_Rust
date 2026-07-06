@@ -4911,6 +4911,33 @@ pub(crate) fn apply_admin_character_command(
         return Some(KeyringCommandResult::default());
     }
 
+    // C `/values <name>` (`command.c:8391-8399` -> `look_values`,
+    // `command.c:501-519`), `CF_GOD|CF_STAFF`-gated, full-word only
+    // (`cmdcmp`'s `minlen` is 6, the full length of "values", no
+    // abbreviation accepted - same idiom as `/look`/`/klog` above, not
+    // `/showvalues`'s open-to-everyone abbreviation gate below). Trims
+    // leading whitespace, then passes the entire untokenized remainder
+    // to `World::queue_values_command` (see `world/values.rs`'s module
+    // doc comment for the contrast with `/showvalues`'s caller/target
+    // role swap - `/values` keeps the caller as the caller, showing the
+    // resolved target's own stats). Always returns a `default()` result
+    // immediately; every reply line arrives later via `World::
+    // queue_system_text` (same fire-and-forget async pattern as
+    // `/look`/`/klog`/`/showvalues` above).
+    if lower == "values" {
+        let Some(caller) = world.characters.get(&character_id) else {
+            return Some(KeyringCommandResult::default());
+        };
+        if !caller
+            .flags
+            .intersects(CharacterFlags::STAFF | CharacterFlags::GOD)
+        {
+            return None;
+        }
+        world.queue_values_command(character_id, rest.trim_start());
+        return Some(KeyringCommandResult::default());
+    }
+
     // C `/showvalues <name>` (`command.c:8401-8409` -> `show_values`,
     // `command.c:521-537`), no permission gate - unlike `/values`/`/look`/
     // `/klog`, any player can use this. Full-word *abbreviation*

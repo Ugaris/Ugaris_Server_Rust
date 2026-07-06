@@ -7,11 +7,12 @@
 //! dispatch site for the `starts_with` abbreviation check this implies
 //! (same idiom as the already-ported `/showattack`, `command.c:6397`,
 //! `minlen` 6). No permission gate (any player can use it, unlike the
-//! staff-only `/values`/`look_values`, which this module does not port -
-//! see the "Cross-area transfer" `PORTING_TODO.md` task's Progress Log
-//! for why it is a separate, larger remaining slice: it additionally
-//! needs paying-player/PK/hardcore/playtime/bank-gold/mirror-area lines
-//! this codebase has no equivalent of yet).
+//! staff-only `/values`/`look_values`, ported further down in this
+//! module as [`ValuesRequest`]/[`World::queue_values_command`]/
+//! [`values_lines`] - see the "Cross-area transfer" `PORTING_TODO.md`
+//! task's Progress Log for the porting history of the paying-player/PK/
+//! hardcore/playtime/bank-gold/mirror-area lines `/values` needed beyond
+//! what `/showvalues` already had).
 //!
 //! `show_values` resolves the *argument* name (C `lookup_name`) and swaps
 //! roles from there: `show_values_bg` sends the *caller's own*
@@ -32,7 +33,9 @@
 //! to be loaded (online) in *this* process's `World` - matching every
 //! other documented cross-area-chat gap in this codebase (e.g. `/tell` to
 //! an offline/remote player).
-use super::character_values::{character_value_base, character_value_present};
+use super::character_values::{
+    character_value_base, character_value_from_index, character_value_present,
+};
 use super::lastseen::is_valid_lookup_name;
 use super::npc_fight::simple_baddy_fight_skill;
 use super::*;
@@ -40,6 +43,15 @@ use crate::attack::parry_skill;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ShowValuesRequest {
+    pub caller_id: CharacterId,
+    pub target_name: String,
+}
+
+/// `/values <name>` async DB round trip's queued request - see
+/// [`World::queue_values_command`] and this module's doc comment for
+/// the contrast with [`ShowValuesRequest`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ValuesRequest {
     pub caller_id: CharacterId,
     pub target_name: String,
 }
@@ -70,6 +82,34 @@ impl World {
 
     pub fn drain_pending_showvalues_requests(&mut self) -> Vec<ShowValuesRequest> {
         self.pending_showvalues_requests.drain(..).collect()
+    }
+
+    /// C `/values <name>` (`command.c:8391-8399`): trims leading
+    /// whitespace, then calls `look_values(cn, ptr)` on the entire
+    /// (untokenized) remainder - same shape as `/showvalues`, no
+    /// alpha-only prefix extraction. `look_values` itself
+    /// (`command.c:501-519`) does no validation of its own beyond
+    /// `lookup_name`'s own gate, so an invalid shape shares the same
+    /// "No player by that name." reply as a DB-confirmed miss, exactly
+    /// like `queue_showvalues_command` above. Permission gating
+    /// (`CF_GOD|CF_STAFF`) happens at the `commands_admin.rs` dispatch
+    /// site, not here - matching every other gated command in this
+    /// codebase (the gate needs the caller's live `Character`, which the
+    /// dispatch site already has resolved).
+    pub fn queue_values_command(&mut self, caller_id: CharacterId, target_name: &str) {
+        let target_name = target_name.trim_start();
+        if !is_valid_lookup_name(target_name) {
+            self.queue_system_text(caller_id, "No player by that name.".to_string());
+            return;
+        }
+        self.pending_values_requests.push(ValuesRequest {
+            caller_id,
+            target_name: target_name.to_string(),
+        });
+    }
+
+    pub fn drain_pending_values_requests(&mut self) -> Vec<ValuesRequest> {
+        self.pending_values_requests.drain(..).collect()
     }
 }
 
@@ -366,5 +406,215 @@ pub fn show_values_lines(character: &Character, items: &HashMap<ItemId, Item>) -
         spell_avg,
     );
     lines.push(format!("Offence: {offence} \u{8}Defence: {defence}"));
+    lines
+}
+
+/// C `skill[V_MAX].name` (`src/system/skill.c:27-88`), the *full* table
+/// (all 43 entries) `/values`' `look_values_bg` skill dump loop needs -
+/// deliberately separate from both `skill_display_name` above (which
+/// only covers the class-value-line subset and diverges in wording at
+/// several indices this dump needs verbatim, e.g. "Warcry" not
+/// "War Cry") and the shared `CHARACTER_VALUE_NAMES` table
+/// (`entity.rs`, whose wording also diverges at "Armor"/"Armor Value",
+/// "Ancient Knowledge"/"Ancient Power", "Resist Cold"/"Cold
+/// Resistance" - this dump line must match C letter-for-letter).
+fn full_skill_name(value: CharacterValue) -> &'static str {
+    use CharacterValue::*;
+    match value {
+        Hp => "Hitpoints",
+        Endurance => "Endurance",
+        Mana => "Mana",
+        Wisdom => "Wisdom",
+        Intelligence => "Intuition",
+        Agility => "Agility",
+        Strength => "Strength",
+        Armor => "Armor",
+        Weapon => "Weapon",
+        Light => "Light",
+        Speed => "Speed",
+        Pulse => "Pulse",
+        Dagger => "Dagger",
+        Hand => "Hand to Hand",
+        Staff => "Staff",
+        Sword => "Sword",
+        TwoHand => "Two-Handed",
+        ArmorSkill => "Armor Skill",
+        Attack => "Attack",
+        Parry => "Parry",
+        Warcry => "Warcry",
+        Tactics => "Tactics",
+        Surround => "Surround Hit",
+        BodyControl => "Body Control",
+        SpeedSkill => "Speed Skill",
+        Barter => "Bartering",
+        Percept => "Perception",
+        Stealth => "Stealth",
+        Bless => "Bless",
+        Heal => "Heal",
+        Freeze => "Freeze",
+        MagicShield => "Magic Shield",
+        Flash => "Lightning",
+        Fireball => "Fire",
+        Empty => "empty",
+        Regenerate => "Regenerate",
+        Meditate => "Meditate",
+        Immunity => "Immunity",
+        Demon => "Ancient Knowledge",
+        Duration => "Duration",
+        Rage => "Rage",
+        Cold => "Resist Cold",
+        Profession => "Profession",
+    }
+}
+
+/// One column of `look_values_bg`'s `V_MAX` dump loop (`tool.c:3060-
+/// 3063`): `index >= CHARACTER_VALUE_COUNT` falls back to C's own
+/// `"none"`/`0`/`0` placeholder (the ternaries guarding `n+1`/`n+2` past
+/// `V_MAX` in the final, incomplete group of three - `V_MAX` is 43, not
+/// a multiple of 3).
+fn dump_entry(character: &Character, index: usize) -> (&'static str, i32, i32) {
+    match character_value_from_index(index) {
+        Some(value) => (
+            full_skill_name(value),
+            character_value_present(character, value),
+            character_value_base(character, value),
+        ),
+        None => ("none", 0, 0),
+    }
+}
+
+/// One full `V_MAX`-loop dump line (`tool.c:3060-3063`), three columns
+/// separated by the same backspace/DLE control characters as
+/// `triple_line` above.
+fn dump_triple_line(character: &Character, index: usize) -> String {
+    let (n0, p0, b0) = dump_entry(character, index);
+    let (n1, p1, b1) = dump_entry(character, index + 1);
+    let (n2, p2, b2) = dump_entry(character, index + 2);
+    format!("{n0}: {p0}/{b0} \u{8}{n1}: {p1}/{b1} \u{10}{n2}: {p2}/{b2}")
+}
+
+/// C `look_values_bg` in full (`src/system/tool.c:2882-2939`), minus the
+/// `getfirst_char`/`getnext_char` scan (the caller already has the
+/// resolved target `Character`) and the `look_values` name-lookup +
+/// `server_chat` dispatch that reaches it (ported as
+/// [`World::queue_values_command`], whose `ugaris-server`-side
+/// `apply_values_events` caller supplies every parameter this function
+/// can't compute from a bare `&Character` alone).
+///
+/// - `is_paid_flag`/`paid_till_unix`: [`compute_paid_till`]'s output
+///   pair, fed straight into [`paid_player_line`] (both already ported).
+/// - `now_unix`: C's `time_now` global.
+/// - `online_minutes`: `PlayerRuntime::stats_online_time()`'s raw
+///   minutes sum (this fn does the `/ 60` itself, matching C's
+///   `stats_online_time(co) / 60`).
+/// - `bank_gold`: `PlayerRuntime::bank_gold` (hundredths, like
+///   `Character::gold`) - C's `ppd->imperial_gold`. Always shown (this
+///   codebase's `PlayerRuntime` always has a value, defaulting to `0`,
+///   unlike C's `set_data`-allocated-on-demand `bank_ppd`, which could
+///   in principle fail to allocate and skip the line entirely - a
+///   corner case never hit in practice).
+/// - `current_mirror`: the target's own current mirror (`ch[co].mirror`
+///   -> `PlayerRuntime::current_mirror_id`).
+/// - `actual_mirror`/`area_id`: this server process's own
+///   `config.mirror_id`/`config.area_id` (C's `areaM`/`areaID` globals).
+/// - `section_name`: `area_section::section_at(area_id, x, y)`'s name,
+///   or `""` when no section matches (C's `get_section_name` can return
+///   `NULL`, which C's `%s` would mishandle - an empty string is the
+///   sane Rust fallback for a corner case never hit in practice, every
+///   in-bounds tile belongs to some section).
+#[allow(clippy::too_many_arguments)]
+pub fn values_lines(
+    character: &Character,
+    items: &HashMap<ItemId, Item>,
+    is_paid_flag: bool,
+    paid_till_unix: i64,
+    now_unix: i64,
+    online_minutes: i32,
+    bank_gold: u32,
+    current_mirror: u16,
+    actual_mirror: u16,
+    area_id: u16,
+    section_name: &str,
+) -> Vec<String> {
+    let warrior = character.flags.contains(CharacterFlags::WARRIOR);
+    let mage = character.flags.contains(CharacterFlags::MAGE);
+    let arch = character.flags.contains(CharacterFlags::ARCH);
+    let class = format!(
+        "{}{}{}",
+        if arch { "A" } else { "" },
+        if warrior { "W" } else { "" },
+        if mage { "M" } else { "" },
+    );
+    let mut lines = vec![format!(
+        "{}, level {}, class {class}",
+        character.name, character.level
+    )];
+    lines.push(format!("Desc: {}", character.description));
+    lines.push(paid_player_line(is_paid_flag, paid_till_unix, now_unix));
+    lines.push(format!(
+        "PK: {}, Hardcore: {}",
+        if character.flags.contains(CharacterFlags::PK) {
+            "yes"
+        } else {
+            "no"
+        },
+        if character.flags.contains(CharacterFlags::HARDCORE) {
+            "yes"
+        } else {
+            "no"
+        },
+    ));
+    lines.push(format!("Playing for {} hours.", online_minutes / 60));
+    lines.push(format!(
+        "Gold in hand: {:.2}G, gold in bank: {:.2}G",
+        f64::from(character.gold) / 100.0,
+        f64::from(bank_gold) / 100.0,
+    ));
+    lines.push(format!(
+        "Mirror: {current_mirror}, actual mirror: {actual_mirror}. Area {area_id}, {section_name}"
+    ));
+
+    let mut index = 0;
+    while index < CHARACTER_VALUE_COUNT {
+        lines.push(dump_triple_line(character, index));
+        index += 3;
+    }
+
+    let fight_skill = simple_baddy_fight_skill(character, items);
+    let spell_avg = spell_average(
+        character_value_base(character, CharacterValue::Bless),
+        character_value_base(character, CharacterValue::Heal),
+        character_value_base(character, CharacterValue::Freeze),
+        character_value_base(character, CharacterValue::MagicShield),
+        character_value_base(character, CharacterValue::Flash),
+        character_value_base(character, CharacterValue::Fireball),
+        character_value_base(character, CharacterValue::Pulse),
+    );
+    let offence = attack_skill(
+        character_value_present(character, CharacterValue::Attack) != 0,
+        fight_skill,
+        character_value_base(character, CharacterValue::Attack),
+        character_value_base(character, CharacterValue::Tactics),
+        0,
+        character.flags.contains(CharacterFlags::EDEMON),
+        character.level as i32,
+        spell_avg,
+    );
+    let defence = parry_skill(
+        character_value_present(character, CharacterValue::Parry) != 0,
+        fight_skill,
+        character_value_base(character, CharacterValue::Parry),
+        character_value_base(character, CharacterValue::Tactics),
+        0,
+        character.flags.contains(CharacterFlags::EDEMON),
+        character_value_present(character, CharacterValue::MagicShield) != 0,
+        character_value_base(character, CharacterValue::MagicShield),
+        spell_avg,
+    );
+    lines.push(format!(
+        "Offensive Value: {offence}, Defensive Value: {defence}, WV: {}, AV: {}",
+        character_value_base(character, CharacterValue::Weapon),
+        character_value_base(character, CharacterValue::Armor) / 20,
+    ));
     lines
 }

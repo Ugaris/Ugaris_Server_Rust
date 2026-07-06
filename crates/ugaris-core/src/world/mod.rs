@@ -489,6 +489,9 @@ pub struct World {
     /// `/showvalues <name>` async DB round trips - see
     /// `world/values.rs`'s module doc comment.
     pending_showvalues_requests: Vec<ShowValuesRequest>,
+    /// `/values <name>` async DB round trips - see `world/values.rs`'s
+    /// module doc comment.
+    pending_values_requests: Vec<ValuesRequest>,
 }
 
 impl Default for Tick {

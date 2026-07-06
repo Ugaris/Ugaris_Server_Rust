@@ -4140,6 +4140,113 @@ pub(crate) async fn apply_showvalues_events(
     applied
 }
 
+/// `/values <name>`'s async DB round trip (C `command.c:8391-8399` ->
+/// `look_values`, `command.c:501-519` + its `server_chat` body
+/// `look_values_bg`, `src/system/tool.c:2882-2939`): resolves every
+/// `World::drain_pending_values_requests` entry (queued by `World::
+/// queue_values_command`) by name via `find_login_target` (C's
+/// synchronous `lookup_name`), same as `/showvalues` above.
+///
+/// Unlike `/showvalues`'s caller/target role swap, `/values` keeps the
+/// caller as the caller throughout: every reply line goes back to
+/// `request.caller_id`, showing the *resolved target's* stats (see
+/// `world/values.rs`'s module doc comment for the contrast, and C's own
+/// `tell_chat(0, cnID, 1, ...)` calls in `look_values_bg`, all addressed
+/// to the caller `cnID`, never the target `coID`).
+///
+/// - no matching character -> "No player by that name." (C's `ID == -1`
+///   branch).
+/// - a match not currently loaded in this process's `World` -> silent
+///   no-op (C's `if (!co) return;` in `look_values_bg` - no message at
+///   all, matching this codebase's single-process-only cross-area chat
+///   caveat, see `world/values.rs`'s module doc comment).
+/// - a match with no resolvable `find_paid_until_info` row (a data
+///   inconsistency - a live `World` character with no matching DB
+///   `accounts` join - never hit for a real player) -> silent no-op,
+///   same as the offline case.
+/// - a loaded match -> the caller receives every `values_lines` line:
+///   `PlayerRuntime::stats_online_time`/`bank_gold`/`current_mirror_id`
+///   come from `ServerRuntime::player_for_character` when the target has
+///   a live session (defaulting to `0`/`0`/this server's own `mirror_id`
+///   when it does not - e.g. an offline-but-somehow-`World`-resident
+///   NPC, never hit for a real logged-in player); the mirror-area
+///   section name comes from `section_at(area_id, x, y)` (C's
+///   `get_section_name`, implicitly scoped to this server process's own
+///   `areaID`), falling back to `""` when no section matches (see
+///   `values_lines`'s own doc comment for why).
+///
+/// No-ops entirely (silent, but still drains the queue) when
+/// `character_repository` is unconfigured.
+pub(crate) async fn apply_values_events(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    character_repository: &Option<ugaris_db::PgCharacterRepository>,
+    area_id: u16,
+    mirror_id: u16,
+    now_unix: i64,
+) -> usize {
+    let requests = world.drain_pending_values_requests();
+    if requests.is_empty() {
+        return 0;
+    }
+    let Some(character_repository) = character_repository else {
+        return 0;
+    };
+    let mut applied = 0;
+    for request in requests {
+        let Ok(Some(summary)) = character_repository
+            .find_login_target(&request.target_name)
+            .await
+        else {
+            world.queue_system_text(request.caller_id, "No player by that name.".to_string());
+            continue;
+        };
+        let Some(target) = world.characters.get(&summary.id).cloned() else {
+            continue;
+        };
+        let Ok(Some(paid_info)) = character_repository.find_paid_until_info(summary.id).await
+        else {
+            continue;
+        };
+        let (paid_till, is_paid) = compute_paid_till(
+            paid_info.raw_paid_until_unix,
+            paid_info.account_created_at_unix,
+            now_unix,
+        );
+        let (online_minutes, bank_gold, current_mirror) = runtime
+            .player_for_character(summary.id)
+            .map(|player| {
+                (
+                    player.stats_online_time(),
+                    player.bank_gold,
+                    player.current_mirror_id,
+                )
+            })
+            .unwrap_or((0, 0, mirror_id));
+        let section_name = section_at(area_id, usize::from(target.x), usize::from(target.y))
+            .map(|section| section.name)
+            .unwrap_or("");
+        let lines = values_lines(
+            &target,
+            &world.items,
+            is_paid,
+            paid_till,
+            now_unix,
+            online_minutes,
+            bank_gold,
+            current_mirror,
+            mirror_id,
+            area_id,
+            section_name,
+        );
+        for line in lines {
+            world.queue_system_text(request.caller_id, line);
+        }
+        applied += 1;
+    }
+    applied
+}
+
 /// `/rename <from> <to>`'s async DB round trip (C `do_rename`/
 /// `db_rename`, `src/system/database/database_admin.c:291-355`):
 /// resolves every `World::drain_pending_rename_lookups` entry (queued by
@@ -5903,5 +6010,32 @@ mod showvalues_tests {
         assert_eq!(applied, 0);
         assert!(world.drain_pending_system_texts().is_empty());
         assert!(world.drain_pending_showvalues_requests().is_empty());
+    }
+}
+
+#[cfg(test)]
+mod values_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn no_values_requests_queued_is_a_cheap_no_op() {
+        let mut world = World::default();
+        let mut runtime = ServerRuntime::default();
+        let applied = apply_values_events(&mut world, &mut runtime, &None, 1, 1, 1_000).await;
+        assert_eq!(applied, 0);
+        assert!(world.drain_pending_system_texts().is_empty());
+    }
+
+    #[tokio::test]
+    async fn missing_repository_drains_the_values_queue_without_a_reply() {
+        let mut world = World::default();
+        let mut runtime = ServerRuntime::default();
+        world.queue_values_command(CharacterId(1), "Someone");
+        assert!(world.drain_pending_system_texts().is_empty());
+
+        let applied = apply_values_events(&mut world, &mut runtime, &None, 1, 1, 1_000).await;
+        assert_eq!(applied, 0);
+        assert!(world.drain_pending_system_texts().is_empty());
+        assert!(world.drain_pending_values_requests().is_empty());
     }
 }

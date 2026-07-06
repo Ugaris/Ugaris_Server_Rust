@@ -108,6 +108,138 @@ fn show_values_lines_mage_only_uses_mage_class_and_line_count() {
     assert_eq!(lines.len(), 11);
 }
 
+#[test]
+fn queue_values_command_empty_argument_reports_no_player() {
+    let mut world = world_with_character(1);
+    world.queue_values_command(CharacterId(1), "");
+    let texts = world.drain_pending_system_texts();
+    assert_eq!(texts.len(), 1);
+    assert_eq!(texts[0].message, "No player by that name.");
+    assert!(world.drain_pending_values_requests().is_empty());
+}
+
+#[test]
+fn queue_values_command_invalid_shape_reports_no_player_immediately() {
+    let mut world = world_with_character(1);
+    world.queue_values_command(CharacterId(1), "a b");
+    let texts = world.drain_pending_system_texts();
+    assert_eq!(texts.len(), 1);
+    assert_eq!(texts[0].message, "No player by that name.");
+    assert!(world.drain_pending_values_requests().is_empty());
+}
+
+#[test]
+fn queue_values_command_valid_shape_queues_a_request() {
+    let mut world = world_with_character(1);
+    world.queue_values_command(CharacterId(1), "  Someone");
+    assert!(world.drain_pending_system_texts().is_empty());
+    let requests = world.drain_pending_values_requests();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].caller_id, CharacterId(1));
+    assert_eq!(requests[0].target_name, "Someone");
+    assert!(world.drain_pending_values_requests().is_empty());
+}
+
+#[test]
+fn values_lines_header_desc_and_class_letters_match_c_shape() {
+    let mut actor = character(1);
+    actor.name = "Conan".into();
+    actor.level = 12;
+    actor.description = "A barbarian".into();
+    actor.flags.insert(CharacterFlags::WARRIOR);
+    actor.flags.insert(CharacterFlags::ARCH);
+
+    let lines = values_lines(
+        &actor,
+        &HashMap::new(),
+        true,
+        1_000,
+        900,
+        120,
+        0,
+        1,
+        2,
+        3,
+        "Testville",
+    );
+    assert_eq!(lines[0], "Conan, level 12, class AW");
+    assert_eq!(lines[1], "Desc: A barbarian");
+}
+
+#[test]
+fn values_lines_paid_pk_hardcore_playtime_and_gold_lines_match_c_shape() {
+    let mut actor = character(1);
+    actor.flags.insert(CharacterFlags::MAGE);
+    actor.flags.insert(CharacterFlags::PK);
+    actor.gold = 1234;
+
+    let lines = values_lines(
+        &actor,
+        &HashMap::new(),
+        false,
+        // Even t (whole days): now=0, t=5 days.
+        DAY * 5,
+        0,
+        // 125 online minutes -> 2 hours (integer division).
+        125,
+        // bank_gold, hundredths.
+        5000,
+        7,
+        8,
+        9,
+        "Nowhere",
+    );
+    // PK set, Hardcore not set.
+    assert_eq!(lines[2], "Paying player: no (5 days left)");
+    assert_eq!(lines[3], "PK: yes, Hardcore: no");
+    assert_eq!(lines[4], "Playing for 2 hours.");
+    assert_eq!(lines[5], "Gold in hand: 12.34G, gold in bank: 50.00G");
+    assert_eq!(lines[6], "Mirror: 7, actual mirror: 8. Area 9, Nowhere");
+}
+
+#[test]
+fn values_lines_full_skill_dump_covers_all_43_values_in_15_lines() {
+    let mut actor = character(1);
+    actor.flags.insert(CharacterFlags::WARRIOR);
+    set_value(&mut actor, CharacterValue::Hp, 50, 45);
+    set_value(&mut actor, CharacterValue::Endurance, 30, 25);
+    set_value(&mut actor, CharacterValue::Mana, 20, 15);
+    // Final, incomplete group: only index 42 (Profession) is real, the
+    // other two columns fall back to C's "none"/0/0 placeholder.
+    set_value(&mut actor, CharacterValue::Profession, 3, 2);
+
+    let lines = values_lines(&actor, &HashMap::new(), true, DAY, 0, 0, 0, 0, 0, 0, "");
+    // 7 header/meta lines + 15 dump lines + 1 summary line.
+    assert_eq!(lines.len(), 23);
+    assert_eq!(
+        lines[7],
+        "Hitpoints: 50/45 \u{8}Endurance: 30/25 \u{10}Mana: 20/15"
+    );
+    // Warcry (index 20), full-table name differs from the abridged
+    // "War Cry"/CHARACTER_VALUE_NAMES spelling.
+    assert!(lines[7 + 6].contains("Warcry: "));
+    // Last dump line (n=42): only Profession is real, the other two
+    // columns are C's "none"/0/0 placeholder.
+    assert_eq!(
+        lines[7 + 14],
+        "Profession: 3/2 \u{8}none: 0/0 \u{10}none: 0/0"
+    );
+}
+
+#[test]
+fn values_lines_summary_line_uses_integer_armor_value_division() {
+    let mut actor = character(1);
+    actor.flags.insert(CharacterFlags::MAGE);
+    set_value(&mut actor, CharacterValue::Armor, 0, 41);
+    set_value(&mut actor, CharacterValue::Weapon, 0, 12);
+
+    let lines = values_lines(&actor, &HashMap::new(), true, DAY, 0, 0, 0, 0, 0, 0, "");
+    let summary = lines.last().unwrap();
+    assert!(summary.starts_with("Offensive Value: "));
+    // 41 / 20 == 2 (integer division), not the 2.05 a float would show.
+    assert!(summary.ends_with("WV: 12, AV: 2"));
+}
+
 const DAY: i64 = 60 * 60 * 24;
 
 #[test]
