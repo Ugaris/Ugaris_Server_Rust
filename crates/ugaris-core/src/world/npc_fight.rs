@@ -577,7 +577,8 @@ impl World {
             | CharacterDriverState::ArenaManager(_)
             | CharacterDriverState::Dungeonmaster(_)
             | CharacterDriverState::Dungeonfighter(_)
-            | CharacterDriverState::Macro(_) => None,
+            | CharacterDriverState::Macro(_)
+            | CharacterDriverState::Camhermit(_) => None,
         }
     }
 

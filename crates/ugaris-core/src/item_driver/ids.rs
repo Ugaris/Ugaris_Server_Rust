@@ -542,3 +542,9 @@ pub(crate) const IID_STAFF_REDKEY23: u32 = make_item_id(DEV_ID_WARR, 0x00001D);
 /// `create_special_item`. `pub` (not `pub(crate)`) since `world::special_item`
 /// needs it outside the `item_driver` module.
 pub const IID_GENERIC_SPECIAL: u32 = make_item_id(DEV_ID_DB, 0x00002C);
+
+/// C `IID_AREA1_SMALL_BEAR_TEETH` (`src/common/item_id.h:377`): the area-1
+/// hermit teeth-collection quest item (`camhermit_driver`'s
+/// `CAMHERMIT_STATE_QUEST2*` chain). `pub` (not `pub(crate)`) since
+/// `world::camhermit` needs it outside the `item_driver` module.
+pub const IID_AREA1_SMALL_BEAR_TEETH: u32 = make_item_id(DEV_ID_RH, 0x000001);

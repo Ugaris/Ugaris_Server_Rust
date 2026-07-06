@@ -38,6 +38,9 @@ pub const CDR_TEUFELQUEST: u16 = 116;
 pub const CDR_TEUFELRAT: u16 = 117;
 pub const CDR_CALIGARSKELLY: u16 = 124;
 pub const CDR_LAB2UNDEAD: u16 = 198;
+/// C `#define CDR_CAMHERMIT 14` (`src/system/drvlib.h`): the forest
+/// hermit NPC in area 1 (`src/area/1/gwendylon.c::camhermit_driver`).
+pub const CDR_CAMHERMIT: u16 = 14;
 /// C `#define CDR_GATE_WELCOME 39` (`src/system/drvlib.h`): the stationary
 /// gatekeeper-welcome NPC (`gate_welcome` template,
 /// `src/system/gatekeeper.c::gate_welcome_driver`).
@@ -180,6 +183,7 @@ pub enum CharacterDriverState {
     Dungeonmaster(DungeonmasterDriverData),
     Dungeonfighter(DungeonfighterDriverData),
     Macro(MacroDriverData),
+    Camhermit(CamhermitDriverData),
 }
 
 /// C `struct lostcon_driver_data` (`src/module/lostcon.c`): the linger-timer
@@ -454,6 +458,18 @@ pub struct GateWelcomeDriverData {
     pub last_talk: u64,
     pub current_victim: Option<CharacterId>,
     pub amgivingback: i32,
+}
+
+/// C `struct camhermit_driver_data` (`src/area/1/gwendylon.c:702-705`): the
+/// forest hermit NPC's own driver memory (`CDR_CAMHERMIT`, distinct from
+/// the per-player `camhermit_state`/`camhermit_seen_timer`/`camhermit_kills`
+/// fields in `crate::player::PlayerRuntime`'s `area1_ppd` - see
+/// `world::camhermit`'s module doc comment for the split).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct CamhermitDriverData {
+    #[serde(default)]
+    pub last_talk: u64,
+    pub current_victim: Option<CharacterId>,
 }
 
 /// C `struct gate_fight_driver_data` (`src/system/gatekeeper.c:636-639`):
@@ -1639,6 +1655,138 @@ pub const GATEKEEPER_QA: &[TextQaEntry] = &[
     },
 ];
 
+/// C `struct qa qa[]` from `src/area/1/gwendylon.c:87-108` - the small-talk
+/// table `analyse_text_driver`'s own local copy in this file feeds every
+/// area-1 NPC driver that calls it (`gwendylon_driver`, `camhermit_driver`,
+/// `yoakin_driver`, etc.), not just one. Unlike [`MERCHANT_QA`]/
+/// [`GATEKEEPER_QA`], most of the non-canned-answer codes here
+/// (`3` advice, `4` buy advice, `9` promise/word/oath, `10` raiseme, `11`
+/// hardcore, `12` learn/accept-the-rules) are only meaningful to
+/// `gwendylon_driver` itself (Gwendylon is the tutorial/hardcore-mode NPC);
+/// every other area-1 driver's own `switch` only ever cases on `2`
+/// (repeat/restart) and, for `gwendylon_driver` alone, `13` (repeat all) -
+/// any other matched code just counts as `didsay` with no further effect,
+/// exactly like `GATEKEEPER_QA`'s `"aye"`/`"nay"` codes.
+pub const GWENDYLON_QA: &[TextQaEntry] = &[
+    TextQaEntry {
+        words: &["how", "are", "you"],
+        answer: Some("I'm fine!"),
+        answer_code: 0,
+    },
+    TextQaEntry {
+        words: &["hello"],
+        answer: Some("Hello, %s!"),
+        answer_code: 0,
+    },
+    TextQaEntry {
+        words: &["hi"],
+        answer: Some("Hi, %s!"),
+        answer_code: 0,
+    },
+    TextQaEntry {
+        words: &["greetings"],
+        answer: Some("Greetings, %s!"),
+        answer_code: 0,
+    },
+    TextQaEntry {
+        words: &["hail"],
+        answer: Some("And hail to you, %s!"),
+        answer_code: 0,
+    },
+    TextQaEntry {
+        words: &["what's", "up"],
+        answer: Some("Everything that isn't nailed down."),
+        answer_code: 0,
+    },
+    TextQaEntry {
+        words: &["what", "is", "up"],
+        answer: Some("Everything that isn't nailed down."),
+        answer_code: 0,
+    },
+    TextQaEntry {
+        words: &["repeat"],
+        answer: None,
+        answer_code: 2,
+    },
+    TextQaEntry {
+        words: &["repeat", "all"],
+        answer: None,
+        answer_code: 13,
+    },
+    TextQaEntry {
+        words: &["restart"],
+        answer: None,
+        answer_code: 2,
+    },
+    TextQaEntry {
+        words: &["please", "repeat"],
+        answer: None,
+        answer_code: 2,
+    },
+    TextQaEntry {
+        words: &["please", "restart"],
+        answer: None,
+        answer_code: 2,
+    },
+    TextQaEntry {
+        words: &["advice"],
+        answer: None,
+        answer_code: 3,
+    },
+    TextQaEntry {
+        words: &["buy", "advice"],
+        answer: None,
+        answer_code: 4,
+    },
+    TextQaEntry {
+        words: &["promise"],
+        answer: None,
+        answer_code: 9,
+    },
+    TextQaEntry {
+        words: &["word"],
+        answer: None,
+        answer_code: 9,
+    },
+    TextQaEntry {
+        words: &["oath"],
+        answer: None,
+        answer_code: 9,
+    },
+    TextQaEntry {
+        words: &["raiseme"],
+        answer: None,
+        answer_code: 10,
+    },
+    TextQaEntry {
+        words: &["hardcore"],
+        answer: None,
+        answer_code: 11,
+    },
+    TextQaEntry {
+        words: &[
+            "i",
+            "accept",
+            "the",
+            "rules",
+            "and",
+            "wish",
+            "to",
+            "become",
+            "a",
+            "hardcore",
+            "character",
+        ],
+        answer: None,
+        answer_code: 12,
+    },
+    TextQaEntry {
+        words: &["learn"],
+        answer: None,
+        answer_code: 12,
+    },
+];
+
 /// C `struct qa qa[]` from `src/area/30/clanmaster.c:126-146`. Unlike
 /// `MERCHANT_QA`/`BANK_QA`/`TRADER_QA`, C's own caller
 /// (`clanmaster_driver`) never even reads `analyse_text_driver`'s return
@@ -2540,7 +2688,8 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::ArenaManager(_)
             | CharacterDriverState::Dungeonmaster(_)
             | CharacterDriverState::Dungeonfighter(_)
-            | CharacterDriverState::Macro(_),
+            | CharacterDriverState::Macro(_)
+            | CharacterDriverState::Camhermit(_),
         ) => SimpleBaddyDriverData::default(),
         None => SimpleBaddyDriverData::default(),
     };

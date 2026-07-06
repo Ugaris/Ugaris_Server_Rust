@@ -1242,14 +1242,28 @@ pub(crate) const JESSICA_STATE_QUEST2_GIVE_1: i32 = 8;
 const JESSICA_STATE_QUEST2_FINISH: i32 = 11;
 const BRITHILDIE_STATE_NOMORETALES_QOPEN: i32 = 20;
 const BRITHILDIE_STATE_NOMORETALES_QDONE: i32 = 21;
-const CAMHERMIT_STATE_QUEST1DO: i32 = 5;
-const CAMHERMIT_STATE_QUEST2WAIT: i32 = 6;
+pub(crate) const CAMHERMIT_STATE_QUEST1DO: i32 = 5;
+pub(crate) const CAMHERMIT_STATE_QUEST2WAIT: i32 = 6;
 /// C `CAMHERMIT_STATE_QUEST2_1` (`src/common/npc_states.h:17`), used by
 /// `questlog_reopen_q83` (`src/system/questlog.c:586-594`) - not read by
 /// `questlog_init_area1`, so it wasn't needed until the reopen dispatch.
 pub(crate) const CAMHERMIT_STATE_QUEST2_1: i32 = 7;
-const CAMHERMIT_STATE_QUEST2DO: i32 = 11;
-const CAMHERMIT_STATE_DONE: i32 = 13;
+pub(crate) const CAMHERMIT_STATE_QUEST2DO: i32 = 11;
+pub(crate) const CAMHERMIT_STATE_DONE: i32 = 13;
+// The remaining `CAMHERMIT_STATE_*` constants (`src/common/npc_states.h:
+// 10-24`), needed by `world::camhermit::process_camhermit_actions`
+// (`camhermit_driver`, `src/area/1/gwendylon.c:707-996`) but not by
+// `questlog_init_area1`/`questlog_reopen`, so they weren't defined above.
+pub(crate) const CAMHERMIT_STATE_ENTRY: i32 = 0;
+pub(crate) const CAMHERMIT_STATE_QUEST1WAIT: i32 = 1;
+pub(crate) const CAMHERMIT_STATE_QUEST1_1: i32 = 2;
+pub(crate) const CAMHERMIT_STATE_QUEST1_2: i32 = 3;
+pub(crate) const CAMHERMIT_STATE_QUEST1_3: i32 = 4;
+pub(crate) const CAMHERMIT_STATE_QUEST2_2: i32 = 8;
+pub(crate) const CAMHERMIT_STATE_QUEST2_3: i32 = 9;
+pub(crate) const CAMHERMIT_STATE_QUEST2_4: i32 = 10;
+pub(crate) const CAMHERMIT_STATE_QUEST2_REOPEN: i32 = 12;
+pub(crate) const CAMHERMIT_STATE_QUEST2DO_WAIT: i32 = 14;
 
 /// C `questlog_init_area1` (`src/system/questlog.c:828-1039`): derives
 /// quest 0 (Lydia), 1-4 (Gwendylon's four skull quests), 5 (Yoakin), 6

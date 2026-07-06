@@ -7,11 +7,11 @@ use crate::{
         apply_lab2_undead_create_message, apply_simple_baddy_create_message,
         parse_arena_manager_driver_args, parse_clanclerk_driver_args, parse_clanmaster_driver_args,
         parse_clubmaster_driver_args, ArenaFighterDriverData, ArenaMasterDriverData,
-        CharacterDriverState, DungeonmasterDriverData, GateFightDriverData, GateWelcomeDriverData,
-        JanitorDriverData, TraderDriverData, ARENA_FIGHTER_REST_POS, CDR_ARENAFIGHTER,
-        CDR_ARENAMANAGER, CDR_ARENAMASTER, CDR_CLANCLERK, CDR_CLANMASTER, CDR_CLUBMASTER,
-        CDR_DUNGEONMASTER, CDR_GATE_FIGHT, CDR_GATE_WELCOME, CDR_JANITOR, CDR_LAB2UNDEAD,
-        CDR_SIMPLEBADDY, CDR_TRADER, NT_CREATE,
+        CamhermitDriverData, CharacterDriverState, DungeonmasterDriverData, GateFightDriverData,
+        GateWelcomeDriverData, JanitorDriverData, TraderDriverData, ARENA_FIGHTER_REST_POS,
+        CDR_ARENAFIGHTER, CDR_ARENAMANAGER, CDR_ARENAMASTER, CDR_CAMHERMIT, CDR_CLANCLERK,
+        CDR_CLANMASTER, CDR_CLUBMASTER, CDR_DUNGEONMASTER, CDR_GATE_FIGHT, CDR_GATE_WELCOME,
+        CDR_JANITOR, CDR_LAB2UNDEAD, CDR_SIMPLEBADDY, CDR_TRADER, NT_CREATE,
     },
     entity::{
         Character, CharacterFlags, Item, ItemFlags, CHARACTER_VALUE_COUNT, INVENTORY_SIZE,
@@ -604,6 +604,14 @@ impl ZoneLoader {
             character.push_driver_message(NT_CREATE, 0, 0, 0);
             apply_lab2_undead_create_message(&mut character, Some(&template.args));
             self.add_lab2_undead_regenerate_spell(&mut character, &mut inventory_items);
+        }
+        if template.driver == CDR_CAMHERMIT {
+            // C never parses zone-file args into `struct
+            // camhermit_driver_data` (`set_data` zero-initializes it) - no
+            // args to read here, same as `CDR_GATE_WELCOME` above.
+            character.driver_state = Some(CharacterDriverState::Camhermit(
+                CamhermitDriverData::default(),
+            ));
         }
 
         Ok((character, inventory_items))

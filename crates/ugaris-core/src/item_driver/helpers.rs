@@ -41,6 +41,10 @@ pub(crate) const DEV_ID_DB: u32 = 0x01;
 
 pub(crate) const DEV_ID_WARR: u32 = 0x06;
 
+/// C `DEV_ID_RH` (`src/system/drdata.h:47`/`src/common/item_id.h:54`,
+/// "ID of Roman Haas"): the area-1 hermit-quest teeth item below.
+pub(crate) const DEV_ID_RH: u32 = 0x3A;
+
 pub(crate) const fn make_item_id(dev_id: u32, nr: u32) -> u32 {
     (dev_id << 24) | nr
 }

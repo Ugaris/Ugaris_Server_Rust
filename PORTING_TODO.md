@@ -11759,11 +11759,32 @@ movement), then boot with that area's data and smoke it.
 
 Ordered by player progression; the C file is the oracle.
 
-- [ ] **Area 1 - `src/area/1/gwendylon.c` (6,286 lines)** - the tutorial
+- [~] **Area 1 - `src/area/1/gwendylon.c` (6,286 lines)** - the tutorial
   and main city NPCs: Gwendylon quest chain, Lydia tutorial give, skeleton
   quests, `tutorial_ppd` hints (player_driver.c has the tutorial hook -
   port together). This is the highest-value area work: new players see it
   first. Slice by NPC.
+  REMAINING: only `camhermit_driver` (`CDR_CAMHERMIT`, the forest hermit's
+  bear-kill/tooth-necklace quest chain, `:707-996`) is ported so far - see
+  the Progress Log entry below and `crates/ugaris-core/src/world/
+  camhermit.rs`'s module doc comment for its own documented gaps
+  (`monster_dead`'s bear-kill counter still unported, so the
+  `CAMHERMIT_STATE_QUEST1DO` branch can never actually complete on a live
+  server yet). Every other NPC in this file is still unported:
+  `gwendylon_driver` (the main quest-giver, `:234-680`), `yoakin_driver`
+  (`:996-1227`), `terion_driver` (`:1228-1484`), `greeter_driver`
+  (`:1485-1808`), `jessica_driver` (`:1809-2073`), `jiu_driver` (`:2074-
+  2255`), `forest_ranger_driver` (`:2284-2473`), `brithildie_driver`
+  (`:2474-2826`), `james_driver` (`:2901-3179`), `nook_driver` (`:3180-
+  3457`), `lydia_driver` (`:3458-3703`), `balltrap_skelly_driver` (`:3712-
+  3774`, a fight-driver archer that needs the generic multi-enemy
+  `DRD_FIGHTDRIVER` system this codebase currently only exposes via the
+  `CDR_SIMPLEBADDY`-specific implementation - see `world/npc_fight.rs`),
+  `robber_driver` (`:3775-3960`), `sanoa_driver` (`:3961-4104`),
+  `reskin_driver` (`:4105-4424`), `asturin_driver` (`:4425-`), `guiwynn_
+  driver`/`logain_driver` and the rest through `ch_driver`'s dispatch
+  table (`:6076-6155`), plus `monster_dead`/the shared area-1 death-hook
+  tail (`:5200-`).
 - [ ] **Area 2 - `src/area/2/area2.c`** - remaining character drivers
   (zombie lord, priests). Item drivers done.
 - [ ] **Area 3 - `src/area/3/area3.c`** - palace story NPCs, lamp ghost
@@ -12339,3 +12360,28 @@ Add one line per completed task: date, task, ledger section touched.
   future iteration if load data ever says otherwise. `cargo fmt --all`,
   `cargo test --workspace`, `cargo build -p ugaris-server` all green;
   boot-smoked (10s run, tick loop advancing, no panics).
+- 2026-07-06: Area 1 - `gwendylon.c` (P4, now `[~]`) - re-verified the
+  sector-skip deferral above independently (confirmed the same "dozens of
+  scattered tile-mutation call sites, large cross-cutting change" finding
+  via a fresh grep of `DirtySectors`/`mark_dirty_sector` call sites), then
+  moved to this, the topmost P4 task, since P0-P3 have no other actionable
+  work. Ported a self-contained first NPC slice: `camhermit_driver`
+  (`CDR_CAMHERMIT = 14`, the forest hermit's two-quest bear-kill/tooth-
+  necklace chain) end to end - message-loop dispatch (`NT_CHAR` state
+  machine, `NT_TEXT` small-talk via a new `GWENDYLON_QA` table shared by
+  every area-1 NPC driver, `NT_GIVE` give-back), the `questlog_open`/
+  `_done`/`_reopen` wiring (first live NPC-driven questlog completion in
+  this codebase), and a new general `World::give_char_item_smart`
+  primitive (`give_char_item_smart`, `tool.c:3408-3494`, money/inventory/
+  hand/drop/destroy cascade) for future NPC ports to reuse. New `crates/
+  ugaris-core/src/world/camhermit.rs` (+tests), `crates/ugaris-server/src/
+  area1.rs` (facts snapshot + event application, wired into `main.rs`'s
+  tick loop), `IID_AREA1_SMALL_BEAR_TEETH`/`DEV_ID_RH` in `item_driver`,
+  10 new `CAMHERMIT_STATE_*` constants promoted to `pub(crate)` in
+  `quest.rs`. 9 new core tests. See `world::camhermit`'s module doc
+  comment for the two documented gaps (color-marker styling dropped from
+  one reminder line; `camhermit_kills` never advances yet since
+  `monster_dead`, the shared area-1 death hook, is still unported).
+  `cargo fmt --all`, `cargo test --workspace` (2270 core + 1084 server,
+  all green), `cargo build -p ugaris-server` all clean with zero
+  warnings; boot-smoked (12s run, tick loop advancing, no panics).

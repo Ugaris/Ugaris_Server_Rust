@@ -9,6 +9,7 @@
 //! startup loading.
 
 mod achievement;
+mod area1;
 mod area_apply;
 mod auction;
 mod chests;
@@ -48,6 +49,7 @@ mod xmas;
 mod zone;
 
 pub(crate) use achievement::*;
+pub(crate) use area1::*;
 pub(crate) use area_apply::*;
 pub(crate) use chests::*;
 pub(crate) use commands_admin::*;
@@ -7555,6 +7557,28 @@ async fn main() -> anyhow::Result<()> {
                         arena_master_events_applied,
                         tick = world.tick.0,
                         "applied arena tournament fight-scoring events"
+                    );
+                }
+                // C `camhermit_driver`: area 1's forest hermit quest NPC
+                // (`src/area/1/gwendylon.c`).
+                let camhermit_facts = camhermit_player_facts(&runtime);
+                let camhermit_events = world.process_camhermit_actions(
+                    &camhermit_facts,
+                    current_unix_time() as i32,
+                    config.area_id,
+                );
+                let camhermit_events_applied = apply_camhermit_events(
+                    &mut world,
+                    &mut runtime,
+                    &achievement_repository,
+                    camhermit_events,
+                )
+                .await;
+                if camhermit_events_applied != 0 {
+                    info!(
+                        camhermit_events_applied,
+                        tick = world.tick.0,
+                        "applied camp hermit dialogue events"
                     );
                 }
                 // C `gate_welcome_driver`: the Ishtar labyrinth gatekeeper

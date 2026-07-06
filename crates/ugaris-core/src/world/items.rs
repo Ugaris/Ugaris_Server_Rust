@@ -344,6 +344,172 @@ pub(crate) fn check_requirements(character: &Character, item: &Item) -> bool {
     true
 }
 
+/// C `give_char_item_smart`'s return code (`src/system/tool.c:3396-3494`):
+/// `1` (to inventory or hand) is collapsed into two explicit variants here
+/// since callers may care which slot was used (C's own callers never do,
+/// but the distinction is cheap to keep and matches the doc comment).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GiveCharItemSmartResult {
+    /// C return `3`: an `IF_MONEY` item was converted straight to gold.
+    /// The caller (which has `PlayerRuntime`/DB access `World` lacks)
+    /// should apply the `achievement_add_gold_earned` wealth ladder for
+    /// this amount, matching every other `give_money`-derived reward in
+    /// this codebase (see `World::complete_mission`'s doc comment for the
+    /// established split).
+    Money { amount: u32 },
+    /// C return `1`, inventory branch.
+    ToInventory,
+    /// C return `1`, hand (`citem`) branch.
+    ToHand,
+    /// C return `2`: dropped on the ground next to the receiver.
+    Dropped,
+    /// C return `0`: destroyed (no space, `IF_NODROP`, or drop failure).
+    Destroyed,
+}
+
+impl World {
+    /// C `give_char_item_smart(cn, in, log_msg)` (`src/system/tool.c:3408-
+    /// 3494`): tries the receiver's inventory, then hand, then a ground
+    /// drop next to them, destroying the item only as a last resort (or
+    /// immediately for `IF_MONEY`/`IF_NODROP` items, which are never
+    /// dropped). `log_msg` gates the private `log_char`/`quiet`-style
+    /// feedback the same way C's own flag does; the `dlog` audit-log
+    /// lines have no Rust equivalent anywhere in this codebase (dev-only
+    /// diagnostic, consistently unported) and are not reproduced here.
+    /// Returns `false` only if `target_id`/`item_id` don't resolve to a
+    /// live character/item (a state C can't represent since both are
+    /// always-valid array indices there).
+    pub fn give_char_item_smart(
+        &mut self,
+        target_id: CharacterId,
+        item_id: ItemId,
+        log_msg: bool,
+    ) -> Option<GiveCharItemSmartResult> {
+        let item = self.items.get(&item_id)?.clone();
+        self.characters.get(&target_id)?;
+
+        // C: `if (it[in].flags & IF_MONEY) { ... give_money(cn, amount,
+        // ...); destroy_item(in); return 3; }` (`tool.c:3411-3432`).
+        if item.flags.contains(ItemFlags::MONEY) {
+            let amount = item.value;
+            if let Some(character) = self.characters.get_mut(&target_id) {
+                character.gold = character.gold.saturating_add(amount);
+                character.flags.insert(CharacterFlags::ITEMS);
+            }
+            if log_msg {
+                self.queue_system_text_bytes(target_id, give_money_message(amount));
+            }
+            self.destroy_item(item_id);
+            return Some(GiveCharItemSmartResult::Money { amount });
+        }
+
+        // C: first try inventory (`tool.c:3434-3450`).
+        if let Some(character) = self.characters.get_mut(&target_id) {
+            if let Some(slot) = character
+                .inventory
+                .iter_mut()
+                .skip(INVENTORY_START_INVENTORY)
+                .find(|slot| slot.is_none())
+            {
+                *slot = Some(item_id);
+                character.flags.insert(CharacterFlags::ITEMS);
+                if let Some(item) = self.items.get_mut(&item_id) {
+                    item.carried_by = Some(target_id);
+                }
+                if log_msg {
+                    self.queue_system_text(target_id, format!("You received {}.", item.name));
+                }
+                return Some(GiveCharItemSmartResult::ToInventory);
+            }
+        }
+
+        // C: inventory full, try hand (`tool.c:3452-3466`).
+        if let Some(character) = self.characters.get_mut(&target_id) {
+            if character.cursor_item.is_none() {
+                character.cursor_item = Some(item_id);
+                character.flags.insert(CharacterFlags::ITEMS);
+                if let Some(item) = self.items.get_mut(&item_id) {
+                    item.carried_by = Some(target_id);
+                }
+                if log_msg {
+                    self.queue_system_text(
+                        target_id,
+                        format!("You received {} in your hand.", item.name),
+                    );
+                }
+                return Some(GiveCharItemSmartResult::ToHand);
+            }
+        }
+
+        // C: both full - `IF_NODROP` items are destroyed instead of
+        // dropped (`tool.c:3467-3479`).
+        if item.flags.contains(ItemFlags::NODROP) {
+            if log_msg {
+                self.queue_system_text(
+                    target_id,
+                    format!(
+                        "You would have received {}, but it was destroyed as you have no space for it.",
+                        item.name
+                    ),
+                );
+            }
+            self.destroy_item(item_id);
+            return Some(GiveCharItemSmartResult::Destroyed);
+        }
+
+        // C: `drop_item`, falling back to `drop_item_extended(..., 1)`,
+        // destroying only if both fail (`tool.c:3480-3502`).
+        let (x, y) = self
+            .characters
+            .get(&target_id)
+            .map(|character| (character.x, character.y))?;
+        let mut item_mut = self.items.get(&item_id)?.clone();
+        let dropped = self
+            .map
+            .drop_item(&mut item_mut, usize::from(x), usize::from(y))
+            || self
+                .map
+                .drop_item_extended(&mut item_mut, usize::from(x), usize::from(y), 1);
+        if dropped {
+            self.items.insert(item_id, item_mut);
+            if log_msg {
+                self.queue_system_text(
+                    target_id,
+                    format!("You received {} (dropped at your feet).", item.name),
+                );
+            }
+            Some(GiveCharItemSmartResult::Dropped)
+        } else {
+            if log_msg {
+                self.queue_system_text(
+                    target_id,
+                    format!(
+                        "You would have received {}, but it was destroyed as there was no space to drop it.",
+                        item.name
+                    ),
+                );
+            }
+            self.destroy_item(item_id);
+            Some(GiveCharItemSmartResult::Destroyed)
+        }
+    }
+}
+
+/// C `give_money`'s message half (`src/system/tool.c:1460-1474`): `"%ds"`
+/// under 100 silver, otherwise `"%.2fG"`.
+pub(crate) fn give_money_message(amount: u32) -> Vec<u8> {
+    let mut message = b"You received".to_vec();
+    message.extend_from_slice(crate::text::COL_YELLOW);
+    if amount < 100 {
+        message.extend_from_slice(format!(" {amount}s").as_bytes());
+    } else {
+        message.extend_from_slice(format!(" {:.2}G", f64::from(amount) / 100.0).as_bytes());
+    }
+    message.extend_from_slice(crate::text::COL_RESET);
+    message.extend_from_slice(b". It has been placed in your gold pouch.");
+    message
+}
+
 pub(crate) fn can_receive_given_item(character: &Character) -> bool {
     if character.cursor_item.is_none() {
         return true;
