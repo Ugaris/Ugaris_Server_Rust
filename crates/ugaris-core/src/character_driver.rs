@@ -52,6 +52,10 @@ pub const CDR_TERION: u16 = 11;
 /// quest-giver mage at the knight castle
 /// (`src/area/1/gwendylon.c::gwendylon_driver`).
 pub const CDR_GWENDYLON: u16 = 8;
+/// C `#define CDR_GREETER 13` (`src/system/drvlib.h`): the "specific NPC
+/// in area1, stronghold" (Cameron, the tutorial-town Governor) greeting
+/// NPC (`src/area/1/gwendylon.c::greeter_driver`).
+pub const CDR_GREETER: u16 = 13;
 /// C `#define CDR_GATE_WELCOME 39` (`src/system/drvlib.h`): the stationary
 /// gatekeeper-welcome NPC (`gate_welcome` template,
 /// `src/system/gatekeeper.c::gate_welcome_driver`).
@@ -198,6 +202,7 @@ pub enum CharacterDriverState {
     Yoakin(YoakinDriverData),
     Terion(TerionDriverData),
     Gwendylon(GwendylonDriverData),
+    Greeter(GreeterDriverData),
 }
 
 /// C `struct lostcon_driver_data` (`src/module/lostcon.c`): the linger-timer
@@ -509,6 +514,19 @@ pub struct YoakinDriverData {
 /// ported.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct TerionDriverData {
+    #[serde(default)]
+    pub last_talk: u64,
+    pub current_victim: Option<CharacterId>,
+}
+
+/// C `struct greeter_driver_data` (`src/area/1/gwendylon.c`, just above
+/// `greeter_driver` at `:1485`): the town-greeter NPC's own driver memory
+/// (`CDR_GREETER`, distinct from the per-player `greeter_state`/
+/// `greeter_seen_timer` fields in `crate::player::PlayerRuntime`'s
+/// `area1_ppd` - see `world::greeter`'s module doc comment for the
+/// split).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct GreeterDriverData {
     #[serde(default)]
     pub last_talk: u64,
     pub current_victim: Option<CharacterId>,
@@ -2748,7 +2766,8 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::Camhermit(_)
             | CharacterDriverState::Yoakin(_)
             | CharacterDriverState::Terion(_)
-            | CharacterDriverState::Gwendylon(_),
+            | CharacterDriverState::Gwendylon(_)
+            | CharacterDriverState::Greeter(_),
         ) => SimpleBaddyDriverData::default(),
         None => SimpleBaddyDriverData::default(),
     };

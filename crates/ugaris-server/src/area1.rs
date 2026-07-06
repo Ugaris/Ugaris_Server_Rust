@@ -1,30 +1,34 @@
-//! Server-side wiring for area 1's forest hermit, hunter, and lore NPCs
+//! Server-side wiring for area 1's forest hermit, hunter, lore, and
+//! town-greeter NPCs
 //! (`CDR_CAMHERMIT`/`ugaris_core::world::camhermit::process_camhermit_actions`,
 //! `CDR_YOAKIN`/`ugaris_core::world::yoakin::process_yoakin_actions`,
-//! `CDR_TERION`/`ugaris_core::world::terion::process_terion_actions`).
+//! `CDR_TERION`/`ugaris_core::world::terion::process_terion_actions`,
+//! `CDR_GREETER`/`ugaris_core::world::greeter::process_greeter_actions`).
 //!
 //! Mirrors the `World`/`PlayerRuntime` split already established for
 //! `world::gatekeeper`'s `GateWelcomePlayerFacts`/`GateWelcomeOutcomeEvent`
 //! (see `world::camhermit`'s module doc comment): [`camhermit_player_facts`]/
-//! [`yoakin_player_facts`]/[`terion_player_facts`] snapshot the per-player
-//! `area1_ppd`/`quest_log` facts each NPC's dialogue needs before the tick,
-//! and [`apply_camhermit_events`]/[`apply_yoakin_events`]/
-//! [`apply_terion_events`] apply the returned events afterward, including
-//! the `QLOG_HERMIT_QUEST1/2`/`QLOG_YOAKIN` `questlog_open`/`questlog_done`/
-//! `questlog_reopen` calls C's own drivers make (each of which
-//! unconditionally resends the legacy questlog packet, matching
-//! `apply_military_mission_kill_check`'s precedent) and each quest's
-//! reward gold wealth-achievement tracking (`give_money`'s
-//! `achievement_add_gold_earned` half - see `World::give_char_item_smart`'s
-//! doc comment for why that split exists). Terion is pure ambient
-//! dialogue (no quest log, no reward), so its own facts/events are the
-//! simplest of the three - just `area1_terion_state`.
+//! [`yoakin_player_facts`]/[`terion_player_facts`]/[`greeter_player_facts`]
+//! snapshot the per-player `area1_ppd`/`quest_log` facts each NPC's
+//! dialogue needs before the tick, and [`apply_camhermit_events`]/
+//! [`apply_yoakin_events`]/[`apply_terion_events`]/[`apply_greeter_events`]
+//! apply the returned events afterward, including the `QLOG_HERMIT_QUEST1/
+//! 2`/`QLOG_YOAKIN` `questlog_open`/`questlog_done`/`questlog_reopen` calls
+//! C's own drivers make (each of which unconditionally resends the legacy
+//! questlog packet, matching `apply_military_mission_kill_check`'s
+//! precedent) and each quest's reward gold wealth-achievement tracking
+//! (`give_money`'s `achievement_add_gold_earned` half - see `World::
+//! give_char_item_smart`'s doc comment for why that split exists). Terion
+//! and the greeter are pure ambient/tutorial dialogue (no quest log
+//! writes), so their own facts/events are the simplest of the four - the
+//! greeter only *reads* `QLOG_LYDIA`'s completion flag, never writes it.
 
 use super::*;
-use ugaris_core::quest::{QLOG_HERMIT_QUEST2, QLOG_YOAKIN};
+use ugaris_core::quest::{QLOG_HERMIT_QUEST2, QLOG_LYDIA, QLOG_YOAKIN};
 use ugaris_core::world::{
-    CamhermitOutcomeEvent, CamhermitPlayerFacts, GwendylonOutcomeEvent, GwendylonPlayerFacts,
-    TerionOutcomeEvent, TerionPlayerFacts, YoakinOutcomeEvent, YoakinPlayerFacts,
+    CamhermitOutcomeEvent, CamhermitPlayerFacts, GreeterOutcomeEvent, GreeterPlayerFacts,
+    GwendylonOutcomeEvent, GwendylonPlayerFacts, TerionOutcomeEvent, TerionPlayerFacts,
+    YoakinOutcomeEvent, YoakinPlayerFacts,
 };
 
 pub(crate) fn camhermit_player_facts(
@@ -461,6 +465,58 @@ pub(crate) async fn apply_gwendylon_cross_area_transfers(
             );
         }
         applied += 1;
+    }
+    applied
+}
+
+pub(crate) fn greeter_player_facts(
+    runtime: &ServerRuntime,
+) -> HashMap<CharacterId, GreeterPlayerFacts> {
+    runtime
+        .players
+        .values()
+        .filter_map(|player| {
+            let character_id = player.character_id?;
+            Some((
+                character_id,
+                GreeterPlayerFacts {
+                    state: player.area1_greeter_state(),
+                    seen_timer: player.area1_greeter_seen_timer(),
+                    james_state: player.area1_james_state(),
+                    lydia_quest_done: player.quest_log.is_done(QLOG_LYDIA),
+                },
+            ))
+        })
+        .collect()
+}
+
+/// Applies each [`GreeterOutcomeEvent`] queued by
+/// `World::process_greeter_actions`. See the module doc comment.
+pub(crate) fn apply_greeter_events(
+    runtime: &mut ServerRuntime,
+    events: Vec<GreeterOutcomeEvent>,
+) -> usize {
+    let mut applied = 0;
+    for event in events {
+        match event {
+            GreeterOutcomeEvent::UpdateState {
+                player_id,
+                new_state,
+            } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.set_area1_greeter_state(new_state);
+                applied += 1;
+            }
+            GreeterOutcomeEvent::UpdateSeenTimer { player_id, value } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.set_area1_greeter_seen_timer(value);
+                applied += 1;
+            }
+        }
     }
     applied
 }

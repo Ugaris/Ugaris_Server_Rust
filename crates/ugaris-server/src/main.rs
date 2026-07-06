@@ -7658,6 +7658,22 @@ async fn main() -> anyhow::Result<()> {
                         "applied gwendylon cross-area transfers"
                     );
                 }
+                // C `greeter_driver`: area 1's tutorial-town greeter NPC
+                // (Cameron the Governor, `src/area/1/gwendylon.c`).
+                let greeter_facts = greeter_player_facts(&runtime);
+                let greeter_events = world.process_greeter_actions(
+                    &greeter_facts,
+                    current_unix_time() as i32,
+                    config.area_id,
+                );
+                let greeter_events_applied = apply_greeter_events(&mut runtime, greeter_events);
+                if greeter_events_applied != 0 {
+                    info!(
+                        greeter_events_applied,
+                        tick = world.tick.0,
+                        "applied greeter dialogue events"
+                    );
+                }
                 // C `gate_welcome_driver`: the Ishtar labyrinth gatekeeper
                 // greeter NPC (`src/system/gatekeeper.c`).
                 let gate_welcome_facts = gate_welcome_player_facts(&runtime);

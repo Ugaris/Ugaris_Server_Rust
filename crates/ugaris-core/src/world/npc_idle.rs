@@ -483,7 +483,8 @@ impl World {
                 | CharacterDriverState::Camhermit(_)
                 | CharacterDriverState::Yoakin(_)
                 | CharacterDriverState::Terion(_)
-                | CharacterDriverState::Gwendylon(_) => None,
+                | CharacterDriverState::Gwendylon(_)
+                | CharacterDriverState::Greeter(_) => None,
             });
         let Some(target_id) = target_id else {
             return false;

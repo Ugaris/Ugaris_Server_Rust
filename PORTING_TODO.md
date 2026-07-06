@@ -11769,19 +11769,22 @@ Ordered by player progression; the C file is the oracle.
   (`CDR_YOAKIN`, the hunter's bear-hunt quest chain plus the shrike-
   talisman/leftover-give branches it also handles, `:996-1217`),
   `terion_driver` (`CDR_TERION`, the village's ambient lore/storyteller
-  NPC, `:1228-1472`), and `gwendylon_driver` (`CDR_GWENDYLON`, the main
-  quest-giver mage's four-skull quest chain, `:234-673`) are ported so
+  NPC, `:1228-1472`), `gwendylon_driver` (`CDR_GWENDYLON`, the main
+  quest-giver mage's four-skull quest chain, `:234-673`), and
+  `greeter_driver` (`CDR_GREETER`, the tutorial-town Governor's class-
+  aware weapon/rest-area/movement civics dialogue plus its "learn"/
+  "repeat" text-command rewind branches, `:1485-1798`) are ported so
   far - see the Progress Log entries below and
   `crates/ugaris-core/src/world/camhermit.rs`/`world/yoakin.rs`/
-  `world/terion.rs`/`world/gwendylon.rs`'s own module doc comments for
-  their documented gaps (camhermit's `monster_dead` bear-kill counter is
-  still unported, so its `CAMHERMIT_STATE_QUEST1DO` branch can never
-  actually complete on a live server yet; yoakin's and gwendylon's
-  `destroy_item_byID` sweeps do not reach the account depot; terion is
-  pure ambient dialogue with no gaps of its own). Every other NPC in this
-  file is still unported:
-  `greeter_driver`
-  (`:1485-1808`), `jessica_driver` (`:1809-2073`), `jiu_driver` (`:2074-
+  `world/terion.rs`/`world/gwendylon.rs`/`world/greeter.rs`'s own module
+  doc comments for their documented gaps (camhermit's `monster_dead`
+  bear-kill counter is still unported, so its `CAMHERMIT_STATE_QUEST1DO`
+  branch can never actually complete on a live server yet; yoakin's and
+  gwendylon's `destroy_item_byID` sweeps do not reach the account depot;
+  terion and greeter are pure ambient/tutorial dialogue with no gaps of
+  their own beyond the documented `COL_LIGHT_BLUE`/`COL_RESET` marker
+  drop). Every other NPC in this file is still unported:
+  `jessica_driver` (`:1809-2073`), `jiu_driver` (`:2074-
   2255`), `forest_ranger_driver` (`:2284-2473`), `brithildie_driver`
   (`:2474-2826`), `james_driver` (`:2901-3179`), `nook_driver` (`:3180-
   3457`), `lydia_driver` (`:3458-3703`), `balltrap_skelly_driver` (`:3712-
@@ -12486,4 +12489,39 @@ Add one line per completed task: date, task, ledger section touched.
   depot. `cargo fmt --all`, `cargo test --workspace` (2305 core + 1084
   server, all green, zero failures, zero warnings), `cargo build -p
   ugaris-server`/`--workspace` all clean; boot-smoked (8s run, "entering
+  Rust game loop" `area_id=1`, tick loop advancing, no panics).
+- Iteration 248 (Area 1 - `gwendylon.c`, fifth NPC slice): ported
+  `greeter_driver` (`CDR_GREETER = 13`, the tutorial-town Governor
+  "Cameron" at the stronghold, `:1485-1798` - new `CDR_GREETER` constant).
+  15-state `NT_CHAR` chain (states 0-14): class-gated (`CF_WARRIOR`/
+  `CF_MAGE`) entry greeting with a silent Seyan'Du (both flags)
+  fast-path straight to the terminal state, a level-7-gated weapon
+  tutorial (small blade -> two-handed/staff -> fists -> outro), the
+  "learn"-prompt/James-whimpering hint (conditional on `james_state`),
+  a level-7-gated rest-area/recall-scrolls/movement/look-ground civics
+  tutorial, and the final `QLOG_LYDIA`-gated understand-prompt/reminder
+  pair (state 12/13, each reading `questlog_isdone(co, QLOG_LYDIA)`
+  exactly like C - caught and fixed a first-draft mistake that dropped
+  this quest-log read entirely). `NT_TEXT` small-talk via the shared
+  `GWENDYLON_QA` table/`analyse_text_qa`, with "repeat" resetting to
+  state 0 and "learn" rewinding to state 8 only from the state-7 "empty"
+  checkpoint or state >= 13 (matching C's `current_victim`/`last_talk`
+  reset-then-gate shape, the same as `world::yoakin`'s `NT_TEXT` handler
+  rather than `world::terion`'s ungated one). `NT_GIVE` is the same
+  give-back-or-destroy fallback every other area-1 ambient NPC uses. New
+  `crates/ugaris-core/src/world/greeter.rs` (+20 tests),
+  `CDR_GREETER`/`GreeterDriverData`/`CharacterDriverState::Greeter` in
+  `character_driver.rs` (plus the two exhaustive-match call sites in
+  `npc_fight.rs`/`npc_idle.rs` that needed the new variant), `CDR_GREETER`
+  default driver-state wiring in `zone.rs` (`greeter_state`/
+  `greeter_seen_timer`/`james_state` `area1_ppd` accessors already
+  existed from earlier iterations' `showppd` work). Extended
+  `crates/ugaris-server/src/area1.rs` (facts snapshot incl.
+  `quest_log.is_done(QLOG_LYDIA)`, event application) and wired into
+  `main.rs`'s tick loop right after the gwendylon cross-area-transfer
+  block. No gameplay gaps beyond the documented `COL_LIGHT_BLUE`/
+  `COL_RESET` marker drop (cosmetic, matches every other ambient NPC in
+  this file). `cargo fmt --all`, `cargo test --workspace` (2325 core +
+  1084 server, all green, zero failures, zero warnings), `cargo build -p
+  ugaris-server`/`--workspace` all clean; boot-smoked (10s run, "entering
   Rust game loop" `area_id=1`, tick loop advancing, no panics).

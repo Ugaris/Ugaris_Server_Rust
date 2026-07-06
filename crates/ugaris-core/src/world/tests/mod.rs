@@ -28,6 +28,7 @@ mod exp;
 mod exterminate;
 mod gate_fight;
 mod gatekeeper;
+mod greeter;
 mod gwendylon;
 mod hurt;
 mod item_outcomes;
