@@ -373,6 +373,10 @@ pub struct World {
     /// `#accleanup <days>` async DB round trips - see
     /// `world/anticheat.rs`'s module doc comment.
     pending_ac_cleanup_lookups: Vec<AcCleanupLookup>,
+    /// `#acreset <name>` async DB round trips (session id already
+    /// resolved synchronously by the caller) - see `world/anticheat.rs`'s
+    /// module doc comment.
+    pending_ac_reset_lookups: Vec<AcResetLookup>,
 }
 
 impl Default for Tick {

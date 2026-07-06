@@ -92,3 +92,21 @@ fn queue_and_drain_ac_cleanup_lookup_round_trips() {
     assert_eq!(queued[0].days, 30);
     assert!(world.drain_pending_ac_cleanup_lookups().is_empty());
 }
+
+#[test]
+fn ac_status_verified_constant_matches_c_header() {
+    assert_eq!(AC_STATUS_VERIFIED, 1);
+}
+
+#[test]
+fn queue_and_drain_ac_reset_lookup_round_trips() {
+    let mut world = World::default();
+    world.queue_ac_reset_lookup(CharacterId(4), "Baddie".to_string(), 77);
+
+    let queued = world.drain_pending_ac_reset_lookups();
+    assert_eq!(queued.len(), 1);
+    assert_eq!(queued[0].caller_id, CharacterId(4));
+    assert_eq!(queued[0].target_name, "Baddie");
+    assert_eq!(queued[0].session_id, 77);
+    assert!(world.drain_pending_ac_reset_lookups().is_empty());
+}

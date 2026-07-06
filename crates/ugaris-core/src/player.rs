@@ -652,6 +652,15 @@ pub struct PlayerRuntime {
     /// on reconnect/disconnect. `None` when running without a database or
     /// before the session row has been created.
     pub anticheat_session_id: Option<i64>,
+    /// C `player[nr]->ac.watch_mode` (`anticheat.h`), toggled by
+    /// `#acwatch <player>` (`ac_cmd_watch`, `anticheat.c:894-921`). Purely
+    /// in-memory in C, kept live for the (unported) detection engine's
+    /// verbose-logging check - this codebase has no such engine yet, so
+    /// the flag currently has no behavioral effect beyond the toggle
+    /// message itself, matching every other pre-wired-but-inert toggle in
+    /// this struct (`no_ball` and siblings).
+    #[serde(default)]
+    pub ac_watch_enabled: bool,
     pub command: Vec<u8>,
     pub action: QueuedAction,
     pub queue: VecDeque<QueuedAction>,
@@ -973,6 +982,7 @@ impl PlayerRuntime {
             character_id: None,
             character_number: 0,
             anticheat_session_id: None,
+            ac_watch_enabled: false,
             command: Vec::new(),
             action: QueuedAction::default(),
             queue: VecDeque::with_capacity(COMMAND_QUEUE_SIZE),
@@ -5719,6 +5729,7 @@ impl PlayerRuntime {
         // so any anti-cheat session tied to the previous connection must
         // not be carried over; the new login path creates a fresh one.
         self.anticheat_session_id = None;
+        self.ac_watch_enabled = false;
         self.command.clear();
         self.action = QueuedAction::default();
         self.queue.clear();

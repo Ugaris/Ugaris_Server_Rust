@@ -6637,6 +6637,15 @@ async fn main() -> anyhow::Result<()> {
                         "applied #accleanup lookups"
                     );
                 }
+                let ac_reset_events_applied =
+                    apply_ac_reset_events(&mut world, &anticheat_repository).await;
+                if ac_reset_events_applied != 0 {
+                    info!(
+                        ac_reset_events_applied,
+                        tick = world.tick.0,
+                        "applied #acreset lookups"
+                    );
+                }
                 // `/jail`/`/unjail <name>`'s async DB round-trip (C
                 // `lookup_name`, `system/lookup.c:42-98` + `system/
                 // database/database_lookup.c:57-83`), queued by

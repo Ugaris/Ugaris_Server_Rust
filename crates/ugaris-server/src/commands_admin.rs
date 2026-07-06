@@ -5223,6 +5223,119 @@ pub(crate) fn apply_admin_character_command(
         });
     }
 
+    // C `#acreset <player>` (`command.c:10157-10165` dispatch, `CF_GOD`-
+    // only, exact-word; `ac_cmd_reset`, `anticheat.c:527-561`). Same
+    // single-name-target resolution as `#acstatus` above (online-
+    // `CF_PLAYER`-name scan, ascending-id tiebreak, then
+    // `PlayerRuntime::anticheat_session_id` lookup), but the DB half is a
+    // mutation, not a read - see `apply_ac_reset_events` for the
+    // confirmation message, which is queued only after the reset
+    // actually succeeds (this codebase has no synchronous in-memory
+    // `player[nr]->ac` struct to mutate directly, unlike C, whose
+    // "Reset anti-cheat data for %s." reply is unconditional and
+    // same-thread).
+    if lower == "acreset" {
+        let Some(caller) = world.characters.get(&character_id) else {
+            return Some(KeyringCommandResult::default());
+        };
+        if !caller.flags.contains(CharacterFlags::GOD) {
+            return None;
+        }
+        let name = rest.trim_start();
+        if name.is_empty() {
+            return Some(KeyringCommandResult {
+                messages: vec!["Usage: #acreset <player>".to_string()],
+                ..Default::default()
+            });
+        }
+        let mut candidates: Vec<&Character> = world
+            .characters
+            .values()
+            .filter(|character| {
+                character.flags.contains(CharacterFlags::PLAYER)
+                    && character.name.eq_ignore_ascii_case(name)
+            })
+            .collect();
+        candidates.sort_by_key(|character| character.id.0);
+        let Some(target_id) = candidates.first().map(|character| character.id) else {
+            return Some(KeyringCommandResult {
+                messages: vec![format!("Player '{name}' not found online.")],
+                ..Default::default()
+            });
+        };
+        let target_name = world.characters[&target_id].name.clone();
+        let Some(session_id) = runtime
+            .player_for_character(target_id)
+            .and_then(|player| player.anticheat_session_id)
+        else {
+            return Some(KeyringCommandResult {
+                messages: vec![format!("Player '{target_name}' has no connection data.")],
+                ..Default::default()
+            });
+        };
+        world.queue_ac_reset_lookup(character_id, target_name, session_id);
+        return Some(KeyringCommandResult::default());
+    }
+
+    // C `#acwatch <player>` (`command.c:10223-10231` dispatch, `CF_GOD|
+    // CF_STAFF`-gated, exact-word; `ac_cmd_watch`, `anticheat.c:894-921`).
+    // Purely in-memory in C (toggles `player[nr]->ac.watch_mode`) and
+    // stays purely in-memory here too - see `PlayerRuntime::
+    // ac_watch_enabled`'s doc comment for why the flag currently has no
+    // other effect beyond the toggle message. Unlike every other member
+    // of this family this needs no DB round trip at all (the target's
+    // `PlayerRuntime` is mutated directly), so it replies synchronously.
+    if lower == "acwatch" {
+        let Some(caller) = world.characters.get(&character_id) else {
+            return Some(KeyringCommandResult::default());
+        };
+        if !caller
+            .flags
+            .intersects(CharacterFlags::STAFF | CharacterFlags::GOD)
+        {
+            return None;
+        }
+        let name = rest.trim_start();
+        if name.is_empty() {
+            return Some(KeyringCommandResult {
+                messages: vec!["Usage: #acwatch <player>".to_string()],
+                ..Default::default()
+            });
+        }
+        let mut candidates: Vec<&Character> = world
+            .characters
+            .values()
+            .filter(|character| {
+                character.flags.contains(CharacterFlags::PLAYER)
+                    && character.name.eq_ignore_ascii_case(name)
+            })
+            .collect();
+        candidates.sort_by_key(|character| character.id.0);
+        let Some(target_id) = candidates.first().map(|character| character.id) else {
+            return Some(KeyringCommandResult {
+                messages: vec![format!("Player '{name}' not found online.")],
+                ..Default::default()
+            });
+        };
+        let target_name = world.characters[&target_id].name.clone();
+        let Some(target_player) = runtime.player_for_character_mut(target_id) else {
+            return Some(KeyringCommandResult {
+                messages: vec![format!("Player '{target_name}' has no connection data.")],
+                ..Default::default()
+            });
+        };
+        target_player.ac_watch_enabled = !target_player.ac_watch_enabled;
+        let message = if target_player.ac_watch_enabled {
+            format!("Now watching {target_name} - detailed AC logging enabled.")
+        } else {
+            format!("Stopped watching {target_name}.")
+        };
+        return Some(KeyringCommandResult {
+            messages: vec![message],
+            ..Default::default()
+        });
+    }
+
     // C `/clearppd <ppdname> [player]` (`command.c:10144-10146` dispatch,
     // `CF_GOD | CF_STAFF`-gated, `cmdcmp(ptr, "clearppd", 8)` - exact word
     // only; `cmd_clearppd`, `command.c:4214-4288`). A raw, PPD-name-

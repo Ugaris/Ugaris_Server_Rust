@@ -91,6 +91,19 @@ pub struct AcCleanupLookup {
     pub days: i32,
 }
 
+/// `#acreset <player>` (`ac_cmd_reset`, `anticheat.c:527-561`), `CF_GOD`-
+/// only. Same single-name-target shape as `AcStatusLookup` (the online-
+/// name-scan + `PlayerRuntime::anticheat_session_id` lookup happens
+/// synchronously in `commands_admin.rs` before queuing, for the same
+/// reason - see the module doc comment); the DB half is a mutation
+/// (`AntiCheatRepository::reset_session`) rather than a read.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AcResetLookup {
+    pub caller_id: CharacterId,
+    pub target_name: String,
+    pub session_id: i64,
+}
+
 impl World {
     pub fn queue_ac_status_lookup(
         &mut self,
@@ -148,6 +161,23 @@ impl World {
     pub fn drain_pending_ac_cleanup_lookups(&mut self) -> Vec<AcCleanupLookup> {
         self.pending_ac_cleanup_lookups.drain(..).collect()
     }
+
+    pub fn queue_ac_reset_lookup(
+        &mut self,
+        caller_id: CharacterId,
+        target_name: String,
+        session_id: i64,
+    ) {
+        self.pending_ac_reset_lookups.push(AcResetLookup {
+            caller_id,
+            target_name,
+            session_id,
+        });
+    }
+
+    pub fn drain_pending_ac_reset_lookups(&mut self) -> Vec<AcResetLookup> {
+        self.pending_ac_reset_lookups.drain(..).collect()
+    }
 }
 
 /// C `ac_status_string` (`anticheat.c:436-449`).
@@ -165,3 +195,7 @@ pub fn ac_status_string(status: i32) -> &'static str {
 /// `ac_cmd_suspicious` (`anticheat.c:762`, `player[nr]->ac.status <
 /// AC_STATUS_SUSPICIOUS`) filters against.
 pub const AC_STATUS_SUSPICIOUS: i32 = 2;
+
+/// C `AC_STATUS_VERIFIED` (`anticheat.h:83`) - the status `#acreset`
+/// (`ac_cmd_reset`, `anticheat.c:557`) restores a session to.
+pub const AC_STATUS_VERIFIED: i32 = 1;

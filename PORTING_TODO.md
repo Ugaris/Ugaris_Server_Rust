@@ -9098,6 +9098,68 @@ Unlocks every quest NPC. Do these before any P4 area work.
   (scoped port vs. skip, matching `/kick`'s precedent) rather than
   looking for another already-solved building block.
 
+  Progress Log (iteration 200): re-read gap (a)'s two most recently
+  flagged commands (`acreset`/`acwatch`) and found both were actually
+  independent of the `subscriber_id`/`subscribers` schema gap that
+  blocks their siblings - a fresh read of `anticheat.c` showed
+  `ac_cmd_reset` (`anticheat.c:527-561`, `CF_GOD`-only) and `ac_cmd_watch`
+  (`anticheat.c:894-921`, `CF_GOD|CF_STAFF`) never call
+  `get_subscriberId_from_character`/`db_ac_*` at all, unlike `acflag`/
+  `acunflag`/`actrust`/`acuntrust`. Ported both. `#acreset <player>`
+  reuses the exact `#acstatus` single-name-target resolution (online-
+  `CF_PLAYER`-scan, ascending-id tiebreak, `PlayerRuntime::
+  anticheat_session_id` lookup) but its DB half is a mutation, not a
+  read: added `AntiCheatRepository::reset_session` (zeroes `bot_score`/
+  `heartbeat_violations`/`state_violations`/`challenge_failures`/
+  `timeout_count`, restores `status` to the new `AC_STATUS_VERIFIED = 1`
+  constant, deliberately leaving `max_bot_score`/`anomaly_count`
+  untouched since C's own reset doesn't touch its equivalents either),
+  `world/anticheat.rs`'s `AcResetLookup` queue (same shape as
+  `AcStatusLookup`), and `world_events.rs`'s `apply_ac_reset_events`
+  (queues "Reset anti-cheat data for {name}." only once the async update
+  reports a row was actually touched, unlike C's unconditional same-
+  thread reply - matching every other offline-DB-mutation event's
+  silent-skip-on-failure convention in this file), wired into
+  `main.rs`'s tick loop right after `apply_ac_cleanup_events`.
+  `#acwatch <player>` needed no DB or queue at all: added
+  `PlayerRuntime::ac_watch_enabled` (a new bool right next to
+  `anticheat_session_id`, reset on `reclaim_for_session` like a fresh
+  physical connection, mirroring C's per-connection `player[nr]->ac.
+  watch_mode`) and toggled it directly via `runtime.
+  player_for_character_mut(target_id)` in `commands_admin.rs`, replying
+  synchronously with C's exact enabled/disabled text; the flag currently
+  has no other behavioral effect since the detection engine that would
+  read it for verbose logging is unported, matching every other pre-
+  wired-but-inert toggle in `PlayerRuntime` (`no_ball` and siblings).
+  6 new tests in `ugaris-core` (`world/tests/anticheat.rs`:
+  `AC_STATUS_VERIFIED` constant, `AcResetLookup` queue/drain round trip),
+  2 in `ugaris-server`'s `world_events.rs` (`ac_reset_tests`: no-lookups/
+  missing-repository no-op pair, same shape as every sibling), and 12 in
+  `tests/commands_admin.rs` (`acreset`'s God-only gate rejecting both a
+  plain target and a staff-only character, usage/not-found/no-session/
+  successful-queue paths; `acwatch`'s God-or-staff gate, usage/not-found
+  paths, the genuinely-no-`PlayerRuntime`-at-all case - distinct from
+  `acreset`/`acstatus`'s "online but no anticheat session" case - and the
+  on/off toggle round trip with its exact confirmation text). `cargo fmt
+  --all`, `cargo test --workspace` (2056 ugaris-core [+2] + 57 db + 3 net
+  + 44 protocol + 883 server [+12], all green, zero failures), `cargo
+  build -p ugaris-server` / `cargo build --workspace` clean with zero
+  warnings, 10s boot-smoke confirmed "entering Rust game loop" with no
+  panic. Task stays `[~]`: `acflag`/`acunflag`/`actrust`/`acuntrust`/
+  `achistory`/`acsessions`/`acviolations`/`acsharedip`/`acsharedhw`/
+  `achighrisk`/`aclookup`/`acsiglist`/`acsigadd`/`acsigdel`/`acwarn` are
+  all still unported and none of gaps (b)-(g) from iteration 195's list
+  are touched by this slice. REMAINING: every command in gap (a) that
+  doesn't need the `subscriber_id`/`subscribers` schema or a new
+  aggregate-query surface is now ported; the next iteration picking this
+  up should make an explicit design decision (scoped port vs. skip,
+  matching `/kick`'s precedent) for one of: the `subscriber_id` gap
+  (`acflag`/`acunflag`/`actrust`/`acuntrust`), the new aggregate queries
+  (`achistory`/`acsessions`/`acviolations`), multi-account detection
+  (`acsharedip`/`acsharedhw`/`achighrisk`/`aclookup`), or signature
+  management (`acsiglist`/`acsigadd`/`acsigdel`) - or pick a different
+  gap entirely from (b)-(g).
+
 - [ ] **Cross-area transfer** - the big multi-server feature. Every
   cross-area teleport currently returns "target server down". Decide the
   single-process stance first (likely: run multiple areas in one process

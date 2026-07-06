@@ -2245,6 +2245,43 @@ pub(crate) async fn apply_ac_cleanup_events(
     applied
 }
 
+/// `#acreset <player>`'s async DB round trip - see `ugaris-core`'s
+/// `world/anticheat.rs` module doc comment. Reproduces `ac_cmd_reset`
+/// (`anticheat.c:527-561`): zeroes the target session's violation
+/// counters/bot score and restores `status` to `AC_STATUS_VERIFIED`
+/// (`AntiCheatRepository::reset_session`). C's confirmation is
+/// unconditional and same-thread (mutating an in-memory struct always
+/// succeeds); here the "Reset anti-cheat data for {name}." message is
+/// only queued once the async update actually reports a row was
+/// touched, matching every other offline-DB-mutation event in this
+/// file's silent-skip-on-failure convention (a vanished session row
+/// between the command and the tick loop draining it, or a DB error,
+/// produces no reply at all).
+pub(crate) async fn apply_ac_reset_events(
+    world: &mut World,
+    anticheat_repository: &Option<ugaris_db::PgAntiCheatRepository>,
+) -> usize {
+    let lookups = world.drain_pending_ac_reset_lookups();
+    if lookups.is_empty() {
+        return 0;
+    }
+    let Some(repository) = anticheat_repository else {
+        return 0;
+    };
+    let mut applied = 0;
+    for lookup in lookups {
+        let Ok(true) = repository.reset_session(lookup.session_id).await else {
+            continue;
+        };
+        world.queue_system_text(
+            lookup.caller_id,
+            format!("Reset anti-cheat data for {}.", lookup.target_name),
+        );
+        applied += 1;
+    }
+    applied
+}
+
 /// `/jail`/`/unjail`'s async DB round trip (C `lookup_name`,
 /// `system/lookup.c:42-98` + `system/database/database_lookup.c:57-83`):
 /// resolves every `World::drain_pending_jail_lookups` entry (queued by a
@@ -2738,6 +2775,30 @@ mod ac_cleanup_tests {
         assert_eq!(applied, 0);
         assert!(world.drain_pending_system_texts().is_empty());
         assert!(world.drain_pending_ac_cleanup_lookups().is_empty());
+    }
+}
+
+#[cfg(test)]
+mod ac_reset_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn no_lookups_queued_is_a_cheap_no_op() {
+        let mut world = World::default();
+        let applied = apply_ac_reset_events(&mut world, &None).await;
+        assert_eq!(applied, 0);
+        assert!(world.drain_pending_system_texts().is_empty());
+    }
+
+    #[tokio::test]
+    async fn missing_repository_leaves_the_lookup_queued_state_untouched_but_drained() {
+        let mut world = World::default();
+        world.queue_ac_reset_lookup(CharacterId(7), "Baddie".to_string(), 30);
+
+        let applied = apply_ac_reset_events(&mut world, &None).await;
+        assert_eq!(applied, 0);
+        assert!(world.drain_pending_system_texts().is_empty());
+        assert!(world.drain_pending_ac_reset_lookups().is_empty());
     }
 }
 

@@ -7936,3 +7936,197 @@ fn accleanup_at_or_above_the_minimum_queues_the_lookup_and_confirms() {
     assert_eq!(queued[0].caller_id, god_id);
     assert_eq!(queued[0].days, 7);
 }
+
+#[test]
+fn acreset_is_god_only_unlike_its_staff_accessible_siblings() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (_god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+    let mut staff = login_character(CharacterId(20), &login_block("Staffer"), 1, 12, 10);
+    staff.flags.insert(CharacterFlags::STAFF);
+    world.add_character(staff);
+
+    assert!(apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        target_id,
+        "#acreset Target",
+        1
+    )
+    .is_none());
+    assert!(apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        CharacterId(20),
+        "#acreset Target",
+        1
+    )
+    .is_none());
+}
+
+#[test]
+fn acreset_without_a_name_shows_usage() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+
+    let result = apply_admin_character_command(&mut world, &mut runtime, god_id, "#acreset", 1)
+        .expect("god acreset should be recognized");
+    assert_eq!(result.messages, vec!["Usage: #acreset <player>"]);
+}
+
+#[test]
+fn acreset_reports_not_found_online_for_an_unknown_name() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+
+    let result =
+        apply_admin_character_command(&mut world, &mut runtime, god_id, "#acreset Nobody", 1)
+            .expect("god acreset should be recognized");
+    assert_eq!(result.messages, vec!["Player 'Nobody' not found online."]);
+}
+
+#[test]
+fn acreset_reports_no_connection_data_when_target_has_no_anticheat_session() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+    // `setup_god_and_online_target` registers the target's `PlayerRuntime`
+    // with `anticheat_session_id: None` (the default).
+
+    let result =
+        apply_admin_character_command(&mut world, &mut runtime, god_id, "#acreset Target", 1)
+            .expect("god acreset should be recognized");
+    assert_eq!(
+        result.messages,
+        vec!["Player 'Target' has no connection data."]
+    );
+    assert!(world.drain_pending_ac_reset_lookups().is_empty());
+}
+
+#[test]
+fn acreset_queues_a_lookup_using_the_targets_anticheat_session_id() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+    for player in runtime.players.values_mut() {
+        if player.character_id == Some(target_id) {
+            player.anticheat_session_id = Some(4321);
+        }
+    }
+
+    let result =
+        apply_admin_character_command(&mut world, &mut runtime, god_id, "#acreset target", 1)
+            .expect("god acreset should be recognized");
+    assert_eq!(result.messages, Vec::<String>::new());
+
+    let queued = world.drain_pending_ac_reset_lookups();
+    assert_eq!(queued.len(), 1);
+    assert_eq!(queued[0].caller_id, god_id);
+    assert_eq!(queued[0].target_name, "Target");
+    assert_eq!(queued[0].session_id, 4321);
+}
+
+#[test]
+fn acwatch_is_god_or_staff_only() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (_god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+
+    assert!(apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        target_id,
+        "#acwatch Target",
+        1
+    )
+    .is_none());
+}
+
+#[test]
+fn acwatch_without_a_name_shows_usage() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+
+    let result = apply_admin_character_command(&mut world, &mut runtime, god_id, "#acwatch", 1)
+        .expect("god acwatch should be recognized");
+    assert_eq!(result.messages, vec!["Usage: #acwatch <player>"]);
+}
+
+#[test]
+fn acwatch_reports_not_found_online_for_an_unknown_name() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+
+    let result =
+        apply_admin_character_command(&mut world, &mut runtime, god_id, "#acwatch Nobody", 1)
+            .expect("god acwatch should be recognized");
+    assert_eq!(result.messages, vec!["Player 'Nobody' not found online."]);
+}
+
+#[test]
+fn acwatch_reports_no_connection_data_when_target_has_no_player_runtime() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+    // A player-flagged character with no registered `PlayerRuntime` at
+    // all (unlike `setup_god_and_online_target`'s own target, which
+    // always gets one) - the genuine "no connection data" case for a
+    // purely in-memory command like `#acwatch`, distinct from
+    // `#acstatus`/`#acreset`'s "known online but no anticheat session"
+    // case.
+    world.add_character(login_character(
+        CharacterId(30),
+        &login_block("Ghost"),
+        1,
+        13,
+        10,
+    ));
+
+    let result =
+        apply_admin_character_command(&mut world, &mut runtime, god_id, "#acwatch Ghost", 1)
+            .expect("god acwatch should be recognized");
+    assert_eq!(
+        result.messages,
+        vec!["Player 'Ghost' has no connection data."]
+    );
+}
+
+#[test]
+fn acwatch_toggles_the_targets_watch_flag_and_confirms() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+
+    let result =
+        apply_admin_character_command(&mut world, &mut runtime, god_id, "#acwatch target", 1)
+            .expect("god acwatch should be recognized");
+    assert_eq!(
+        result.messages,
+        vec!["Now watching Target - detailed AC logging enabled."]
+    );
+    assert!(
+        runtime
+            .players
+            .values()
+            .find(|player| player.character_id == Some(target_id))
+            .unwrap()
+            .ac_watch_enabled
+    );
+
+    let result =
+        apply_admin_character_command(&mut world, &mut runtime, god_id, "#acwatch Target", 1)
+            .expect("god acwatch should be recognized");
+    assert_eq!(result.messages, vec!["Stopped watching Target."]);
+    assert!(
+        !runtime
+            .players
+            .values()
+            .find(|player| player.character_id == Some(target_id))
+            .unwrap()
+            .ac_watch_enabled
+    );
+}

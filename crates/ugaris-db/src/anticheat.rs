@@ -94,6 +94,14 @@ pub trait AntiCheatRepository: Send + Sync {
     async fn end_session(&self, session_id: i64, final_bot_score: f32) -> anyhow::Result<bool>;
     async fn log_event(&self, event: AntiCheatEvent) -> anyhow::Result<i64>;
     async fn cleanup_old_records(&self, days_to_keep: i32) -> anyhow::Result<u64>;
+    /// `#acreset <player>`'s backing mutation (`ac_cmd_reset`,
+    /// `anticheat.c:527-561`): zeroes the same fields C's in-memory reset
+    /// touches (`hb_violations`, `state_violations`,
+    /// `challenge_fail_count`, `bot_score`, `timeout_count`) and restores
+    /// `status` to `AC_STATUS_VERIFIED` (1). C does not touch
+    /// `max_bot_score_session`/`anomaly_count`, so this query leaves this
+    /// row's `max_bot_score`/`anomaly_count` columns untouched too.
+    async fn reset_session(&self, session_id: i64) -> anyhow::Result<bool>;
     /// `#acstatus <name>`'s backing query: a single session row by id
     /// (`PlayerRuntime::anticheat_session_id`, already known synchronously
     /// by the caller - see `world/anticheat.rs`'s module doc comment for
@@ -268,6 +276,19 @@ impl AntiCheatRepository for PgAntiCheatRepository {
         .execute(&self.pool)
         .await?;
         Ok(result.rows_affected())
+    }
+
+    async fn reset_session(&self, session_id: i64) -> anyhow::Result<bool> {
+        let result = sqlx::query(
+            "update anticheat_sessions set \
+             status = 1, bot_score = 0, heartbeat_violations = 0, \
+             state_violations = 0, challenge_failures = 0, timeout_count = 0 \
+             where id = $1",
+        )
+        .bind(session_id)
+        .execute(&self.pool)
+        .await?;
+        Ok(result.rows_affected() > 0)
     }
 
     async fn find_session(&self, session_id: i64) -> anyhow::Result<Option<AntiCheatSessionInfo>> {
