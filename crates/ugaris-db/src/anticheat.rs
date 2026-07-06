@@ -42,6 +42,30 @@ pub struct AntiCheatEvent {
     pub data: BTreeMap<String, String>,
 }
 
+/// The subset of an `anticheat_sessions` row displayed by the `#acstatus`/
+/// `#acstats`/`#aclist` admin commands (`ac_cmd_status`/`ac_cmd_stats`/
+/// `ac_cmd_list`, `src/module/anticheat/anticheat.c:473-543,604-628,
+/// 721-753`). C reads these fields straight out of the in-memory
+/// `player[nr]->ac` struct; this codebase has no such struct (see
+/// `ugaris-core`'s `world/anticheat.rs` module doc comment), so they are
+/// queried back out of the same row `create_session`/`increment_counters`/
+/// `update_bot_score`/`set_fingerprint` already write to.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct AntiCheatSessionInfo {
+    pub status: i32,
+    pub bot_score: f32,
+    pub heartbeat_violations: i32,
+    pub state_violations: i32,
+    pub challenge_failures: i32,
+    pub timeout_count: i32,
+    pub mod_major: Option<i32>,
+    pub mod_minor: Option<i32>,
+    pub mod_patch: Option<i32>,
+    pub os_type: Option<i32>,
+    pub screen_w: Option<i32>,
+    pub screen_h: Option<i32>,
+}
+
 #[async_trait]
 pub trait AntiCheatRepository: Send + Sync {
     async fn create_session(&self, request: AntiCheatSessionCreate) -> anyhow::Result<i64>;
@@ -70,6 +94,22 @@ pub trait AntiCheatRepository: Send + Sync {
     async fn end_session(&self, session_id: i64, final_bot_score: f32) -> anyhow::Result<bool>;
     async fn log_event(&self, event: AntiCheatEvent) -> anyhow::Result<i64>;
     async fn cleanup_old_records(&self, days_to_keep: i32) -> anyhow::Result<u64>;
+    /// `#acstatus <name>`'s backing query: a single session row by id
+    /// (`PlayerRuntime::anticheat_session_id`, already known synchronously
+    /// by the caller - see `world/anticheat.rs`'s module doc comment for
+    /// why the name-to-session-id resolution happens before this call
+    /// rather than inside it). `None` when the row no longer exists.
+    async fn find_session(&self, session_id: i64) -> anyhow::Result<Option<AntiCheatSessionInfo>>;
+    /// `#acstats`/`#aclist`'s backing query: every session row named by
+    /// `session_ids`, batched into one round trip (C's `ac_cmd_stats`/
+    /// `ac_cmd_list` instead re-read the in-memory `player[nr]->ac` struct
+    /// once per online player in a single-process loop - see the same
+    /// `world/anticheat.rs` module doc comment). Rows for an id that no
+    /// longer exists are simply omitted, not padded with defaults.
+    async fn find_sessions(
+        &self,
+        session_ids: &[i64],
+    ) -> anyhow::Result<Vec<(i64, AntiCheatSessionInfo)>>;
 }
 
 #[derive(Debug, Clone)]
@@ -228,6 +268,136 @@ impl AntiCheatRepository for PgAntiCheatRepository {
         .execute(&self.pool)
         .await?;
         Ok(result.rows_affected())
+    }
+
+    async fn find_session(&self, session_id: i64) -> anyhow::Result<Option<AntiCheatSessionInfo>> {
+        let row = sqlx::query_as::<
+            _,
+            (
+                i32,
+                f32,
+                i32,
+                i32,
+                i32,
+                i32,
+                Option<i32>,
+                Option<i32>,
+                Option<i32>,
+                Option<i32>,
+                Option<i32>,
+                Option<i32>,
+            ),
+        >(
+            "select status, bot_score, heartbeat_violations, state_violations, \
+             challenge_failures, timeout_count, mod_major, mod_minor, mod_patch, \
+             os_type, screen_w, screen_h \
+             from anticheat_sessions where id = $1",
+        )
+        .bind(session_id)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(row.map(
+            |(
+                status,
+                bot_score,
+                heartbeat_violations,
+                state_violations,
+                challenge_failures,
+                timeout_count,
+                mod_major,
+                mod_minor,
+                mod_patch,
+                os_type,
+                screen_w,
+                screen_h,
+            )| AntiCheatSessionInfo {
+                status,
+                bot_score,
+                heartbeat_violations,
+                state_violations,
+                challenge_failures,
+                timeout_count,
+                mod_major,
+                mod_minor,
+                mod_patch,
+                os_type,
+                screen_w,
+                screen_h,
+            },
+        ))
+    }
+
+    async fn find_sessions(
+        &self,
+        session_ids: &[i64],
+    ) -> anyhow::Result<Vec<(i64, AntiCheatSessionInfo)>> {
+        if session_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let rows = sqlx::query_as::<
+            _,
+            (
+                i64,
+                i32,
+                f32,
+                i32,
+                i32,
+                i32,
+                i32,
+                Option<i32>,
+                Option<i32>,
+                Option<i32>,
+                Option<i32>,
+                Option<i32>,
+                Option<i32>,
+            ),
+        >(
+            "select id, status, bot_score, heartbeat_violations, state_violations, \
+             challenge_failures, timeout_count, mod_major, mod_minor, mod_patch, \
+             os_type, screen_w, screen_h \
+             from anticheat_sessions where id = any($1)",
+        )
+        .bind(session_ids)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .into_iter()
+            .map(
+                |(
+                    id,
+                    status,
+                    bot_score,
+                    heartbeat_violations,
+                    state_violations,
+                    challenge_failures,
+                    timeout_count,
+                    mod_major,
+                    mod_minor,
+                    mod_patch,
+                    os_type,
+                    screen_w,
+                    screen_h,
+                )| {
+                    (
+                        id,
+                        AntiCheatSessionInfo {
+                            status,
+                            bot_score,
+                            heartbeat_violations,
+                            state_violations,
+                            challenge_failures,
+                            timeout_count,
+                            mod_major,
+                            mod_minor,
+                            mod_patch,
+                            os_type,
+                            screen_w,
+                            screen_h,
+                        },
+                    )
+                },
+            )
+            .collect())
     }
 }
 
@@ -472,6 +642,32 @@ mod tests {
             assert_eq!(anomaly_count, 4);
             assert_eq!(timeout_count, 5);
 
+            let info = repo
+                .find_session(session_id)
+                .await
+                .expect("find_session")
+                .expect("session must exist");
+            assert_eq!(info.status, 2);
+            assert_eq!(info.bot_score, 0.5);
+            assert_eq!(info.heartbeat_violations, 1);
+            assert_eq!(info.state_violations, 2);
+            assert_eq!(info.challenge_failures, 3);
+            assert_eq!(info.timeout_count, 5);
+            assert_eq!(info.mod_major, Some(1));
+            assert_eq!(info.mod_minor, Some(2));
+            assert_eq!(info.mod_patch, Some(3));
+            assert_eq!(info.os_type, Some(4));
+            assert_eq!(info.screen_w, Some(1920));
+            assert_eq!(info.screen_h, Some(1080));
+
+            let batch = repo
+                .find_sessions(&[session_id, i64::MAX - 1])
+                .await
+                .expect("find_sessions");
+            assert_eq!(batch.len(), 1, "the nonexistent id must be omitted");
+            assert_eq!(batch[0].0, session_id);
+            assert_eq!(batch[0].1.bot_score, 0.5);
+
             let mut data = BTreeMap::new();
             data.insert("delta_x".to_string(), "500".to_string());
             let event_id = repo
@@ -548,6 +744,16 @@ mod tests {
                 .end_session(i64::MAX - 1, 0.0)
                 .await
                 .expect("end_session on unknown id"));
+            assert!(repo
+                .find_session(i64::MAX - 1)
+                .await
+                .expect("find_session on unknown id")
+                .is_none());
+            assert!(repo
+                .find_sessions(&[i64::MAX - 1])
+                .await
+                .expect("find_sessions on unknown ids")
+                .is_empty());
         }
     }
 }

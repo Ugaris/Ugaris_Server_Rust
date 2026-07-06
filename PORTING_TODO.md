@@ -8911,6 +8911,86 @@ Unlocks every quest NPC. Do these before any P4 area work.
   the now-real (if all-zero) session/violation-count columns this
   iteration wired up.
 
+  Progress Log (iteration 197): picked gap (a)'s suggested next slice -
+  ported the 4 read-only display members of the `ac_cmd_*` family that
+  need no detection-engine data to be meaningful: `#achelp`/`#acstatus
+  <name>`/`#acstats`/`#aclist` (`command.c:10148-10192` dispatch ->
+  `ac_cmd_help`/`ac_cmd_status`/`ac_cmd_stats`/`ac_cmd_list`,
+  `src/module/anticheat/anticheat.c:473-543,604-628,688-753`), all
+  `CF_GOD|CF_STAFF`-gated, exact-word only. `#achelp` is pure static text
+  (C's own help text reproduced letter for letter, minus `COL_*`
+  wrapping - matching `/global`'s established plain-text-dump
+  simplification - even though most listed subcommands are still
+  unported, since it's C's own aspirational help text, not a coverage
+  reflection). The other three needed a genuine architecture bridge: C
+  reads `player[nr]->ac` synchronously (kept live by the unported
+  detection engine); this codebase's only source of that data is the
+  `anticheat_sessions` Postgres row wired up in iteration 196, referenced
+  by `PlayerRuntime::anticheat_session_id` - so, like `/lastseen`, this
+  becomes an async DB round trip, except the online-name-scan (C's
+  `ac_find_player`, `CF_PLAYER`-filtered) + session-id lookup has to
+  happen synchronously in `commands_admin.rs` (which has both `world`
+  and `runtime`) *before* queuing to `World`, since `World` has no
+  visibility into `PlayerRuntime` - a deviation from `/jail`'s "queue the
+  raw name, resolve online-ness later" pattern forced by this being the
+  first async-DB command whose input is a session id, not a name. Added
+  `ugaris-db`'s `AntiCheatRepository::find_session`/`find_sessions`
+  (single/batched `anticheat_sessions` row reads by id, backed by the new
+  `AntiCheatSessionInfo` struct) and `ugaris-core`'s new `world/
+  anticheat.rs` (`AcStatusLookup`/`AcListLookup`/`AcStatsLookup` queues +
+  `ac_status_string`, C's status-name table). `ugaris-server`'s
+  `commands_admin.rs` dispatches all four (gathering online `CF_PLAYER`
+  targets sorted by ascending character id for determinism, matching
+  `world/clanmaster.rs`'s sibling-helper convention, and silently
+  omitting any online player with no known anticheat session - "DB not
+  configured" or "session row never got created" - from `acstats`/
+  `aclist`'s tallies rather than padding with defaults); `world_events.rs`
+  gained `apply_ac_status_events`/`apply_ac_stats_events`/
+  `apply_ac_list_events`, wired into `main.rs`'s tick loop right after
+  `/lastseen`'s. Message shapes reproduce C's own text exactly (status
+  names, violation counts, bot score, fingerprint/mod-version/OS/screen
+  block, the `Total players:`/`Total: N players` summaries) with
+  `COL_*` wrapping dropped throughout, the same simplification `/global`
+  already established for text-heavy admin dumps. 4 new tests in
+  `ugaris-core`'s `world/tests/anticheat.rs` (status-string table +
+  queue/drain round trips for all three lookup types), 2 new assertions
+  folded into `ugaris-db`'s existing live-DB round-trip test plus 2 new
+  assertions in its not-found test (both extended, not new test
+  functions, so the db crate's test count is unchanged at 57), 12 new
+  tests in `ugaris-server`'s `world_events.rs` (`ac_status_tests`/
+  `ac_stats_tests`/`ac_list_tests`: pure `ac_status_lines` formatting for
+  with/without-fingerprint and unknown-OS-type, plus the standard
+  no-lookups/missing-repository no-op pair per command) and 13 in
+  `tests/commands_admin.rs` (GOD-or-STAFF gate for all four commands,
+  `#achelp`'s exact text including a staff-without-god case, `#acstatus`'s
+  usage/not-found-online/no-connection-data/successful-queue paths, and
+  `#acstats`/`#aclist`'s online-target-gathering with a session-less
+  caller and a session-bearing target). `cargo fmt --all`, `cargo test
+  --workspace` (2051 ugaris-core [+4] + 57 db + 3 net + 44 protocol + 863
+  server [+19], all green, zero failures), `cargo build -p ugaris-server`
+  / `cargo build --workspace` clean with zero warnings, 10s boot-smoke
+  confirmed "entering Rust game loop" with no panic. Task stays `[~]`:
+  only 4 of the ~20-member `ac_cmd_*` family are ported.  REMAINING:
+  `acreset`/`acflag`/`acunflag`/`actrust`/`acuntrust`/`acwatch` (session-
+  status mutations - `set_status` already exists, but `acflag`/`acunflag`/
+  `actrust`/`acuntrust` also call C's `db_ac_flag_player`/
+  `db_ac_trust_player`/`db_ac_log_admin_action`, which key off a
+  `subscriber_id` and a `subscribers`-adjacent table this codebase's
+  schema doesn't have - would need a scoped-down port, or an explicit
+  decision to skip those DB side effects like `/kick`'s skipped `dlog`);
+  `achistory`/`acsessions`/`acviolations` (need `db_ac_get_player_stats`/
+  `db_ac_get_recent_sessions`/`db_ac_get_recent_violations` - new
+  aggregate queries, plus the same `subscriber_id` resolution gap);
+  `acsharedip`/`acsharedhw`/`achighrisk`/`aclookup` (multi-account
+  detection - a real new query surface); `acsiglist`/`acsigadd`/
+  `acsigdel` (a whole unported bad-signature table); `accleanup` (thin
+  wrapper over the already-ported `cleanup_old_records`, likely the next
+  quick win); `acwarn` (issues a warning - needs the notes/karmalog
+  subsystem gap #(c) already named above); `acsuspicious` (same shape as
+  `aclist` but filtered to suspicious/flagged - should be a quick follow-
+  up now that the plumbing exists). None of gaps (b)-(g) from iteration
+  195's list are touched by this slice.
+
 - [ ] **Cross-area transfer** - the big multi-server feature. Every
   cross-area teleport currently returns "target server down". Decide the
   single-process stance first (likely: run multiple areas in one process

@@ -172,13 +172,13 @@ use ugaris_core::{
     },
     tick::TICKS_PER_SECOND,
     world::{
-        army_rank_for_points, army_rank_name, exp2level, legacy_save_number, level2exp,
-        level2maxitem, level_value, merchant_buy_price, merchant_sales_price, ArenaMasterEvent,
-        BankEvent, ClanclerkEvent, ClanmasterEvent, ClubmasterEvent, DungeonRaidBuildRequest,
-        FirstKillCheck, GateWelcomeOutcomeEvent, GateWelcomePlayerFacts, LegacyHurtEvent,
-        LookMapRequest, LootKiller, LootRegistry, MerchantTradeResult, PendingDeathLootRoll,
-        RaiseSkillOutcome, StealOutcome, StoreWare, TraderEvent, WorldActionCompletion,
-        MERCHANT_STORE_SIZE,
+        ac_status_string, army_rank_for_points, army_rank_name, exp2level, legacy_save_number,
+        level2exp, level2maxitem, level_value, merchant_buy_price, merchant_sales_price,
+        AcOnlineTarget, ArenaMasterEvent, BankEvent, ClanclerkEvent, ClanmasterEvent,
+        ClubmasterEvent, DungeonRaidBuildRequest, FirstKillCheck, GateWelcomeOutcomeEvent,
+        GateWelcomePlayerFacts, LegacyHurtEvent, LookMapRequest, LootKiller, LootRegistry,
+        MerchantTradeResult, PendingDeathLootRoll, RaiseSkillOutcome, StealOutcome, StoreWare,
+        TraderEvent, WorldActionCompletion, MERCHANT_STORE_SIZE,
     },
     zone::ZoneLoader,
     ServerConfig, TickRate, World,
@@ -6585,6 +6585,38 @@ async fn main() -> anyhow::Result<()> {
                         lastseen_events_applied,
                         tick = world.tick.0,
                         "applied /lastseen lookups"
+                    );
+                }
+                // `#acstatus`/`#acstats`/`#aclist`'s async DB round-trips
+                // (C's synchronous in-memory `player[nr]->ac` struct read
+                // in this codebase's architecture - see `ugaris-core`'s
+                // `world/anticheat.rs` module doc comment), queued by
+                // `apply_admin_character_command` above.
+                let ac_status_events_applied =
+                    apply_ac_status_events(&mut world, &anticheat_repository).await;
+                if ac_status_events_applied != 0 {
+                    info!(
+                        ac_status_events_applied,
+                        tick = world.tick.0,
+                        "applied #acstatus lookups"
+                    );
+                }
+                let ac_stats_events_applied =
+                    apply_ac_stats_events(&mut world, &anticheat_repository).await;
+                if ac_stats_events_applied != 0 {
+                    info!(
+                        ac_stats_events_applied,
+                        tick = world.tick.0,
+                        "applied #acstats lookups"
+                    );
+                }
+                let ac_list_events_applied =
+                    apply_ac_list_events(&mut world, &anticheat_repository).await;
+                if ac_list_events_applied != 0 {
+                    info!(
+                        ac_list_events_applied,
+                        tick = world.tick.0,
+                        "applied #aclist lookups"
                     );
                 }
                 // `/jail`/`/unjail <name>`'s async DB round-trip (C

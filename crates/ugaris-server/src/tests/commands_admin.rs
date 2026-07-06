@@ -7652,3 +7652,188 @@ fn ls_produces_no_packet_when_dir_exceeds_two_hundred_bytes_but_still_confirms()
     );
     assert!(runtime.tick_out.get(&2).is_none());
 }
+
+// C's Anti-Cheat Admin Commands (`command.c:10148-10192`): `#achelp`/
+// `#acstatus <name>`/`#acstats`/`#aclist`, `CF_GOD|CF_STAFF`-gated.
+
+#[test]
+fn achelp_is_god_or_staff_only() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (_god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+
+    assert!(
+        apply_admin_character_command(&mut world, &mut runtime, target_id, "#achelp", 1).is_none()
+    );
+}
+
+#[test]
+fn achelp_lists_every_c_subcommand_verbatim() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+
+    let result = apply_admin_character_command(&mut world, &mut runtime, god_id, "#achelp", 1)
+        .expect("god achelp should be recognized");
+    assert_eq!(result.messages[0], "--- Anti-Cheat Commands ---");
+    assert!(result
+        .messages
+        .contains(&"#acstatus <name> - Show player's AC status".to_string()));
+    assert!(result
+        .messages
+        .contains(&"#aclist - List online players with AC status".to_string()));
+}
+
+#[test]
+fn achelp_is_available_to_staff_without_god() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let staff_id = CharacterId(9);
+    let mut staff = login_character(staff_id, &login_block("Staffer"), 1, 12, 10);
+    staff.flags.insert(CharacterFlags::STAFF);
+    world.add_character(staff);
+
+    let result = apply_admin_character_command(&mut world, &mut runtime, staff_id, "#achelp", 1)
+        .expect("staff achelp should be recognized");
+    assert_eq!(result.messages[0], "--- Anti-Cheat Commands ---");
+}
+
+#[test]
+fn acstatus_is_god_or_staff_only() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (_god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+
+    assert!(apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        target_id,
+        "#acstatus Target",
+        1
+    )
+    .is_none());
+}
+
+#[test]
+fn acstatus_without_a_name_shows_usage() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+
+    let result = apply_admin_character_command(&mut world, &mut runtime, god_id, "#acstatus", 1)
+        .expect("god acstatus should be recognized");
+    assert_eq!(result.messages, vec!["Usage: #acstatus <player>"]);
+}
+
+#[test]
+fn acstatus_reports_not_found_online_for_an_unknown_name() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+
+    let result =
+        apply_admin_character_command(&mut world, &mut runtime, god_id, "#acstatus Nobody", 1)
+            .expect("god acstatus should be recognized");
+    assert_eq!(result.messages, vec!["Player 'Nobody' not found online."]);
+}
+
+#[test]
+fn acstatus_reports_no_connection_data_when_target_has_no_anticheat_session() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+    // `setup_god_and_online_target` registers the target's `PlayerRuntime`
+    // with `anticheat_session_id: None` (the default) - matching C's
+    // `!nr || !player[nr]` branch, just for a different underlying reason
+    // (no anti-cheat session ever got created rather than no connection
+    // at all).
+
+    let result =
+        apply_admin_character_command(&mut world, &mut runtime, god_id, "#acstatus Target", 1)
+            .expect("god acstatus should be recognized");
+    assert_eq!(
+        result.messages,
+        vec!["Player 'Target' has no connection data."]
+    );
+    assert!(world.drain_pending_ac_status_lookups().is_empty());
+}
+
+#[test]
+fn acstatus_queues_a_lookup_using_the_targets_anticheat_session_id() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+    for player in runtime.players.values_mut() {
+        if player.character_id == Some(target_id) {
+            player.anticheat_session_id = Some(1234);
+        }
+    }
+
+    let result =
+        apply_admin_character_command(&mut world, &mut runtime, god_id, "#acstatus target", 1)
+            .expect("god acstatus should be recognized");
+    assert_eq!(result.messages, Vec::<String>::new());
+
+    let queued = world.drain_pending_ac_status_lookups();
+    assert_eq!(queued.len(), 1);
+    assert_eq!(queued[0].caller_id, god_id);
+    assert_eq!(queued[0].target_name, "Target");
+    assert_eq!(queued[0].session_id, 1234);
+}
+
+#[test]
+fn acstats_and_aclist_are_god_or_staff_only() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (_god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+
+    assert!(
+        apply_admin_character_command(&mut world, &mut runtime, target_id, "#acstats", 1).is_none()
+    );
+    assert!(
+        apply_admin_character_command(&mut world, &mut runtime, target_id, "#aclist", 1).is_none()
+    );
+}
+
+#[test]
+fn acstats_and_aclist_only_gather_online_players_with_a_known_anticheat_session() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+    // The caller (`god_id`) itself has no registered `PlayerRuntime` in
+    // this lightweight helper, so it must be omitted from the gathered
+    // targets exactly like a player with no anticheat session.
+    for player in runtime.players.values_mut() {
+        if player.character_id == Some(target_id) {
+            player.anticheat_session_id = Some(555);
+        }
+    }
+
+    let result = apply_admin_character_command(&mut world, &mut runtime, god_id, "#acstats", 1)
+        .expect("god acstats should be recognized");
+    assert_eq!(result.messages, Vec::<String>::new());
+    let queued = world.drain_pending_ac_stats_lookups();
+    assert_eq!(queued.len(), 1);
+    assert_eq!(queued[0].caller_id, god_id);
+    assert_eq!(
+        queued[0].targets,
+        vec![AcOnlineTarget {
+            name: "Target".to_string(),
+            session_id: 555,
+        }]
+    );
+
+    let result = apply_admin_character_command(&mut world, &mut runtime, god_id, "#aclist", 1)
+        .expect("god aclist should be recognized");
+    assert_eq!(result.messages, Vec::<String>::new());
+    let queued = world.drain_pending_ac_list_lookups();
+    assert_eq!(queued.len(), 1);
+    assert_eq!(queued[0].caller_id, god_id);
+    assert_eq!(
+        queued[0].targets,
+        vec![AcOnlineTarget {
+            name: "Target".to_string(),
+            session_id: 555,
+        }]
+    );
+}

@@ -13,7 +13,7 @@ use sqlx::{postgres::PgPoolOptions, PgPool};
 pub use achievement::{AchievementRepository, PgAchievementRepository};
 pub use anticheat::{
     AntiCheatCounters, AntiCheatEvent, AntiCheatFingerprint, AntiCheatRepository,
-    AntiCheatSessionCreate, PgAntiCheatRepository,
+    AntiCheatSessionCreate, AntiCheatSessionInfo, PgAntiCheatRepository,
 };
 pub use area::{AreaRepository, PgAreaRepository};
 pub use auction::{

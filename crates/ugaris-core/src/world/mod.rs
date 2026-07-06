@@ -13,6 +13,7 @@
 mod aclerk;
 mod actions;
 mod admin_flag;
+mod anticheat;
 mod area_mech;
 mod arena;
 mod assembly;
@@ -68,6 +69,7 @@ mod weather;
 
 pub use actions::*;
 pub use admin_flag::*;
+pub use anticheat::*;
 pub(crate) use area_mech::*;
 pub use arena::*;
 pub(crate) use assembly::*;
@@ -355,6 +357,16 @@ pub struct World {
     /// `/qmaster` targets not found among the currently loaded
     /// characters - see `world/admin_flag.rs`'s module doc comment.
     pending_admin_flag_toggles: Vec<AdminFlagToggle>,
+    /// `#acstatus <name>` async DB round trips (session id already
+    /// resolved synchronously by the caller) - see `world/anticheat.rs`'s
+    /// module doc comment.
+    pending_ac_status_lookups: Vec<AcStatusLookup>,
+    /// `#aclist` async DB round trips - see `world/anticheat.rs`'s module
+    /// doc comment.
+    pending_ac_list_lookups: Vec<AcListLookup>,
+    /// `#acstats` async DB round trips - see `world/anticheat.rs`'s module
+    /// doc comment.
+    pending_ac_stats_lookups: Vec<AcStatsLookup>,
 }
 
 impl Default for Tick {

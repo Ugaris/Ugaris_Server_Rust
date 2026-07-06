@@ -5024,6 +5024,155 @@ pub(crate) fn apply_admin_character_command(
         });
     }
 
+    // C's Anti-Cheat Admin Commands family (`command.c:10148-10192`):
+    // `#achelp`/`#acstatus <name>`/`#acstats`/`#aclist`, all
+    // `CF_GOD|CF_STAFF`-gated, exact-word only (`cmdcmp`'s `minlen` equals
+    // each command's full length, so no abbreviation is accepted for
+    // any of them). See `crates/ugaris-core/src/world/anticheat.rs`'s
+    // module doc comment for why `#acstatus`/`#acstats`/`#aclist` need an
+    // async DB round trip in this codebase (unlike C's synchronous
+    // in-memory `player[nr]->ac` struct read): the online-name-scan (C's
+    // `ac_find_player`, `CF_PLAYER`-filtered, first match by iteration
+    // order - ties broken by ascending character id here for determinism,
+    // same convention as `world/clanmaster.rs`'s sibling helper) plus the
+    // `PlayerRuntime::anticheat_session_id` lookup happen here,
+    // synchronously, before queuing to `World` for the DB half. Only
+    // these four of the ~20-member family are ported this iteration (see
+    // `PORTING_TODO.md`'s remaining-text-commands task's REMAINING note);
+    // `acreset`/`acflag`/`acunflag`/`actrust`/`acuntrust`/`acwatch`/
+    // `achistory`/`acsessions`/`acviolations`/`acsharedip`/`acsharedhw`/
+    // `achighrisk`/`aclookup`/`acsiglist`/`acsigadd`/`acsigdel`/
+    // `accleanup`/`acwarn`/`acsuspicious` remain unported.
+    if lower == "achelp" {
+        let Some(caller) = world.characters.get(&character_id) else {
+            return Some(KeyringCommandResult::default());
+        };
+        if !caller
+            .flags
+            .intersects(CharacterFlags::STAFF | CharacterFlags::GOD)
+        {
+            return None;
+        }
+        // C `ac_cmd_help` (`anticheat.c:688-720`) - reproduced letter for
+        // letter (minus the `COL_*` wrapping, matching `/global`'s own
+        // established plain-text simplification for text-heavy admin
+        // dumps) even though most of the listed subcommands are still
+        // unported, since this is C's own static help text, not a
+        // reflection of this codebase's current dispatch coverage.
+        return Some(KeyringCommandResult {
+            messages: vec![
+                "--- Anti-Cheat Commands ---".to_string(),
+                "#achelp - Show this help".to_string(),
+                "#acstats - Global AC statistics".to_string(),
+                "#aclist - List online players with AC status".to_string(),
+                "#acsuspicious - List suspicious/flagged players".to_string(),
+                "--- Player Commands ---".to_string(),
+                "#acstatus <name> - Show player's AC status".to_string(),
+                "#achistory <name> - Show player's violation history".to_string(),
+                "#acsessions <name> - Show player's recent sessions".to_string(),
+                "#acviolations <name> - Show player's violations".to_string(),
+                "#acflag <name> - Flag player for review".to_string(),
+                "#acunflag <name> - Remove flagged status".to_string(),
+                "#actrust <name> - Mark player as trusted".to_string(),
+                "#acuntrust <name> - Remove trusted status".to_string(),
+                "#acreset <name> - Reset player's AC data (God)".to_string(),
+                "#acwarn <name> [reason] - Issue AC warning".to_string(),
+                "#acwatch <name> - Toggle detailed logging".to_string(),
+                "--- Multi-Account Detection ---".to_string(),
+                "#acsharedip <name> - Show accounts sharing IP".to_string(),
+                "#acsharedhw <name> - Show accounts sharing hardware".to_string(),
+                "--- Database Queries ---".to_string(),
+                "#achighrisk - Show high-risk players".to_string(),
+                "#aclookup <id> - Lookup by subscriber ID".to_string(),
+                "--- Signature Management ---".to_string(),
+                "#acsiglist - List known bad signatures".to_string(),
+                "#acsigadd <type> <value> <name> - Add signature (God)".to_string(),
+                "#acsigdel <id> - Delete signature (God)".to_string(),
+                "--- Maintenance ---".to_string(),
+                "#accleanup <days> - Cleanup old records (God)".to_string(),
+            ],
+            ..Default::default()
+        });
+    }
+
+    if lower == "acstatus" || lower == "acstats" || lower == "aclist" {
+        let Some(caller) = world.characters.get(&character_id) else {
+            return Some(KeyringCommandResult::default());
+        };
+        if !caller
+            .flags
+            .intersects(CharacterFlags::STAFF | CharacterFlags::GOD)
+        {
+            return None;
+        }
+
+        if lower == "acstatus" {
+            // C `ac_cmd_status` (`anticheat.c:473-517`).
+            let name = rest.trim_start();
+            if name.is_empty() {
+                return Some(KeyringCommandResult {
+                    messages: vec!["Usage: #acstatus <player>".to_string()],
+                    ..Default::default()
+                });
+            }
+            let mut candidates: Vec<&Character> = world
+                .characters
+                .values()
+                .filter(|character| {
+                    character.flags.contains(CharacterFlags::PLAYER)
+                        && character.name.eq_ignore_ascii_case(name)
+                })
+                .collect();
+            candidates.sort_by_key(|character| character.id.0);
+            let Some(target_id) = candidates.first().map(|character| character.id) else {
+                return Some(KeyringCommandResult {
+                    messages: vec![format!("Player '{name}' not found online.")],
+                    ..Default::default()
+                });
+            };
+            let target_name = world.characters[&target_id].name.clone();
+            let Some(session_id) = runtime
+                .player_for_character(target_id)
+                .and_then(|player| player.anticheat_session_id)
+            else {
+                return Some(KeyringCommandResult {
+                    messages: vec![format!("Player '{target_name}' has no connection data.")],
+                    ..Default::default()
+                });
+            };
+            world.queue_ac_status_lookup(character_id, target_name, session_id);
+            return Some(KeyringCommandResult::default());
+        }
+
+        // `#acstats`/`#aclist` (`ac_cmd_stats`/`ac_cmd_list`,
+        // `anticheat.c:604-628,721-753`): gather every currently online
+        // `CF_PLAYER` character with a known anticheat session - see
+        // module doc comment for why a player with no session (DB not
+        // configured, or the session row failed to create at login) is
+        // simply omitted rather than padded with defaults.
+        let mut player_ids: Vec<CharacterId> = world
+            .characters
+            .values()
+            .filter(|character| character.flags.contains(CharacterFlags::PLAYER))
+            .map(|character| character.id)
+            .collect();
+        player_ids.sort_by_key(|id| id.0);
+        let targets: Vec<AcOnlineTarget> = player_ids
+            .into_iter()
+            .filter_map(|id| {
+                let session_id = runtime.player_for_character(id)?.anticheat_session_id?;
+                let name = world.characters.get(&id)?.name.clone();
+                Some(AcOnlineTarget { name, session_id })
+            })
+            .collect();
+        if lower == "acstats" {
+            world.queue_ac_stats_lookup(character_id, targets);
+        } else {
+            world.queue_ac_list_lookup(character_id, targets);
+        }
+        return Some(KeyringCommandResult::default());
+    }
+
     // C `/clearppd <ppdname> [player]` (`command.c:10144-10146` dispatch,
     // `CF_GOD | CF_STAFF`-gated, `cmdcmp(ptr, "clearppd", 8)` - exact word
     // only; `cmd_clearppd`, `command.c:4214-4288`). A raw, PPD-name-
