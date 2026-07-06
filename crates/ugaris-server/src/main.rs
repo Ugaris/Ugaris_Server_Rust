@@ -188,9 +188,9 @@ use ugaris_core::{
 };
 
 use ugaris_db::{
-    AntiCheatRepository, AuctionRepository, CharacterRepository, CharacterSaveMode,
-    CharacterSaveRequest, CharacterSnapshot, ClanRegistryRepository, LoginOutcome, LoginRequest,
-    MerchantRepository, MerchantStoreSnapshot, MerchantWareSnapshot,
+    AntiCheatRepository, AreaRepository, AreaServerRecord, AuctionRepository, CharacterRepository,
+    CharacterSaveMode, CharacterSaveRequest, CharacterSnapshot, ClanRegistryRepository,
+    LoginOutcome, LoginRequest, MerchantRepository, MerchantStoreSnapshot, MerchantWareSnapshot,
     MilitaryAdvisorStorageRepository, MilitaryMasterStorageRepository, NotesRepository,
 };
 
@@ -216,6 +216,17 @@ use ugaris_protocol::{
 struct Args {
     #[arg(long, env = "UGARIS_BIND_ADDR", default_value = "0.0.0.0:5556")]
     bind_addr: SocketAddr,
+
+    // C `server_addr`/`server_port` (`src/system/io.c:433-437`, config-file
+    // `inet_addr(ipstring)`): the address *advertised* to other area
+    // servers and to clients redirected here via `SV_SERVER`, which is not
+    // necessarily the same as `bind_addr` (usually `0.0.0.0` to listen on
+    // every interface). Defaults to `bind_addr` for single-host/dev setups
+    // where that coincidentally is routable; a real multi-area deployment
+    // must set this explicitly per area-server process. See the "Cross-
+    // area transfer" design plan in `PORTING_LEDGER.md`.
+    #[arg(long, env = "UGARIS_PUBLIC_ADDR")]
+    public_addr: Option<SocketAddr>,
 
     #[arg(short = 'a', long, env = "UGARIS_AREA_ID", default_value_t = 1)]
     area_id: u16,
@@ -684,6 +695,21 @@ fn current_unix_time() -> i64 {
         .unwrap_or_default()
 }
 
+/// Converts an IPv4 address to the raw 32-bit representation C's
+/// `inet_addr()` produces (`src/system/io.c:433`), for storage in
+/// `area_servers.server_addr`/encoding into an `SV_SERVER` redirect
+/// packet. C's value has the first dotted octet at the lowest memory
+/// address regardless of host endianness (`inet_addr` builds it that
+/// way), which on this codebase's little-endian target is bit-for-bit
+/// `u32::from_le_bytes(octets)` - the same convention already used for
+/// `LoginBlock::his_ip` (`ugaris-protocol/src/login.rs`), so a value
+/// this function returns round-trips through `PacketBuilder::
+/// server_redirect` (which writes it back out via `put_u32_le`) with the
+/// exact same wire bytes a real C client/server would produce.
+fn legacy_ipv4_addr(addr: std::net::Ipv4Addr) -> u32 {
+    u32::from_le_bytes(addr.octets())
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     fmt()
@@ -711,6 +737,7 @@ async fn main() -> anyhow::Result<()> {
         military_advisor_storage_repository,
         anticheat_repository,
         notes_repository,
+        area_repository,
     ) = if let Some(database_url) = args.database_url.as_deref() {
         let db = ugaris_db::Database::connect(database_url, 8).await?;
         db.ping().await?;
@@ -734,10 +761,13 @@ async fn main() -> anyhow::Result<()> {
             Some(db.military_advisor_storage()),
             Some(db.anticheat()),
             Some(db.notes()),
+            Some(db.areas()),
         )
     } else {
         warn!("DATABASE_URL not set; starting without persistence");
-        (None, None, None, None, None, None, None, None, None, None)
+        (
+            None, None, None, None, None, None, None, None, None, None, None,
+        )
     };
 
     let (events_tx, mut events_rx) = mpsc::channel(1024);
@@ -758,6 +788,42 @@ async fn main() -> anyhow::Result<()> {
         }
         Err(_) => {
             anyhow::bail!("legacy TCP listener task exited before reporting readiness");
+        }
+    }
+
+    // C `area_alive(0)` (`src/system/database/database_area.c:31-75`),
+    // called periodically from the main loop to keep this area server's
+    // `area` table row fresh so other area servers' `get_area` calls (and
+    // `read_login`'s cross-area redirect) resolve to a live target; ported
+    // here as a startup-only `mark_alive` (see the "Cross-area transfer"
+    // design plan in `PORTING_LEDGER.md` for the full liveness-refresh
+    // story - a real periodic re-mark is left to a follow-up slice, since
+    // Postgres itself being the shared source of truth makes a stale-but-
+    // present row far less harmful here than C's in-memory `area[]` cache
+    // going stale).
+    if let Some(repository) = &area_repository {
+        let public_addr = args.public_addr.unwrap_or(args.bind_addr);
+        match public_addr.ip() {
+            std::net::IpAddr::V4(ipv4) => {
+                let server_addr = legacy_ipv4_addr(ipv4) as i32;
+                if let Err(err) = repository
+                    .mark_alive(
+                        i32::from(config.area_id),
+                        i32::from(config.mirror_id),
+                        server_addr,
+                        i32::from(public_addr.port()),
+                    )
+                    .await
+                {
+                    warn!(error = %err, "failed to mark this area server alive at startup");
+                }
+            }
+            std::net::IpAddr::V6(_) => {
+                warn!(
+                    "public-addr is IPv6; the legacy SV_SERVER redirect protocol only carries \
+                     an IPv4 address, skipping area-liveness registration"
+                );
+            }
         }
     }
 
@@ -7621,6 +7687,38 @@ async fn main() -> anyhow::Result<()> {
                                         }
                                     }
                                 }
+                                // C `read_login`'s area-routing branch
+                                // (`src/system/player.c:445-465`): if the
+                                // target area server is registered and
+                                // alive, redirect the client there via
+                                // `SV_SERVER` (C `player_to_server`)
+                                // instead of always falling through to the
+                                // "target area server is down" reject text
+                                // (which stays the fallback for a genuinely
+                                // unregistered/offline target, matching
+                                // C's own `else` branch).
+                                Ok(outcome @ LoginOutcome::NewArea { area_id: target_area_id, mirror: target_mirror, .. }) => {
+                                    let mut redirect_payload = None;
+                                    if let Some(area_repo) = &area_repository {
+                                        match area_repo.get_area(target_area_id, target_mirror).await {
+                                            Ok(record) => redirect_payload = area_redirect_payload(record.as_ref()),
+                                            Err(err) => {
+                                                warn!(%id, area_id = target_area_id, mirror = target_mirror, error = %err, "failed to look up target area server for cross-area login redirect");
+                                            }
+                                        }
+                                    }
+                                    if let Some(payload) = redirect_payload {
+                                        runtime.send_to_session(id.0, payload);
+                                        runtime.flush_session(id.0);
+                                        if let Some(commands) = runtime.sessions.get(&id.0) {
+                                            let _ = commands.try_send(SessionCommand::Disconnect);
+                                        }
+                                        info!(%id, name = %login.name, area_id = target_area_id, mirror = target_mirror, "redirecting login to target area server");
+                                        continue;
+                                    }
+                                    login_reject = login_reject_message(&outcome);
+                                    warn!(%id, code = outcome.legacy_find_login_code(), reject = login_reject.is_some(), "target area server not registered or offline; rejecting cross-area login");
+                                }
                                 Ok(outcome) => {
                                     login_reject = login_reject_message(&outcome);
                                     warn!(%id, code = outcome.legacy_find_login_code(), reject = login_reject.is_some(), "DB login did not return a local ready character");
@@ -7897,6 +7995,19 @@ async fn main() -> anyhow::Result<()> {
     if let Some(repository) = &auction_repository {
         if let Err(err) = repository.cleanup_expired_auctions().await {
             warn!(error = %err, "failed to clean up expired auctions at shutdown");
+        }
+    }
+
+    // C `area_alive(1)` (`database_area.c:31-75`, called from the exit
+    // path): mark this area server's row down so `get_area`/the cross-area
+    // login redirect stop pointing other servers/clients at a server that
+    // is about to stop accepting connections.
+    if let Some(repository) = &area_repository {
+        if let Err(err) = repository
+            .mark_down(i32::from(config.area_id), i32::from(config.mirror_id))
+            .await
+        {
+            warn!(error = %err, "failed to mark this area server down at shutdown");
         }
     }
 

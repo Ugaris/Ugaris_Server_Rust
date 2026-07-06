@@ -103,8 +103,8 @@ Remaining oversized files worth splitting during future work:
 | C File | Rust Location | Remaining Work |
 |---|---|---|
 | `src/system/database/database.h` | `crates/ugaris-db/src/lib.rs` | PostgreSQL pool, module boundary, and database handle ported. |
-| `src/system/database/database_area.h` | `crates/ugaris-db/src/area.rs`, `migrations/0001_core_accounts_characters.sql` | Area server records and alive/down/get operations scaffolded. |
-| `src/system/database/database_character.h` / `database_character.c` login and snapshot paths, `src/system/player.c` `read_login`/`player_client_exit` reject path, `src/system/badip.c` | `crates/ugaris-db/src/character.rs`, `crates/ugaris-server/src/login.rs`, `crates/ugaris-server/src/constants.rs`, `crates/ugaris-server/src/main.rs`, `migrations/0001_core_accounts_characters.sql`, `migrations/0002_sessions_questlog_anticheat.sql`, `migrations/0003_character_snapshots.sql`, `migrations/0004_bad_passwords.sql` | Login status semantics, character target lookup, legacy plaintext subscriber-password comparison against `accounts.password_hash`, current-area update, login session insert, release semantics, guarded backup save, logout save, Rust character JSON snapshot load/save, character item snapshot rows, server-side optional snapshot load/logout-save integration for PostgreSQL, client-facing login rejection (every non-`Ready` `LoginOutcome`/DB error now sends the exact C `player_client_exit` `SV_EXIT` reject text and disconnects instead of spawning a scaffold character), IP-based bad-password rate limiting (`is_badpass_ip`/`add_badpass_ip`, `>3`/60s, `>8`/1h, `>25`/24h windows, backed by a new `bad_passwords` table) constructing `LoginOutcome::TooManyBadPasswords`, and same-account duplicate-online-character detection (`load_char_dup`) constructing `LoginOutcome::Duplicate` are scaffolded/ported. `clean_badpass_ips` confirmed dead code in C (declared, never called) and intentionally not ported. `begin_login_tx`'s full row-decision branching (unknown name, wrong password + bad-password recording, locked character/account, ip-locked, unfixed, not-paid, `allowed_area <= 0`, duplicate-login reject, `account_id == 1` duplicate exemption, `NewArea` routing, success `Ready` + `login_sessions` insert) now has a `DATABASE_URL`-gated live-Postgres test suite (`crates/ugaris-db/src/character.rs::tests::live_login`, 12 tests, `tokio` dev-dependency added to `ugaris-db`) - skips cleanly with no `DATABASE_URL` set, verified against a throwaway local `postgres:16-alpine` Docker container. Live DB migration verification (actually running `migrations/*.sql` against a fresh Postgres, done manually this iteration but not automated), cross-area `NewArea` redirect (`player_to_server`, deferred to the separate "Cross-area transfer" task), a true end-to-end reject test over a real TCP socket, and full legacy binary blob decode/encode remain. |
+| `src/system/database/database_area.h`/`.c` (`area_alive`, `update_arealist`, `check_area`, `get_mirror`, `get_area`), `src/system/player.c` `player_to_server`/`change_area`'s area-lookup half | `crates/ugaris-db/src/area.rs`, `migrations/0001_core_accounts_characters.sql`, `crates/ugaris-protocol/src/packet.rs`, `crates/ugaris-server/src/main.rs` | Iteration 220 (see the "Cross-area transfer" P3 task and this ledger's "Continuation Handoff" design plan for the full context): `AreaRepository`/`PgAreaRepository` (`mark_alive`/`mark_down`/`get_area` against the pre-existing `area_servers` table, C's `area_alive`/`update_arealist`/`check_area`+`get_mirror` folded into one repository call instead of a separate poll-then-cache step, since Postgres is this codebase's single shared source of truth rather than each area server's own in-memory `area[][]` cache) is now wired into `ugaris-server`: a new `--public-addr` CLI arg (falls back to `--bind-addr`) is registered via `mark_alive` right after the TCP listener confirms it's bound, and `mark_down` runs at clean shutdown (both `ctrl_c` and scheduled-shutdown exit paths share the same post-loop tail). `PacketBuilder::server_redirect` (`ugaris-protocol/src/packet.rs`) encodes the 7-byte `SV_SERVER` packet C's `player_to_server` (`src/system/player.c:244-250`) sends - tag + raw little-endian 4-byte address + raw little-endian 2-byte port, no network-byte-order swap on either field, matching the existing `LoginBlock::his_ip` raw-bytes convention exactly (new `legacy_ipv4_addr` helper in `main.rs` converts a real `Ipv4Addr` to the same bit pattern). Remaining: the actual `get_mirror` mirror-fallback-search semantics (try the requested mirror, else the next one up) are not reproduced - `get_area` only ever looks up the exact `(area_id, mirror_id)` pair passed in, since nothing in this codebase generates a second mirror row yet; a periodic `mark_alive` re-poll/heartbeat (currently startup-once); and the `check_area`/`update_arealist`-style separate liveness cache the C server refreshes independently of `get_area` (not needed here, since every lookup already hits Postgres directly). |
+| `src/system/database/database_character.h` / `database_character.c` login and snapshot paths, `src/system/player.c` `read_login`/`player_client_exit` reject path, `src/system/badip.c` | `crates/ugaris-db/src/character.rs`, `crates/ugaris-server/src/login.rs`, `crates/ugaris-server/src/constants.rs`, `crates/ugaris-server/src/main.rs`, `migrations/0001_core_accounts_characters.sql`, `migrations/0002_sessions_questlog_anticheat.sql`, `migrations/0003_character_snapshots.sql`, `migrations/0004_bad_passwords.sql` | Login status semantics, character target lookup, legacy plaintext subscriber-password comparison against `accounts.password_hash`, current-area update, login session insert, release semantics, guarded backup save, logout save, Rust character JSON snapshot load/save, character item snapshot rows, server-side optional snapshot load/logout-save integration for PostgreSQL, client-facing login rejection (every non-`Ready` `LoginOutcome`/DB error now sends the exact C `player_client_exit` `SV_EXIT` reject text and disconnects instead of spawning a scaffold character), IP-based bad-password rate limiting (`is_badpass_ip`/`add_badpass_ip`, `>3`/60s, `>8`/1h, `>25`/24h windows, backed by a new `bad_passwords` table) constructing `LoginOutcome::TooManyBadPasswords`, and same-account duplicate-online-character detection (`load_char_dup`) constructing `LoginOutcome::Duplicate` are scaffolded/ported. `clean_badpass_ips` confirmed dead code in C (declared, never called) and intentionally not ported. `begin_login_tx`'s full row-decision branching (unknown name, wrong password + bad-password recording, locked character/account, ip-locked, unfixed, not-paid, `allowed_area <= 0`, duplicate-login reject, `account_id == 1` duplicate exemption, `NewArea` routing, success `Ready` + `login_sessions` insert) now has a `DATABASE_URL`-gated live-Postgres test suite (`crates/ugaris-db/src/character.rs::tests::live_login`, 12 tests, `tokio` dev-dependency added to `ugaris-db`) - skips cleanly with no `DATABASE_URL` set, verified against a throwaway local `postgres:16-alpine` Docker container. Live DB migration verification (actually running `migrations/*.sql` against a fresh Postgres, done manually this iteration but not automated), a true end-to-end reject test over a real TCP socket, and full legacy binary blob decode/encode remain. As of iteration 220, cross-area `NewArea` redirect (`player_to_server`) is ported: `main.rs`'s `SessionEvent::Login` handler now matches `LoginOutcome::NewArea` specially, calls the newly-wired `AreaRepository::get_area(area_id, mirror)`, and (via the new pure `login.rs::area_redirect_payload` helper, unit-tested without a database) sends the `SV_SERVER` redirect payload + disconnects when a live registered target exists, falling back to the pre-existing `login_reject_message`'s "target area server is down" text only when the target row is missing or marked offline - matching C `read_login`'s `if (get_area(...)) { player_to_server(...); } else { rescue_char(...); player_client_exit(...); }` branch structure exactly. See the `crates/ugaris-db/src/area.rs` ledger row above for the `AreaRepository` wiring/`SV_SERVER` encoder detail, and this ledger's "Continuation Handoff" design plan for what's still missing (mid-game teleport-triggered transfers, periodic liveness heartbeat). |
 | `src/system/database/database_anticheat.h` / `database_anticheat.c` session/event core | `crates/ugaris-db/src/anticheat.rs`, `migrations/0002_sessions_questlog_anticheat.sql`, `migrations/0014_ac_player_stats.sql`, `migrations/0015_ac_player_stats_warnings.sql`, `migrations/0016_ac_known_signatures.sql`, `migrations/0017_ac_player_stats_rollup.sql` | Session/event schema, typed PostgreSQL repository boundary, session create/character/fingerprint/status/bot-score/counter/end operations, event logging, cleanup (now called from `#accleanup`, iteration 199), and legacy result/action/risk text mappings ported with tests. Iteration 209 added a first, deliberately scoped-down slice of the player-stat table (`ac_player_stats`, keyed by `subscriber_id` == this codebase's pre-existing `characters.account_id` - no new subscriber-id concept needed, just `anticheat_sessions.account_id`, already stored there since iteration 196, read back via the new `account_id_for_session`): only `is_flagged`/`is_trusted` (the two columns `#acunflag`/`#actrust`/`#acuntrust` mutate, `set_flagged`/`set_trusted` upserts), not the full session-rollup-history schema (`total_sessions`, `lifetime_bot_score`, `risk_level`, fingerprint-on-login columns, etc.) C's real table also carries - that fuller schema is still unbuilt and blocks `#achistory`. Iteration 210 extended `ac_player_stats` with `warnings_issued`/`last_warning_at` and ported `#acwarn <player> [reason]` (`db_ac_issue_warning`, `database_anticheat.c:606-621`) on top - the new `issue_warning` repository method upserts the same row, incrementing the counter rather than overwriting it. The `ac_admin_actions` audit-log table `db_ac_log_admin_action` writes to on every mutation (including `db_ac_issue_warning`'s own call) is intentionally not ported (skipped, matching the `/kick`-`dlog` untracked-audit-log convention - documented on the new repository methods). Iteration 211 ported `#acsessions <player>` by reading directly from the existing `anticheat_sessions` table (new `recent_sessions` repository method) instead of porting C's separate `ac_sessions` table, since both are structurally the same per-login-session history - no rollup or new schema needed for this one, unlike `#achistory`/`#acviolations`. Iteration 212 ported `#acviolations <player>` the same reuse-over-new-schema way: C's `ac_violations` table joins a separate `ac_violation_types` lookup only because C stores the violation type as a numeric foreign key, while this codebase's pre-existing `anticheat_events` table already stores `event_type` as human-readable text, so the new `recent_violations` repository method just joins `anticheat_events` against `anticheat_sessions` for the account-id scope - no new violations table or violation-types lookup table needed. Iteration 213 added the new `ac_known_signatures` table (never itself defined in this codebase before, only referenced by name) and ported `#acsiglist`/`#acsigadd`/`#acsigdel` (`list_signatures`/`add_signature`/`delete_signature`) on top - the last three gap-(a) commands with no cross-account-join or rollup-schema dependency. Iteration 214 ported the session-end lifetime-rollup half of `ac_player_disconnect` itself (`db_ac_update_player_stats`, `database_anticheat.c:480-517`, called from `anticheat.c:141-163`) - the previously-missing piece that blocked `#achistory`: extended `ac_player_stats` (`migrations/0017_ac_player_stats_rollup.sql`) with `total_sessions`/`flagged_sessions`/`suspicious_sessions`/the three violation-total counters/`total_anomalies`/`lifetime_bot_score`/`max_session_bot_score`/`avg_session_bot_score`/`risk_level`/`last_seen`, added `AntiCheatRepository::update_player_stats` (a single Postgres upsert reproducing C's atomic MySQL `@variable` update via `GREATEST`/`CASE` over `excluded.*`), and wired it into `main.rs`'s disconnect handler right after `end_session`, using the same pre-mutation `find_session` snapshot `#acstatus` already reads. Every counter is currently always `0` (no detection engine ported, matching the session-lifecycle-only state since iteration 196), so real accumulation only currently applies to `total_sessions`/`last_seen`/a permanently-`low` `risk_level` - but the schema and upsert logic are real and tested against every `risk_level` tier. `#achistory` itself (the display command reading these columns) is still unported - this iteration only wired the write side. Iteration 216 closed gap (a) entirely by porting its last four members - `#acsharedip`/`#acsharedhw`/`#achighrisk`/`#aclookup` - adding `AntiCheatRepository::shared_ips`/`shared_hardware`/`high_risk_players`/`lookup_subscriber` (`crates/ugaris-db/src/anticheat.rs`). `shared_ips`/`shared_hardware` do reuse `anticheat_sessions`' existing `ip_address`/`hardware_hash` columns as iteration 214's note predicted, self-joining the table live rather than porting C's separate `ac_ip_history`/`ac_hardware_history` aggregate tables (no `db_ac_track_ip`/`db_ac_track_hardware`-equivalent writer exists or is needed). None of these four commands' C format strings' `email` field has a home in this codebase's schema (`accounts` has no email column) - `accounts.username` substitutes for it throughout, the same identity-column mapping this whole family already relies on for `subscriber.ID` == `accounts.id`. Runtime anti-cheat packet integration beyond session lifecycle (the actual detection engine), `ac_admin_actions`, and exact legacy MySQL report fan-out remain; no live `ugaris-db` fixture test yet covers the four new joined queries (a gap the next iteration touching this file should close). |
 | `src/system/player.c` / `src/system/player.h` | `crates/ugaris-net`, `crates/ugaris-core`, `crates/ugaris-server` | Player states, `PAC_*`, command recognition, command payload parsing, login parse, runtime registry, session send channels, scaffold character spawn, direct action setters, action queue, and primitive world action bridge exist; full action execution, map cache/client sync, inventory delta sync, text logging, transfer, anti-cheat integration remain. As of iteration 38, the `ClientAction::Nop`/`ClientInfo`/`Log`/`ModPacket` dispatch audit is closed: `cl_nop`/`cl_clientinfo` (true C no-ops) get explicit non-logging match arms in `crates/ugaris-server/src/main.rs`'s per-tick dispatch and `player_actions.rs::apply_player_action`'s immediate dispatch instead of falling through a catch-all; `cl_log` is ported as a `debug!`-logged `charlog`-shaped message via new helper `player_actions::format_client_log_message`; `ModPacket` (`cl_mod1`/`cl_mod3`) is a `debug!`-logged no-op matching C's own "acknowledge for now" handshake stub. |
 | `src/system/tell.h` / `src/system/tell.c`, `/tell` slice from `src/system/command.c` / `src/system/chat/chat.c` | `crates/ugaris-core/src/tell.rs`, `crates/ugaris-server/src/main.rs` | C-compatible ten-slot sent-tell tracking, duplicate suppression, first-empty insertion, received-tell removal, strict one-second timeout expiry, `DRD_TELL_DATA` ID, legacy not-listening feedback text, runtime `/tell <name> <text>` parsing, online character lookup, sender acknowledgement/self-tell feedback, staff-name/staff-code formatting, no-tell and ignore blocking with delayed not-listening feedback, recipient received-tell clearing, and spy fan-out are ported with focused tests. Offline cross-server tell delivery, lookup-in-progress retry semantics, dlog/audit logging, and exact chat-service transport remain. |
@@ -133,6 +133,115 @@ Remaining oversized files worth splitting during future work:
 ## Continuation Handoff
 
 Use this section as the starting point for the next session.
+
+### Design Plan: Cross-Area Transfer (P3 task, written iteration 220)
+
+**Decision: N OS processes, one area+mirror per process, DB-mediated
+handoff.** No in-process multi-area mode. This was already the implied
+target architecture before this plan was written - `Args`/`ServerConfig`
+take a single `--area-id`/`--mirror-id`, `World::area_id` is a scalar set
+once at startup and never mutated, and one `ZoneLoader`/map exists per
+process - reworking that to host multiple areas in one process would be
+a much larger, higher-risk change (dozens of call sites assume "this
+process's one area") for no real benefit versus just running more
+processes, which is also how the legacy C server itself was deployed
+(one binary per area, per `server.c`'s own `areaID`/`areaM` globals).
+
+**Mechanism, reverse-engineered from the C source** (`src/system/
+player.c` `player_to_server`/`kick_char`/`change_area`, `src/system/
+database/database_character.c` `change_area`/`get_area`/`update_arealist`,
+`src/system/database/database_area.c` `area_alive`): cross-area transfer
+in C is **entirely client-driven reconnect**, not a server-to-server live
+character handoff:
+
+1. The sending area server decides a character should move (a teleport
+   destination resolves to a different `area_id`, or login discovers
+   `allowed_area != this_area_id`).
+2. It looks up the target's server/port via `get_area` (backed by an
+   `area` DB table each area server keeps fresh with a periodic
+   `area_alive(0)` heartbeat UPDATE, `alive_time`/`idle`/`players`/etc.,
+   with a `time_now - alive_time < 300` staleness check standing in for
+   "is this area server actually still running").
+3. If found: for a mid-game teleport, `change_area` sets `tmpx/tmpy/tmpa`
+   + `CF_AREACHANGE`, calls `kick_char` (which removes the character from
+   the live map and **saves it to DB with the *target* area/coords
+   already written**, i.e. `save_char(cn, target_area)`), then
+   `player_to_server` sends the 7-byte `SV_SERVER` packet (raw IP +
+   port, no byte-order conversion) and marks the session `ST_EXIT`. For a
+   fresh login that resolves to the wrong area server, `read_login` does
+   the `get_area`+`player_to_server` call directly with no save needed
+   (nothing was loaded into memory on this server yet).
+4. The **client**, seeing `SV_SERVER`, disconnects and reconnects to the
+   new address/port with the same login credentials.
+5. The **receiving** area server's own `read_login` sees the DB row's
+   `current_area`/`allowed_area` now already matches its own `area_id`
+   (written by step 3's `save_char`), so login proceeds normally as a
+   `Ready` outcome - no special "arrival" packet or in-memory handoff
+   blob is ever sent between the two server processes. Postgres is the
+   only channel; the two server processes never talk to each other
+   directly at all.
+
+This is good news for the Rust port: it means "cross-area transfer" does
+**not** require any new inter-process protocol or shared memory - every
+piece of state involved (target area/coords, area-server liveness) is
+already expressed as ordinary Postgres rows this codebase already has
+migrations and repository types for (`characters.current_area`/
+`allowed_area`, the `area_servers` table). The work is almost entirely
+"plumb the already-scaffolded pieces together", not new distributed-
+systems design.
+
+**What iteration 220 ported** (see the `crates/ugaris-db/src/area.rs`
+ledger row and the "Cross-area transfer" `PORTING_TODO.md` entry for
+detail): the `SV_SERVER` encoder, `AreaRepository` wired into
+`ugaris-server` (startup `mark_alive`/shutdown `mark_down`, `--public-
+addr` CLI arg), and the **login-side** half of the redirect (`read_login`'s
+area-routing branch) - a login that resolves to the wrong area server
+now actually redirects to a live registered target instead of always
+rejecting with "down".
+
+**What's still missing, in priority order for whoever picks this up
+next:**
+
+1. **The mid-game teleport half** (`change_area`'s own call sites, not
+   `read_login`'s). Every current `TransportTravelResult::CrossArea`/
+   `area_id != config.area_id` site (transport points in `main.rs`, `/
+   office`+`/goto` in `commands_admin.rs`, mine gateway, clan-spawn exit,
+   jail/unjail in `world/jail.rs`, dungeon-master rescue in `world/
+   dungeon_master.rs`) still only ever sends the "down" message. Porting
+   this needs, per character being transferred: (a) look up the target
+   via `AreaRepository::get_area` (same as the login path); (b) if found,
+   save the character's full snapshot to DB with the *target*
+   `current_area`/coords already written (reuse `CharacterSaveMode`/
+   `save_character_snapshot`/`CharacterSaveRequest` - the exact same
+   machinery the normal logout-save path already uses, just called
+   proactively instead of on disconnect, matching C's `kick_char`'s own
+   `save_char(cn, save_area)` call inside `change_area`); (c) remove the
+   character from this process's live `World` (same as a normal
+   disconnect/despawn); (d) send `SV_SERVER` (`PacketBuilder::
+   server_redirect`, already built) and disconnect the session. If not
+   found/offline, keep today's "down" message fallback. This is a bigger
+   slice than the login half because every call site needs the same save-
+   then-redirect sequence threaded through - worth its own iteration(s),
+   ideally starting with just one call site (transport points are the
+   most self-contained) before generalizing to the rest.
+2. **Periodic `mark_alive` heartbeat.** Currently startup-once; C's own
+   `area_alive(0)` is called every tick from the main loop specifically so
+   `update_arealist`'s `time_now - alive_time < 300` staleness check can
+   catch a hung-but-still-listening process. Since this codebase's
+   `get_area` hits Postgres directly on every lookup (no separate poll-
+   then-cache step like C), a stale-but-`online=true` row is arguably a
+   smaller risk here than in C, but a real deployment should still re-mark
+   periodically (e.g. once a minute alongside the existing shutdown-
+   countdown/backup-rotation periodic tasks in the main tick loop) and a
+   receiving server should treat a too-stale `mark_alive` timestamp the
+   same as `online = false`. `AreaServerRecord` doesn't currently expose
+   `last_seen` to callers - would need a small `AreaRepository`/
+   `AreaServerRecord` extension.
+3. **The three blocked text commands** (`/exterminate`, `/values`/
+   `/showvalues`, `/allow`) still need a `server_chat`-equivalent
+   multi-node broadcast/query design of their own once (1) lands enough
+   that a real multi-process deployment is meaningfully testable - not
+   needed for (1) itself.
 
 ### Current Runnable State
 

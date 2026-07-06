@@ -208,6 +208,31 @@ impl PacketBuilder {
         self
     }
 
+    /// C `player_to_server` (`src/system/player.c:244-250`): a 7-byte
+    /// packet telling the client to disconnect and reconnect to a
+    /// different area server. `server_addr` is the raw 32-bit value C's
+    /// `inet_addr()` produces (memcpy'd into the wire buffer with no
+    /// endianness conversion on C's little-endian x86 target - matched
+    /// here by writing the value's bytes in little-endian order, the same
+    /// convention this codebase already uses for `LoginBlock::his_ip`,
+    /// see `login.rs`'s `u32::from_le_bytes` read of the equivalent
+    /// client-sent field), and `server_port` is the plain port number
+    /// (also written raw/little-endian, matching C's `*(short *)(buf + 5)
+    /// = port`, no network-byte-order swap). Sending this packet does not
+    /// by itself close the connection - C only marks `player[nr]->state =
+    /// ST_EXIT` and lets the client-initiated reconnect (or, from the
+    /// login path, `player_client_exit`'s own follow-up `SV_EXIT`) tear it
+    /// down; callers here are expected to disconnect the session
+    /// immediately afterward, matching every existing `player_to_server`
+    /// call site in the C tree (`change_area`, `read_login`'s area-routing
+    /// branch).
+    pub fn server_redirect(&mut self, server_addr: u32, server_port: u16) -> &mut Self {
+        self.payload.put_u8(SV_SERVER);
+        self.payload.put_u32_le(server_addr);
+        self.payload.put_u16_le(server_port);
+        self
+    }
+
     pub fn scroll(&mut self, direction: u8) -> &mut Self {
         self.payload.put_u8(direction);
         self
@@ -1056,6 +1081,20 @@ mod tests {
         assert_eq!(payload[0], SV_EXIT);
         assert_eq!(payload[1], 200);
         assert_eq!(payload.len(), 202);
+    }
+
+    #[test]
+    fn server_redirect_matches_legacy_player_to_server_wire_layout() {
+        // C `player_to_server` (`src/system/player.c:244-250`): 7-byte
+        // packet, tag + raw 4-byte server address + raw 2-byte port, no
+        // network-byte-order swap on either field.
+        let mut builder = PacketBuilder::new();
+        builder.server_redirect(0x0100_a8c0, 5556);
+        let payload = builder.into_payload();
+        assert_eq!(payload.len(), 7);
+        assert_eq!(payload[0], SV_SERVER);
+        assert_eq!(&payload[1..5], &0x0100_a8c0u32.to_le_bytes());
+        assert_eq!(&payload[5..7], &5556u16.to_le_bytes());
     }
 
     #[test]

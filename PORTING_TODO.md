@@ -10472,7 +10472,7 @@ Unlocks every quest NPC. Do these before any P4 area work.
   protocol + 1050 server, all green, zero failures), `cargo build -p
   ugaris-server` clean with zero warnings.
 
-- [ ] **Cross-area transfer** - the big multi-server feature. Every
+- [~] **Cross-area transfer** - the big multi-server feature. Every
   cross-area teleport currently returns "target server down". Decide the
   single-process stance first (likely: run multiple areas in one process
   or reject cleanly). If porting: C `change_area` in
@@ -10484,6 +10484,36 @@ Unlocks every quest NPC. Do these before any P4 area work.
   and `#` text commands" task's final Progress Log entry for the
   per-command detail; none of the three need a separate task of their
   own once this one lands.
+  REMAINING (iteration 220): the single-process stance is now decided
+  (see the design plan in `PORTING_LEDGER.md`'s "Continuation Handoff" -
+  N area-server OS processes, one `--area-id`/`--mirror-id` each, DB-
+  mediated handoff via the already-existing `area_servers` table; no in-
+  process multi-area mode) and the login-side half of the redirect is
+  wired: `SV_SERVER` packet encoder
+  (`ugaris-protocol/src/packet.rs::PacketBuilder::server_redirect`),
+  `AreaRepository` wired into `ugaris-server` (startup `mark_alive`/
+  shutdown `mark_down`, new `--public-addr` CLI arg), and
+  `LoginOutcome::NewArea` now redirects a client to a live registered
+  target area server instead of unconditionally rejecting (falls back to
+  the existing "down" reject text only when the target isn't registered
+  or is marked offline). Still missing: (1) the *mid-game* teleport half
+  - every `TransportTravelResult::CrossArea`/`area_id != config.area_id`
+  call site listed in the design plan (transport points, `/office`,
+  `/goto`, mine gateway, clan-spawn exit, jail/unjail, dungeon-master
+  rescue) still only ever sends the "down" message and never calls
+  `AreaRepository::get_area` - porting this needs the character's DB row
+  saved with the *target* area/coords before sending `SV_SERVER` (C's
+  `change_area`+`kick_char`+`save_char(cn, area_number)`), which touches
+  the existing `CharacterSaveMode`/`save_character_snapshot` machinery
+  and hasn't been threaded through yet; (2) a periodic `mark_alive`
+  heartbeat (currently startup-only, so a long-running process whose
+  `area_servers` row falls out of some future staleness window - none
+  exists yet, C's own `time_now - alive < 300` check has no Rust
+  equivalent either - would need a periodic re-mark, though Postgres
+  being the single shared source of truth here makes this far less
+  urgent than C's in-memory `area[]` cache going stale); (3) the three
+  blocked commands (`/exterminate`/`/values`+`/showvalues`/`/allow`)
+  still need their own `server_chat`-equivalent design once (1) lands.
 
 - [ ] **Player-side fight-driver auto-combat (lostcon self-defense +
   no*/auto* toggle family)** - `fight_driver_attack_enemy`/
@@ -11116,3 +11146,13 @@ Add one line per completed task: date, task, ledger section touched.
   explicitly out of scope (belongs to the unstarted P4 "Area 12 -
   `mine.c`" task). Ledger row for `events.c`/`.h`/`recurring/*.c`/
   `easter_event.c` updated accordingly.
+- 2026-07-06: Cross-area transfer (P3, partial) - wrote the design plan
+  (single-process stance: N OS processes, one area+mirror each, DB-
+  mediated handoff), added `PacketBuilder::server_redirect` (`SV_SERVER`
+  encoder) to `ugaris-protocol`, wired `AreaRepository` into
+  `ugaris-server` (startup `mark_alive`/shutdown `mark_down`, new
+  `--public-addr` CLI arg), and wired the login-side redirect
+  (`LoginOutcome::NewArea` -> live-target lookup -> `SV_SERVER` +
+  disconnect, falling back to the existing down-reject text only when
+  unregistered/offline); ledger "Continuation Handoff" design-plan
+  section and the new `crates/ugaris-db/src/area.rs` ledger row.

@@ -196,6 +196,30 @@ pub(crate) fn login_reject_message(outcome: &LoginOutcome) -> Option<&'static st
     }
 }
 
+/// C `read_login`'s area-routing branch (`src/system/player.c:445-465`):
+/// `if (area != -1 && get_area(area, mirror, &server, &port))` decides
+/// between the `player_to_server`/`SV_SERVER` redirect success path and
+/// the `rescue_char`/"target area server is down" reject text. Split out
+/// as a pure function (record already resolved via `AreaRepository::
+/// get_area`, no I/O here) so the decision - "is there a live registered
+/// target?" - is unit-testable without a database, matching this
+/// codebase's established "pure decision, I/O-heavy application
+/// elsewhere" split (see `world/dungeon_master.rs`'s doc comments for the
+/// same precedent). Returns the `SV_SERVER` payload to send (and then
+/// disconnect the session) on success, or `None` when the caller should
+/// fall back to `login_reject_message`'s `NewArea` down-fallback text
+/// instead (record missing entirely, i.e. never registered, or present
+/// but marked offline via `AreaRepository::mark_down`).
+pub(crate) fn area_redirect_payload(record: Option<&AreaServerRecord>) -> Option<bytes::BytesMut> {
+    let record = record?;
+    if !record.online {
+        return None;
+    }
+    let mut builder = PacketBuilder::new();
+    builder.server_redirect(record.server_addr as u32, record.server_port as u16);
+    Some(builder.into_payload())
+}
+
 pub(crate) fn login_bootstrap_payloads(
     world: &World,
     character: &Character,

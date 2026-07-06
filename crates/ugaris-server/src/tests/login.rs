@@ -273,6 +273,78 @@ fn login_reject_message_matches_legacy_find_login_switch() {
 }
 
 #[test]
+fn area_redirect_payload_builds_sv_server_for_a_live_registered_area() {
+    // C `read_login`'s `if (get_area(...))` success branch
+    // (`src/system/player.c:445-465`): a live target resolves to the
+    // `SV_SERVER` redirect payload, not a reject string.
+    let record = AreaServerRecord {
+        area_id: 2,
+        mirror_id: 1,
+        server_addr: 0x0100_a8c0,
+        server_port: 5556,
+        online: true,
+    };
+    let payload = area_redirect_payload(Some(&record)).expect("live area redirects");
+    assert_eq!(payload[0], ugaris_protocol::packet::SV_SERVER);
+    assert_eq!(&payload[1..5], &0x0100_a8c0u32.to_le_bytes());
+    assert_eq!(&payload[5..7], &5556u16.to_le_bytes());
+}
+
+#[test]
+fn area_redirect_payload_falls_back_when_record_missing_or_offline() {
+    // C `read_login`'s `else` branch: no row at all (never registered) and
+    // a row marked down (`area_alive(1)`/`AreaRepository::mark_down`)
+    // both fall through to the caller's down-fallback reject text - the
+    // caller is expected to call `login_reject_message` in this case.
+    assert!(area_redirect_payload(None).is_none());
+
+    let offline = AreaServerRecord {
+        area_id: 2,
+        mirror_id: 1,
+        server_addr: 0x0100_a8c0,
+        server_port: 5556,
+        online: false,
+    };
+    assert!(area_redirect_payload(Some(&offline)).is_none());
+}
+
+#[test]
+fn runtime_login_redirects_to_a_live_target_area_with_sv_server_and_disconnects() {
+    // End-to-end wiring check mirroring
+    // `runtime_login_rejects_wrong_password_with_sv_exit_and_disconnects`
+    // below, but for the `LoginOutcome::NewArea` + live-target-found case:
+    // the session gets an `SV_SERVER` redirect frame (not `SV_EXIT`) and
+    // is still disconnected afterward, matching C's `player_to_server`
+    // (sends `SV_SERVER`, sets `ST_EXIT`) rather than
+    // `player_client_exit` (sends `SV_EXIT`, sets `ST_EXIT`).
+    let mut runtime = ServerRuntime::default();
+    let (commands, mut rx) = mpsc::channel(4);
+    runtime.connect(9, commands, 10);
+
+    let record = AreaServerRecord {
+        area_id: 4,
+        mirror_id: 1,
+        server_addr: 0x0201_a8c0,
+        server_port: 5557,
+        online: true,
+    };
+    let payload = area_redirect_payload(Some(&record)).expect("live area redirects");
+    runtime.send_to_session(9, payload.clone());
+    runtime.flush_session(9);
+    if let Some(commands) = runtime.sessions.get(&9) {
+        let _ = commands.try_send(SessionCommand::Disconnect);
+    }
+
+    assert_eq!(payload[0], ugaris_protocol::packet::SV_SERVER);
+
+    let SessionCommand::Send(sent_frame) = rx.try_recv().expect("redirect frame queued") else {
+        panic!("expected a Send command carrying the redirect frame");
+    };
+    assert!(sent_frame.windows(payload.len()).any(|w| w == &payload[..]));
+    assert!(matches!(rx.try_recv(), Ok(SessionCommand::Disconnect)));
+}
+
+#[test]
 fn runtime_login_rejects_wrong_password_with_sv_exit_and_disconnects() {
     // End-to-end wiring check for the `SessionEvent::Login` handler's reject
     // path: build the exact `SV_EXIT` payload the way `main.rs` does for a

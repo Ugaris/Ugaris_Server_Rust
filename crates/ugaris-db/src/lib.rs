@@ -18,7 +18,7 @@ pub use anticheat::{
     AntiCheatSessionHistoryRow, AntiCheatSessionInfo, AntiCheatSharedHwRow, AntiCheatSharedIpRow,
     AntiCheatSignatureRow, AntiCheatSubscriberLookup, AntiCheatViolationRow, PgAntiCheatRepository,
 };
-pub use area::{AreaRepository, PgAreaRepository};
+pub use area::{AreaRepository, AreaServerRecord, PgAreaRepository};
 pub use auction::{
     AuctionDelivery, AuctionFilter, AuctionRecord, AuctionRepository, AuctionSearchResult,
     AuctionSortBy, AuctionStatus, DeliveryReason, DeliverySummary, NewAuction, NewDelivery,
