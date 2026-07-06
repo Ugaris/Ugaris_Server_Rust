@@ -1292,6 +1292,47 @@ fn god_memstats_command_reports_live_world_counts() {
 }
 
 #[test]
+fn god_querystats_command_queues_a_lookup() {
+    let mut world = World::default();
+    let god_id = CharacterId(7);
+    let mut god = login_character(god_id, &login_block("Godmode"), 1, 10, 10);
+    god.flags.insert(CharacterFlags::GOD);
+    world.add_character(god);
+    let mut runtime = ServerRuntime::default();
+
+    // No immediate reply - the actual data needs a `PgCharacterRepository`
+    // read, resolved by `apply_querystats_events` once queued (see
+    // `ugaris-core`'s `world/querystats.rs` module doc comment).
+    let result = apply_admin_character_command(&mut world, &mut runtime, god_id, "/querystats", 1)
+        .expect("legacy cmdcmp accepts the full querystats word");
+    assert!(result.messages.is_empty());
+    let queued = world.drain_pending_querystats_lookups();
+    assert_eq!(queued.len(), 1);
+    assert_eq!(queued[0].caller_id, god_id);
+
+    // minlen 5: "query" is the shortest accepted abbreviation.
+    apply_admin_character_command(&mut world, &mut runtime, god_id, "/query", 1)
+        .expect("legacy cmdcmp accepts prefix length five");
+    assert_eq!(world.drain_pending_querystats_lookups().len(), 1);
+    // Shorter than minlen 5 doesn't reach `querystats` at all.
+    assert!(apply_admin_character_command(&mut world, &mut runtime, god_id, "/quer", 1).is_none());
+
+    let mortal_id = CharacterId(8);
+    world.add_character(login_character(
+        mortal_id,
+        &login_block("Mortal"),
+        1,
+        11,
+        10,
+    ));
+    assert!(
+        apply_admin_character_command(&mut world, &mut runtime, mortal_id, "/querystats", 1)
+            .is_none()
+    );
+    assert!(world.drain_pending_querystats_lookups().is_empty());
+}
+
+#[test]
 fn god_staffcode_command_sets_runtime_code_with_legacy_parsing() {
     let mut world = World::default();
     let god_id = CharacterId(7);

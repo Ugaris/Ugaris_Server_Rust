@@ -52,6 +52,7 @@ mod military;
 mod npc_fight;
 mod npc_idle;
 mod npc_messages;
+mod querystats;
 mod regen;
 mod rmdeath;
 mod skills;
@@ -109,6 +110,7 @@ pub(crate) use npc_fight::*;
 pub(crate) use npc_idle::*;
 #[allow(unused_imports)]
 pub(crate) use npc_messages::*;
+pub use querystats::*;
 #[allow(unused_imports)]
 pub(crate) use regen::*;
 pub use rmdeath::*;
@@ -377,6 +379,9 @@ pub struct World {
     /// resolved synchronously by the caller) - see `world/anticheat.rs`'s
     /// module doc comment.
     pending_ac_reset_lookups: Vec<AcResetLookup>,
+    /// `#querystats`/`/querystats` async DB round trips - see
+    /// `world/querystats.rs`'s module doc comment.
+    pending_querystats_lookups: Vec<QueryStatsLookup>,
 }
 
 impl Default for Tick {

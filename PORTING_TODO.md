@@ -9224,12 +9224,73 @@ Unlocks every quest NPC. Do these before any P4 area work.
   `acsigadd`/`acsigdel`/`acwarn`, (b) `punish`/`rename`/`lockname`/
   `unlockname`/`unpunish`/`exterminate`, (c) `look`/`klog`/`values`/
   `showvalues`, (e) `showppd`, (f) `depotsort`, (g) `respawn` remain
-  unported. REMAINING: next iteration should either design `querystats`'s
+  unported.   REMAINING: next iteration should either design `querystats`'s
   counters mechanism (a real cross-cutting change, likely its own scoped
   slice: pick one or two of the C counters - e.g. just `save_char_cnt`/
   `load_char_cnt`/`exit_char_cnt` since `CharacterRepository` is a single
   existing choke point for those three - rather than all 12+ at once) or
   pick a different lettered gap from (a)/(b)/(c)/(e)/(f)/(g).
+
+  Progress Log (iteration 202): closed iteration 201's own suggested
+  scoped slice - ported `/querystats`'s `save_char_cnt`/`exit_char_cnt`/
+  `load_char_cnt` counters (`command.c:6596,6603-6604`), the three that
+  share `PgCharacterRepository` as a single existing choke point. Added a
+  private `CharacterQueryCounters` (three `AtomicU64`s behind an `Arc`,
+  shared across `PgCharacterRepository` clones) plus a public
+  `CharacterQueryStats` snapshot and `query_stats()` reader
+  (`crates/ugaris-db/src/character.rs`). `save_char_cnt`/`exit_char_cnt`
+  increment unconditionally inside `save_character_snapshot` before the
+  transaction begins (matching C's placement right before
+  `execute_query`, regardless of success), keyed off the pre-existing
+  `CharacterSaveMode::Backup`/`Logout` enum that already maps 1:1 onto
+  C's `area_number <= 0`/`> 0` branches. `load_char_cnt` increments in
+  `begin_login` whenever the inner `begin_login_tx` call returns
+  `LoginOutcome::Ready` - the only outcome for which C's own "mark
+  character as online" query (the one `load_char_cnt` sits next to in C)
+  ever actually ran. Command-side reused the `/lastseen`/`#ac*` queue-
+  then-drain async-bridge pattern verbatim since `commands_admin.rs` has
+  no DB handle: new `crates/ugaris-core/src/world/querystats.rs`
+  (`QueryStatsLookup` + queue/drain, `world/mod.rs`'s matching
+  `pending_querystats_lookups` field) and `world_events.rs::
+  apply_querystats_events` (a plain non-`async fn` for once, since
+  `query_stats()` is a synchronous atomic read, not a real query - still
+  routed through the tick-loop drain for architectural consistency),
+  wired into `main.rs` right after `apply_ac_reset_events`. Reply
+  reproduces C's `"Database Query Statistics:"` header and `"Character
+  operations:"`/`"Save chars: %u, Exit chars: %u, Load chars: %u"` lines
+  verbatim; every other C line (`Total queries`/`Average query time`/
+  `Other operations`/`Query type statistics`) is omitted entirely (not
+  faked with zeroes), matching this task's own scoping decision. 2 new
+  tests in `world/tests/querystats.rs`, 1 new test in `ugaris-db/src/
+  character.rs` (`query_stats_start_at_zero_and_are_shared_across_
+  clones`, built via `PgPoolOptions::connect_lazy` so it needs no live
+  Postgres connection at all - `connect_lazy` only parses the URL, and
+  neither `query_stats()` nor a direct `fetch_add` on the counters ever
+  issues a real query), 4 new tests in `world_events.rs`
+  (`querystats_tests`: no-lookups/missing-repository no-op pair plus two
+  pure `querystats_lines` formatting tests, split out exactly like
+  `ac_status_lines`'s established testable-pure-function precedent), and
+  1 new test in `tests/commands_admin.rs`. Did NOT add a live-DB test for
+  `save_character_snapshot`/`begin_login`'s actual counter increments:
+  unlike `begin_login_tx`, which has a rollback-friendly manual-
+  transaction test fixture, the full trait-level methods open and commit
+  their own pool-level transactions internally, which would break that
+  fixture's "never actually persists" isolation convention - and
+  `CharacterSaveRequest`/`save_character_snapshot_tx` have no existing
+  test coverage at all to extend safely in this scope; noted here rather
+  than silently skipped. `cargo fmt --all`, `cargo test --workspace`
+  (2058 ugaris-core [+2] + 58 db [+1] + 3 net + 44 protocol + 891 server
+  [+5], all green, zero failures), `cargo build -p ugaris-server` /
+  `cargo build --workspace` clean with zero warnings, 10s boot-smoke
+  confirmed "entering Rust game loop" with no panic. REMAINING:
+  `querystats` now reports its three scoped counters; the other 9 C
+  counters remain unported (no single choke point, or genuinely no Rust
+  instrumentation surface yet) and would need their own scoped design
+  decision if ever prioritized. Gaps (a) (the `subscriber_id`/aggregate-
+  query/multi-account/signature-management sub-gaps), (b), (c), (e), (f),
+  (g) from iteration 195's list are all still open and untouched by this
+  slice - the next iteration picking this task up should pick one of
+  those.
 
 - [ ] **Cross-area transfer** - the big multi-server feature. Every
   cross-area teleport currently returns "target server down". Decide the

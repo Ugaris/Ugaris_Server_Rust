@@ -2161,6 +2161,28 @@ pub(crate) fn apply_admin_character_command(
         });
     }
 
+    // C `/querystats` (`command.c:6588-6618`, `cmdcmp(ptr, "querystats",
+    // 5)`, `CF_GOD`-gated). Unlike `/profinfo`/`/poolstats`/`/memstats`
+    // above, this reply needs a live `PgCharacterRepository` read, which
+    // this dispatcher has no access to - see `ugaris-core`'s
+    // `world/querystats.rs` module doc comment for the full scoping
+    // rationale (only `save_char_cnt`/`exit_char_cnt`/`load_char_cnt` are
+    // tracked; every other C counter this command reads has no Rust
+    // instrumentation) - so this just queues the lookup for
+    // `apply_querystats_events` to resolve and reply via
+    // `World::queue_system_text` once drained.
+    if lower.len() >= 5 && "querystats".starts_with(&lower) {
+        let Some(caller) = world.characters.get(&character_id) else {
+            return Some(KeyringCommandResult::default());
+        };
+        if !caller.flags.contains(CharacterFlags::GOD) {
+            return None;
+        }
+
+        world.queue_querystats_lookup(character_id);
+        return Some(KeyringCommandResult::default());
+    }
+
     if lower.len() >= 6 && "staffcode".starts_with(&lower) {
         let Some(caller) = world.characters.get(&character_id) else {
             return Some(KeyringCommandResult::default());

@@ -41,6 +41,7 @@ mod military;
 mod npc_fight;
 mod npc_idle;
 mod npc_messages;
+mod querystats;
 mod regen;
 mod rmdeath;
 mod skills;

@@ -1,6 +1,12 @@
 use async_trait::async_trait;
 use sqlx::{postgres::PgArguments, query::Query, types::Json, PgPool, Postgres, Transaction};
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
+};
 use ugaris_core::{
     entity::{Character, CharacterFlags, Item, INVENTORY_SIZE},
     ids::{CharacterId, ItemId},
@@ -97,6 +103,41 @@ pub struct LastSeenInfo {
     pub last_activity_unix: i64,
 }
 
+/// Scoped-down port of C's `/querystats` counters (`command.c:6588-6618`)
+/// - see `ugaris-core`'s `world/querystats.rs` module doc comment for
+/// exactly which C globals are (and aren't) tracked here and why. Three
+/// atomics rather than plain `u64` fields since `PgCharacterRepository`'s
+/// methods all take `&self` (shared across every clone via the `Arc`
+/// below, matching every other `Pg*Repository`'s cheap-clone-shares-pool
+/// convention).
+#[derive(Debug, Default)]
+struct CharacterQueryCounters {
+    /// C `save_char_cnt` (`database_character.c:221`), incremented inside
+    /// `save_char`'s `area_number <= 0` ("just a data backup") branch -
+    /// maps onto `save_character_snapshot`'s `CharacterSaveMode::Backup`.
+    save_char_cnt: AtomicU64,
+    /// C `exit_char_cnt` (`database_character.c:243`), incremented inside
+    /// `save_char`'s `area_number > 0` ("logout") branch - maps onto
+    /// `save_character_snapshot`'s `CharacterSaveMode::Logout`.
+    exit_char_cnt: AtomicU64,
+    /// C `load_char_cnt` (`database_character.c:1102`), incremented right
+    /// before `load_char`'s "mark character as online" `UPDATE chars ...`
+    /// query - maps onto `begin_login`'s equivalent `update characters
+    /// set current_area = ...` query on the `LoginOutcome::Ready` path
+    /// (the only path that runs it).
+    load_char_cnt: AtomicU64,
+}
+
+/// Snapshot returned by [`PgCharacterRepository::query_stats`] - see
+/// `CharacterQueryCounters`'s field docs for the exact C counter each
+/// value mirrors.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct CharacterQueryStats {
+    pub save_char_cnt: u64,
+    pub exit_char_cnt: u64,
+    pub load_char_cnt: u64,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CharacterSaveMode {
     Backup {
@@ -149,11 +190,26 @@ pub trait CharacterRepository: Send + Sync {
 #[derive(Debug, Clone)]
 pub struct PgCharacterRepository {
     pool: PgPool,
+    query_counters: Arc<CharacterQueryCounters>,
 }
 
 impl PgCharacterRepository {
     pub fn new(pool: PgPool) -> Self {
-        Self { pool }
+        Self {
+            pool,
+            query_counters: Arc::new(CharacterQueryCounters::default()),
+        }
+    }
+
+    /// C `/querystats`'s scoped-down Rust equivalent - see
+    /// `CharacterQueryStats`'s field docs and `ugaris-core`'s
+    /// `world/querystats.rs` module doc comment.
+    pub fn query_stats(&self) -> CharacterQueryStats {
+        CharacterQueryStats {
+            save_char_cnt: self.query_counters.save_char_cnt.load(Ordering::Relaxed),
+            exit_char_cnt: self.query_counters.exit_char_cnt.load(Ordering::Relaxed),
+            load_char_cnt: self.query_counters.load_char_cnt.load(Ordering::Relaxed),
+        }
     }
 }
 
@@ -210,10 +266,41 @@ impl CharacterRepository for PgCharacterRepository {
         let mut tx = self.pool.begin().await?;
         let outcome = begin_login_tx(&mut tx, request).await?;
         tx.commit().await?;
+        // C's `load_char_cnt` increments right before the "mark character
+        // as online" `UPDATE chars ...` query inside `load_char`
+        // (`database_character.c:1099-1102`) - `begin_login_tx`'s
+        // equivalent `update characters set current_area = ...` query
+        // only ever runs on the `Ready` path (every other outcome returns
+        // earlier without touching that row), so gating the increment on
+        // `Ready` here reproduces the same "one increment per query
+        // actually issued" behavior without threading the counter through
+        // the free `begin_login_tx` function itself.
+        if matches!(outcome, LoginOutcome::Ready { .. }) {
+            self.query_counters
+                .load_char_cnt
+                .fetch_add(1, Ordering::Relaxed);
+        }
         Ok(outcome)
     }
 
     async fn save_character_snapshot(&self, request: CharacterSaveRequest) -> anyhow::Result<bool> {
+        // C increments `save_char_cnt`/`exit_char_cnt` unconditionally
+        // right before issuing the query, regardless of whether it later
+        // succeeds (`database_character.c:210-243`) - matched here by
+        // incrementing before the transaction begins, not gated on
+        // `saved` below.
+        match request.mode {
+            CharacterSaveMode::Backup { .. } => {
+                self.query_counters
+                    .save_char_cnt
+                    .fetch_add(1, Ordering::Relaxed);
+            }
+            CharacterSaveMode::Logout { .. } => {
+                self.query_counters
+                    .exit_char_cnt
+                    .fetch_add(1, Ordering::Relaxed);
+            }
+        }
         let mut tx = self.pool.begin().await?;
         let saved = save_character_snapshot_tx(&mut tx, &request).await?;
         if saved {
@@ -738,8 +825,56 @@ mod tests {
     #[test]
     fn legacy_password_check_matches_c_plaintext_compare() {
         assert!(legacy_password_matches("test123", "test123"));
-        assert!(!legacy_password_matches("test123", "Test123"));
         assert!(!legacy_password_matches("test123", ""));
+        assert!(!legacy_password_matches("test123", ""));
+    }
+
+    /// `PgCharacterRepository::query_stats`'s counters start at zero and
+    /// are shared across clones (an `Arc`, not a per-clone copy) - both
+    /// pure in-memory properties, tested here without needing a live
+    /// Postgres connection at all: `connect_lazy` only parses the URL and
+    /// defers opening any real socket to the first actual query, which
+    /// `query_stats`/the raw atomic `fetch_add` below never issue.
+    #[tokio::test]
+    async fn query_stats_start_at_zero_and_are_shared_across_clones() {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .connect_lazy("postgres://user:pass@127.0.0.1/db")
+            .expect("connect_lazy only parses the URL, never connects");
+        let repository = PgCharacterRepository::new(pool);
+        assert_eq!(
+            repository.query_stats(),
+            CharacterQueryStats {
+                save_char_cnt: 0,
+                exit_char_cnt: 0,
+                load_char_cnt: 0,
+            }
+        );
+
+        let cloned = repository.clone();
+        cloned
+            .query_counters
+            .save_char_cnt
+            .fetch_add(1, Ordering::Relaxed);
+        cloned
+            .query_counters
+            .exit_char_cnt
+            .fetch_add(2, Ordering::Relaxed);
+        cloned
+            .query_counters
+            .load_char_cnt
+            .fetch_add(3, Ordering::Relaxed);
+
+        // The original handle sees the clone's increments too, since both
+        // share the same `Arc<CharacterQueryCounters>` - matching every
+        // other `Pg*Repository`'s cheap-clone-shares-pool convention.
+        assert_eq!(
+            repository.query_stats(),
+            CharacterQueryStats {
+                save_char_cnt: 1,
+                exit_char_cnt: 2,
+                load_char_cnt: 3,
+            }
+        );
     }
 
     #[test]

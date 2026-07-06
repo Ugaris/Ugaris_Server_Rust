@@ -2282,6 +2282,60 @@ pub(crate) async fn apply_ac_reset_events(
     applied
 }
 
+/// `#querystats`/`/querystats`'s async round trip - see `ugaris-core`'s
+/// `world/querystats.rs` module doc comment for exactly which C counters
+/// this scoped-down port tracks (and why the rest are omitted rather than
+/// faked). `PgCharacterRepository::query_stats` is a synchronous
+/// in-memory atomic read, not a real query, but is still routed through
+/// this tick-loop drain (rather than answered directly in
+/// `commands_admin.rs`) since command dispatch has no visibility into
+/// `character_repository` - the same architectural constraint every
+/// other DB-backed command in this file works around.
+///
+/// No-ops entirely (silent) when no `character_repository` is configured,
+/// matching every sibling offline-DB-lookup event's convention.
+pub(crate) fn apply_querystats_events(
+    world: &mut World,
+    character_repository: &Option<ugaris_db::PgCharacterRepository>,
+) -> usize {
+    let lookups = world.drain_pending_querystats_lookups();
+    if lookups.is_empty() {
+        return 0;
+    }
+    let Some(repository) = character_repository else {
+        return 0;
+    };
+    let mut applied = 0;
+    for lookup in lookups {
+        let stats = repository.query_stats();
+        for line in querystats_lines(stats) {
+            world.queue_system_text(lookup.caller_id, line);
+        }
+        applied += 1;
+    }
+    applied
+}
+
+/// Pure formatting half of `apply_querystats_events`, split out for unit
+/// testing without needing a live `PgCharacterRepository` - matches
+/// `ac_status_lines`'s established pattern for this file. Reproduces C's
+/// `"Database Query Statistics:"` header and `"Character operations:"`
+/// subheader/line verbatim (`command.c:6596,6601-604`); every other C
+/// line (`Total queries`/`Average query time`/`Other operations`/`Query
+/// type statistics`) is omitted, not faked, since nothing in `ugaris-db`
+/// increments those counters - see `ugaris-core`'s `world/querystats.rs`
+/// module doc comment.
+fn querystats_lines(stats: ugaris_db::CharacterQueryStats) -> Vec<String> {
+    vec![
+        "Database Query Statistics:".to_string(),
+        "Character operations:".to_string(),
+        format!(
+            "Save chars: {}, Exit chars: {}, Load chars: {}",
+            stats.save_char_cnt, stats.exit_char_cnt, stats.load_char_cnt
+        ),
+    ]
+}
+
 /// `/jail`/`/unjail`'s async DB round trip (C `lookup_name`,
 /// `system/lookup.c:42-98` + `system/database/database_lookup.c:57-83`):
 /// resolves every `World::drain_pending_jail_lookups` entry (queued by a
@@ -2799,6 +2853,60 @@ mod ac_reset_tests {
         assert_eq!(applied, 0);
         assert!(world.drain_pending_system_texts().is_empty());
         assert!(world.drain_pending_ac_reset_lookups().is_empty());
+    }
+}
+
+#[cfg(test)]
+mod querystats_tests {
+    use super::*;
+
+    #[test]
+    fn no_lookups_queued_is_a_cheap_no_op() {
+        let mut world = World::default();
+        let applied = apply_querystats_events(&mut world, &None);
+        assert_eq!(applied, 0);
+        assert!(world.drain_pending_system_texts().is_empty());
+    }
+
+    #[test]
+    fn missing_repository_leaves_the_lookup_queued_state_untouched_but_drained() {
+        let mut world = World::default();
+        world.queue_querystats_lookup(CharacterId(7));
+
+        let applied = apply_querystats_events(&mut world, &None);
+        assert_eq!(applied, 0);
+        assert!(world.drain_pending_system_texts().is_empty());
+        assert!(world.drain_pending_querystats_lookups().is_empty());
+    }
+
+    #[test]
+    fn querystats_lines_reproduce_the_scoped_c_header_and_counters() {
+        let stats = ugaris_db::CharacterQueryStats {
+            save_char_cnt: 12,
+            exit_char_cnt: 3,
+            load_char_cnt: 7,
+        };
+        assert_eq!(
+            querystats_lines(stats),
+            vec![
+                "Database Query Statistics:".to_string(),
+                "Character operations:".to_string(),
+                "Save chars: 12, Exit chars: 3, Load chars: 7".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn querystats_lines_reports_zero_counters_faithfully() {
+        let stats = ugaris_db::CharacterQueryStats::default();
+        assert_eq!(
+            querystats_lines(stats),
+            vec![
+                "Database Query Statistics:".to_string(),
+                "Character operations:".to_string(),
+                "Save chars: 0, Exit chars: 0, Load chars: 0".to_string(),
+            ]
+        );
     }
 }
 

@@ -6646,6 +6646,20 @@ async fn main() -> anyhow::Result<()> {
                         "applied #acreset lookups"
                     );
                 }
+                // `#querystats`/`/querystats`'s round trip against the
+                // live `PgCharacterRepository`'s in-memory counters -
+                // see `ugaris-core`'s `world/querystats.rs` module doc
+                // comment, queued by `apply_admin_character_command`
+                // above.
+                let querystats_events_applied =
+                    apply_querystats_events(&mut world, &character_repository);
+                if querystats_events_applied != 0 {
+                    info!(
+                        querystats_events_applied,
+                        tick = world.tick.0,
+                        "applied /querystats lookups"
+                    );
+                }
                 // `/jail`/`/unjail <name>`'s async DB round-trip (C
                 // `lookup_name`, `system/lookup.c:42-98` + `system/
                 // database/database_lookup.c:57-83`), queued by
