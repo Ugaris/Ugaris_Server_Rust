@@ -1118,6 +1118,180 @@ fn god_prof_command_reports_empty_profile_boundary_like_c() {
 }
 
 #[test]
+fn god_profinfo_command_reports_header_only_like_c() {
+    let mut world = World::default();
+    let god_id = CharacterId(7);
+    let mut god = login_character(god_id, &login_block("Godmode"), 1, 10, 10);
+    god.flags.insert(CharacterFlags::GOD);
+    world.add_character(god);
+    let mut runtime = ServerRuntime::default();
+
+    // C's `show_prof()` body is entirely console-only `xlog`, so the
+    // player only ever sees the one header line - this is not a stub,
+    // it's the real C player-facing behavior.
+    let result = apply_admin_character_command(&mut world, &mut runtime, god_id, "/profinfo", 1)
+        .expect("legacy cmdcmp accepts the full profinfo word");
+    assert_eq!(result.messages, vec!["Profiling Information:"]);
+
+    // minlen 5: "profi" is the shortest accepted abbreviation.
+    let result = apply_admin_character_command(&mut world, &mut runtime, god_id, "/profi", 1)
+        .expect("legacy cmdcmp accepts prefix length five");
+    assert_eq!(result.messages, vec!["Profiling Information:"]);
+
+    // Shorter than minlen 5 doesn't reach `profinfo` at all (nor `prof`,
+    // which requires the literal 4-letter word as its own prefix).
+    assert!(apply_admin_character_command(&mut world, &mut runtime, god_id, "/prof", 1).is_some());
+    let short = apply_admin_character_command(&mut world, &mut runtime, god_id, "/prof", 1)
+        .expect("prof itself is still its own separate command");
+    assert_eq!(short.messages, vec!["--- Profile ---", "---------------"]);
+
+    let mortal_id = CharacterId(8);
+    world.add_character(login_character(
+        mortal_id,
+        &login_block("Mortal"),
+        1,
+        11,
+        10,
+    ));
+    assert!(
+        apply_admin_character_command(&mut world, &mut runtime, mortal_id, "/profinfo", 1)
+            .is_none()
+    );
+}
+
+#[test]
+fn god_poolstats_command_reports_header_only_like_c() {
+    let mut world = World::default();
+    let god_id = CharacterId(7);
+    let mut god = login_character(god_id, &login_block("Godmode"), 1, 10, 10);
+    god.flags.insert(CharacterFlags::GOD);
+    world.add_character(god);
+    let mut runtime = ServerRuntime::default();
+
+    // C's `log_connection_pool_state()` body is entirely console-only
+    // `xlog`, so the player only ever sees the one header line.
+    let result = apply_admin_character_command(&mut world, &mut runtime, god_id, "/poolstats", 1)
+        .expect("legacy cmdcmp accepts the full poolstats word");
+    assert_eq!(result.messages, vec!["Connection Pool Statistics:"]);
+
+    // minlen 5: "pools" is the shortest accepted abbreviation.
+    let result = apply_admin_character_command(&mut world, &mut runtime, god_id, "/pools", 1)
+        .expect("legacy cmdcmp accepts prefix length five");
+    assert_eq!(result.messages, vec!["Connection Pool Statistics:"]);
+    assert!(apply_admin_character_command(&mut world, &mut runtime, god_id, "/pool", 1).is_none());
+
+    let mortal_id = CharacterId(8);
+    world.add_character(login_character(
+        mortal_id,
+        &login_block("Mortal"),
+        1,
+        11,
+        10,
+    ));
+    assert!(
+        apply_admin_character_command(&mut world, &mut runtime, mortal_id, "/poolstats", 1)
+            .is_none()
+    );
+}
+
+#[test]
+fn god_memstats_command_reports_live_world_counts() {
+    let mut world = World::default();
+    let god_id = CharacterId(7);
+    let mut god = login_character(god_id, &login_block("Godmode"), 1, 10, 10);
+    god.flags.insert(CharacterFlags::GOD);
+    world.add_character(god);
+    world.add_character(login_character(
+        CharacterId(8),
+        &login_block("Bystander"),
+        1,
+        11,
+        10,
+    ));
+
+    world.add_item(Item {
+        id: ItemId(1),
+        name: "Loose Item".to_string(),
+        description: String::new(),
+        flags: ItemFlags::empty(),
+        sprite: 0,
+        value: 0,
+        min_level: 0,
+        max_level: 0,
+        needs_class: 0,
+        template_id: 0,
+        owner_id: 0,
+        modifier_index: [0; 5],
+        modifier_value: [0; 5],
+        x: 0,
+        y: 0,
+        carried_by: None,
+        contained_in: None,
+        content_id: 0,
+        driver: 0,
+        driver_data: vec![0; 40],
+        serial: 1,
+    });
+    world.add_item(Item {
+        id: ItemId(2),
+        name: "A Sack".to_string(),
+        description: String::new(),
+        flags: ItemFlags::empty(),
+        sprite: 0,
+        value: 0,
+        min_level: 0,
+        max_level: 0,
+        needs_class: 0,
+        template_id: 0,
+        owner_id: 0,
+        modifier_index: [0; 5],
+        modifier_value: [0; 5],
+        x: 0,
+        y: 0,
+        carried_by: None,
+        contained_in: None,
+        content_id: 42,
+        driver: 0,
+        driver_data: vec![0; 40],
+        serial: 2,
+    });
+    world.effects.insert(1, Effect::new(EF_BURN, 1, 0, 100));
+    let mut runtime = ServerRuntime::default();
+
+    let result = apply_admin_character_command(&mut world, &mut runtime, god_id, "/memstats", 1)
+        .expect("legacy cmdcmp accepts the full memstats word");
+    assert_eq!(
+        result.messages,
+        vec![
+            "Memory Usage Statistics:",
+            "Total memory usage: 0 KB",
+            "Characters: 2 used",
+            "Items: 2 used",
+            "Effects: 1 used",
+            "Containers: 1 used",
+            "Messages: 0 used",
+        ]
+    );
+
+    // minlen 5: "memst" is the shortest accepted abbreviation.
+    assert!(apply_admin_character_command(&mut world, &mut runtime, god_id, "/memst", 1).is_some());
+    assert!(apply_admin_character_command(&mut world, &mut runtime, god_id, "/mems", 1).is_none());
+
+    let mortal_id = CharacterId(9);
+    world.add_character(login_character(
+        mortal_id,
+        &login_block("Mortal"),
+        1,
+        12,
+        10,
+    ));
+    assert!(
+        apply_admin_character_command(&mut world, &mut runtime, mortal_id, "/memstats", 1)
+            .is_none()
+    );
+}
+
+#[test]
 fn god_staffcode_command_sets_runtime_code_with_legacy_parsing() {
     let mut world = World::default();
     let god_id = CharacterId(7);

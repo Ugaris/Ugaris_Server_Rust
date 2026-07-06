@@ -9160,6 +9160,77 @@ Unlocks every quest NPC. Do these before any P4 area work.
   management (`acsiglist`/`acsigadd`/`acsigdel`) - or pick a different
   gap entirely from (b)-(g).
 
+  Progress Log (iteration 201): picked gap (d) from iteration 195's list -
+  `memstats`/`poolstats`/`querystats`/`profinfo` (`command.c:7476-7513`/
+  `6588-6612`), all `CF_GOD`-gated, `minlen=5`. Read all four C handlers
+  fully first and found a load-bearing distinction the task note hadn't
+  captured: `/profinfo` and `/poolstats` send exactly one header line to
+  the calling player in C (`"Profiling Information:"` /
+  `"Connection Pool Statistics:"`) and then call `show_prof()`
+  (`server.c:934-986`) / `log_connection_pool_state()`
+  (`database_connection_pool.c:23-37`), both of which are entirely
+  `xlog()` console-only output - the player never receives the real
+  profiler/pool data in the C oracle either. So a byte-faithful port of
+  those two is just the header line, no new instrumentation needed;
+  ported both into `apply_admin_character_command`
+  (`commands_admin.rs`), right after the existing `/prof` block.
+  `/memstats` is different: C sends every stat line to the player via
+  `log_char`, so a faithful port needs real numbers. Ported it using
+  `World`'s actual live collections as the closest honest equivalent:
+  `world.characters.len()`/`world.items.len()`/`world.effects.len()` for
+  `used_chars`/`used_items`/`used_effects`, and a `Item.content_id != 0`
+  filter (the same "container" derivation `world/consistency.rs` already
+  uses, since Rust has no separate container store) for
+  `used_containers`. Two C fields have no Rust analogue at all and are
+  reported as a fixed `0`, matching the established "no real equivalent
+  -> always report the harmless constant" convention (`#accleanup`'s
+  always-`0` heartbeat-log count is the precedent): `mem_usage` (C's
+  heap-allocation byte counter - Rust has no manual allocation tracking)
+  and `used_msgs` (C's pending-notify-message queue depth - Rust drains
+  notifications to packets every tick with no persistent countable
+  queue). Also dropped the C `used_X/MAXX` denominators entirely (just
+  "N used", no "/N"): `MAXCHARS`/`MAXITEM`/`MAXEFFECT` are themselves
+  runtime-configurable C globals, not fixed constants, and `World`'s
+  character/item/effect stores are unbounded `HashMap`s with no
+  analogous "capacity" concept to divide by. Left `/querystats`
+  (`command.c:6588-6618`) unported: unlike the other three, its 12+
+  counters (`query_cnt`, `query_stat[20]`, `save_char_cnt`, etc.) are
+  incremented at 6+ different call sites spread across
+  `system/database/database*.c` with no existing single choke point, and
+  `ugaris-db` has zero instrumentation of any kind today (confirmed by
+  grepping every repository file) - porting it means designing a new
+  cross-cutting counters mechanism threaded through every repository
+  method first, not a same-slice quick win like the other three turned
+  out to be. 3 new tests in `tests/commands_admin.rs`
+  (`god_profinfo_command_reports_header_only_like_c`,
+  `god_poolstats_command_reports_header_only_like_c` - both covering the
+  minlen-5 abbreviation boundary, the God-only gate, and the pre-existing
+  `/prof` command's independence from the new `/profinfo` one;
+  `god_memstats_command_reports_live_world_counts` - asserts the exact
+  message set against a world seeded with 2 characters, 1 loose item, 1
+  container item, and 1 effect). The pre-existing stray `/memstats`/
+  `/profinfo`/`/poolstats`/`/querystats` help-text lines in
+  `commands_player.rs` (noted as a trap in earlier iterations) were
+  already accurate for the first three now that dispatch exists;
+  `/querystats`'s help line remains a stray pointing at nothing, same as
+  before. `cargo fmt --all`, `cargo test --workspace` (2056 ugaris-core +
+  57 db + 3 net + 44 protocol + 886 server [+3], all green, zero
+  failures), `cargo build -p ugaris-server` / `cargo build --workspace`
+  clean with zero warnings, 10s boot-smoke confirmed "entering Rust game
+  loop" with no panic. Task stays `[~]`: `querystats` (this iteration's
+  gap (d) remainder) plus every item in gaps (a) `acflag`/`acunflag`/
+  `actrust`/`acuntrust`/`achistory`/`acsessions`/`acviolations`/
+  `acsharedip`/`acsharedhw`/`achighrisk`/`aclookup`/`acsiglist`/
+  `acsigadd`/`acsigdel`/`acwarn`, (b) `punish`/`rename`/`lockname`/
+  `unlockname`/`unpunish`/`exterminate`, (c) `look`/`klog`/`values`/
+  `showvalues`, (e) `showppd`, (f) `depotsort`, (g) `respawn` remain
+  unported. REMAINING: next iteration should either design `querystats`'s
+  counters mechanism (a real cross-cutting change, likely its own scoped
+  slice: pick one or two of the C counters - e.g. just `save_char_cnt`/
+  `load_char_cnt`/`exit_char_cnt` since `CharacterRepository` is a single
+  existing choke point for those three - rather than all 12+ at once) or
+  pick a different lettered gap from (a)/(b)/(c)/(e)/(f)/(g).
+
 - [ ] **Cross-area transfer** - the big multi-server feature. Every
   cross-area teleport currently returns "target server down". Decide the
   single-process stance first (likely: run multiple areas in one process
