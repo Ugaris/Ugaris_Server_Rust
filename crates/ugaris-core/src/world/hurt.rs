@@ -131,6 +131,16 @@ impl World {
                 target.flags.insert(CharacterFlags::UPDATE);
                 outcome.hp_damage = hp_damage;
 
+                // C `death.c:1213-1217`: `(ch[cn].flags & CF_PLAYER) &&
+                // ch[cn].driver == CDR_LOSTCON` unconditionally runs
+                // `player_use_potion`/`player_use_recall` here, before the
+                // death-threshold check just below - see
+                // `pending_lostcon_hurt_events`'s doc comment for why this
+                // only queues the reaction instead of running it inline.
+                if hp_damage != 0 && target_was_player && target.driver == CDR_LOSTCON {
+                    self.pending_lostcon_hurt_events.push(target_id);
+                }
+
                 if target.hp < POWERSCALE / 2 {
                     if target.flags.contains(CharacterFlags::NODEATH) {
                         target.hp = 1;
@@ -255,6 +265,15 @@ impl World {
 
     pub fn drain_legacy_hurt_events(&mut self) -> Vec<LegacyHurtEvent> {
         self.pending_hurt_events.drain(..).collect()
+    }
+
+    /// Drains the queue `apply_legacy_hurt` fills for every `CF_PLAYER`+
+    /// `CDR_LOSTCON` character that just took nonzero damage - see
+    /// `pending_lostcon_hurt_events`'s doc comment (`world/mod.rs`) and
+    /// `World::process_player_use_potion`/`process_player_use_recall`
+    /// (`world/lostcon.rs`).
+    pub fn drain_lostcon_hurt_events(&mut self) -> Vec<CharacterId> {
+        self.pending_lostcon_hurt_events.drain(..).collect()
     }
 
     pub fn apply_simple_baddy_death_driver(

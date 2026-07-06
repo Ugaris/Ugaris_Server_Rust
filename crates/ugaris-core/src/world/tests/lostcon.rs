@@ -573,3 +573,199 @@ fn queue_lostcon_idle_is_a_no_op_for_a_normal_playing_character() {
     let character = world.characters.get(&CharacterId(1)).unwrap();
     assert_eq!(character.action, 0);
 }
+
+// `process_player_use_potion` (C `tool.c::player_use_potion`,
+// `src/system/tool.c:3986-4011`, called from `death.c:1215`).
+
+#[test]
+fn use_potion_drinks_a_life_potion_when_hp_low() {
+    let mut world = World::default();
+    let mut lingering = lingering_lostcon(1);
+    lingering.values[1][CharacterValue::Hp as usize] = 10;
+    lingering.hp = 4_000; // below 10*1000/2 = 5000
+    let mut potion = potion_item(900, 5, 0);
+    potion.carried_by = Some(CharacterId(1));
+    world.items.insert(ItemId(900), potion);
+    lingering.inventory[30] = Some(ItemId(900));
+    assert!(world.spawn_character(lingering, 10, 10));
+
+    assert!(world.process_player_use_potion(
+        CharacterId(1),
+        1,
+        LostconSelfCareSuppressions::default()
+    ));
+
+    let character = world.characters.get(&CharacterId(1)).unwrap();
+    assert_eq!(character.inventory[30], None);
+    assert_eq!(world.items.get(&ItemId(900)).unwrap().carried_by, None);
+}
+
+#[test]
+fn use_potion_skips_a_combo_potion_when_nocombo_and_falls_back_to_a_pure_life_potion() {
+    let mut world = World::default();
+    let mut lingering = lingering_lostcon(1);
+    lingering.values[1][CharacterValue::Hp as usize] = 10;
+    lingering.hp = 4_000;
+    let mut combo = potion_item(900, 5, 5);
+    combo.carried_by = Some(CharacterId(1));
+    world.items.insert(ItemId(900), combo);
+    let mut pure_life = potion_item(901, 5, 0);
+    pure_life.carried_by = Some(CharacterId(1));
+    world.items.insert(ItemId(901), pure_life);
+    lingering.inventory[30] = Some(ItemId(900));
+    lingering.inventory[31] = Some(ItemId(901));
+    assert!(world.spawn_character(lingering, 10, 10));
+
+    let suppressions = LostconSelfCareSuppressions {
+        nocombo: true,
+        ..Default::default()
+    };
+    assert!(world.process_player_use_potion(CharacterId(1), 1, suppressions));
+
+    let character = world.characters.get(&CharacterId(1)).unwrap();
+    // The combo potion (slot 30) was skipped; the pure life potion (slot
+    // 31) was drunk instead.
+    assert_eq!(character.inventory[30], Some(ItemId(900)));
+    assert_eq!(character.inventory[31], None);
+    assert!(world.items.contains_key(&ItemId(900)));
+}
+
+#[test]
+fn use_potion_returns_false_when_hp_is_not_low() {
+    let mut world = World::default();
+    let mut lingering = lingering_lostcon(1);
+    lingering.values[1][CharacterValue::Hp as usize] = 10;
+    lingering.hp = 8_000;
+    let mut potion = potion_item(900, 5, 0);
+    potion.carried_by = Some(CharacterId(1));
+    world.items.insert(ItemId(900), potion);
+    lingering.inventory[30] = Some(ItemId(900));
+    assert!(world.spawn_character(lingering, 10, 10));
+
+    assert!(!world.process_player_use_potion(
+        CharacterId(1),
+        1,
+        LostconSelfCareSuppressions::default()
+    ));
+    let character = world.characters.get(&CharacterId(1)).unwrap();
+    assert_eq!(character.inventory[30], Some(ItemId(900)));
+}
+
+#[test]
+fn use_potion_is_a_no_op_for_a_normal_playing_character() {
+    let mut world = World::default();
+    let mut player = player_character(1);
+    player.values[1][CharacterValue::Hp as usize] = 10;
+    player.hp = 1_000;
+    assert!(world.spawn_character(player, 10, 10));
+
+    assert!(!world.process_player_use_potion(
+        CharacterId(1),
+        1,
+        LostconSelfCareSuppressions::default()
+    ));
+}
+
+// `process_player_use_recall` (C `tool.c::player_use_recall`,
+// `src/system/tool.c:4013-4035`, called from `death.c:1216`).
+
+fn recall_item(id: u32, level_requirement: u8) -> Item {
+    let mut recall = item(id, ItemFlags::empty());
+    recall.driver = IDR_RECALL;
+    recall.driver_data = vec![level_requirement];
+    recall
+}
+
+#[test]
+fn use_recall_teleports_to_the_rest_area_when_hp_low() {
+    let mut world = World::default();
+    let mut lingering = lingering_lostcon(1);
+    lingering.values[1][CharacterValue::Hp as usize] = 10;
+    lingering.hp = 3_000; // below 10*1000*2/5 = 4000, above the 500 death floor
+    lingering.level = 10;
+    lingering.rest_area = 1;
+    lingering.rest_x = 30;
+    lingering.rest_y = 40;
+    let mut recall = recall_item(900, 10);
+    recall.carried_by = Some(CharacterId(1));
+    world.items.insert(ItemId(900), recall);
+    lingering.inventory[30] = Some(ItemId(900));
+    assert!(world.spawn_character(lingering, 10, 10));
+
+    assert!(world.process_player_use_recall(CharacterId(1), 1, false));
+
+    let character = world.characters.get(&CharacterId(1)).unwrap();
+    assert_eq!((character.x, character.y), (30, 40));
+    assert_eq!(character.inventory[30], None);
+}
+
+#[test]
+fn use_recall_does_not_use_recall_after_already_dying() {
+    let mut world = World::default();
+    let mut lingering = lingering_lostcon(1);
+    lingering.values[1][CharacterValue::Hp as usize] = 10;
+    lingering.hp = 400; // below POWERSCALE/2 = 500 - "dont use recall after you died"
+    lingering.level = 10;
+    let mut recall = recall_item(900, 10);
+    recall.carried_by = Some(CharacterId(1));
+    world.items.insert(ItemId(900), recall);
+    lingering.inventory[30] = Some(ItemId(900));
+    assert!(world.spawn_character(lingering, 10, 10));
+
+    assert!(!world.process_player_use_recall(CharacterId(1), 1, false));
+
+    let character = world.characters.get(&CharacterId(1)).unwrap();
+    assert_eq!(character.inventory[30], Some(ItemId(900)));
+}
+
+#[test]
+fn use_recall_respects_norecall() {
+    let mut world = World::default();
+    let mut lingering = lingering_lostcon(1);
+    lingering.values[1][CharacterValue::Hp as usize] = 10;
+    lingering.hp = 3_000;
+    lingering.level = 10;
+    let mut recall = recall_item(900, 10);
+    recall.carried_by = Some(CharacterId(1));
+    world.items.insert(ItemId(900), recall);
+    lingering.inventory[30] = Some(ItemId(900));
+    assert!(world.spawn_character(lingering, 10, 10));
+
+    assert!(!world.process_player_use_recall(CharacterId(1), 1, true));
+
+    let character = world.characters.get(&CharacterId(1)).unwrap();
+    assert_eq!(character.inventory[30], Some(ItemId(900)));
+}
+
+#[test]
+fn use_recall_skips_an_item_whose_level_requirement_is_too_low() {
+    let mut world = World::default();
+    let mut lingering = lingering_lostcon(1);
+    lingering.values[1][CharacterValue::Hp as usize] = 10;
+    lingering.hp = 3_000;
+    lingering.level = 20;
+    // Requires level 10, but the character is level 20 - C's search
+    // condition `it[in].drdata[0] >= ch[cn].level` fails for this item.
+    let mut recall = recall_item(900, 10);
+    recall.carried_by = Some(CharacterId(1));
+    world.items.insert(ItemId(900), recall);
+    lingering.inventory[30] = Some(ItemId(900));
+    assert!(world.spawn_character(lingering, 10, 10));
+
+    assert!(!world.process_player_use_recall(CharacterId(1), 1, false));
+
+    let character = world.characters.get(&CharacterId(1)).unwrap();
+    assert_eq!(character.inventory[30], Some(ItemId(900)));
+}
+
+#[test]
+fn use_recall_is_a_no_op_for_a_normal_playing_character() {
+    let mut world = World::default();
+    let mut player = player_character(1);
+    player.values[1][CharacterValue::Hp as usize] = 10;
+    player.hp = 1_000;
+    player.level = 10;
+    assert!(world.spawn_character(player, 10, 10));
+
+    assert!(!world.process_player_use_recall(CharacterId(1), 1, false));
+}

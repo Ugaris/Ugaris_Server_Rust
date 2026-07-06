@@ -6698,6 +6698,41 @@ async fn main() -> anyhow::Result<()> {
                     info!(simple_baddy_attacks, tick = world.tick.0, "queued simple-baddy attack actions");
                 }
 
+                // C `death.c:1214-1217`'s `player_use_potion`/
+                // `player_use_recall` reaction to any hp damage a
+                // `CF_PLAYER`+`CDR_LOSTCON` character just took, wherever
+                // in this tick it happened (combat, spells, weather,
+                // traps, ...) - see `pending_lostcon_hurt_events`'s doc
+                // comment (`ugaris-core::world::mod`) for why this reacts
+                // once per tick here instead of running inline inside
+                // `apply_legacy_hurt` itself.
+                let lostcon_hurt_events = world.drain_lostcon_hurt_events();
+                let mut lostcon_self_defense_reactions = 0;
+                for character_id in lostcon_hurt_events {
+                    let Some(player) = runtime.lostcon_players.get(&character_id) else {
+                        continue;
+                    };
+                    let self_care_suppressions = player.lostcon_self_care_suppressions();
+                    let norecall = player.no_recall;
+                    if world.process_player_use_potion(
+                        character_id,
+                        config.area_id,
+                        self_care_suppressions,
+                    ) {
+                        lostcon_self_defense_reactions += 1;
+                    }
+                    if world.process_player_use_recall(character_id, config.area_id, norecall) {
+                        lostcon_self_defense_reactions += 1;
+                    }
+                }
+                if lostcon_self_defense_reactions != 0 {
+                    info!(
+                        lostcon_self_defense_reactions,
+                        tick = world.tick.0,
+                        "lostcon character(s) used a potion/recall in reaction to taking damage"
+                    );
+                }
+
                 // C `lostcon_driver`'s full per-tick body
                 // (`src/module/lostcon.c:117-220`) for every character
                 // currently lingering under `CDR_LOSTCON`: the message

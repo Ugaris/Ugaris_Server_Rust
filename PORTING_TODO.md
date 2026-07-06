@@ -11052,7 +11052,7 @@ Unlocks every quest NPC. Do these before any P4 area work.
    task open indefinitely, matching the iteration-218 precedent for
    closing tasks with only a permanently-deferred infra gap left.
 
-- [~] **Player-side fight-driver auto-combat (lostcon self-defense +
+- [x] **Player-side fight-driver auto-combat (lostcon self-defense +
   no*/auto* toggle family)** - `fight_driver_attack_enemy`/
   `fight_driver_attack_visible`/`fight_driver_follow_invisible`
   (`src/system/drvlib.c:1682-2320`) already have a substantial Rust port
@@ -11411,6 +11411,69 @@ Unlocks every quest NPC. Do these before any P4 area work.
   applied and the sound-effect check, before the death-threshold check).
   Once that's ported, every `no*`/`auto*` toggle in the whole family will
   have a real gameplay consumer and this task can finally close.
+
+  DONE (iteration 238): ported both `tool.c::player_use_potion`/
+  `player_use_recall` as `World::process_player_use_potion`/
+  `process_player_use_recall` (`world/lostcon.rs`) and wired them into
+  the hurt/damage path, closing this task. Resolved the architecture
+  question flagged above: `apply_legacy_hurt` (`world/hurt.rs`) cannot
+  build the C `no*` toggle suppressions inline - `World` has no access
+  to the session-owned `PlayerRuntime` that holds them (unlike every
+  other `pending_*` queue in `World`, which is drained and fully handled
+  inside `ugaris-core` itself). So `apply_legacy_hurt` now only queues a
+  new `pending_lostcon_hurt_events: Vec<CharacterId>` (pushed whenever a
+  `CF_PLAYER`+`CDR_LOSTCON` target takes nonzero hp damage, mirroring
+  C's own `(ch[cn].flags & CF_PLAYER) && ch[cn].driver == CDR_LOSTCON`
+  gate letter-for-letter) via a new `World::drain_lostcon_hurt_events`,
+  and `ugaris-server`'s tick loop (`main.rs`, right before the existing
+  per-lostcon-character message/precascade/attack/postcascade/idle
+  block) drains it and calls the two new `World` methods with
+  suppressions built from each character's stashed `lostcon_players`
+  `PlayerRuntime` (reusing `lostcon_self_care_suppressions()`'s
+  `nolife`/`nocombo` for the potion search, plus the previously-unused
+  `no_recall` field directly for the recall search). `process_player_
+  use_potion` mirrors C's `drdata[1]`-gated (life component) search via
+  a new `find_lostcon_life_potion` helper - a mirror image of the
+  existing `find_lostcon_mana_potion` with the `drdata[1]`/`drdata[2]`
+  roles swapped, matching C's two near-identical but distinct search
+  loops letter-for-letter. `process_player_use_recall` mirrors C's
+  `drdata[0] >= ch[cn].level`-gated search and the "don't use recall
+  after you died" `hp < POWERSCALE/2` early bail, reusing the existing
+  `IDR_RECALL`/`ItemDriverOutcome::Recall` dispatch path (newly
+  re-exported through `world/mod.rs` for this call site).
+  Disclosed, deliberate ordering deviation from C (documented on
+  `pending_lostcon_hurt_events`'s doc comment in `world/mod.rs` and at
+  each call site): C calls `player_use_potion`/`player_use_recall`
+  *inline*, between the sound-effect check and the death-threshold check
+  of the exact same `hurt()` invocation, so a potion/recall can rescue a
+  lingering character on the very hit that would otherwise kill it. This
+  Rust port instead reacts once per tick, after all of that tick's
+  damage has already been applied and any resulting death/nodeath/
+  god-save outcome already decided - so it cannot resurrect a character
+  mid-hit, only keep an already-still-alive lingering character topped
+  up before the tick ends. This is an accepted, disclosed architectural
+  gap (not a reason to keep the task open) given `World`'s hard
+  separation from session-owned `PlayerRuntime` state, consistent with
+  how every other `no*`/`auto*` consumer in this task was already wired
+  through the same `ugaris-server`-side suppression-building pattern.
+  13 new tests (4 in `world/tests/hurt.rs` covering `pending_
+  lostcon_hurt_events` queuing/draining and its `CF_PLAYER`/`CDR_LOSTCON`/
+  zero-damage gates, 9 in `world/tests/lostcon.rs` covering both new
+  methods' hp thresholds, `nolife`/`nocombo`/`norecall` gating, the
+  death-threshold recall bail, and the level-requirement search filter).
+  `cargo fmt --all`, `cargo test --workspace` (2217 ugaris-core [+13] +
+  78 db + 3 net + 45 protocol + 1073 server, all green, zero failures),
+  `cargo build -p ugaris-server`/`--workspace` clean with zero warnings,
+  10s boot-smoke confirmed "entering Rust game loop" with no panic and
+  hundreds of NPC ticks per game tick (no live players connected, so the
+  new per-tick drain/reaction loop was a no-op in practice, exercised
+  only by the new unit tests). Every `no*`/`auto*` toggle in the 16-
+  member family now has a real gameplay consumer
+  (`noball`/`nobless`/`nofireball`/`noflash`/`nofreeze`/`noheal`/
+  `noshield`/`nowarcry`/`nolife`/`nomana`/`nocombo`/`nomove`/`norecall`/
+  `nopulse` via the fight-driver engine/lostcon self-care/this iteration's
+  potion+recall reaction, `autobless`/`autopulse` via the iteration-237
+  player-tick consumer) - this task is complete.
 
 - [ ] **Macro-detection engine (`macro_driver`, `src/module/base.c:802-
   1243`, ~800 lines)** - anti-macro/anti-bot detection: activity

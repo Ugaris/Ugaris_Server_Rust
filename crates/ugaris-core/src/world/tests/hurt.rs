@@ -702,3 +702,66 @@ fn tile_special_check_applies_non_underwater_slowdeath_damage() {
     assert_eq!(player.hp, 750);
     assert!(player.flags.contains(CharacterFlags::UPDATE));
 }
+
+// `pending_lostcon_hurt_events`/`drain_lostcon_hurt_events` (C
+// `death.c:1213-1217`'s `player_use_potion`/`player_use_recall` reaction
+// gate).
+
+#[test]
+fn apply_legacy_hurt_queues_a_lostcon_hurt_event_for_a_damaged_lingering_player() {
+    let mut world = World::default();
+    let mut target = character(1);
+    target.flags.insert(CharacterFlags::PLAYER);
+    target.driver = CDR_LOSTCON;
+    target.hp = 5 * POWERSCALE;
+    assert!(world.spawn_character(target, 10, 10));
+
+    world.apply_legacy_hurt(CharacterId(1), None, POWERSCALE, 1, 0, 0);
+
+    assert_eq!(world.drain_lostcon_hurt_events(), vec![CharacterId(1)]);
+    // Draining empties the queue.
+    assert!(world.drain_lostcon_hurt_events().is_empty());
+}
+
+#[test]
+fn apply_legacy_hurt_does_not_queue_a_lostcon_event_for_a_normal_player() {
+    let mut world = World::default();
+    let mut target = character(1);
+    target.flags.insert(CharacterFlags::PLAYER);
+    target.hp = 5 * POWERSCALE;
+    assert!(world.spawn_character(target, 10, 10));
+
+    world.apply_legacy_hurt(CharacterId(1), None, POWERSCALE, 1, 0, 0);
+
+    assert!(world.drain_lostcon_hurt_events().is_empty());
+}
+
+#[test]
+fn apply_legacy_hurt_does_not_queue_a_lostcon_event_for_a_non_player_lostcon_npc() {
+    let mut world = World::default();
+    let mut target = character(1);
+    target.driver = CDR_LOSTCON;
+    target.hp = 5 * POWERSCALE;
+    assert!(world.spawn_character(target, 10, 10));
+
+    world.apply_legacy_hurt(CharacterId(1), None, POWERSCALE, 1, 0, 0);
+
+    assert!(world.drain_lostcon_hurt_events().is_empty());
+}
+
+#[test]
+fn apply_legacy_hurt_does_not_queue_a_lostcon_event_when_damage_is_fully_blocked() {
+    let mut world = World::default();
+    let mut target = character(1);
+    target.flags.insert(CharacterFlags::PLAYER);
+    target.driver = CDR_LOSTCON;
+    target.hp = 5 * POWERSCALE;
+    assert!(world.spawn_character(target, 10, 10));
+
+    // Zero damage in, zero damage out - C's `if (dam) {...}` gate around
+    // both the hp reduction and the `player_use_potion`/`player_use_recall`
+    // reaction never fires.
+    world.apply_legacy_hurt(CharacterId(1), None, 0, 1, 0, 0);
+
+    assert!(world.drain_lostcon_hurt_events().is_empty());
+}

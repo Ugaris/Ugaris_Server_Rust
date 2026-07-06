@@ -396,6 +396,106 @@ impl World {
         }
         do_idle(character, TICKS_PER_SECOND as i32).is_ok()
     }
+
+    /// C `tool.c::player_use_potion` (`src/system/tool.c:3986-4011`),
+    /// called from `death.c:1215` - see `World::drain_lostcon_hurt_events`
+    /// for how `ugaris-server` reaches this. Below 50% max hp, scans
+    /// inventory slots 30.. for the first `IDR_POTION` item with a life
+    /// component (`drdata[1]` set): a combo potion (`drdata[2]` also set)
+    /// is gated by `nocombo`, a pure life potion by `nolife`. No-op if
+    /// `character_id` is not currently `CDR_LOSTCON`, dead, or already at
+    /// or above the hp threshold.
+    pub fn process_player_use_potion(
+        &mut self,
+        character_id: CharacterId,
+        area_id: u16,
+        suppressions: LostconSelfCareSuppressions,
+    ) -> bool {
+        let Some(character) = self.characters.get(&character_id).cloned() else {
+            return false;
+        };
+        if character.driver != CDR_LOSTCON || character.flags.contains(CharacterFlags::DEAD) {
+            return false;
+        }
+        if character.hp >= character_value_present(&character, CharacterValue::Hp) * POWERSCALE / 2
+        {
+            return false;
+        }
+        if suppressions.nolife && suppressions.nocombo {
+            return false;
+        }
+        let Some(item_id) = find_lostcon_life_potion(&character, &self.items, suppressions) else {
+            return false;
+        };
+        self.execute_item_driver_request(
+            ItemDriverRequest::Driver {
+                driver: IDR_POTION,
+                item_id,
+                character_id,
+                spec: 0,
+            },
+            area_id,
+        );
+        true
+    }
+
+    /// C `tool.c::player_use_recall` (`src/system/tool.c:4013-4035`),
+    /// called from `death.c:1216` immediately after `player_use_potion` -
+    /// same reaction path, see `World::drain_lostcon_hurt_events`. Bails
+    /// out entirely if `hp` is already below the death threshold ("dont
+    /// use recall *after* you died"). Below 40% max hp and not
+    /// `norecall`, scans inventory slots 30.. for the first `IDR_RECALL`
+    /// item whose level requirement (`drdata[0]`) the character's own
+    /// level already meets, and uses it. No-op if `character_id` is not
+    /// currently `CDR_LOSTCON`, dead, or past the death threshold.
+    pub fn process_player_use_recall(
+        &mut self,
+        character_id: CharacterId,
+        area_id: u16,
+        norecall: bool,
+    ) -> bool {
+        let Some(character) = self.characters.get(&character_id).cloned() else {
+            return false;
+        };
+        if character.driver != CDR_LOSTCON || character.flags.contains(CharacterFlags::DEAD) {
+            return false;
+        }
+        if character.hp < POWERSCALE / 2 {
+            return false;
+        }
+        if norecall
+            || character.hp
+                >= character_value_present(&character, CharacterValue::Hp) * POWERSCALE * 2 / 5
+        {
+            return false;
+        }
+        let items = &self.items;
+        let Some(item_id) = character
+            .inventory
+            .get(30..INVENTORY_SIZE)
+            .unwrap_or_default()
+            .iter()
+            .flatten()
+            .find_map(|item_id| {
+                let item = items.get(item_id)?;
+                (item.driver == IDR_RECALL
+                    && u32::from(crate::item_driver::drdata(item, 0)) >= character.level)
+                    .then_some(*item_id)
+            })
+        else {
+            return false;
+        };
+        self.execute_item_driver_request(
+            ItemDriverRequest::Driver {
+                driver: IDR_RECALL,
+                item_id,
+                character_id,
+                spec: 0,
+            },
+            area_id,
+        );
+        true
+    }
 }
 
 /// C `lostcon_driver`'s low-mana potion search (`lostcon.c:176-187`):
@@ -425,6 +525,37 @@ fn find_lostcon_mana_potion(
                 (!suppressions.nocombo).then_some(*item_id)
             } else {
                 (!suppressions.nomana).then_some(*item_id)
+            }
+        })
+}
+
+/// C `tool.c::player_use_potion`'s inventory search (`tool.c:3997-4008`):
+/// scans inventory slots 30.. for the first `IDR_POTION` item with a life
+/// component (`drdata[1]`); a combo potion (`drdata[2]` also set) is
+/// gated by `nocombo`, a pure life potion by `nolife`. Mirror image of
+/// `find_lostcon_mana_potion` with the `drdata[1]`/`drdata[2]` roles
+/// swapped, matching C's two near-identical but distinct search loops
+/// letter-for-letter.
+fn find_lostcon_life_potion(
+    character: &Character,
+    items: &HashMap<ItemId, Item>,
+    suppressions: LostconSelfCareSuppressions,
+) -> Option<ItemId> {
+    character
+        .inventory
+        .get(30..INVENTORY_SIZE)
+        .unwrap_or_default()
+        .iter()
+        .flatten()
+        .find_map(|item_id| {
+            let item = items.get(item_id)?;
+            if item.driver != IDR_POTION || crate::item_driver::drdata(item, 1) == 0 {
+                return None;
+            }
+            if crate::item_driver::drdata(item, 2) != 0 {
+                (!suppressions.nocombo).then_some(*item_id)
+            } else {
+                (!suppressions.nolife).then_some(*item_id)
             }
         })
 }

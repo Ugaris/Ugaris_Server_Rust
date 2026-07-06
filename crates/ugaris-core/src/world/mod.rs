@@ -196,10 +196,10 @@ use crate::{
         IDR_FDEMONGATE, IDR_FDEMONLIGHT, IDR_FDEMONLOADER, IDR_FLAMETHROW, IDR_FLASK,
         IDR_FORESTCHEST, IDR_LAB2_WATER, IDR_LAB3_PLANT, IDR_LABTORCH, IDR_MINEDOOR,
         IDR_MINEGATEWAY, IDR_NIGHTLIGHT, IDR_ONOFFLIGHT, IDR_PALACEDOOR, IDR_POTION,
-        IDR_RANDOMSHRINE, IDR_STEPTRAP, IDR_SWAMPARM, IDR_SWAMPSPAWN, IDR_SWAMPWHISP, IDR_TORCH,
-        IDR_TOYLIGHT, IDR_WARPKEYDOOR, IDR_WARPTELEPORT, IDR_WARPTRIALDOOR, IID_AREA11_PALACEKEY,
-        IID_AREA14_SHRINEKEY, IID_AREA16_ROBBERKEY, IID_AREA16_SKELLYKEY, IID_AREA25_DOORKEY,
-        IID_AREA25_TELEKEY, IID_GENERIC_SPECIAL, IID_MINEGATEWAY,
+        IDR_RANDOMSHRINE, IDR_RECALL, IDR_STEPTRAP, IDR_SWAMPARM, IDR_SWAMPSPAWN, IDR_SWAMPWHISP,
+        IDR_TORCH, IDR_TOYLIGHT, IDR_WARPKEYDOOR, IDR_WARPTELEPORT, IDR_WARPTRIALDOOR,
+        IID_AREA11_PALACEKEY, IID_AREA14_SHRINEKEY, IID_AREA16_ROBBERKEY, IID_AREA16_SKELLYKEY,
+        IID_AREA25_DOORKEY, IID_AREA25_TELEKEY, IID_GENERIC_SPECIAL, IID_MINEGATEWAY,
     },
     item_ops::{consume_item, give_item_to_character, GiveItemFlags, GiveItemResult},
     legacy::{
@@ -353,6 +353,24 @@ pub struct World {
     pending_area_texts: Vec<WorldAreaText>,
     pending_channel_broadcasts: Vec<WorldChannelBroadcast>,
     pending_hurt_events: Vec<LegacyHurtEvent>,
+    /// `CharacterId`s that took nonzero hp damage this call while
+    /// `CF_PLAYER`+`CDR_LOSTCON`, matching C `death.c:1214`'s
+    /// `(ch[cn].flags & CF_PLAYER) && ch[cn].driver == CDR_LOSTCON` gate
+    /// around `player_use_potion`/`player_use_recall`. `World` has no
+    /// access to the session-owned `PlayerRuntime` that holds the `no*`
+    /// toggles those two C functions read, so - unlike every other
+    /// `pending_*` queue in this list, which is drained and fully handled
+    /// inside `ugaris-core` - this one is drained by `ugaris-server`
+    /// (`World::drain_lostcon_hurt_events`), which calls back into
+    /// `World::process_player_use_potion`/`process_player_use_recall`
+    /// with suppressions built from the stashed `PlayerRuntime` for each
+    /// currently-lingering character. See `world/lostcon.rs`'s module doc
+    /// comment for the resulting (disclosed) ordering deviation from C:
+    /// this reacts once per tick to whatever damage accumulated by the
+    /// time `ugaris-server`'s per-tick lostcon block runs, not literally
+    /// inline between the sound-effect check and the death-threshold
+    /// check of the exact same `hurt()` call C calls it from.
+    pending_lostcon_hurt_events: Vec<CharacterId>,
     pending_bank_events: Vec<BankEvent>,
     pending_trader_events: Vec<TraderEvent>,
     pending_clanmaster_events: Vec<ClanmasterEvent>,
