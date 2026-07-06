@@ -1821,6 +1821,44 @@ async fn main() -> anyhow::Result<()> {
                                     )
                                     .await;
                                 }
+                                if let Some((target_area, target_x, target_y)) =
+                                    result.cross_area_transfer
+                                {
+                                    // C `/office` (`command.c:9670-9676`)
+                                    // and `/goto`/`/jump` (`command.c:
+                                    // 8537-8567`/`8608-8625`): `change_area
+                                    // (cn, a, x, y)` reads `ch[cn].mirror`
+                                    // as the target mirror, which is set
+                                    // to `m` just beforehand when `m` is a
+                                    // valid mirror (`mirror_changed`
+                                    // above); otherwise the target mirror
+                                    // is the caller's own current area's
+                                    // mirror.
+                                    let target_mirror = result
+                                        .mirror_changed
+                                        .unwrap_or(u32::from(config.mirror_id));
+                                    let transferred = attempt_cross_area_transfer(
+                                        &mut world,
+                                        &mut runtime,
+                                        &character_repository,
+                                        &area_repository,
+                                        config.area_id,
+                                        config.mirror_id,
+                                        character_id,
+                                        target_area,
+                                        target_mirror,
+                                        target_x,
+                                        target_y,
+                                    )
+                                    .await;
+                                    if !transferred {
+                                        command_feedback.push((
+                                            character_id,
+                                            "Nothing happens - target area server is down."
+                                                .to_string(),
+                                        ));
+                                    }
+                                }
                                 continue;
                             }
                             if let Some(result) =

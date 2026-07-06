@@ -10536,6 +10536,56 @@ Unlocks every quest NPC. Do these before any P4 area work.
   has no live-Postgres test (same gap as before), only the 10s
   boot-smoke this iteration re-ran (confirmed "entering Rust game loop"
   with no panic).
+  REMAINING (iteration 223): wired the first of the 4 remaining
+  `area_id != config.area_id` call sites the prior note flagged:
+  **`/office`** (`commands_admin.rs`, C `command.c:9670-9676`) and
+  **`/goto`/`/jump`** (shared tail `finish_goto_jump`, C `command.c:
+  8537-8567`/`8608-8625`) - both changed to defer to `main.rs` instead of
+  eagerly returning "Nothing happens - target area server is down." A
+  new `KeyringCommandResult::cross_area_transfer: Option<(u16, u16,
+  u16)>` field (`(target_area, target_x, target_y)`) carries the
+  request out of `commands_admin.rs` (which has no DB handle or
+  `ServerRuntime` of its own, same reason `/kick`'s save and
+  `/setclanjewels`'s clan-log write are deferred to `main.rs`); the new
+  `main.rs` handling block (right after the existing
+  `clear_merchant_store_requested` block, before the shared `continue;`)
+  computes `target_mirror = result.mirror_changed.unwrap_or(u32::from(
+  config.mirror_id))` - matching C's `change_area` reading `ch[cn].
+  mirror`, which `/goto`/`/jump` already set to `m` beforehand via the
+  pre-existing `mirror_changed` field when a valid mirror was given,
+  else falling back to the caller's own current area's mirror (`/office`
+  never touches mirror at all, so it always takes this fallback) - then
+  calls `attempt_cross_area_transfer(...).await`, pushing the "Nothing
+  happens" feedback message only if the transfer itself fails, exactly
+  mirroring the `TransportTravel`/`ClanSpawnExit`/`MineGateway` arms'
+  shape. Updated the 4 existing unit tests that previously asserted the
+  eager "down" message for `/office` (cross-area case),
+  `/goto <name>` (cross-area `gl[]` entry), `/goto` with an explicit
+  mirror argument (the C quirk where a same-numbered target area still
+  routes through `change_area` once a mirror is given), and
+  `/jump <name>` (cross-area, non-GOD-restricted) to instead assert
+  `result.messages.is_empty()` plus the new `cross_area_transfer` field's
+  exact `(area, x, y)` tuple - no behavior regression, same C source
+  lines, just moved where the "down" message decision happens. No new
+  tests added: the shared `attempt_cross_area_transfer` helper already
+  has full coverage and the `main.rs` tick-loop dispatch itself has no
+  extracted/testable function to unit-test against (same gap noted for
+  every prior call site in this task). `cargo fmt --all`, `cargo test
+  --workspace` (2108 ugaris-core + 73 db + 3 net + 45 protocol + 1056
+  server, all green, zero failures), `cargo build -p ugaris-server`
+  clean with zero warnings, 10s boot-smoke confirmed "entering Rust game
+  loop" with no panic. Still missing, in the same priority order as
+  before: (1) the remaining 3 call sites - `/jail`/`/unjail`
+  (`world/jail.rs`, still needs its own pending-event-queue wiring path
+  since `World` has no DB handle or `ServerRuntime` of its own) and the
+  dungeon-master eviction rescue (`world/dungeon_master.rs`, same
+  constraint, and currently doesn't even show a "down" message since
+  there's no direct command caller to notify - see that file's own doc
+  comment); (2) a periodic `mark_alive` heartbeat (still startup-only);
+  (3) the three blocked commands (`/exterminate`/`/values`+
+  `/showvalues`/`/allow`) still need their own `server_chat`-equivalent
+  design once (1) fully lands. The actual DB-backed save+redirect path
+  itself still has no live-Postgres test (same gap as before).
 
 - [ ] **Player-side fight-driver auto-combat (lostcon self-defense +
   no*/auto* toggle family)** - `fight_driver_attack_enemy`/
@@ -11190,3 +11240,17 @@ Add one line per completed task: date, task, ledger section touched.
   dungeon-master rescue) and the periodic `mark_alive` heartbeat are
   unchanged; ledger row for `src/system/database/database_area.h`/`.c`
   updated with the iteration-222 note.
+- 2026-07-06: Cross-area transfer (P3, still `[~]`) - wired the
+  `/office` and `/goto`/`/jump` (`finish_goto_jump`) call sites into
+  `attempt_cross_area_transfer` via a new deferred
+  `KeyringCommandResult::cross_area_transfer` field, following the same
+  established pattern as `/kick`'s save and `/setclanjewels`'s clan-log
+  write (the command layer has no DB handle or `ServerRuntime` of its
+  own); target mirror resolves to `mirror_changed` when the command set
+  one, else the caller's own current area/mirror, matching C's
+  `change_area` reading `ch[cn].mirror`. Updated 4 existing unit tests
+  in `crates/ugaris-server/src/tests/commands_admin.rs` accordingly.
+  Remaining 3 call sites (`/jail`/`/unjail`, dungeon-master rescue) and
+  the periodic `mark_alive` heartbeat are unchanged; ledger row for
+  `src/system/database/database_area.h`/`.c` updated with the
+  iteration-223 note.

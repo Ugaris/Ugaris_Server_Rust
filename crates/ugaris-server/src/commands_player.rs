@@ -108,6 +108,21 @@ pub(crate) struct KeyringCommandResult {
     /// already established for the same "message a non-caller character"
     /// shape.
     pub(crate) other_messages: Vec<(CharacterId, String)>,
+    /// Set by `/office` (`command.c:9670-9676`) and `/goto`/`/jump`
+    /// (`finish_goto_jump`, ported from `command.c:8537-8567`/`8608-8625`)
+    /// when the target is in a different area than the caller's current
+    /// one: `(target_area, target_x, target_y)` for the call site to hand
+    /// to `attempt_cross_area_transfer`, matching C's `change_area(cn, a,
+    /// x, y)`. The command layer has no DB handle or `ServerRuntime` of
+    /// its own (same reason `/kick`'s save is deferred to the `main.rs`
+    /// call site instead of here); the target mirror is `mirror_changed`
+    /// when the command also set one (C sets `ch[cn].mirror = m` before
+    /// calling `change_area`, which then reads `ch[cn].mirror` via
+    /// `get_area`), else the caller's own current area/mirror. On
+    /// failure the call site must fall back to the same "Nothing happens
+    /// - target area server is down." message every other cross-area
+    /// teleport site in this codebase uses.
+    pub(crate) cross_area_transfer: Option<(u16, u16, u16)>,
 }
 
 pub(crate) fn legacy_light_red_text_bytes(message: &str) -> Vec<u8> {

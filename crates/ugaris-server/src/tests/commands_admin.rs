@@ -5204,7 +5204,7 @@ fn goto_command_named_location_normalizes_to_same_area() {
 }
 
 #[test]
-fn goto_command_named_location_cross_area_reports_server_down() {
+fn goto_command_named_location_cross_area_requests_transfer() {
     let mut world = goto_test_world();
     let character_id = CharacterId(1);
     let mut character = login_character(character_id, &login_block("Ralph"), 1, 10, 10);
@@ -5213,16 +5213,15 @@ fn goto_command_named_location_cross_area_reports_server_down() {
     let mut runtime = ServerRuntime::default();
 
     // "aston" is gl[]'s (167,188,3); the caller is in area 1, so C would
-    // call `change_area(cn, 3, 167, 188)` - real cross-process area
-    // handoff isn't ported, so this resolves to the same no-op message
-    // as every other cross-area teleport in this codebase.
+    // call `change_area(cn, 3, 167, 188)` - the command layer defers to
+    // the `main.rs` call site's `attempt_cross_area_transfer` via the
+    // `cross_area_transfer` field, matching every other cross-area
+    // teleport site in this codebase.
     let result =
         apply_admin_character_command(&mut world, &mut runtime, character_id, "/goto aston", 1)
             .expect("god goto command should be recognized");
-    assert_eq!(
-        result.messages,
-        vec!["Nothing happens - target area server is down.".to_string()]
-    );
+    assert!(result.messages.is_empty());
+    assert_eq!(result.cross_area_transfer, Some((3, 167, 188)));
     let character = world.characters.get(&character_id).unwrap();
     assert_eq!((character.x, character.y), (10, 10));
 }
@@ -5307,15 +5306,14 @@ fn goto_command_mirror_argument_always_forces_cross_area_handoff() {
     // same-area normalization (because `m != 0`) - so requesting a mirror
     // always routes through `change_area`, even when the area number is
     // literally the caller's own current area. Copied as-is (a real C
-    // quirk, not a Rust bug): the mirror still gets set even though the
-    // teleport itself becomes a same-area-server-down no-op.
+    // quirk, not a Rust bug): the mirror still gets set and the command
+    // layer still requests a cross-area transfer via `cross_area_transfer`
+    // even though the target area number equals the caller's own.
     let result =
         apply_admin_character_command(&mut world, &mut runtime, character_id, "/goto 50 60 0 3", 1)
             .expect("god goto command should be recognized");
-    assert_eq!(
-        result.messages,
-        vec!["Nothing happens - target area server is down.".to_string()]
-    );
+    assert!(result.messages.is_empty());
+    assert_eq!(result.cross_area_transfer, Some((1, 50, 60)));
     assert_eq!(result.mirror_changed, Some(3));
     let character = world.characters.get(&character_id).unwrap();
     assert_eq!((character.x, character.y), (10, 10));
@@ -5385,14 +5383,13 @@ fn jump_command_cross_area_is_not_restricted_to_god() {
     // Unlike `/goto`, C's `/jump` has no `CF_GOD`-only restriction on the
     // cross-area branch - a plain `CF_STAFF` caller jumping to a
     // different-area `gl[]` entry ("aston" is area 3) still reaches
-    // `change_area` in C, so it gets the same server-down no-op here.
+    // `change_area` in C, so it requests the same `cross_area_transfer`
+    // handoff here.
     let result =
         apply_admin_character_command(&mut world, &mut runtime, character_id, "/jump aston", 1)
             .expect("staff jump command should be recognized");
-    assert_eq!(
-        result.messages,
-        vec!["Nothing happens - target area server is down.".to_string()]
-    );
+    assert!(result.messages.is_empty());
+    assert_eq!(result.cross_area_transfer, Some((3, 167, 188)));
     let character = world.characters.get(&character_id).unwrap();
     assert_eq!((character.x, character.y), (10, 10));
 }
@@ -5757,7 +5754,7 @@ fn office_command_teleports_within_aston() {
 }
 
 #[test]
-fn office_command_from_another_area_reports_cross_area_no_op() {
+fn office_command_from_another_area_requests_cross_area_transfer() {
     let mut world = goto_test_world();
     let caller_id = CharacterId(1);
     let mut caller = login_character(caller_id, &login_block("Ralph"), 1, 10, 10);
@@ -5767,11 +5764,14 @@ fn office_command_from_another_area_reports_cross_area_no_op() {
 
     let result = apply_admin_character_command(&mut world, &mut runtime, caller_id, "/office", 1)
         .expect("god office command should be recognized");
-    assert_eq!(
-        result.messages,
-        vec!["Nothing happens - target area server is down.".to_string()]
-    );
-    // Position is unaffected since the cross-area handoff is unported.
+    // C `change_area(cn, 3, 11, 195)` - the command layer defers to the
+    // `main.rs` call site's `attempt_cross_area_transfer`, which reports
+    // "Nothing happens - target area server is down." only if the
+    // transfer itself fails (no DB/repositories configured in this unit
+    // test's harness).
+    assert!(result.messages.is_empty());
+    assert_eq!(result.cross_area_transfer, Some((3, 11, 195)));
+    // Position is unaffected until the call site's transfer succeeds.
     let character = world.characters.get(&caller_id).unwrap();
     assert_eq!((character.x, character.y), (10, 10));
 }

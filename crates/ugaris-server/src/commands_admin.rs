@@ -4631,10 +4631,11 @@ pub(crate) fn apply_admin_character_command(
     // C `/office` (`command.c:9670-9676`), `CF_GOD`-gated, `minlen=6` so
     // the full word must be typed (`cmdcmp(ptr, "office", 6)`, no
     // abbreviation). Teleports to the staff office in Aston (area 3,
-    // x:11, y:195): via `change_area` when not already in area 3
-    // (unported - resolves to the same "Nothing happens" message used by
-    // every other cross-area teleport in this codebase), or directly via
-    // `teleport_char_driver` when already in Aston.
+    // x:11, y:195): via `change_area` when not already in area 3 (the
+    // call site resolves `cross_area_transfer` via
+    // `attempt_cross_area_transfer`, falling back to the "Nothing
+    // happens" message on failure), or directly via `teleport_char_driver`
+    // when already in Aston.
     if lower == "office" {
         let Some(caller) = world.characters.get(&character_id) else {
             return Some(KeyringCommandResult::default());
@@ -4644,7 +4645,7 @@ pub(crate) fn apply_admin_character_command(
         }
         if area_id != 3 {
             return Some(KeyringCommandResult {
-                messages: vec!["Nothing happens - target area server is down.".to_string()],
+                cross_area_transfer: Some((3, 11, 195)),
                 ..Default::default()
             });
         }
@@ -7513,10 +7514,11 @@ fn resolve_goto_jump_args(
 
 /// Shared tail of `/goto` (`command.c:8537-8567`) and `/jump`
 /// (`command.c:8608-8625`): apply the mirror change (if any), then either
-/// same-area `teleport_char_driver` or the (unported) cross-area
-/// `change_area` handoff, which - like every other cross-area teleport in
-/// this codebase - resolves to a "target area server is down" message
-/// instead (see the `Cross-area transfer` PORTING_TODO task).
+/// same-area `teleport_char_driver` or the cross-area `change_area`
+/// handoff via `cross_area_transfer` (the `main.rs` call site resolves it
+/// through `attempt_cross_area_transfer`, falling back to the "target
+/// area server is down" message on failure, matching every other
+/// cross-area teleport site in this codebase).
 fn finish_goto_jump(
     world: &mut World,
     character_id: CharacterId,
@@ -7530,7 +7532,11 @@ fn finish_goto_jump(
 
     if a != 0 {
         return KeyringCommandResult {
-            messages: vec!["Nothing happens - target area server is down.".to_string()],
+            cross_area_transfer: Some((
+                a.clamp(0, i32::from(u16::MAX)) as u16,
+                x.clamp(0, i32::from(u16::MAX)) as u16,
+                y.clamp(0, i32::from(u16::MAX)) as u16,
+            )),
             mirror_changed,
             ..Default::default()
         };
