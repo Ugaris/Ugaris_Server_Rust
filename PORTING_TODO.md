@@ -7045,9 +7045,9 @@ Unlocks every quest NPC. Do these before any P4 area work.
   173 did one such pass and found `/killclub`/`/renclub` above as the
   only genuinely ready gap; everything else it checked was already
   correctly categorized somewhere in this note). `/showflags`/
-  `/toggleflag` done (see iteration 168); `/showppd` is NOT done (it
-  needs many more named `area1_ppd`/`area3_ppd` field accessors than
-  currently exist in `player.rs` - see that iteration's note).
+  `/toggleflag` done (see iteration 168); `/showppd` done (see iteration
+  204 - added the remaining `area1_ppd`/`area3_ppd` field accessors and
+  wired the `area1`/`area3` dump).
   `punish`/`shutup`/`rename`/`lockname`/`unlockname`/`unpunish` are all
   blocked on the unported async offline-name-lookup cache (`lookup_name`/
   `lookup.c`) and DB task-queue (`task_punish_player`/`do_rename`/etc.,
@@ -9341,6 +9341,41 @@ Unlocks every quest NPC. Do these before any P4 area work.
   picking this up should make an explicit scoped-design decision for one
   of those rather than looking for another already-solved building
   block, or pick a different lettered gap ((b)/(c)/(e)/(f)/(g)) entirely.
+
+  Progress Log (iteration 204): closed gap (e) - `/showppd <name> <ppd>`
+  (`cmd_showppd`, `command.c:275-346`, dispatch `command.c:8790-8837`,
+  `CF_GOD`-gated, exact-word only). Turned out smaller than the task
+  note's "needs many more named PPD field accessors" implied: `cmd_
+  showppd` only recognizes two PPD names (`area1`, `area3`), and the
+  `area3` branch reads exactly one field (`kassim_state`) - so the real
+  gap was "every remaining `area1_ppd` field" (28 of 39) plus that one
+  `area3_ppd` field. Added get/set accessor pairs for all 29
+  (`crates/ugaris-core/src/player.rs`), matching the pre-existing offset-
+  constant/`read_area1_i32`/`write_area1_i32` pattern; left the struct's
+  final two fields (`forest_ranger_state`/`_seen_timer`) unaccessored
+  since `cmd_showppd` never reads them either. Wired the command into
+  `apply_admin_character_command` (`commands_admin.rs`), right after
+  `/resetpent`: name/ppd-name parsing mirrors C's `isalpha`/`isalpha-or-
+  isdigit` scan loops via the pre-existing `take_legacy_alpha_name` plus
+  a new sibling `take_legacy_alnum_name` (`commands_player.rs`);
+  message-check order (online-name lookup, then "Which ppd?", then the
+  ppd-name match) and every `log_char` line's exact wording/grouping
+  match C. 2 new `ugaris-core` tests (26-field `area1` round trip,
+  `area3` `kassim_state`) and 6 new `tests/commands_admin.rs` tests
+  (God-only gate, offline/unknown-name message, missing-ppd-name, unknown
+  ppd name, a full 11-line `area1` dump against 37 seeded values, and an
+  `area3` dump proving only `kassim_state` leaks). `cargo fmt --all`,
+  `cargo test --workspace` (2060 ugaris-core [+2] + 58 db + 3 net + 44
+  protocol + 904 server [+6], all green, zero failures), `cargo build -p
+  ugaris-server` / `cargo build --workspace` clean with zero warnings,
+  10s boot-smoke confirmed the tick loop advancing with no panic. This
+  closes gap (e) entirely. REMAINING: gaps (a) (`ac*` `subscriber_id`/
+  aggregate-query/multi-account/signature-management sub-gaps), (b)
+  (`punish`/`rename`/`lockname`/`unlockname`/`unpunish`/`exterminate`,
+  DB task-queue), (c) (`look`/`klog`/`values`/`showvalues`, notes
+  subsystem/cross-area relay), (f) (`depotsort`, unported per-character
+  legacy depot storage), and (g) (`respawn`, low-value, likely permanent
+  skip) remain open - next iteration should pick one of (a)/(b)/(c)/(f).
 
 - [ ] **Cross-area transfer** - the big multi-server feature. Every
   cross-area teleport currently returns "target server down". Decide the

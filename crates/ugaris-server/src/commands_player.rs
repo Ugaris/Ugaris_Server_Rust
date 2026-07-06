@@ -308,6 +308,16 @@ pub(crate) fn take_legacy_alpha_name(text: &str) -> (&str, &str) {
     text.split_at(end)
 }
 
+/// C's `isalpha(*ptr) || isdigit(*ptr)` scan loop (e.g.
+/// `cmd_showppd`'s `ppdName` parse, `src/system/command.c:299-300`).
+pub(crate) fn take_legacy_alnum_name(text: &str) -> (&str, &str) {
+    let end = text
+        .char_indices()
+        .find_map(|(index, ch)| (!ch.is_ascii_alphanumeric()).then_some(index))
+        .unwrap_or(text.len());
+    text.split_at(end)
+}
+
 pub(crate) fn legacy_pk_command_verb(verb: &str) -> Option<&'static str> {
     let verb = verb.trim_start_matches('/').trim_start_matches('#');
     if verb.eq_ignore_ascii_case("playerkiller") {

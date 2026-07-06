@@ -390,6 +390,9 @@ const AREA3_PPD_IMP_KILLS_OFFSET: usize = 11 * 4;
 const AREA3_PPD_IMP_FLAGS_OFFSET: usize = 12 * 4;
 const AREA3_PPD_WILLIAM_STATE_OFFSET: usize = 13 * 4;
 const AREA3_PPD_HERMIT_STATE_OFFSET: usize = 14 * 4;
+// Backs `cmd_showppd`'s `/showppd <name> area3` branch
+// (`src/system/command.c:339-346`), the only `area3_ppd` field it reads.
+const AREA3_PPD_KASSIM_STATE_OFFSET: usize = 15 * 4;
 // `struct area1_ppd` field offsets (`src/area/1/area1.h:24-75`), in
 // declaration order (0-based `int` index * 4). Only the fields consumed by
 // `questlog_init_area1` (`src/system/questlog.c:828-1039`) have named
@@ -405,6 +408,35 @@ const AREA1_PPD_RESKIN_STATE_OFFSET: usize = 19 * 4;
 const AREA1_PPD_BRITHILDIE_STATE_OFFSET: usize = 24 * 4;
 const AREA1_PPD_CAMHERMIT_STATE_OFFSET: usize = 32 * 4;
 const AREA1_PPD_JESSICA_STATE_OFFSET: usize = 35 * 4;
+// The remaining `area1_ppd` fields (`src/area/1/area1.h:24-75`) have no
+// gameplay driver in Rust yet; these accessors exist solely to back
+// `cmd_showppd` (`src/system/command.c:275-341`, `/showppd <name> area1`).
+const AREA1_PPD_YOAKIN_SEEN_TIMER_OFFSET: usize = 1 * 4;
+const AREA1_PPD_GWENDY_SEEN_TIMER_OFFSET: usize = 3 * 4;
+const AREA1_PPD_TERION_STATE_OFFSET: usize = 4 * 4;
+const AREA1_PPD_FLAGS_OFFSET: usize = 6 * 4;
+const AREA1_PPD_DARKIN_STATE_OFFSET: usize = 7 * 4;
+const AREA1_PPD_GEREWIN_STATE_OFFSET: usize = 8 * 4;
+const AREA1_PPD_GEREWIN_SEEN_TIMER_OFFSET: usize = 9 * 4;
+const AREA1_PPD_LYDIA_SEEN_TIMER_OFFSET: usize = 12 * 4;
+const AREA1_PPD_ASTURIN_STATE_OFFSET: usize = 13 * 4;
+const AREA1_PPD_ASTURIN_SEEN_TIMER_OFFSET: usize = 14 * 4;
+const AREA1_PPD_GUIWYNN_SEEN_TIMER_OFFSET: usize = 16 * 4;
+const AREA1_PPD_LOGAIN_SEEN_TIMER_OFFSET: usize = 18 * 4;
+const AREA1_PPD_RESKIN_SEEN_TIMER_OFFSET: usize = 20 * 4;
+const AREA1_PPD_RESKIN_GOT_BITS_OFFSET: usize = 21 * 4;
+const AREA1_PPD_SHRIKE_STATE_OFFSET: usize = 22 * 4;
+const AREA1_PPD_SHRIKE_FAILS_OFFSET: usize = 23 * 4;
+const AREA1_PPD_BRITHILDIE_SEEN_TIMER_OFFSET: usize = 25 * 4;
+const AREA1_PPD_JIU_STATE_OFFSET: usize = 26 * 4;
+const AREA1_PPD_JIU_SEEN_TIMER_OFFSET: usize = 27 * 4;
+const AREA1_PPD_GREETER_STATE_OFFSET: usize = 28 * 4;
+const AREA1_PPD_GREETER_SEEN_TIMER_OFFSET: usize = 29 * 4;
+const AREA1_PPD_ACLERK_STATE_OFFSET: usize = 30 * 4;
+const AREA1_PPD_ACLERK_SEEN_TIMER_OFFSET: usize = 31 * 4;
+const AREA1_PPD_CAMHERMIT_SEEN_TIMER_OFFSET: usize = 33 * 4;
+const AREA1_PPD_CAMHERMIT_KILLS_OFFSET: usize = 34 * 4;
+const AREA1_PPD_JESSICA_SEEN_TIMER_OFFSET: usize = 36 * 4;
 // `struct nomad_ppd` field offsets (`src/common/nomad_ppd.h:9-13`):
 // `nomad_state[MAXNOMAD]` then `nomad_win[MAXNOMAD]` then the four open-
 // roll/bet ints then `tribe_member`.
@@ -3512,6 +3544,17 @@ impl PlayerRuntime {
         self.write_area3_i32(AREA3_PPD_HERMIT_STATE_OFFSET, state);
     }
 
+    /// Backs `cmd_showppd`'s `/showppd <name> area3` branch
+    /// (`src/system/command.c:339-346`); no gameplay driver reads/writes
+    /// this yet.
+    pub fn area3_kassim_state(&self) -> i32 {
+        self.read_area3_i32(AREA3_PPD_KASSIM_STATE_OFFSET)
+    }
+
+    pub fn set_area3_kassim_state(&mut self, state: i32) {
+        self.write_area3_i32(AREA3_PPD_KASSIM_STATE_OFFSET, state);
+    }
+
     /// Snapshot of the `area3_ppd` fields consumed by
     /// `questlog_init_area3` (`src/system/questlog.c:1040-1203`), for
     /// `crate::quest::init_area3_quests`.
@@ -3674,6 +3717,219 @@ impl PlayerRuntime {
 
     pub fn set_area1_jessica_state(&mut self, state: i32) {
         self.write_area1_i32(AREA1_PPD_JESSICA_STATE_OFFSET, state);
+    }
+
+    // The remaining `area1_ppd` getters below have no gameplay driver in
+    // Rust yet (no NPC state machine sets them); they exist solely to
+    // back `cmd_showppd`'s `/showppd <name> area1` branch
+    // (`src/system/command.c:275-336`), which reads every field of the
+    // struct for a `CF_GOD` debug dump.
+    pub fn area1_yoakin_seen_timer(&self) -> i32 {
+        self.read_area1_i32(AREA1_PPD_YOAKIN_SEEN_TIMER_OFFSET)
+    }
+
+    pub fn set_area1_yoakin_seen_timer(&mut self, value: i32) {
+        self.write_area1_i32(AREA1_PPD_YOAKIN_SEEN_TIMER_OFFSET, value);
+    }
+
+    pub fn area1_gwendy_seen_timer(&self) -> i32 {
+        self.read_area1_i32(AREA1_PPD_GWENDY_SEEN_TIMER_OFFSET)
+    }
+
+    pub fn set_area1_gwendy_seen_timer(&mut self, value: i32) {
+        self.write_area1_i32(AREA1_PPD_GWENDY_SEEN_TIMER_OFFSET, value);
+    }
+
+    pub fn area1_terion_state(&self) -> i32 {
+        self.read_area1_i32(AREA1_PPD_TERION_STATE_OFFSET)
+    }
+
+    pub fn set_area1_terion_state(&mut self, state: i32) {
+        self.write_area1_i32(AREA1_PPD_TERION_STATE_OFFSET, state);
+    }
+
+    pub fn area1_flags(&self) -> i32 {
+        self.read_area1_i32(AREA1_PPD_FLAGS_OFFSET)
+    }
+
+    pub fn set_area1_flags(&mut self, flags: i32) {
+        self.write_area1_i32(AREA1_PPD_FLAGS_OFFSET, flags);
+    }
+
+    pub fn area1_darkin_state(&self) -> i32 {
+        self.read_area1_i32(AREA1_PPD_DARKIN_STATE_OFFSET)
+    }
+
+    pub fn set_area1_darkin_state(&mut self, state: i32) {
+        self.write_area1_i32(AREA1_PPD_DARKIN_STATE_OFFSET, state);
+    }
+
+    pub fn area1_gerewin_state(&self) -> i32 {
+        self.read_area1_i32(AREA1_PPD_GEREWIN_STATE_OFFSET)
+    }
+
+    pub fn set_area1_gerewin_state(&mut self, state: i32) {
+        self.write_area1_i32(AREA1_PPD_GEREWIN_STATE_OFFSET, state);
+    }
+
+    pub fn area1_gerewin_seen_timer(&self) -> i32 {
+        self.read_area1_i32(AREA1_PPD_GEREWIN_SEEN_TIMER_OFFSET)
+    }
+
+    pub fn set_area1_gerewin_seen_timer(&mut self, value: i32) {
+        self.write_area1_i32(AREA1_PPD_GEREWIN_SEEN_TIMER_OFFSET, value);
+    }
+
+    pub fn area1_lydia_seen_timer(&self) -> i32 {
+        self.read_area1_i32(AREA1_PPD_LYDIA_SEEN_TIMER_OFFSET)
+    }
+
+    pub fn set_area1_lydia_seen_timer(&mut self, value: i32) {
+        self.write_area1_i32(AREA1_PPD_LYDIA_SEEN_TIMER_OFFSET, value);
+    }
+
+    pub fn area1_asturin_state(&self) -> i32 {
+        self.read_area1_i32(AREA1_PPD_ASTURIN_STATE_OFFSET)
+    }
+
+    pub fn set_area1_asturin_state(&mut self, state: i32) {
+        self.write_area1_i32(AREA1_PPD_ASTURIN_STATE_OFFSET, state);
+    }
+
+    pub fn area1_asturin_seen_timer(&self) -> i32 {
+        self.read_area1_i32(AREA1_PPD_ASTURIN_SEEN_TIMER_OFFSET)
+    }
+
+    pub fn set_area1_asturin_seen_timer(&mut self, value: i32) {
+        self.write_area1_i32(AREA1_PPD_ASTURIN_SEEN_TIMER_OFFSET, value);
+    }
+
+    pub fn area1_guiwynn_seen_timer(&self) -> i32 {
+        self.read_area1_i32(AREA1_PPD_GUIWYNN_SEEN_TIMER_OFFSET)
+    }
+
+    pub fn set_area1_guiwynn_seen_timer(&mut self, value: i32) {
+        self.write_area1_i32(AREA1_PPD_GUIWYNN_SEEN_TIMER_OFFSET, value);
+    }
+
+    pub fn area1_logain_seen_timer(&self) -> i32 {
+        self.read_area1_i32(AREA1_PPD_LOGAIN_SEEN_TIMER_OFFSET)
+    }
+
+    pub fn set_area1_logain_seen_timer(&mut self, value: i32) {
+        self.write_area1_i32(AREA1_PPD_LOGAIN_SEEN_TIMER_OFFSET, value);
+    }
+
+    pub fn area1_reskin_seen_timer(&self) -> i32 {
+        self.read_area1_i32(AREA1_PPD_RESKIN_SEEN_TIMER_OFFSET)
+    }
+
+    pub fn set_area1_reskin_seen_timer(&mut self, value: i32) {
+        self.write_area1_i32(AREA1_PPD_RESKIN_SEEN_TIMER_OFFSET, value);
+    }
+
+    pub fn area1_reskin_got_bits(&self) -> i32 {
+        self.read_area1_i32(AREA1_PPD_RESKIN_GOT_BITS_OFFSET)
+    }
+
+    pub fn set_area1_reskin_got_bits(&mut self, value: i32) {
+        self.write_area1_i32(AREA1_PPD_RESKIN_GOT_BITS_OFFSET, value);
+    }
+
+    pub fn area1_shrike_state(&self) -> i32 {
+        self.read_area1_i32(AREA1_PPD_SHRIKE_STATE_OFFSET)
+    }
+
+    pub fn set_area1_shrike_state(&mut self, state: i32) {
+        self.write_area1_i32(AREA1_PPD_SHRIKE_STATE_OFFSET, state);
+    }
+
+    pub fn area1_shrike_fails(&self) -> i32 {
+        self.read_area1_i32(AREA1_PPD_SHRIKE_FAILS_OFFSET)
+    }
+
+    pub fn set_area1_shrike_fails(&mut self, value: i32) {
+        self.write_area1_i32(AREA1_PPD_SHRIKE_FAILS_OFFSET, value);
+    }
+
+    pub fn area1_brithildie_seen_timer(&self) -> i32 {
+        self.read_area1_i32(AREA1_PPD_BRITHILDIE_SEEN_TIMER_OFFSET)
+    }
+
+    pub fn set_area1_brithildie_seen_timer(&mut self, value: i32) {
+        self.write_area1_i32(AREA1_PPD_BRITHILDIE_SEEN_TIMER_OFFSET, value);
+    }
+
+    pub fn area1_jiu_state(&self) -> i32 {
+        self.read_area1_i32(AREA1_PPD_JIU_STATE_OFFSET)
+    }
+
+    pub fn set_area1_jiu_state(&mut self, state: i32) {
+        self.write_area1_i32(AREA1_PPD_JIU_STATE_OFFSET, state);
+    }
+
+    pub fn area1_jiu_seen_timer(&self) -> i32 {
+        self.read_area1_i32(AREA1_PPD_JIU_SEEN_TIMER_OFFSET)
+    }
+
+    pub fn set_area1_jiu_seen_timer(&mut self, value: i32) {
+        self.write_area1_i32(AREA1_PPD_JIU_SEEN_TIMER_OFFSET, value);
+    }
+
+    pub fn area1_greeter_state(&self) -> i32 {
+        self.read_area1_i32(AREA1_PPD_GREETER_STATE_OFFSET)
+    }
+
+    pub fn set_area1_greeter_state(&mut self, state: i32) {
+        self.write_area1_i32(AREA1_PPD_GREETER_STATE_OFFSET, state);
+    }
+
+    pub fn area1_greeter_seen_timer(&self) -> i32 {
+        self.read_area1_i32(AREA1_PPD_GREETER_SEEN_TIMER_OFFSET)
+    }
+
+    pub fn set_area1_greeter_seen_timer(&mut self, value: i32) {
+        self.write_area1_i32(AREA1_PPD_GREETER_SEEN_TIMER_OFFSET, value);
+    }
+
+    pub fn area1_aclerk_state(&self) -> i32 {
+        self.read_area1_i32(AREA1_PPD_ACLERK_STATE_OFFSET)
+    }
+
+    pub fn set_area1_aclerk_state(&mut self, state: i32) {
+        self.write_area1_i32(AREA1_PPD_ACLERK_STATE_OFFSET, state);
+    }
+
+    pub fn area1_aclerk_seen_timer(&self) -> i32 {
+        self.read_area1_i32(AREA1_PPD_ACLERK_SEEN_TIMER_OFFSET)
+    }
+
+    pub fn set_area1_aclerk_seen_timer(&mut self, value: i32) {
+        self.write_area1_i32(AREA1_PPD_ACLERK_SEEN_TIMER_OFFSET, value);
+    }
+
+    pub fn area1_camhermit_seen_timer(&self) -> i32 {
+        self.read_area1_i32(AREA1_PPD_CAMHERMIT_SEEN_TIMER_OFFSET)
+    }
+
+    pub fn set_area1_camhermit_seen_timer(&mut self, value: i32) {
+        self.write_area1_i32(AREA1_PPD_CAMHERMIT_SEEN_TIMER_OFFSET, value);
+    }
+
+    pub fn area1_camhermit_kills(&self) -> i32 {
+        self.read_area1_i32(AREA1_PPD_CAMHERMIT_KILLS_OFFSET)
+    }
+
+    pub fn set_area1_camhermit_kills(&mut self, value: i32) {
+        self.write_area1_i32(AREA1_PPD_CAMHERMIT_KILLS_OFFSET, value);
+    }
+
+    pub fn area1_jessica_seen_timer(&self) -> i32 {
+        self.read_area1_i32(AREA1_PPD_JESSICA_SEEN_TIMER_OFFSET)
+    }
+
+    pub fn set_area1_jessica_seen_timer(&mut self, value: i32) {
+        self.write_area1_i32(AREA1_PPD_JESSICA_SEEN_TIMER_OFFSET, value);
     }
 
     /// Snapshot of the `area1_ppd` fields consumed by
@@ -8765,6 +9021,86 @@ mod tests {
         assert_eq!(state.crypt_state, 15);
         assert_eq!(state.william_state, 7);
         assert_eq!(state.hermit_state, 5);
+    }
+
+    #[test]
+    fn area3_ppd_exposes_kassim_state_for_showppd() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.set_area3_kassim_state(9);
+
+        let encoded = player.encode_legacy_area3_ppd();
+        assert_eq!(read_i32(&encoded, AREA3_PPD_KASSIM_STATE_OFFSET), 9);
+
+        let mut decoded = PlayerRuntime::connected(2, 0);
+        assert!(decoded.decode_legacy_area3_ppd(&encoded));
+        assert_eq!(decoded.area3_kassim_state(), 9);
+    }
+
+    /// Round-trips every `area1_ppd` field `cmd_showppd`'s `/showppd <name>
+    /// area1` branch reads (`src/system/command.c:303-336`) that had no
+    /// prior accessor - i.e. everything except the 10 quest-driver states
+    /// already covered by `area1_ppd_codec_matches_legacy_c_layout` and the
+    /// two never-read `forest_ranger_*` fields.
+    #[test]
+    fn area1_ppd_exposes_remaining_fields_for_showppd() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.set_area1_yoakin_seen_timer(1);
+        player.set_area1_gwendy_seen_timer(2);
+        player.set_area1_terion_state(3);
+        player.set_area1_flags(4);
+        player.set_area1_darkin_state(5);
+        player.set_area1_gerewin_state(6);
+        player.set_area1_gerewin_seen_timer(7);
+        player.set_area1_lydia_seen_timer(8);
+        player.set_area1_asturin_state(9);
+        player.set_area1_asturin_seen_timer(10);
+        player.set_area1_guiwynn_seen_timer(11);
+        player.set_area1_logain_seen_timer(12);
+        player.set_area1_reskin_seen_timer(13);
+        player.set_area1_reskin_got_bits(14);
+        player.set_area1_shrike_state(15);
+        player.set_area1_shrike_fails(16);
+        player.set_area1_brithildie_seen_timer(17);
+        player.set_area1_jiu_state(18);
+        player.set_area1_jiu_seen_timer(19);
+        player.set_area1_greeter_state(20);
+        player.set_area1_greeter_seen_timer(21);
+        player.set_area1_aclerk_state(22);
+        player.set_area1_aclerk_seen_timer(23);
+        player.set_area1_camhermit_seen_timer(24);
+        player.set_area1_camhermit_kills(25);
+        player.set_area1_jessica_seen_timer(26);
+
+        let encoded = player.encode_legacy_area1_ppd();
+        let mut decoded = PlayerRuntime::connected(2, 0);
+        assert!(decoded.decode_legacy_area1_ppd(&encoded));
+
+        assert_eq!(decoded.area1_yoakin_seen_timer(), 1);
+        assert_eq!(decoded.area1_gwendy_seen_timer(), 2);
+        assert_eq!(decoded.area1_terion_state(), 3);
+        assert_eq!(decoded.area1_flags(), 4);
+        assert_eq!(decoded.area1_darkin_state(), 5);
+        assert_eq!(decoded.area1_gerewin_state(), 6);
+        assert_eq!(decoded.area1_gerewin_seen_timer(), 7);
+        assert_eq!(decoded.area1_lydia_seen_timer(), 8);
+        assert_eq!(decoded.area1_asturin_state(), 9);
+        assert_eq!(decoded.area1_asturin_seen_timer(), 10);
+        assert_eq!(decoded.area1_guiwynn_seen_timer(), 11);
+        assert_eq!(decoded.area1_logain_seen_timer(), 12);
+        assert_eq!(decoded.area1_reskin_seen_timer(), 13);
+        assert_eq!(decoded.area1_reskin_got_bits(), 14);
+        assert_eq!(decoded.area1_shrike_state(), 15);
+        assert_eq!(decoded.area1_shrike_fails(), 16);
+        assert_eq!(decoded.area1_brithildie_seen_timer(), 17);
+        assert_eq!(decoded.area1_jiu_state(), 18);
+        assert_eq!(decoded.area1_jiu_seen_timer(), 19);
+        assert_eq!(decoded.area1_greeter_state(), 20);
+        assert_eq!(decoded.area1_greeter_seen_timer(), 21);
+        assert_eq!(decoded.area1_aclerk_state(), 22);
+        assert_eq!(decoded.area1_aclerk_seen_timer(), 23);
+        assert_eq!(decoded.area1_camhermit_seen_timer(), 24);
+        assert_eq!(decoded.area1_camhermit_kills(), 25);
+        assert_eq!(decoded.area1_jessica_seen_timer(), 26);
     }
 
     #[test]

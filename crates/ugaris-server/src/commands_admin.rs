@@ -4927,6 +4927,138 @@ pub(crate) fn apply_admin_character_command(
         });
     }
 
+    // C `/showppd <name> <ppd>` (`command.c:8790-8837` dispatch,
+    // `cmdcmp(ptr, "showppd", 7)` - `minlen` == `strlen("showppd")`, exact
+    // word only, `CF_GOD`-gated) + `cmd_showppd` (`command.c:275-346`): an
+    // online-only (not `lookup_name`-backed, unlike most other by-name
+    // debug commands) `CF_GOD` debug dump of one named `struct` PPD block
+    // for a target character. Only two PPD names are recognized in the C
+    // source (verified by reading the whole function): `area1` prints
+    // every field of `struct area1_ppd`, `area3` prints only
+    // `kassim_state` out of `struct area3_ppd` (the other 17 fields of
+    // that struct are simply never read by this command). Name/ppd-name
+    // parsing mirrors C's own `isalpha`/`isalpha-or-isdigit` scan loops
+    // exactly (`take_legacy_alpha_name`/`take_legacy_alnum_name`), and the
+    // "not found"/"which ppd"/"no ppd by that name" messages are checked
+    // in the same order C does: online-name lookup first, then the
+    // remaining-argument-empty check, then the ppd-name match.
+    if lower == "showppd" {
+        let Some(caller) = world.characters.get(&character_id) else {
+            return Some(KeyringCommandResult::default());
+        };
+        if !caller.flags.contains(CharacterFlags::GOD) {
+            return None;
+        }
+        let (name, remainder) = take_legacy_alpha_name(rest.trim_start());
+        let Some(target_id) = find_online_character_by_name(world, name) else {
+            return Some(KeyringCommandResult {
+                messages: vec![format!(
+                    "Sorry, no player by the name {name} online (offline chars not possible)."
+                )],
+                ..Default::default()
+            });
+        };
+        let ppd_rest = remainder.trim_start();
+        if ppd_rest.is_empty() {
+            return Some(KeyringCommandResult {
+                messages: vec!["Which ppd?".to_string()],
+                ..Default::default()
+            });
+        }
+        let (ppd_name, _) = take_legacy_alnum_name(ppd_rest);
+        let target_name = world
+            .characters
+            .get(&target_id)
+            .map(|character| character.name.clone())
+            .unwrap_or_default();
+        let messages = if ppd_name.eq_ignore_ascii_case("area1") {
+            match runtime.player_for_character(target_id) {
+                Some(player) => vec![
+                    format!("Area1 ppd of {target_name}"),
+                    format!(
+                        "Yoakin state: {}, Yoakin seen timer: {}, Greeter state: {}, Greeter seen timer: {}",
+                        player.area1_yoakin_state(),
+                        player.area1_yoakin_seen_timer(),
+                        player.area1_greeter_state(),
+                        player.area1_greeter_seen_timer(),
+                    ),
+                    format!(
+                        "AClerk state: {}, AClerk seen timer: {}, Cameron Hermit state: {}, Cameron Hermit seen timer: {}, Cameron Hermit kill count: {}",
+                        player.area1_aclerk_state(),
+                        player.area1_aclerk_seen_timer(),
+                        player.area1_camhermit_state(),
+                        player.area1_camhermit_seen_timer(),
+                        player.area1_camhermit_kills(),
+                    ),
+                    format!(
+                        "Jessica state: {}, Jessica seen timer: {}, Gwendolyn state: {}, Gwendolyn seen timer: {}",
+                        player.area1_jessica_state(),
+                        player.area1_jessica_seen_timer(),
+                        player.area1_gwendy_state(),
+                        player.area1_gwendy_seen_timer(),
+                    ),
+                    format!(
+                        "Gerewin state: {}, Gerewin seen timer: {}, Lydia state: {}, Lydia seen timer: {}",
+                        player.area1_gerewin_state(),
+                        player.area1_gerewin_seen_timer(),
+                        player.area1_lydia_state(),
+                        player.area1_lydia_seen_timer(),
+                    ),
+                    format!(
+                        "Asturin state: {}, Asturin seen timer: {}, Guiwynn state: {}, Guiwynn seen timer: {}",
+                        player.area1_asturin_state(),
+                        player.area1_asturin_seen_timer(),
+                        player.area1_guiwynn_state(),
+                        player.area1_guiwynn_seen_timer(),
+                    ),
+                    format!(
+                        "Logain state: {}, Logain seen timer: {}, Brithildie state: {}, Brithildie seen timer: {}",
+                        player.area1_logain_state(),
+                        player.area1_logain_seen_timer(),
+                        player.area1_brithildie_state(),
+                        player.area1_brithildie_seen_timer(),
+                    ),
+                    format!(
+                        "Jiu state: {}, Jiu seen timer: {}, Nook state: {}, Darkin state: {}",
+                        player.area1_jiu_state(),
+                        player.area1_jiu_seen_timer(),
+                        player.area1_nook_state(),
+                        player.area1_darkin_state(),
+                    ),
+                    format!(
+                        "Terion state: {}, Shrike state: {}, Shrike fails: {}",
+                        player.area1_terion_state(),
+                        player.area1_shrike_state(),
+                        player.area1_shrike_fails(),
+                    ),
+                    format!(
+                        "Reskin state: {}, Reskin seen timer: {}, Reskin got bits: {}",
+                        player.area1_reskin_state(),
+                        player.area1_reskin_seen_timer(),
+                        player.area1_reskin_got_bits(),
+                    ),
+                    format!(
+                        "James state: {}, James flags: {}",
+                        player.area1_james_state(),
+                        player.area1_flags(),
+                    ),
+                ],
+                None => vec![format!("Reading PPD {ppd_name} failed.")],
+            }
+        } else if ppd_name.eq_ignore_ascii_case("area3") {
+            match runtime.player_for_character(target_id) {
+                Some(player) => vec![format!("Kassim state: {}", player.area3_kassim_state())],
+                None => vec![format!("Reading PPD {ppd_name} failed.")],
+            }
+        } else {
+            vec![format!("Sorry, no ppd by the name {ppd_name}.")]
+        };
+        return Some(KeyringCommandResult {
+            messages,
+            ..Default::default()
+        });
+    }
+
     // C `/noarch` (`command.c:9049-9057`, `CF_GOD`-gated, `cmdcmp(ptr,
     // "noarch", 6)` - `minlen == strlen("noarch")`, exact word only) plus
     // `cmd_noarch` (`command.c:3163-3192`): looks up an online character by
