@@ -10683,6 +10683,46 @@ Unlocks every quest NPC. Do these before any P4 area work.
   their own `server_chat`-equivalent design; (3) the DB-backed
   save+redirect path itself still has no live-Postgres test (same gap as
   before, only offline/no-repository-pair paths are unit-tested).
+  REMAINING (iteration 226): closed gap (1) - added the **periodic
+  `mark_alive` heartbeat**. C's `area_alive(0)`
+  (`src/system/database/database_area.c:31-75`) is re-run from
+  `maintenance_60s_task` every 85 seconds
+  (`add_scheduled_task(maintenance_60s_task, 85, "Maintenance", true)`,
+  `server.c:600`, where `TICKS` = 24 ticks/second - matching this
+  codebase's own `TICKS_PER_SECOND`), not just once at startup
+  (`server.c:586`). Extracted the existing startup-only inline block
+  into a new shared `main.rs::mark_area_alive` helper (same IPv4-only
+  address-encoding logic, same `mark_alive` call), called once at
+  startup exactly as before, plus a new `if world.tick.0 %
+  (TICKS_PER_SECOND * 85) == 0 { ... }` gate in the tick-loop body
+  (inserted right before the existing once-a-minute auction-cleanup
+  gate, same style/pattern as every other periodic in-loop DB task:
+  `world.tick.0` starts at `0` and `World::advance()` increments it to
+  `1` before any of these gates run each iteration, so this doesn't
+  double-fire alongside the pre-loop startup call). No new tests added:
+  like every other periodic in-loop DB-maintenance gate already in
+  `main.rs` (auction cleanup, clan-registry save, military-storage
+  saves), the tick-loop body itself has no extracted/testable function
+  to unit-test against, and `mark_area_alive` takes a concrete
+  `&PgAreaRepository` (not the `AreaRepository` trait
+  `attempt_cross_area_transfer` mocks against), so it can only be
+  exercised against a live Postgres pool - same gap (3) below already
+  tracked. `cargo fmt --all`, `cargo test --workspace` (2108 ugaris-core
+  + 73 db + 3 net + 45 protocol + 1060 server, all green, zero
+  failures, unchanged counts since this is a paperwork-free-of-new-
+  tests infra change), `cargo build -p ugaris-server` clean with zero
+  warnings, 10s boot-smoke confirmed "legacy TCP listener ready",
+  "loaded area zone map", "entering Rust game loop", no panics (ran with
+  no `DATABASE_URL`, so `area_repository` is `None` and the new gate is
+  a no-op in that run, same as the pre-existing startup call). Still
+  missing, same as before minus (1): (2) the three blocked commands
+  (`/exterminate`/`/values`+`/showvalues`/`/allow`) still need their own
+  `server_chat`-equivalent design; (3) the DB-backed save+redirect path
+  itself still has no live-Postgres test (same gap as before, only
+  offline/no-repository-pair paths are unit-tested) - this is now the
+  only remaining gap for the whole "Cross-area transfer" task besides
+  (2), since every `area_id != config.area_id` call site is wired and
+  the liveness heartbeat now matches C's own cadence.
 
 - [ ] **Player-side fight-driver auto-combat (lostcon self-defense +
   no*/auto* toggle family)** - `fight_driver_attack_enemy`/

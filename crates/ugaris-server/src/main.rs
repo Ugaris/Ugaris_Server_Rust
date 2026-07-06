@@ -712,6 +712,45 @@ fn legacy_ipv4_addr(addr: std::net::Ipv4Addr) -> u32 {
     u32::from_le_bytes(addr.octets())
 }
 
+/// C `area_alive(0)` (`src/system/database/database_area.c:31-75`):
+/// upserts this area server's `area` (here: `area_servers`) row as alive
+/// at the given public address. Shared by the one-time startup call and
+/// the periodic re-mark in the game loop below (C re-runs the same
+/// function from `maintenance_60s_task` every 85 seconds via
+/// `add_scheduled_task(maintenance_60s_task, 85, "Maintenance", true)`)
+/// so other area servers' `get_area` lookups (and `read_login`'s
+/// cross-area redirect) keep resolving to a live target instead of only
+/// a startup snapshot.
+async fn mark_area_alive(
+    repository: &ugaris_db::PgAreaRepository,
+    area_id: u16,
+    mirror_id: u16,
+    public_addr: std::net::SocketAddr,
+) {
+    match public_addr.ip() {
+        std::net::IpAddr::V4(ipv4) => {
+            let server_addr = legacy_ipv4_addr(ipv4) as i32;
+            if let Err(err) = repository
+                .mark_alive(
+                    i32::from(area_id),
+                    i32::from(mirror_id),
+                    server_addr,
+                    i32::from(public_addr.port()),
+                )
+                .await
+            {
+                warn!(error = %err, "failed to mark this area server alive");
+            }
+        }
+        std::net::IpAddr::V6(_) => {
+            warn!(
+                "public-addr is IPv6; the legacy SV_SERVER redirect protocol only carries \
+                 an IPv4 address, skipping area-liveness registration"
+            );
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     fmt()
@@ -793,40 +832,11 @@ async fn main() -> anyhow::Result<()> {
         }
     }
 
-    // C `area_alive(0)` (`src/system/database/database_area.c:31-75`),
-    // called periodically from the main loop to keep this area server's
-    // `area` table row fresh so other area servers' `get_area` calls (and
-    // `read_login`'s cross-area redirect) resolve to a live target; ported
-    // here as a startup-only `mark_alive` (see the "Cross-area transfer"
-    // design plan in `PORTING_LEDGER.md` for the full liveness-refresh
-    // story - a real periodic re-mark is left to a follow-up slice, since
-    // Postgres itself being the shared source of truth makes a stale-but-
-    // present row far less harmful here than C's in-memory `area[]` cache
-    // going stale).
+    // C `area_alive(0)` called once before the game loop starts
+    // (`server.c:586`), matching `mark_area_alive`'s doc comment above.
     if let Some(repository) = &area_repository {
         let public_addr = args.public_addr.unwrap_or(args.bind_addr);
-        match public_addr.ip() {
-            std::net::IpAddr::V4(ipv4) => {
-                let server_addr = legacy_ipv4_addr(ipv4) as i32;
-                if let Err(err) = repository
-                    .mark_alive(
-                        i32::from(config.area_id),
-                        i32::from(config.mirror_id),
-                        server_addr,
-                        i32::from(public_addr.port()),
-                    )
-                    .await
-                {
-                    warn!(error = %err, "failed to mark this area server alive at startup");
-                }
-            }
-            std::net::IpAddr::V6(_) => {
-                warn!(
-                    "public-addr is IPv6; the legacy SV_SERVER redirect protocol only carries \
-                     an IPv4 address, skipping area-liveness registration"
-                );
-            }
-        }
+        mark_area_alive(repository, config.area_id, config.mirror_id, public_addr).await;
     }
 
     let mut world = World::default();
@@ -7353,6 +7363,25 @@ async fn main() -> anyhow::Result<()> {
                                 warn!(merchant = %name, x, y, error = %err, "failed to load merchant store from database");
                             }
                         }
+                    }
+                }
+                // C `maintenance_60s_task` (`server.c:197-210`): re-run
+                // `area_alive(0)` every 85 seconds
+                // (`add_scheduled_task(maintenance_60s_task, 85,
+                // "Maintenance", true)`) to keep this area server's
+                // `area_servers` row fresh - closes the "periodic
+                // `mark_alive` heartbeat (still startup-only)" gap the
+                // "Cross-area transfer" task's Progress Log tracked.
+                if world.tick.0 % (TICKS_PER_SECOND * 85) == 0 {
+                    if let Some(repository) = &area_repository {
+                        let public_addr = args.public_addr.unwrap_or(args.bind_addr);
+                        mark_area_alive(
+                            repository,
+                            config.area_id,
+                            config.mirror_id,
+                            public_addr,
+                        )
+                        .await;
                     }
                 }
                 // C `maintenance_60s_task` (`server.c:197-210`):
