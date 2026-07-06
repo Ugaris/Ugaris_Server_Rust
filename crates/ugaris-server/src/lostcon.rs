@@ -84,3 +84,25 @@ pub(crate) fn take_expired_lostcon_characters(
         })
         .collect()
 }
+
+/// C `lostcon_driver`'s early-exit gauntlet (`lostcon_early_exit_
+/// characters`'s doc comment has the full list: rest-area/arena tiles,
+/// the karma cutoff) - characters that leave at once regardless of the
+/// ordinary lagout timeout. Same stashed-runtime/account-depot contract as
+/// `take_expired_lostcon_characters`; callers should merge both lists into
+/// the same save+despawn loop.
+pub(crate) fn take_lostcon_early_exit_characters(
+    world: &World,
+    runtime: &mut ServerRuntime,
+    area_id: u16,
+) -> Vec<(CharacterId, PlayerRuntime, Option<AccountDepotState>)> {
+    world
+        .lostcon_early_exit_characters(area_id)
+        .into_iter()
+        .filter_map(|character_id| {
+            let player = runtime.lostcon_players.remove(&character_id)?;
+            let account_depot = runtime.account_depots.remove(&character_id);
+            Some((character_id, player, account_depot))
+        })
+        .collect()
+}

@@ -113,6 +113,7 @@ pub(crate) use light::*;
 pub use lockname::*;
 pub use look::*;
 pub use loot::*;
+pub use lostcon::*;
 pub use lq::*;
 pub use merchant::*;
 pub use military::*;

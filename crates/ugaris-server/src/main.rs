@@ -1160,9 +1160,18 @@ async fn main() -> anyhow::Result<()> {
                 // C `lostcon_driver`'s `!ch[cn].player && ticker >
                 // dat->timeout` branch + `exit_char`/`kick_char`: save and
                 // despawn characters whose disconnect linger expired
-                // without being reclaimed by a reconnect.
-                let expired_lostcon =
+                // without being reclaimed by a reconnect, plus its earlier
+                // early-exit gauntlet (rest-area/arena tile, karma cutoff -
+                // `lostcon_early_exit_characters`'s doc comment has the
+                // full list) that leaves at once regardless of the
+                // ordinary lagout timeout.
+                let mut expired_lostcon =
                     take_expired_lostcon_characters(&world, &mut runtime, world.tick.0);
+                expired_lostcon.extend(take_lostcon_early_exit_characters(
+                    &world,
+                    &mut runtime,
+                    config.area_id,
+                ));
                 if !expired_lostcon.is_empty() {
                     let expired_count = expired_lostcon.len();
                     for (character_id, player, account_depot) in expired_lostcon {
@@ -6652,37 +6661,58 @@ async fn main() -> anyhow::Result<()> {
                     info!(simple_baddy_attacks, tick = world.tick.0, "queued simple-baddy attack actions");
                 }
 
-                // C `lostcon_driver`'s message loop + `fight_driver_update(cn);
-                // if (fight_driver_attack_visible(cn, ppd->nomove)) return; if
-                // (!ppd->nomove && fight_driver_follow_invisible(cn)) return;`
-                // self-defense cascade (`src/module/lostcon.c:117-203`), for
-                // every character currently lingering under `CDR_LOSTCON`. The
-                // rest of `lostcon_driver` (low-hp-heal/low-mana-potion/
-                // low-shield-magicshield pre-cascade and the bless/heal/
-                // magicshield post-cascade fallback before `do_idle`) is not
-                // wired yet - see `PORTING_TODO.md`'s "Player-side fight-driver
-                // auto-combat" task.
+                // C `lostcon_driver`'s full per-tick body
+                // (`src/module/lostcon.c:117-220`) for every character
+                // currently lingering under `CDR_LOSTCON`: the message
+                // loop, the low-hp-heal/low-mana-potion/low-shield-
+                // magicshield pre-cascade, `fight_driver_update(cn); if
+                // (fight_driver_attack_visible(cn, ppd->nomove)) return; if
+                // (!ppd->nomove && fight_driver_follow_invisible(cn))
+                // return;`, the bless/magicshield/heal post-cascade
+                // fallback, and finally `do_idle(cn, TICKS)` if none of the
+                // above did anything this tick.
                 let lostcon_character_ids: Vec<CharacterId> =
                     runtime.lostcon_players.keys().copied().collect();
                 let mut lostcon_attacks = 0;
+                let mut lostcon_idles = 0;
                 for character_id in lostcon_character_ids {
                     world.process_lostcon_messages(character_id);
-                    let suppressions = runtime
+                    let (fight_suppressions, self_care_suppressions) = runtime
                         .lostcon_players
                         .get(&character_id)
-                        .map(|player| player.fight_driver_suppressions())
+                        .map(|player| {
+                            (
+                                player.fight_driver_suppressions(),
+                                player.lostcon_self_care_suppressions(),
+                            )
+                        })
                         .unwrap_or_default();
-                    if world.process_lostcon_attack_action_with_random(
+                    world.process_lostcon_self_care_precascade(
                         character_id,
                         config.area_id,
-                        suppressions,
+                        self_care_suppressions,
+                    );
+                    let attacked = world.process_lostcon_attack_action_with_random(
+                        character_id,
+                        config.area_id,
+                        fight_suppressions,
                         |limit| runtime_random_below(limit as i32).max(0) as u32,
-                    ) {
+                    );
+                    if attacked {
                         lostcon_attacks += 1;
+                        continue;
+                    }
+                    if world
+                        .process_lostcon_self_care_postcascade(character_id, self_care_suppressions)
+                    {
+                        continue;
+                    }
+                    if world.queue_lostcon_idle(character_id) {
+                        lostcon_idles += 1;
                     }
                 }
-                if lostcon_attacks != 0 {
-                    info!(lostcon_attacks, tick = world.tick.0, "queued lostcon self-defense actions");
+                if lostcon_attacks != 0 || lostcon_idles != 0 {
+                    info!(lostcon_attacks, lostcon_idles, tick = world.tick.0, "queued lostcon self-defense/idle actions");
                 }
 
                 let simple_baddy_noncombat = world

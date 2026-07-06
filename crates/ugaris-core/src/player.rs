@@ -1814,6 +1814,24 @@ impl PlayerRuntime {
         }
     }
 
+    /// C `lostcon_driver`'s own six self-care toggles
+    /// (`src/module/lostcon.c:164-218`), as opposed to the ten
+    /// `fight_driver_attack_enemy` toggles `fight_driver_suppressions`
+    /// maps. `nomove`/`noflash`/`nofireball`/`noball`/`nowarcry`/
+    /// `nofreeze`/`nopulse`/`norecall` have no `LostconSelfCareSuppressions`
+    /// field - they are consumed only by the fight-driver engine or by
+    /// still-unported callers (`/norecall`'s `player_use_recall`).
+    pub fn lostcon_self_care_suppressions(&self) -> crate::world::LostconSelfCareSuppressions {
+        crate::world::LostconSelfCareSuppressions {
+            noheal: self.no_heal,
+            noshield: self.no_shield,
+            nobless: self.no_bless,
+            nolife: self.no_life,
+            nomana: self.no_mana,
+            nocombo: self.no_combo,
+        }
+    }
+
     /// True if any of the 16 lag-control/automation toggles (everything
     /// but `autoturn`/`maxlag`/`hints`, which each have their own
     /// pre-existing "is this default" gate) is non-default, matching the

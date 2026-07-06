@@ -11263,6 +11263,83 @@ Unlocks every quest NPC. Do these before any P4 area work.
   now called), then finally the normal-player-tick `autobless`/
   `autopulse` consumers.
 
+  REMAINING: (iteration 236) ported the rest of `lostcon_driver`'s own
+  body flagged above as next, all in `crates/ugaris-core/src/world/
+  lostcon.rs`. The early-exit gauntlet (`lostcon.c:87-104`) is a new
+  `World::lostcon_early_exit_characters(area_id)` (mirroring the existing
+  `expired_lostcon_characters`'s shape) covering the rest-area tile,
+  arena tile (`areaID != 34`), and karma (`<= -12`, or `<= -5` when not
+  `CF_PAID`) exits; C's second arena check ("leave after 10s if lagging",
+  `lostcon.c:96-99`, guarding a `kick_player` call behind `if
+  (ch[cn].player)`) is deliberately not ported - `kick_player`
+  (`player.c:187`) unconditionally zeroes `ch[cn].player` in the same
+  statement that sets `ch[cn].driver = CDR_LOSTCON`, so every character
+  this function ever runs for already has `ch[cn].player == 0`, and the
+  immediate arena check directly above it already unconditionally fires
+  first for every arena tile outside area 34 - making the 10s-lag branch
+  and its `kick_player` guard permanently unreachable dead code in the C
+  oracle itself. New `ugaris-server/src/lostcon.rs::take_lostcon_early_
+  exit_characters` mirrors `take_expired_lostcon_characters`'s stashed-
+  runtime/account-depot contract; `main.rs`'s existing expiry-handling
+  block now merges both lists into the same save+despawn loop (a
+  character can only appear in one or the other in practice, but
+  `filter_map`'s `?` on `HashMap::remove` makes a hypothetical double-
+  match harmless either way). The low-hp-heal/low-mana-potion/low-
+  magicshield pre-cascade (`lostcon.c:164-197`) is `World::process_
+  lostcon_self_care_precascade`, and the bless/magicshield/heal fallback
+  (`lostcon.c:207-218`) is `World::process_lostcon_self_care_
+  postcascade`; both take a new `LostconSelfCareSuppressions` (`noheal`/
+  `noshield`/`nobless`/`nolife`/`nomana`/`nocombo` - the six `lostcon_ppd`
+  toggles `lostcon_driver`'s own body reads directly, as opposed to
+  `FightDriverSuppressions`'s ten toggles consumed by `fight_driver_
+  attack_enemy`), built by a new `PlayerRuntime::lostcon_self_care_
+  suppressions()` mirroring the existing `fight_driver_suppressions()`.
+  The precascade's mana-potion search is a new `find_lostcon_mana_potion`
+  private helper reproducing C's exact (and non-obvious) gating verbatim:
+  the outer loop-gate is `!nolife || !nocombo` (not `!nomana` - matches
+  C's own `lostcon.c:175` letter-for-letter, likely a legacy naming
+  oversight in the C oracle itself, ported faithfully rather than
+  "corrected"), then per-candidate a combo potion (`drdata[1]` and
+  `drdata[2]` both set) is gated by `nocombo` and a pure-mana potion
+  (`drdata[2]` only) by `nomana`. C's `return`-on-success semantics for
+  the heal/magicshield pre-cascade sub-checks (as opposed to the potion
+  drink, which never returns early, only `break`s its own search loop)
+  did not need explicit short-circuit plumbing in `ugaris-server`'s
+  caller: `do_heal`/`do_magicshield` already set `character.action != 0`
+  on success, and every downstream cascade step in this codebase already
+  self-gates on `action != 0` (`process_lostcon_attack_action_with_
+  random` included), so calling precascade/attack-cascade/postcascade
+  unconditionally in sequence each tick reproduces C's early-return
+  control flow for free. `World::queue_lostcon_idle` ports the
+  `do_idle(cn, TICKS)` tail. `main.rs`'s tick loop now runs the full
+  sequence per lingering character each tick: messages, precascade,
+  attack cascade (unchanged), postcascade only if the attack cascade
+  didn't act, idle only if nothing above acted. 20 new tests (6 early-
+  exit gauntlet, 8 precascade, 4 postcascade, 2 idle) in `world/tests/
+  lostcon.rs`. `cargo fmt --all`, `cargo test --workspace` (2195
+  ugaris-core [+20] + 78 db + 3 net + 45 protocol + 1073 server, all
+  green, zero failures), `cargo build -p ugaris-server`/`--workspace`
+  clean with zero warnings, 10s boot-smoke confirmed "entering Rust game
+  loop" with no panic (no live players connected during this smoke test,
+  so `runtime.lostcon_players` was empty and the new wiring was a no-op
+  in practice, exercised only by the new unit tests). This task stays
+  `[~]`: the normal-player-tick `autobless`/`autopulse` consumers
+  (`player_driver.c:1067-1070`) and the normal-player-tick (connected,
+  not lingering) autopotion/autorecall consumers (`tool.c`'s
+  `player_use_potion`/`player_use_recall`, which read the same `no*`
+  toggles but are separate C functions from anything in `lostcon.c` and
+  are called from the *connected*-player tick, not the lostcon linger
+  tick) remain entirely unwired - `lostcon_driver` itself (the lingering-
+  only autopilot this task set out to port) is now fully ported. Next
+  iteration: either wire the two `player_driver.c:1067-1070` autobless/
+  autopulse consumers onto the normal (connected) player tick reusing
+  `process_lostcon_self_care_postcascade`'s bless/magicshield-adjacent
+  logic (checking C's exact `player_driver.c` gating, which differs from
+  `lostcon_driver`'s own thresholds), or port `player_use_potion`/
+  `player_use_recall` next to close out every `no*`/`auto*` toggle's
+  real consumer, whichever `player_driver.c:1050-1075`'s surrounding
+  context (read it in full first) shows fires more often in practice.
+
 - [ ] **Macro-detection engine (`macro_driver`, `src/module/base.c:802-
   1243`, ~800 lines)** - anti-macro/anti-bot detection: activity
   tracking, math/type-word/reverse/multiple-choice challenge generation
