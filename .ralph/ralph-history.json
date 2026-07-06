@@ -6932,15 +6932,50 @@
         "test result: ok. 1018 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s",
         "test result: ok. 73 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
       ]
+    },
+    {
+      "iteration": 216,
+      "startedAt": "2026-07-06T07:11:03.498Z",
+      "endedAt": "2026-07-06T07:35:05.579Z",
+      "durationMs": 1441247,
+      "agent": "opencode",
+      "model": "anthropic/claude-sonnet-5",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "PORTING_TODO.md",
+        "crates/ugaris-core/src/world/anticheat.rs",
+        "crates/ugaris-core/src/world/mod.rs",
+        "crates/ugaris-core/src/world/tests/anticheat.rs",
+        "crates/ugaris-db/src/anticheat.rs",
+        "crates/ugaris-db/src/lib.rs",
+        "crates/ugaris-server/src/commands_admin.rs",
+        "crates/ugaris-server/src/main.rs",
+        "crates/ugaris-server/src/world_events.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "All 2108 (core) + 73 (db) + 3 (net) + 44 (protocol) + 1036 (server) tests pass, zero failures. Now let's build the server binary and do a boot smoke test since this touches the runtime/command dispatc",
+        "Verification: `cargo fmt --all` clean, `cargo test --workspace` (2108 core + 73 db + 3 net + 44 protocol + 1036 server, all green, zero failures), `cargo build --workspace` zero warnings, boot-smoke c",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&1 | grep -E \"FAILED|error\\[|error:|warning:\" | head -50",
+        "test error::tests::error_constants_match_legacy_header ... ok",
+        "test error::tests::error_strings_match_legacy_table ... ok",
+        "test error::tests::out_of_range_errors_use_c_fallback_string ... ok",
+        "crates/ugaris-server/src/tests/login.rs:224:        Some(\"Internal error. Please try again. If several retries fail email game@ugaris.com.\")",
+        "error: could not compile `ugaris-server` (bin \"ugaris-server\") due to 4 previous errors",
+        "error: unexpected argument 'ac_sharedhw' found"
+      ]
     }
   ],
-  "totalDurationMs": 244756804,
+  "totalDurationMs": 246198051,
   "struggleIndicators": {
     "repeatedErrors": {
       "1011 (up from 998 earlier) - all passing, zero failures. Now let's build the server binary and run a": 1,
       "Everything is green: `cargo fmt --all` clean, full workspace test suite passing (1011 core tests + o": 1,
       "test result: ok. 327 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 4,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 215,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 216,
       "test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 998 filtered out; finished in 0.00s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1010 filtered out; finished in 0.00s": 1,
       "error: could not compile `ugaris-db` (lib test) due to 1 previous error": 3,
@@ -6949,10 +6984,10 @@
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 82,
       "1020 tests pass (up from 1011), zero failures. Now build for warnings check:": 1,
       "test result: ok. 327 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s": 6,
-      "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&": 69,
-      "test error::tests::error_constants_match_legacy_header ... ok": 42,
-      "test error::tests::error_strings_match_legacy_table ... ok": 37,
-      "test error::tests::out_of_range_errors_use_c_fallback_string ... ok": 31,
+      "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&": 70,
+      "test error::tests::error_constants_match_legacy_header ... ok": 43,
+      "test error::tests::error_strings_match_legacy_table ... ok": 38,
+      "test error::tests::out_of_range_errors_use_c_fallback_string ... ok": 32,
       "test result: ok. 1011 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1,
       "Verified: `cargo fmt --all`, `cargo test --workspace` (1030 ugaris-core tests + all others, 0 failur": 1,
       "error: could not compile `ugaris-server` (bin \"ugaris-server\") due to 1 previous error": 12,
@@ -7197,7 +7232,7 @@
       "**Verification:** `cargo fmt --all` clean, `cargo test --workspace` (1263+36+3+33+401 passed, zero f": 1,
       "Progress Log (iteration 53): wired `enter_test`'s validation-failure": 2,
       "`world/tests/gatekeeper.rs` covering each failure message, the": 2,
-      "error: could not compile `ugaris-server` (bin \"ugaris-server\") due to 4 previous errors": 1,
+      "error: could not compile `ugaris-server` (bin \"ugaris-server\") due to 4 previous errors": 2,
       "assertion failed: events.is_empty()": 1,
       "test result: FAILED. 1257 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s": 1,
       "test result: ok. 401 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 2,
@@ -7870,7 +7905,11 @@
       "test result: ok. 72 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 2,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 71 filtered out; finished in 0.09s": 1,
       "test result: ok. 1018 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s": 1,
-      "test result: ok. 73 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 1
+      "test result: ok. 73 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 1,
+      "All 2108 (core) + 73 (db) + 3 (net) + 44 (protocol) + 1036 (server) tests pass, zero failures. Now l": 1,
+      "Verification: `cargo fmt --all` clean, `cargo test --workspace` (2108 core + 73 db + 3 net + 44 prot": 1,
+      "crates/ugaris-server/src/tests/login.rs:224:        Some(\"Internal error. Please try again. If sever": 1,
+      "error: unexpected argument 'ac_sharedhw' found": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0
