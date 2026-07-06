@@ -196,3 +196,16 @@ fn queue_and_drain_ac_sessions_lookup_round_trips() {
     assert_eq!(queued[0].session_id, 104);
     assert!(world.drain_pending_ac_sessions_lookups().is_empty());
 }
+
+#[test]
+fn queue_and_drain_ac_violations_lookup_round_trips() {
+    let mut world = World::default();
+    world.queue_ac_violations_lookup(CharacterId(14), "Baddie".to_string(), 105);
+
+    let queued = world.drain_pending_ac_violations_lookups();
+    assert_eq!(queued.len(), 1);
+    assert_eq!(queued[0].caller_id, CharacterId(14));
+    assert_eq!(queued[0].target_name, "Baddie");
+    assert_eq!(queued[0].session_id, 105);
+    assert!(world.drain_pending_ac_violations_lookups().is_empty());
+}

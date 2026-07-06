@@ -2593,6 +2593,67 @@ fn ac_sessions_lines(
     lines
 }
 
+/// `#acviolations <player>`'s async round trip - see `ugaris-core`'s
+/// `world/anticheat.rs` module doc comment for the general async-DB-
+/// round-trip pattern this family shares, and `AcViolationsLookup`'s own
+/// doc comment for why this is the same single-name-target resolution
+/// shape as `#acsessions`.
+pub(crate) async fn apply_ac_violations_events(
+    world: &mut World,
+    anticheat_repository: &Option<ugaris_db::PgAntiCheatRepository>,
+) -> usize {
+    let lookups = world.drain_pending_ac_violations_lookups();
+    if lookups.is_empty() {
+        return 0;
+    }
+    let Some(repository) = anticheat_repository else {
+        return 0;
+    };
+    let mut applied = 0;
+    for lookup in lookups {
+        let Ok(Some(account_id)) = repository.account_id_for_session(lookup.session_id).await
+        else {
+            continue;
+        };
+        let Ok(rows) = repository.recent_violations(account_id, 15).await else {
+            continue;
+        };
+        for line in ac_violations_lines(&lookup.target_name, &rows) {
+            world.queue_system_text(lookup.caller_id, line);
+        }
+        applied += 1;
+    }
+    applied
+}
+
+/// Pure message-formatting half of [`apply_ac_violations_events`], split
+/// out so it can be unit-tested without a live database - same
+/// established convention as `ac_sessions_lines`. C `ac_cmd_violations`
+/// (`anticheat.c:1043-1053`) - color wrapping (severity-based
+/// red/orange/yellow) dropped, matching `ac_sessions_lines`'s/`ac_
+/// status_lines`'s plain-text simplification for admin-only displays;
+/// the numeric severity is kept in the line itself instead so the
+/// information isn't lost entirely.
+fn ac_violations_lines(
+    target_name: &str,
+    rows: &[ugaris_db::AntiCheatViolationRow],
+) -> Vec<String> {
+    if rows.is_empty() {
+        return vec![format!("No violations found for {target_name}.")];
+    }
+    let mut lines = vec![format!("--- Recent Violations for {target_name} ---")];
+    for row in rows {
+        lines.push(format!(
+            "{} [{}] sev={} {}",
+            row.detected_at,
+            row.type_name,
+            row.severity,
+            row.details.as_deref().unwrap_or(""),
+        ));
+    }
+    lines
+}
+
 /// `#querystats`/`/querystats`'s async round trip - see `ugaris-core`'s
 /// `world/querystats.rs` module doc comment for exactly which C counters
 /// this scoped-down port tracks (and why the rest are omitted rather than
@@ -4075,6 +4136,63 @@ mod ac_sessions_tests {
                 "--- Recent Sessions for Baddie ---".to_string(),
                 "07-06 10:00 (15m) flagged Bot:0.91 V:2/3/4/5".to_string(),
                 "07-05 09:00 (60m) verified Bot:0.00 V:0/0/0/0".to_string(),
+            ]
+        );
+    }
+}
+
+#[cfg(test)]
+mod ac_violations_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn no_lookups_queued_is_a_cheap_no_op() {
+        let mut world = World::default();
+        let applied = apply_ac_violations_events(&mut world, &None).await;
+        assert_eq!(applied, 0);
+        assert!(world.drain_pending_system_texts().is_empty());
+    }
+
+    #[tokio::test]
+    async fn missing_repository_leaves_the_lookup_queued_state_untouched_but_drained() {
+        let mut world = World::default();
+        world.queue_ac_violations_lookup(CharacterId(7), "Baddie".to_string(), 30);
+
+        let applied = apply_ac_violations_events(&mut world, &None).await;
+        assert_eq!(applied, 0);
+        assert!(world.drain_pending_system_texts().is_empty());
+        assert!(world.drain_pending_ac_violations_lookups().is_empty());
+    }
+
+    #[test]
+    fn ac_violations_lines_reports_no_violations_when_empty() {
+        let lines = ac_violations_lines("Baddie", &[]);
+        assert_eq!(lines, vec!["No violations found for Baddie.".to_string()]);
+    }
+
+    #[test]
+    fn ac_violations_lines_formats_header_and_rows() {
+        let rows = vec![
+            ugaris_db::AntiCheatViolationRow {
+                detected_at: "07-06 10:00".to_string(),
+                type_name: "teleport".to_string(),
+                severity: 2,
+                details: Some("impossible jump".to_string()),
+            },
+            ugaris_db::AntiCheatViolationRow {
+                detected_at: "07-05 09:00".to_string(),
+                type_name: "speedhack".to_string(),
+                severity: 1,
+                details: None,
+            },
+        ];
+        let lines = ac_violations_lines("Baddie", &rows);
+        assert_eq!(
+            lines,
+            vec![
+                "--- Recent Violations for Baddie ---".to_string(),
+                "07-06 10:00 [teleport] sev=2 impossible jump".to_string(),
+                "07-05 09:00 [speedhack] sev=1 ".to_string(),
             ]
         );
     }

@@ -6745,6 +6745,15 @@ async fn main() -> anyhow::Result<()> {
                         "applied #acsessions lookups"
                     );
                 }
+                let ac_violations_events_applied =
+                    apply_ac_violations_events(&mut world, &anticheat_repository).await;
+                if ac_violations_events_applied != 0 {
+                    info!(
+                        ac_violations_events_applied,
+                        tick = world.tick.0,
+                        "applied #acviolations lookups"
+                    );
+                }
                 // `#querystats`/`/querystats`'s round trip against the
                 // live `PgCharacterRepository`'s in-memory counters -
                 // see `ugaris-core`'s `world/querystats.rs` module doc

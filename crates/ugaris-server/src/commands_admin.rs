@@ -6087,6 +6087,58 @@ pub(crate) fn apply_admin_character_command(
         return Some(KeyringCommandResult::default());
     }
 
+    // C `#acviolations <player>` (`command.c:10250-10255` dispatch,
+    // `CF_GOD|CF_STAFF`-gated, exact-word; `ac_cmd_violations`,
+    // `anticheat.c:1019-1053`). Identical single-name-target resolution
+    // shape to `#acsessions` right above - see `apply_ac_violations_events`
+    // for the subscriber-id resolution and the recent-violation-history
+    // query itself.
+    if lower == "acviolations" {
+        let Some(caller) = world.characters.get(&character_id) else {
+            return Some(KeyringCommandResult::default());
+        };
+        if !caller
+            .flags
+            .intersects(CharacterFlags::STAFF | CharacterFlags::GOD)
+        {
+            return None;
+        }
+        let name = rest.trim_start();
+        if name.is_empty() {
+            return Some(KeyringCommandResult {
+                messages: vec!["Usage: #acviolations <player>".to_string()],
+                ..Default::default()
+            });
+        }
+        let mut candidates: Vec<&Character> = world
+            .characters
+            .values()
+            .filter(|character| {
+                character.flags.contains(CharacterFlags::PLAYER)
+                    && character.name.eq_ignore_ascii_case(name)
+            })
+            .collect();
+        candidates.sort_by_key(|character| character.id.0);
+        let Some(target_id) = candidates.first().map(|character| character.id) else {
+            return Some(KeyringCommandResult {
+                messages: vec![format!("Player '{name}' not found online.")],
+                ..Default::default()
+            });
+        };
+        let target_name = world.characters[&target_id].name.clone();
+        let Some(session_id) = runtime
+            .player_for_character(target_id)
+            .and_then(|player| player.anticheat_session_id)
+        else {
+            return Some(KeyringCommandResult {
+                messages: vec![format!("Player '{target_name}' has no connection data.")],
+                ..Default::default()
+            });
+        };
+        world.queue_ac_violations_lookup(character_id, target_name, session_id);
+        return Some(KeyringCommandResult::default());
+    }
+
     // C `/clearppd <ppdname> [player]` (`command.c:10144-10146` dispatch,
     // `CF_GOD | CF_STAFF`-gated, `cmdcmp(ptr, "clearppd", 8)` - exact word
     // only; `cmd_clearppd`, `command.c:4214-4288`). A raw, PPD-name-

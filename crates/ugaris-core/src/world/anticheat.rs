@@ -205,6 +205,22 @@ pub struct AcSessionsLookup {
     pub session_id: i64,
 }
 
+/// `#acviolations <player>` (`ac_cmd_violations`, `anticheat.c:1019-
+/// 1053`), `CF_GOD|CF_STAFF`-gated, exact-word (`cmdcmp(ptr,
+/// "acviolations", 12)`). Same single-name-target resolution as
+/// `#acsessions` above (the caller resolves `session_id` synchronously
+/// via the online-name-scan; `apply_ac_violations_events` resolves the
+/// subscriber's `account_id` from it via `account_id_for_session`
+/// before querying the violation history), not just the current
+/// session - see `ugaris-db`'s `AntiCheatViolationRow` doc comment for
+/// why no new table is needed for the history query itself.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AcViolationsLookup {
+    pub caller_id: CharacterId,
+    pub target_name: String,
+    pub session_id: i64,
+}
+
 impl World {
     pub fn queue_ac_status_lookup(
         &mut self,
@@ -384,6 +400,23 @@ impl World {
 
     pub fn drain_pending_ac_sessions_lookups(&mut self) -> Vec<AcSessionsLookup> {
         self.pending_ac_sessions_lookups.drain(..).collect()
+    }
+
+    pub fn queue_ac_violations_lookup(
+        &mut self,
+        caller_id: CharacterId,
+        target_name: String,
+        session_id: i64,
+    ) {
+        self.pending_ac_violations_lookups.push(AcViolationsLookup {
+            caller_id,
+            target_name,
+            session_id,
+        });
+    }
+
+    pub fn drain_pending_ac_violations_lookups(&mut self) -> Vec<AcViolationsLookup> {
+        self.pending_ac_violations_lookups.drain(..).collect()
     }
 }
 

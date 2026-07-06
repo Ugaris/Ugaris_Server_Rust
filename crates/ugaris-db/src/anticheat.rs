@@ -88,6 +88,26 @@ pub struct AntiCheatSessionHistoryRow {
     pub anomaly_count: i32,
 }
 
+/// `#acviolations <player>`'s per-row shape (`db_ac_violation_result`,
+/// `database_anticheat.h:481-`). C's own query reads from a separate
+/// `ac_violations` table (populated by `db_ac_log_violation`) joined
+/// against `ac_violation_types` for a human-readable `type_name`; this
+/// codebase already has a per-session violation/event log in
+/// `anticheat_events` (`migrations/0002_sessions_questlog_anticheat.
+/// sql`, written by `AntiCheatRepository::log_event`) with `event_type`
+/// stored directly as text rather than a foreign-key id, so no join (or
+/// new `ac_violation_types`-equivalent table) is needed - see
+/// `PgAntiCheatRepository::recent_violations`'s doc comment for the
+/// column-by-column mapping, same reuse-over-new-schema approach
+/// `recent_sessions` above already took for `#acsessions`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AntiCheatViolationRow {
+    pub detected_at: String,
+    pub type_name: String,
+    pub severity: i32,
+    pub details: Option<String>,
+}
+
 #[async_trait]
 pub trait AntiCheatRepository: Send + Sync {
     async fn create_session(&self, request: AntiCheatSessionCreate) -> anyhow::Result<i64>;
@@ -187,6 +207,21 @@ pub trait AntiCheatRepository: Send + Sync {
         account_id: i64,
         max_count: i64,
     ) -> anyhow::Result<Vec<AntiCheatSessionHistoryRow>>;
+    /// `#acviolations <player>`'s backing query (`db_ac_get_recent_
+    /// violations`, `database_anticheat.c:922-955`): the `max_count` most
+    /// recent `anticheat_events` rows across every one of the
+    /// subscriber's `anticheat_sessions`, newest first - see
+    /// `AntiCheatViolationRow`'s doc comment for why this reads the
+    /// existing `anticheat_events` table (C's own `ac_violations`,
+    /// joined against `ac_violation_types` there only because C stores
+    /// the type as a numeric foreign key; this codebase's `event_type`
+    /// column is already the human-readable name) rather than a new
+    /// pair of tables.
+    async fn recent_violations(
+        &self,
+        account_id: i64,
+        max_count: i64,
+    ) -> anyhow::Result<Vec<AntiCheatViolationRow>>;
 }
 
 #[derive(Debug, Clone)]
@@ -578,6 +613,35 @@ impl AntiCheatRepository for PgAntiCheatRepository {
                     state_violations,
                     challenge_failures,
                     anomaly_count,
+                },
+            )
+            .collect())
+    }
+
+    async fn recent_violations(
+        &self,
+        account_id: i64,
+        max_count: i64,
+    ) -> anyhow::Result<Vec<AntiCheatViolationRow>> {
+        let rows = sqlx::query_as::<_, (String, String, i32, Option<String>)>(
+            "select to_char(e.created_at, 'MM-DD HH24:MI'), e.event_type, e.severity, e.details \
+             from anticheat_events e \
+             join anticheat_sessions s on s.id = e.session_id \
+             where s.account_id = $1 \
+             order by e.created_at desc limit $2",
+        )
+        .bind(account_id)
+        .bind(max_count)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .into_iter()
+            .map(
+                |(detected_at, type_name, severity, details)| AntiCheatViolationRow {
+                    detected_at,
+                    type_name,
+                    severity,
+                    details,
                 },
             )
             .collect())
@@ -1158,6 +1222,111 @@ mod tests {
 
             sqlx::query("delete from anticheat_sessions where id = any($1)")
                 .bind([older_id, newer_id])
+                .execute(&pool)
+                .await
+                .expect("cleanup fixture sessions");
+            sqlx::query("delete from accounts where id = $1")
+                .bind(account_id)
+                .execute(&pool)
+                .await
+                .expect("cleanup fixture account");
+        }
+
+        /// `#acviolations`'s backing query (`recent_violations`): two
+        /// `anticheat_events` rows logged against two different sessions
+        /// belonging to the same subscriber (proving the join reaches
+        /// across every one of the account's sessions, not just one),
+        /// come back newest-first with `event_type`/`severity`/`details`
+        /// intact, and a `limit` of `1` returns only the newest row.
+        #[tokio::test]
+        async fn recent_violations_orders_newest_first_across_sessions() {
+            let Some(pool) = connect().await else {
+                return;
+            };
+            let repo = PgAntiCheatRepository::new(pool.clone());
+
+            sqlx::query("delete from accounts where username = 'ac_violations_fixture_acct'")
+                .execute(&pool)
+                .await
+                .expect("pre-clean fixture account");
+            let (account_id,): (i64,) = sqlx::query_as(
+                "insert into accounts(username, password_hash) values ($1, 'secret') returning id",
+            )
+            .bind("ac_violations_fixture_acct")
+            .fetch_one(&pool)
+            .await
+            .expect("insert fixture account");
+
+            let (session_a,): (i64,) = sqlx::query_as(
+                "insert into anticheat_sessions(account_id, ip_address, area_id) \
+                 values ($1, 1, 1) returning id",
+            )
+            .bind(account_id)
+            .fetch_one(&pool)
+            .await
+            .expect("insert fixture session a");
+            let (session_b,): (i64,) = sqlx::query_as(
+                "insert into anticheat_sessions(account_id, ip_address, area_id) \
+                 values ($1, 1, 1) returning id",
+            )
+            .bind(account_id)
+            .fetch_one(&pool)
+            .await
+            .expect("insert fixture session b");
+
+            sqlx::query(
+                "insert into anticheat_events(session_id, event_type, severity, details, \
+                 created_at) values ($1, 'speedhack', 1, 'moved too fast', \
+                 now() - interval '1 hour')",
+            )
+            .bind(session_a)
+            .execute(&pool)
+            .await
+            .expect("insert older violation");
+            sqlx::query(
+                "insert into anticheat_events(session_id, event_type, severity, details, \
+                 created_at) values ($1, 'teleport', 2, 'impossible jump', now())",
+            )
+            .bind(session_b)
+            .execute(&pool)
+            .await
+            .expect("insert newer violation");
+
+            let rows = repo
+                .recent_violations(account_id, 15)
+                .await
+                .expect("recent_violations");
+            assert_eq!(
+                rows.len(),
+                2,
+                "violations from both sessions must come back"
+            );
+            assert_eq!(
+                rows[0].type_name, "teleport",
+                "newest violation sorts first"
+            );
+            assert_eq!(rows[0].severity, 2);
+            assert_eq!(rows[0].details.as_deref(), Some("impossible jump"));
+            assert_eq!(rows[1].type_name, "speedhack");
+            assert_eq!(rows[1].details.as_deref(), Some("moved too fast"));
+
+            let limited = repo
+                .recent_violations(account_id, 1)
+                .await
+                .expect("recent_violations with limit 1");
+            assert_eq!(limited.len(), 1);
+            assert_eq!(
+                limited[0].type_name, "teleport",
+                "limit must keep only the newest row"
+            );
+
+            sqlx::query("delete from anticheat_events where session_id = any($1)")
+                .bind([session_a, session_b])
+                .execute(&pool)
+                .await
+                .expect("cleanup fixture events");
+            sqlx::query("delete from anticheat_sessions where id = any($1)")
+                .bind([session_a, session_b])
                 .execute(&pool)
                 .await
                 .expect("cleanup fixture sessions");

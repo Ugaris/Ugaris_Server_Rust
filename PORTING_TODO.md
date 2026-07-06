@@ -9974,6 +9974,87 @@ Unlocks every quest NPC. Do these before any P4 area work.
   `acsiglist`/`acsigadd`/`acsigdel` and gaps (b)/(d)/(e)/(f)/(g) remain
   untouched, same as noted above.
 
+  Progress Log (iteration 212): closed the `#acviolations <player>` gap
+  from gap (a) (`ac_cmd_violations`, `anticheat.c:1019-1053`,
+  `CF_GOD|CF_STAFF`-gated, exact-word, `command.c:10250-10255`
+  dispatch), following iteration 211's own suggestion to try reusing
+  `anticheat_events` before assuming a new schema was needed - it was:
+  C's own backing table (`ac_violations`, populated by `db_ac_log_
+  violation`) joins against a separate `ac_violation_types` lookup table
+  only because C stores the violation type as a numeric foreign key;
+  this codebase's `anticheat_events` (populated by `AntiCheatRepository::
+  log_event`, `migrations/0002_sessions_questlog_anticheat.sql`) already
+  stores `event_type` as human-readable text directly, so the port needed
+  a new read query joined against `anticheat_sessions` for the
+  account-id scope, not a new violations table or a violation-types
+  lookup table. New `AntiCheatRepository::recent_violations`
+  (`ugaris-db/src/anticheat.rs`) queries the `max_count` newest
+  `anticheat_events` rows across every one of a subscriber's
+  `anticheat_sessions` (`join anticheat_sessions s on s.id = e.
+  session_id where s.account_id = $1`), using Postgres `to_char` to
+  reproduce C's `DATE_FORMAT` server-side (same no-chrono-in-Rust
+  convention as `recent_sessions`/`find_last_seen`). New
+  `AntiCheatViolationRow` return type (`detected_at`/`type_name`/
+  `severity`/`details`). New `ugaris-core` `world/anticheat.rs` type
+  `AcViolationsLookup` (identical single-name-target shape to
+  `AcSessionsLookup`: `caller_id`/`target_name`/`session_id`, the
+  `session_id` resolved synchronously in `commands_admin.rs` by the
+  online-name-scan, then turned into the target's `account_id` inside
+  `apply_ac_violations_events` via the existing `account_id_for_
+  session`). `apply_ac_violations_events` (`world_events.rs`) queries up
+  to 15 rows (matching C's `violations[15]` stack array) and formats
+  them through a new pure `ac_violations_lines` helper - color wrapping
+  (severity-based red/orange/yellow) dropped, matching `ac_sessions_
+  lines`'s established plain-text simplification, but the numeric
+  severity is kept inline in the text (`sev={n}`) instead of discarded
+  outright, since dropping it silently would lose real information
+  no other column carries; "No violations found for {name}." when the
+  query comes back empty, matching C's own early-return message.
+  Dispatch (`commands_admin.rs`, right after `#acsessions`) reuses the
+  identical online-`CF_PLAYER`-name-scan-then-session-id-lookup shape
+  every sibling in this family already has. The `#acviolations <name> -
+  Show player's violations` help line already existed unwired in
+  `#achelp`'s static text, like several other gaps this file's REMAINING
+  note has found before - no help-text change needed. 1 new `ugaris-db`
+  live test (`recent_violations_orders_newest_first_across_sessions`:
+  two fixture `anticheat_events` rows logged against two *different*
+  sessions belonging to the same subscriber, proving the join reaches
+  across every one of the account's sessions rather than just the
+  session the caller happens to be connected through right now, asserts
+  newest-first ordering and a `limit` of 1 keeping only the newest row),
+  1 new `ugaris-core` test (queue/drain round trip for
+  `AcViolationsLookup`), 4 new `ugaris-server` tests in `world_events.rs`
+  (`ac_violations_tests`: the standard no-lookups/missing-repository
+  no-op pair, plus two pure `ac_violations_lines` formatting tests for
+  the empty and populated cases, the latter covering both a `details`
+  value and a `None` details column). `cargo fmt --all`, `cargo test
+  --workspace` (2101 ugaris-core [+1] + 70 db [+1] + 3 net + 44 protocol
+  + 995 server [+4], all green, zero failures), `cargo build -p
+  ugaris-server` / `cargo build --workspace` clean with zero warnings,
+  10s boot-smoke confirmed "entering Rust game loop" with no panic.
+  Verified the new query for real by spinning up a throwaway
+  `postgres:16-alpine` container, applying all 15 `migrations/*.sql`
+  files by hand, and running the new live test against it directly
+  (`cargo test -p ugaris-db recent_violations`, 1/1 passed) before
+  destroying the container; noted in passing that a handful of
+  *pre-existing* `ugaris-db` live tests
+  (`character::tests::live_login::exempts_account_id_one_from_
+  duplicate_login_check`, `clan_log::tests::live::*`,
+  `auction::tests::live::*`) are order/isolation-dependent against a
+  shared container and fail when the whole `ugaris-db` suite is run
+  against one live database in certain orders/thread counts - unrelated
+  to this change (none of them touch `anticheat.rs`), not investigated
+  further here, and irrelevant to the default `cargo test --workspace`
+  contract since these tests compile and skip cleanly without
+  `DATABASE_URL` set (this repo's default state, confirmed still green
+  above). This closes the `acviolations` gap entirely. REMAINING: gap
+  (a) still has `achistory` (needs the session-end rollup mechanism
+  wired in first - see the iteration-211 note above - this is now the
+  only remaining gap-(a) item with a clear existing-infra-reuse angle);
+  `acsharedip`/`acsharedhw`/`achighrisk`/`aclookup`/`acsiglist`/
+  `acsigadd`/`acsigdel` and gaps (b)/(d)/(e)/(f)/(g) remain untouched,
+  same as noted above.
+
 - [ ] **Cross-area transfer** - the big multi-server feature. Every
   cross-area teleport currently returns "target server down". Decide the
   single-process stance first (likely: run multiple areas in one process

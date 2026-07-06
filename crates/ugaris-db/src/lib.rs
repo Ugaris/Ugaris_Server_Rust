@@ -15,7 +15,7 @@ pub use achievement::{AchievementRepository, PgAchievementRepository};
 pub use anticheat::{
     AntiCheatCounters, AntiCheatEvent, AntiCheatFingerprint, AntiCheatRepository,
     AntiCheatSessionCreate, AntiCheatSessionHistoryRow, AntiCheatSessionInfo,
-    PgAntiCheatRepository,
+    AntiCheatViolationRow, PgAntiCheatRepository,
 };
 pub use area::{AreaRepository, PgAreaRepository};
 pub use auction::{
