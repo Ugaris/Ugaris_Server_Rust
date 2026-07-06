@@ -584,7 +584,7 @@ impl World {
         })
     }
 
-    pub(crate) fn apply_tabunga_text_notification(
+    pub fn apply_tabunga_text_notification(
         &mut self,
         character_id: CharacterId,
         speaker_id: CharacterId,

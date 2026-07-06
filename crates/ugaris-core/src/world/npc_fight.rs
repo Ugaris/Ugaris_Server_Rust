@@ -576,7 +576,8 @@ impl World {
             | CharacterDriverState::ArenaFighter(_)
             | CharacterDriverState::ArenaManager(_)
             | CharacterDriverState::Dungeonmaster(_)
-            | CharacterDriverState::Dungeonfighter(_) => None,
+            | CharacterDriverState::Dungeonfighter(_)
+            | CharacterDriverState::Macro(_) => None,
         }
     }
 

@@ -203,7 +203,7 @@ pub const MACRO_CHOICE_QUESTIONS: &[MacroChoiceQuestion] = &[
 /// `victim`/`v_ID`/`state`/`start`/`last`/`teleported_to_jail` are NPC-
 /// side (`CharacterDriverState`-backed) bookkeeping for the not-yet-
 /// ported live driver, omitted here.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct MacroChallenge {
     pub challenge_type: i32,
     pub val1: i32,

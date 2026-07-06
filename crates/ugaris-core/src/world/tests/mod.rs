@@ -40,6 +40,7 @@ mod look;
 mod loot;
 mod lostcon;
 mod lq;
+mod macro_npc;
 mod merchant;
 mod military;
 mod npc_fight;

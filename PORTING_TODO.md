@@ -11565,6 +11565,61 @@ Unlocks every quest NPC. Do these before any P4 area work.
   cross-server hand-off/reward item grants/pentagram+xmas cosmetics) -
   none of those are part of this slice.
 
+  REMAINING: (iteration 241) closed sub-item (1) (the live NPC-side
+  state machine/message loop) and folded in most of (3)/(4)/(6): new
+  `CharacterDriverState::Macro`/`MacroDriverData`/`MacroDriverState`
+  (`character_driver.rs`) plus `World::macro_search_candidates`/
+  `macro_update_appearance`/`macro_handle_give_message`/
+  `macro_idle_mutter`/`macro_daemon_ids`/the `macro_*_seeded`
+  `World::legacy_random_seed`-threading wrappers (new `world/
+  macro_npc.rs`, 6 tests in `world/tests/macro_npc.rs`) cover every
+  *non*-`PlayerRuntime` piece. Since nearly every `MACRO_STATE_*`
+  transition touches a player's `MacroPpd` (immunity/next-check/
+  activity gating the search itself, karma/suspicion shaping the
+  greeting/challenge difficulty, and the correct-answer/failure
+  mutations), the live driver is wired directly in `ugaris-server`
+  (`apply_macro_events`, `macro_daemon.rs`, extending the existing
+  activity-tracking bridge from iteration 240) rather than split the
+  usual `World`-decides/`ugaris-server`-applies way - it ticks every
+  live `CDR_MACRO` NPC once per game tick: appearance reskin (`isxmas`,
+  now wired via `ugaris-server`'s own xmas-event awareness), the
+  message loop (`NT_TEXT` answer-checking incl. the generic `tabunga`
+  GM stat-dump hook, newly `pub` on `World` for this cross-crate call;
+  `NT_GIVE`), and the full `IDLE`->`FOUND`->`TELEPORTED`->
+  `CHALLENGING`->`TIMEOUT` cascade exactly matching C's sequential-`if`
+  (not `else if`) control flow, including same-tick restarts (a
+  just-answered victim immediately re-enters the search). The
+  forced-summon admin pickup (`/summonmacro`'s `force_summon` flag) is
+  wired end-to-end for the first time. Reward granting resolves
+  `MacroReward::Gold`/`HealingPotion`/`ComboPotion`/`Lollipop`/
+  `Experience`/`Consolation` via `grant_template_item_smart`/
+  `give_exp`/direct gold, with the item-grant-fails exp fallback. 6 new
+  integration tests in `ugaris-server/src/tests/macro_daemon.rs`
+  (force-summon pickup end-to-end, same-tick search-to-challenge,
+  AFK skip pushing back `nextcheck`, correct-answer reward+karma,
+  three-failure timeout kick, xmas reskin).
+
+  Disclosed, deliberate gaps (still open, see the new code's own doc
+  comments for the full list): the cross-server "challenge room"
+  pickup/banishment/return-teleport (`in_challenge_room`/
+  `needs_challenge`/`teleported_to_jail` never become meaningful, so
+  suspicious players get a normal challenge instead of being banished -
+  sub-item (3) is therefore only *partially* closed); the pentagram-
+  progress save/restore (no-op until `pents.c` itself is ported,
+  sub-item (6)); C's `realtime - ch[co].login_time < 60*5` recent-login
+  grace period (this codebase does not track a player's login
+  timestamp anywhere yet, so a just-logged-in player has no grace
+  period); `macro_teleport_char_driver`'s `MF_SOUNDBLOCK`/
+  `MF_SHOUTBLOCK` destination-tile pre-check (reuses the plain
+  `World::teleport_char_driver` instead, a narrow edge case). `cargo
+  fmt --all`, `cargo test --workspace` (2252 ugaris-core [+6] + 78 db +
+  3 net + 45 protocol + 1079 server [+6], all green, zero failures),
+  `cargo build -p ugaris-server`/`--workspace` clean with zero
+  warnings, 10s boot-smoke confirmed "entering Rust game loop" with no
+  panic. Next iteration: the cross-server challenge-room hand-off
+  (reuse `attempt_cross_area_transfer`, same shape as `world/jail.rs`)
+  is the last substantial gap before this task can close.
+
 - [x] **`.pre` zone preprocessor parity** - `src/system/create.c` expands
   `.pre` template includes; the Rust `ZoneLoader` skips them. Check which
   areas' data actually use `.pre` and port expansion so those areas load

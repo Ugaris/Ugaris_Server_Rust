@@ -20,6 +20,7 @@ mod item_apply;
 mod keyring;
 mod login;
 mod lostcon;
+mod macro_daemon;
 mod map_sync;
 mod merchants;
 mod military;

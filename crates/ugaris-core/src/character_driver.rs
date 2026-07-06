@@ -179,6 +179,7 @@ pub enum CharacterDriverState {
     ArenaManager(ArenaManagerDriverData),
     Dungeonmaster(DungeonmasterDriverData),
     Dungeonfighter(DungeonfighterDriverData),
+    Macro(MacroDriverData),
 }
 
 /// C `struct lostcon_driver_data` (`src/module/lostcon.c`): the linger-timer
@@ -774,6 +775,56 @@ pub struct DungeonfighterDriverData {
     pub simple_pots_taken: i32,
     /// C `alc_pots_taken`.
     pub alc_pots_taken: i32,
+}
+
+/// C `MACRO_STATE_*` (`base.c:263-268`): the `CDR_MACRO` "Macro Daemon"
+/// anti-bot NPC's own state machine, driving [`MacroDriverData`].
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum MacroDriverState {
+    /// `MACRO_STATE_IDLE` (`0`): looking for a victim.
+    #[default]
+    Idle,
+    /// `MACRO_STATE_FOUND` (`1`): found a victim, preparing.
+    Found,
+    /// `MACRO_STATE_TELEPORTED` (`2`): teleported to the victim.
+    Teleported,
+    /// `MACRO_STATE_CHALLENGING` (`3`): asking the challenge.
+    Challenging,
+    /// `MACRO_STATE_TIMEOUT` (`4`): time ran out.
+    Timeout,
+}
+
+/// C `struct macro_data` (`base.c:242-254`): the `CDR_MACRO` NPC's own
+/// per-victim state. C's `victim`/`v_ID` pair (a `cn` array index plus its
+/// `ch[].ID` generation check, guarding against the slot being recycled by
+/// a different character between ticks) collapses to a single
+/// [`CharacterId`] here, since this codebase's `CharacterId` is already
+/// the stable, non-recycled identity every other ported NPC driver
+/// compares directly (see e.g. `World::dungeonmaster_handle_char_message`'s
+/// `speaker_id == dungeonmaster_id` check) - a stale `victim` simply stops
+/// resolving via `World::characters.get`, which every consumer already
+/// treats as "victim is gone, advance". C's six loose challenge fields
+/// (`challenge_type`/`val1`/`val2`/`challenge_word`/`expected_answer`/
+/// `choice_answer`) fold into a single [`crate::macro_daemon::
+/// MacroChallenge`] (already ported whole, see that module).
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct MacroDriverData {
+    pub state: MacroDriverState,
+    pub victim: Option<CharacterId>,
+    /// C `dat->victim`'s *other* role: while `state ==
+    /// MacroDriverState::Idle`, the next victim search resumes from this
+    /// `CharacterId.0` value (C's `for (co = dat->victim; ...)`
+    /// continuation) - split into its own field since Rust's `victim`
+    /// above is `None` exactly when there is no *current* target, whereas
+    /// C's single `int victim` always holds a meaningful value in both
+    /// roles at once.
+    pub search_cursor: u32,
+    /// C `start` (`ticker` when the current challenge began).
+    pub start: u64,
+    /// C `last` (`ticker` of the last time the challenge was (re-)asked).
+    pub last: u64,
+    pub challenge: Option<crate::macro_daemon::MacroChallenge>,
+    pub teleported_to_jail: bool,
 }
 
 /// C `struct qa qa[]` (`src/area/13/dungeon.c:91-99`): `dungeonmaster`'s
@@ -2488,7 +2539,8 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::ArenaFighter(_)
             | CharacterDriverState::ArenaManager(_)
             | CharacterDriverState::Dungeonmaster(_)
-            | CharacterDriverState::Dungeonfighter(_),
+            | CharacterDriverState::Dungeonfighter(_)
+            | CharacterDriverState::Macro(_),
         ) => SimpleBaddyDriverData::default(),
         None => SimpleBaddyDriverData::default(),
     };

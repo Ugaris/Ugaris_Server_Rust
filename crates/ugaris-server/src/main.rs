@@ -6753,6 +6753,27 @@ async fn main() -> anyhow::Result<()> {
                     );
                 }
 
+                // C `macro_driver`: the anti-macro/anti-bot "Macro Daemon"
+                // NPC (`src/module/base.c`) - victim search (plus
+                // `/summonmacro`'s forced-pickup), teleport-to-victim,
+                // challenge asking/repeating/timeout, and reward granting.
+                let (is_xmas, _xmas_event_year) = runtime_effective_xmas_event(&runtime);
+                let macro_daemon_events_applied = apply_macro_events(
+                    &mut world,
+                    &mut runtime,
+                    &mut zone_loader,
+                    config.area_id,
+                    is_xmas,
+                    current_unix_time(),
+                );
+                if macro_daemon_events_applied != 0 {
+                    info!(
+                        macro_daemon_events_applied,
+                        tick = world.tick.0,
+                        "Macro Daemon NPC(s) advanced state this tick"
+                    );
+                }
+
                 // C `lostcon_driver`'s full per-tick body
                 // (`src/module/lostcon.c:117-220`) for every character
                 // currently lingering under `CDR_LOSTCON`: the message
