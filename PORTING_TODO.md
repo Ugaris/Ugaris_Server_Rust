@@ -9821,6 +9821,88 @@ Unlocks every quest NPC. Do these before any P4 area work.
   `#acwarn` (now a clear quick win per the note above), or pick a
   different top-level gap entirely.
 
+  Progress Log (iteration 210): picked iteration 209's own suggested
+  quick win - ported `#acwarn <player> [reason]` (`ac_cmd_warn`,
+  `anticheat.c:1291-1314`, `CF_GOD|CF_STAFF`-gated, exact-word;
+  `command.c:10323-10329` dispatch) in full. Extended `ac_player_stats`
+  (new migration `0015_ac_player_stats_warnings.sql`, `alter table ...
+  add column if not exists`, matching `0014`'s own doc-commented
+  intent to keep growing this one table rather than replacing it) with
+  the two columns `db_ac_issue_warning` (`database_anticheat.c:606-621`)
+  actually touches: `warnings_issued` (incremented, not overwritten,
+  each call) and `last_warning_at`. New `AntiCheatRepository::
+  issue_warning` (`crates/ugaris-db/src/anticheat.rs`) folds C's
+  `db_ac_ensure_player_stats`-then-`UPDATE ... = warnings_issued + 1`
+  two-step into one `INSERT ... ON CONFLICT DO UPDATE SET warnings_issued
+  = ac_player_stats.warnings_issued + 1`, same shape as `set_flagged`/
+  `set_trusted`; `db_ac_log_admin_action`'s audit row is skipped, same
+  established convention. New `ugaris-core` `world/anticheat.rs` type
+  `AcWarnLookup` - unlike every sibling in this family it also carries
+  `target_id` (not just `target_name`/`session_id`), since C's handler
+  sends two of its four messages to the *target* character directly
+  (`log_char(co, ...)`), not just the caller - the first command in this
+  whole slice that needs to message someone other than the admin.
+  `World::queue_ac_warn_lookup`/`drain_pending_ac_warn_lookups` follow
+  the established pattern. New `ugaris-server` `apply_ac_warn_events`
+  (`world_events.rs`): resolves the subscriber id via the already-
+  existing `account_id_for_session` (a `None` result reproduces C's
+  synchronous `subscriber_id <= 0` -> "Could not find subscriber for
+  '{name}'." branch, the one case this event skips the rest of the work
+  for); once resolved, calls `issue_warning` *ignoring its `Result`*
+  and unconditionally sends all four reply lines - a deliberate,
+  documented deviation from this file's usual "reply only once the
+  mutation succeeds" convention, because C's own `ac_cmd_warn` does
+  exactly the same thing (`db_ac_issue_warning`'s return value is never
+  checked at the call site either). The target's `"*** WARNING ***"`
+  line reuses `commands_player.rs`'s existing `legacy_light_red_text_
+  bytes` helper (C's `COL_LIGHT_RED`/`COL_RESET`-wrapped text), the other
+  three lines are plain `queue_system_text`. Dispatch
+  (`commands_admin.rs`, right after `#acwatch`) reproduces C's `sscanf
+  (args, "%39s %255[^\n]", target, reason)` name/reason split (first
+  whitespace token capped at 39 chars as the name, the rest of the line
+  capped at 255 chars as the reason) with the C-side pre-seeded default
+  reason ("Anti-cheat warning") applied here when the second token is
+  absent/empty; same online-`CF_PLAYER`-name-scan-then-session-id-lookup
+  shape as `#acflag`/`#acwatch`, same `CF_GOD|CF_STAFF` gate as `#acflag`
+  (not `#actrust`/`#acuntrust`/`#acunflag`'s `CF_GOD`-only). The
+  `#acwarn <name> [reason] - Issue AC warning` help line already existed
+  unwired in `#achelp`'s static text (added when the whole `#ac*` help
+  block was first ported), like several other gaps this file's REMAINING
+  note has found before - no help-text change was needed. Extended the
+  existing live `subscriber_flag_and_trust_round_trip` `ugaris-db` test
+  (reusing its `account_id`/session fixture) with two `issue_warning`
+  calls asserting the counter increments rather than overwrites and
+  `last_warning_at` gets stamped, rather than adding a whole new fixture.
+  1 new `ugaris-core` test (`world/tests/anticheat.rs`: queue/drain round
+  trip for `AcWarnLookup`, including `target_id`), 2 new `ugaris-server`
+  tests in `world_events.rs` (`ac_warn_tests`: the standard no-lookups/
+  missing-repository no-op pair) and 6 in `tests/commands_admin.rs`
+  (`CF_GOD|CF_STAFF` gate, usage, not-found-online, no-connection-data,
+  default-reason-when-omitted, and given-reason paths). `cargo fmt --all`,
+  `cargo test --workspace` (2099 ugaris-core [+1] + 68 db + 3 net + 44
+  protocol + 987 server [+8], all green, zero failures), `cargo build -p
+  ugaris-server` / `cargo build --workspace` clean with zero warnings,
+  10s boot-smoke confirmed "entering Rust game loop" with no panic. This
+  closes the `#acwarn` quick win entirely. REMAINING: gap (a) still has
+  `achistory`/`acsessions`/`acviolations` (aggregate queries over the
+  still-unported session-rollup half of `ac_player_stats`),
+  `acsharedip`/`acsharedhw`/`achighrisk`/`aclookup` (multi-account
+  detection, a real new query surface), and `acsiglist`/`acsigadd`/
+  `acsigdel` (a whole unported bad-signature table) - all three remain
+  genuinely large, unstarted sub-slices, not quick wins. Gaps (b)
+  (`shutup`/`exterminate`, blocked on `subscriber_id`/`server_chat` per
+  iteration 205's note) and (d)/(e)/(f)/(g) from iteration 195's list are
+  also untouched. Next iteration picking up this task should pick one of
+  the remaining `ac*` aggregate-query sub-slices (recommend starting with
+  `achistory`/`acsessions`/`acviolations` since they only need read
+  queries over data this codebase already writes - `anticheat_sessions`
+  and now `ac_player_stats` - unlike `acsharedip`/`acsharedhw`/
+  `acsiglist`/etc. which need genuinely new tracking tables), or pick a
+  different top-level `PORTING_TODO.md` task/section entirely, since this
+  one giant task's remaining gaps are all sizeable multi-iteration slices
+  now rather than the small independent wins that characterized
+  iterations 158-210.
+
 - [ ] **Cross-area transfer** - the big multi-server feature. Every
   cross-area teleport currently returns "target server down". Decide the
   single-process stance first (likely: run multiple areas in one process

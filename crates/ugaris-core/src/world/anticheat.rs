@@ -168,6 +168,27 @@ pub struct AcUntrustLookup {
     pub session_id: i64,
 }
 
+/// `#acwarn <player> [reason]` (`ac_cmd_warn`, `anticheat.c:1291-1314`),
+/// `CF_GOD|CF_STAFF`-gated, exact-word (`cmdcmp(ptr, "acwarn", 6)`).
+/// Same single-name-target resolution as `#acflag`/`#actrust` above, but
+/// unlike every other member of this family also carries the resolved
+/// `target_id` (not just `target_name`) - the two-line warning message
+/// (`log_char(co, ...)`) has to reach the *target* character directly,
+/// something no sibling command needs (they only ever message the
+/// caller). `reason` defaults to `"Anti-cheat warning"` when omitted,
+/// matching C's `sscanf(args, "%39s %255[^\n]", target, reason)` pattern,
+/// where `reason`'s buffer is pre-seeded with that exact default text
+/// before the `sscanf` call, so a missing second token leaves it
+/// untouched.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AcWarnLookup {
+    pub caller_id: CharacterId,
+    pub target_id: CharacterId,
+    pub target_name: String,
+    pub session_id: i64,
+    pub reason: String,
+}
+
 impl World {
     pub fn queue_ac_status_lookup(
         &mut self,
@@ -309,6 +330,27 @@ impl World {
 
     pub fn drain_pending_ac_untrust_lookups(&mut self) -> Vec<AcUntrustLookup> {
         self.pending_ac_untrust_lookups.drain(..).collect()
+    }
+
+    pub fn queue_ac_warn_lookup(
+        &mut self,
+        caller_id: CharacterId,
+        target_id: CharacterId,
+        target_name: String,
+        session_id: i64,
+        reason: String,
+    ) {
+        self.pending_ac_warn_lookups.push(AcWarnLookup {
+            caller_id,
+            target_id,
+            target_name,
+            session_id,
+            reason,
+        });
+    }
+
+    pub fn drain_pending_ac_warn_lookups(&mut self) -> Vec<AcWarnLookup> {
+        self.pending_ac_warn_lookups.drain(..).collect()
     }
 }
 

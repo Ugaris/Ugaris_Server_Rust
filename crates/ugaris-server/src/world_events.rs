@@ -2464,6 +2464,65 @@ pub(crate) async fn apply_ac_untrust_events(
     applied
 }
 
+/// `#acwarn <player> [reason]`'s async DB round trip - see `ugaris-core`'s
+/// `world/anticheat.rs` module doc comment. Reproduces `ac_cmd_warn`
+/// (`anticheat.c:1291-1314`): resolves the subscriber id
+/// (`get_subscriberId_from_character`, here `account_id_for_session`) -
+/// a `None` result mirrors C's synchronous `subscriber_id <= 0` ->
+/// "Could not find subscriber for '{name}'." branch, the one case this
+/// event actually skips the rest of the work for. Once a subscriber id
+/// is found, C calls `db_ac_issue_warning` *without checking its return
+/// value* and then unconditionally sends all four messages (two to the
+/// target, two to the caller) - reproduced as-is here too (the `issue_
+/// warning` DB write's `Result` is deliberately ignored, matching C's own
+/// disregard for it, rather than this file's usual "reply only once the
+/// mutation succeeds" convention).
+pub(crate) async fn apply_ac_warn_events(
+    world: &mut World,
+    anticheat_repository: &Option<ugaris_db::PgAntiCheatRepository>,
+) -> usize {
+    let lookups = world.drain_pending_ac_warn_lookups();
+    if lookups.is_empty() {
+        return 0;
+    }
+    let Some(repository) = anticheat_repository else {
+        return 0;
+    };
+    let mut applied = 0;
+    for lookup in lookups {
+        let Ok(Some(account_id)) = repository.account_id_for_session(lookup.session_id).await
+        else {
+            world.queue_system_text(
+                lookup.caller_id,
+                format!("Could not find subscriber for '{}'.", lookup.target_name),
+            );
+            continue;
+        };
+        let _ = repository.issue_warning(account_id).await;
+        world.queue_system_text_bytes(
+            lookup.target_id,
+            legacy_light_red_text_bytes("*** WARNING ***"),
+        );
+        world.queue_system_text(
+            lookup.target_id,
+            format!("You have received an anti-cheat warning: {}", lookup.reason),
+        );
+        world.queue_system_text(
+            lookup.target_id,
+            "Further violations may result in suspension.".to_string(),
+        );
+        world.queue_system_text(
+            lookup.caller_id,
+            format!(
+                "Issued warning to {}: {}",
+                lookup.target_name, lookup.reason
+            ),
+        );
+        applied += 1;
+    }
+    applied
+}
+
 /// `#querystats`/`/querystats`'s async round trip - see `ugaris-core`'s
 /// `world/querystats.rs` module doc comment for exactly which C counters
 /// this scoped-down port tracks (and why the rest are omitted rather than
@@ -3853,6 +3912,36 @@ mod ac_untrust_tests {
         assert_eq!(applied, 0);
         assert!(world.drain_pending_system_texts().is_empty());
         assert!(world.drain_pending_ac_untrust_lookups().is_empty());
+    }
+}
+
+#[cfg(test)]
+mod ac_warn_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn no_lookups_queued_is_a_cheap_no_op() {
+        let mut world = World::default();
+        let applied = apply_ac_warn_events(&mut world, &None).await;
+        assert_eq!(applied, 0);
+        assert!(world.drain_pending_system_texts().is_empty());
+    }
+
+    #[tokio::test]
+    async fn missing_repository_leaves_the_lookup_queued_state_untouched_but_drained() {
+        let mut world = World::default();
+        world.queue_ac_warn_lookup(
+            CharacterId(7),
+            CharacterId(8),
+            "Baddie".to_string(),
+            30,
+            "Speedhacking".to_string(),
+        );
+
+        let applied = apply_ac_warn_events(&mut world, &None).await;
+        assert_eq!(applied, 0);
+        assert!(world.drain_pending_system_texts().is_empty());
+        assert!(world.drain_pending_ac_warn_lookups().is_empty());
     }
 }
 

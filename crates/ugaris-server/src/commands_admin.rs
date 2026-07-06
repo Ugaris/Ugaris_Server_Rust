@@ -5969,6 +5969,71 @@ pub(crate) fn apply_admin_character_command(
         });
     }
 
+    // C `#acwarn <player> [reason]` (`command.c:10323-10329` dispatch,
+    // `CF_GOD|CF_STAFF`-gated, exact-word; `ac_cmd_warn`, `anticheat.c:
+    // 1291-1314`). Same single-name-target resolution as `#acflag`/
+    // `#acwatch` above, but keeps `target_id` around too (not just
+    // `target_name`/`session_id`) since the target itself, not just the
+    // caller, receives a message - see `apply_ac_warn_events` for the
+    // subscriber-id resolution and all four reply lines. Name/reason
+    // split reproduces C's `sscanf(args, "%39s %255[^\n]", target,
+    // reason)` (first whitespace-delimited token, capped at 39 chars, as
+    // the name; the rest of the line, capped at 255 chars, as the
+    // reason) with `reason`'s C-side pre-seeded default ("Anti-cheat
+    // warning") applied here when the second token is absent/empty.
+    if lower == "acwarn" {
+        let Some(caller) = world.characters.get(&character_id) else {
+            return Some(KeyringCommandResult::default());
+        };
+        if !caller
+            .flags
+            .intersects(CharacterFlags::STAFF | CharacterFlags::GOD)
+        {
+            return None;
+        }
+        if rest.is_empty() {
+            return Some(KeyringCommandResult {
+                messages: vec!["Usage: #acwarn <player> [reason]".to_string()],
+                ..Default::default()
+            });
+        }
+        let mut parts = rest.splitn(2, char::is_whitespace);
+        let name: String = parts.next().unwrap_or("").chars().take(39).collect();
+        let reason_raw = parts.next().unwrap_or("").trim_start();
+        let reason: String = if reason_raw.is_empty() {
+            "Anti-cheat warning".to_string()
+        } else {
+            reason_raw.chars().take(255).collect()
+        };
+        let mut candidates: Vec<&Character> = world
+            .characters
+            .values()
+            .filter(|character| {
+                character.flags.contains(CharacterFlags::PLAYER)
+                    && character.name.eq_ignore_ascii_case(&name)
+            })
+            .collect();
+        candidates.sort_by_key(|character| character.id.0);
+        let Some(target_id) = candidates.first().map(|character| character.id) else {
+            return Some(KeyringCommandResult {
+                messages: vec![format!("Player '{name}' not found online.")],
+                ..Default::default()
+            });
+        };
+        let target_name = world.characters[&target_id].name.clone();
+        let Some(session_id) = runtime
+            .player_for_character(target_id)
+            .and_then(|player| player.anticheat_session_id)
+        else {
+            return Some(KeyringCommandResult {
+                messages: vec![format!("Player '{target_name}' has no connection data.")],
+                ..Default::default()
+            });
+        };
+        world.queue_ac_warn_lookup(character_id, target_id, target_name, session_id, reason);
+        return Some(KeyringCommandResult::default());
+    }
+
     // C `/clearppd <ppdname> [player]` (`command.c:10144-10146` dispatch,
     // `CF_GOD | CF_STAFF`-gated, `cmdcmp(ptr, "clearppd", 8)` - exact word
     // only; `cmd_clearppd`, `command.c:4214-4288`). A raw, PPD-name-

@@ -143,6 +143,13 @@ pub trait AntiCheatRepository: Send + Sync {
     /// is_trusted` for the subscriber, same ensure-then-update shape and
     /// same skipped `db_ac_log_admin_action` audit row as `set_flagged`.
     async fn set_trusted(&self, subscriber_id: i64, is_trusted: bool) -> anyhow::Result<()>;
+    /// `#acwarn <player> [reason]`'s persistent half (`db_ac_issue_
+    /// warning`, `database_anticheat.c:606-621`): upserts `ac_player_
+    /// stats.warnings_issued`/`last_warning_at` for the subscriber,
+    /// incrementing the counter (not overwriting it) on every call - same
+    /// ensure-then-update shape and same skipped `db_ac_log_admin_action`
+    /// audit row as `set_flagged`/`set_trusted`.
+    async fn issue_warning(&self, subscriber_id: i64) -> anyhow::Result<()>;
 }
 
 #[derive(Debug, Clone)]
@@ -477,6 +484,20 @@ impl AntiCheatRepository for PgAntiCheatRepository {
         )
         .bind(subscriber_id)
         .bind(is_trusted)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    async fn issue_warning(&self, subscriber_id: i64) -> anyhow::Result<()> {
+        sqlx::query(
+            "insert into ac_player_stats (subscriber_id, warnings_issued, last_warning_at, \
+             updated_at) values ($1, 1, now(), now()) \
+             on conflict (subscriber_id) do update set \
+             warnings_issued = ac_player_stats.warnings_issued + 1, last_warning_at = now(), \
+             updated_at = now()",
+        )
+        .bind(subscriber_id)
         .execute(&self.pool)
         .await?;
         Ok(())
@@ -929,6 +950,38 @@ mod tests {
             .fetch_one(&pool)
             .await
             .expect("re-fetch ac_player_stats row");
+            assert!(!is_flagged);
+            assert!(!is_trusted);
+
+            // `#acwarn`'s backing method (`issue_warning`): the same
+            // `ac_player_stats` row is reused (already created above by
+            // `set_flagged`), so this call must only increment
+            // `warnings_issued` and stamp `last_warning_at`, not disturb
+            // `is_flagged`/`is_trusted`; a second call must increment
+            // again rather than overwrite, matching C's own `warnings_
+            // issued = warnings_issued + 1`.
+            repo.issue_warning(account_id)
+                .await
+                .expect("issue_warning first call");
+            repo.issue_warning(account_id)
+                .await
+                .expect("issue_warning second call");
+
+            let (warnings_issued, last_warning_at_is_set, is_flagged, is_trusted): (
+                i32,
+                bool,
+                bool,
+                bool,
+            ) = sqlx::query_as(
+                "select warnings_issued, last_warning_at is not null, is_flagged, is_trusted \
+                 from ac_player_stats where subscriber_id = $1",
+            )
+            .bind(account_id)
+            .fetch_one(&pool)
+            .await
+            .expect("fetch ac_player_stats row after issue_warning");
+            assert_eq!(warnings_issued, 2);
+            assert!(last_warning_at_is_set);
             assert!(!is_flagged);
             assert!(!is_trusted);
 

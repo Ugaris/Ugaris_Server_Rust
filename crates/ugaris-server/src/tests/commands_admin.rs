@@ -8925,6 +8925,138 @@ fn acwatch_toggles_the_targets_watch_flag_and_confirms() {
     );
 }
 
+// C `#acwarn <player> [reason]` (`command.c:10323-10329` dispatch,
+// `ac_cmd_warn`, `anticheat.c:1291-1314`), `CF_GOD|CF_STAFF`-gated
+// (unlike `#actrust`/`#acuntrust`/`#acunflag`'s `CF_GOD`-only, but the
+// same gate as `#acflag`).
+
+#[test]
+fn acwarn_is_god_or_staff() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (_god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+    let mut staff = login_character(CharacterId(20), &login_block("Staffer"), 1, 12, 10);
+    staff.flags.insert(CharacterFlags::STAFF);
+    world.add_character(staff);
+
+    // Neither GOD nor STAFF -> not recognized.
+    assert!(apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        target_id,
+        "#acwarn Target",
+        1
+    )
+    .is_none());
+
+    // STAFF alone is enough.
+    for player in runtime.players.values_mut() {
+        if player.character_id == Some(target_id) {
+            player.anticheat_session_id = Some(4321);
+        }
+    }
+    let result = apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        CharacterId(20),
+        "#acwarn Target",
+        1,
+    )
+    .expect("staff acwarn should be recognized");
+    assert_eq!(result.messages, Vec::<String>::new());
+    assert_eq!(world.drain_pending_ac_warn_lookups().len(), 1);
+}
+
+#[test]
+fn acwarn_without_a_name_shows_usage() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+
+    let result = apply_admin_character_command(&mut world, &mut runtime, god_id, "#acwarn", 1)
+        .expect("god acwarn should be recognized");
+    assert_eq!(result.messages, vec!["Usage: #acwarn <player> [reason]"]);
+}
+
+#[test]
+fn acwarn_reports_not_found_online_for_an_unknown_name() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+
+    let result =
+        apply_admin_character_command(&mut world, &mut runtime, god_id, "#acwarn Nobody", 1)
+            .expect("god acwarn should be recognized");
+    assert_eq!(result.messages, vec!["Player 'Nobody' not found online."]);
+}
+
+#[test]
+fn acwarn_reports_no_connection_data_when_target_has_no_anticheat_session() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+
+    let result =
+        apply_admin_character_command(&mut world, &mut runtime, god_id, "#acwarn Target", 1)
+            .expect("god acwarn should be recognized");
+    assert_eq!(
+        result.messages,
+        vec!["Player 'Target' has no connection data."]
+    );
+    assert!(world.drain_pending_ac_warn_lookups().is_empty());
+}
+
+#[test]
+fn acwarn_queues_a_lookup_with_the_default_reason_when_omitted() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+    for player in runtime.players.values_mut() {
+        if player.character_id == Some(target_id) {
+            player.anticheat_session_id = Some(4321);
+        }
+    }
+
+    let result =
+        apply_admin_character_command(&mut world, &mut runtime, god_id, "#acwarn target", 1)
+            .expect("god acwarn should be recognized");
+    assert_eq!(result.messages, Vec::<String>::new());
+
+    let queued = world.drain_pending_ac_warn_lookups();
+    assert_eq!(queued.len(), 1);
+    assert_eq!(queued[0].caller_id, god_id);
+    assert_eq!(queued[0].target_id, target_id);
+    assert_eq!(queued[0].target_name, "Target");
+    assert_eq!(queued[0].session_id, 4321);
+    assert_eq!(queued[0].reason, "Anti-cheat warning");
+}
+
+#[test]
+fn acwarn_queues_a_lookup_with_the_given_reason() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+    for player in runtime.players.values_mut() {
+        if player.character_id == Some(target_id) {
+            player.anticheat_session_id = Some(4321);
+        }
+    }
+
+    let result = apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        god_id,
+        "#acwarn target Speedhacking detected in area 3",
+        1,
+    )
+    .expect("god acwarn should be recognized");
+    assert_eq!(result.messages, Vec::<String>::new());
+
+    let queued = world.drain_pending_ac_warn_lookups();
+    assert_eq!(queued.len(), 1);
+    assert_eq!(queued[0].reason, "Speedhacking detected in area 3");
+}
+
 // C `/showppd <name> <ppd>` (`command.c:8790-8837` dispatch,
 // `cmd_showppd` `command.c:275-346`), `CF_GOD`-gated, online-only (not
 // `lookup_name`-backed).
