@@ -108,6 +108,108 @@ fn show_values_lines_mage_only_uses_mage_class_and_line_count() {
     assert_eq!(lines.len(), 11);
 }
 
+const DAY: i64 = 60 * 60 * 24;
+
+#[test]
+fn compute_paid_till_never_paid_grants_28_day_free_grace_from_creation() {
+    let created = 1_000_000_i64;
+    let now = created + DAY * 3;
+    let (t, is_paid) = compute_paid_till(None, created, now);
+    assert!(!is_paid);
+    // Rounded-up-to-even-day: (created + 28d + DAY - 1) & !1.
+    let expected = (created + DAY * 28 + DAY - 1) & !1;
+    assert_eq!(t, expected);
+    assert_eq!(t % 2, 0);
+}
+
+#[test]
+fn compute_paid_till_zero_raw_value_is_treated_as_never_paid() {
+    let created = 500_000_i64;
+    let now = created + DAY;
+    let (t, is_paid) = compute_paid_till(Some(0), created, now);
+    assert!(!is_paid);
+    assert_eq!(t, (created + DAY * 28 + DAY - 1) & !1);
+}
+
+#[test]
+fn compute_paid_till_future_expiration_rounds_up_to_even_day() {
+    let created = 0_i64;
+    let now = 10_000_i64;
+    // An even raw value, in the future - regular paid account branch.
+    let raw = now + DAY * 5 + 1234;
+    let (t, is_paid) = compute_paid_till(Some(raw), created, now);
+    assert!(is_paid);
+    assert_eq!(t, (raw + DAY - 1) & !1);
+    assert_eq!(t % 2, 0);
+    assert!(t >= now);
+}
+
+#[test]
+fn compute_paid_till_odd_raw_value_is_a_12_hour_account_passed_through() {
+    let created = 0_i64;
+    let now = 10_000_i64;
+    // Odd raw value, in the future - the "12 hour paid account" marker;
+    // C passes it straight through unrounded.
+    let raw = now + 6 * 60 * 60 + 1;
+    assert!(raw % 2 == 1);
+    let (t, is_paid) = compute_paid_till(Some(raw), created, now);
+    assert!(is_paid);
+    assert_eq!(t, raw);
+    assert_eq!(t % 2, 1);
+}
+
+#[test]
+fn compute_paid_till_past_expiration_still_within_four_week_creation_window_counts_as_paid() {
+    // C's second OR-branch: `paid_till > creation_time + 4 weeks` also
+    // counts as paid even if `paid_till <= now` - covers the case of a
+    // very-recently-created account whose raw paid_till already passed
+    // but is still further out than 4 weeks from creation (a data
+    // oddity C tolerates rather than rejects).
+    let created = 0_i64;
+    let now = DAY * 40;
+    let raw = DAY * 35; // <= now (already "expired"), but > created + 28d.
+    assert!(raw <= now);
+    assert!(raw > created + DAY * 7 * 4);
+    let (_, is_paid) = compute_paid_till(Some(raw), created, now);
+    assert!(is_paid);
+}
+
+#[test]
+fn compute_paid_till_past_expiration_outside_four_week_window_falls_back_to_free_grace() {
+    let created = 0_i64;
+    let now = DAY * 100;
+    let raw = DAY * 10; // well in the past, well within 4 weeks of creation.
+    let (t, is_paid) = compute_paid_till(Some(raw), created, now);
+    assert!(!is_paid);
+    assert_eq!(t, (created + DAY * 28 + DAY - 1) & !1);
+}
+
+#[test]
+fn paid_player_line_even_t_reports_whole_days_left() {
+    let now = 0_i64;
+    let t = DAY * 5; // even
+    assert_eq!(t % 2, 0);
+    assert_eq!(
+        paid_player_line(true, t, now),
+        "Paying player: yes (5 days left)"
+    );
+    assert_eq!(
+        paid_player_line(false, t, now),
+        "Paying player: no (5 days left)"
+    );
+}
+
+#[test]
+fn paid_player_line_odd_t_reports_hh_mm_ss_countdown() {
+    let now = 0_i64;
+    let t = 6 * 60 * 60 + 30 * 60 + 15; // odd, 06:30:15
+    assert_eq!(t % 2, 1);
+    assert_eq!(
+        paid_player_line(true, t, now),
+        "Paying player: yes (06:30:15 hours left)"
+    );
+}
+
 #[test]
 fn show_values_lines_final_lines_report_armor_weapon_speed_and_combat_values() {
     let mut actor = character(1);

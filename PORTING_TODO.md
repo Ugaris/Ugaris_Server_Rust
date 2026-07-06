@@ -10914,6 +10914,63 @@ Unlocks every quest NPC. Do these before any P4 area work.
   but *without* the role swap or a "Sent." confirmation (C's
   `look_values_bg` sends the resolved target's own info back to the
   caller, unlike `show_values_bg`'s swapped-roles delivery).
+  REMAINING (iteration 230): ported the `paid_until` threading slice the
+  iteration-229 note flagged as `/values`'s last blocker, and reused the
+  same slice to also pre-build the "Paying player: ..." display-line
+  logic so the future full-command slice only has to wire plumbing, not
+  re-derive C's rounding arithmetic. New `ugaris-db::CharacterRepository::
+  find_paid_until_info(character_id)` (`ugaris-db/src/character.rs`)
+  joins `characters`/`accounts` by `account_id` exactly like
+  `BEGIN_LOGIN_SQL` (`extract(epoch from a.paid_until)::bigint`/
+  `extract(epoch from a.created_at)::bigint`, keyed by id rather than
+  name since `/values`' caller already has a resolved `CharacterSummary`)
+  - no new migration needed, `accounts.paid_until timestamptz` already
+  exists (`migrations/0001_core_accounts_characters.sql`). New
+  `ugaris-core::world::values::compute_paid_till(raw_paid_until_unix:
+  Option<i64>, account_created_at_unix, now_unix) -> (t, is_paid)` ports
+  C's `load_char_pwd` paid-account-expiration computation
+  (`database_character.c:619-703`) digit-for-digit: the `paid_till &&
+  (paid_till > now || paid_till > creation_time + 4 weeks)` paid-vs-free
+  branch, the odd-`paid_till`-is-a-"12-hour-account"-passed-through-
+  unrounded vs even-rounds-up-to-the-next-even-day sub-branch
+  (`(paid_till + DAY - 1) & !1`), and the free-account 28-day grace
+  period from account creation - deliberately skips the `#ifdef STAFF`
+  "staff accounts always get 24 hours" branch
+  (`database_character.c:675-677`) since `STAFF` is a special
+  staff-test-server compile flag never `#define`d anywhere in the C
+  tree's build config, confirmed by grepping the whole tree. New
+  `paid_player_line(is_paid_flag, t_unix, now_unix)` ports the actual
+  "Paying player: %s (...)" format string (`tool.c:2903-2911`), branching
+  on `t & 1` for the HH:MM:SS-vs-days-left shape. 11 new tests (7 for
+  `compute_paid_till`'s branch matrix - never-paid, zero-raw-value,
+  future-even, future-odd-12-hour, past-but-within-4-weeks-of-creation,
+  past-and-outside-4-weeks - plus 2 for `paid_player_line`'s two format
+  branches, plus 1 SQL-shape test for the new repository query) in
+  `crates/ugaris-core/src/world/tests/values.rs` and
+  `crates/ugaris-db/src/character.rs`'s existing `#[cfg(test)]` module.
+  Not yet wired to any command: `/values` itself (`queue_values_command`/
+  `values_lines`/`apply_values_events`) still needs (1) the full `V_MAX`
+  skill-dump line loop (new code, `show_values_lines`'s class-gated
+  subset doesn't cover it), (2) threading `runtime: &mut ServerRuntime`
+  into a new `apply_values_events` (unlike `apply_showvalues_events`,
+  which never needed `bank_gold`/`stats_online_time` - both live on
+  `PlayerRuntime`, only reachable via `ServerRuntime::
+  player_for_character`, not from a bare `&mut World`; `apply_punish_
+  events`'s `runtime: &mut ServerRuntime` parameter is the existing
+  precedent for this shape), (3) the mirror-area line ("Mirror: %d,
+  actual mirror: %d. Area %d, %s" - `PlayerRuntime::current_mirror_id`
+  for the character's own mirror, `config.mirror_id`/`config.area_id`
+  for "actual", `area_section::section_at(area_id, x, y)` for the
+  section name - all three exist but in different structs than
+  `world_events.rs`'s current per-event signatures reach), and (4) the
+  `/values` dispatch arm itself in `commands_admin.rs` (`CF_GOD|CF_STAFF`
+  gated, full-word-only `lower == "values"`, modeled on the `/look`/
+  `/klog` gating idiom - `/showvalues`'s open-to-everyone gate is not the
+  right model here). `cargo fmt --all`, `cargo test --workspace` (2136
+  ugaris-core [+8] + 78 db [+1] + 3 net + 45 protocol + 1069 server, all
+  green, zero failures), `cargo build -p ugaris-server`/`--workspace`
+  clean with zero warnings, 10s boot-smoke confirmed "entering Rust game
+  loop" with no panic.
 
 - [ ] **Player-side fight-driver auto-combat (lostcon self-defense +
   no*/auto* toggle family)** - `fight_driver_attack_enemy`/

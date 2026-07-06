@@ -87,6 +87,17 @@ pub struct CharacterSummary {
     pub mirror_id: i32,
 }
 
+/// See [`CharacterRepository::find_paid_until_info`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PaidUntilInfo {
+    /// `accounts.paid_until` as a unix timestamp; `None` for SQL NULL
+    /// (C's `subscriber.paid_till` column being unset, read as `0`).
+    pub raw_paid_until_unix: Option<i64>,
+    /// `accounts.created_at` as a unix timestamp (C's `subscriber.
+    /// creation_time`).
+    pub account_created_at_unix: i64,
+}
+
 /// C `db_lastseen`'s `charinfo` row shape (`database_notes.c:352-390`):
 /// the properly-capitalized name, whether the row's `class` carries
 /// `CF_GOD` (staff never gets an elapsed-time readout), and the most
@@ -241,6 +252,24 @@ pub trait CharacterRepository: Send + Sync {
     /// `"**deleted**"` placeholder strings - the caller substitutes its
     /// own fallback text).
     async fn find_name_by_id(&self, character_id: CharacterId) -> anyhow::Result<Option<String>>;
+    /// C `load_char_pwd`'s two SQL-sourced inputs to the paid-account
+    /// expiration computation (`database_character.c:626-668`): the raw
+    /// `subscriber.paid_till`/`subscriber.creation_time` columns, here
+    /// `accounts.paid_until`/`accounts.created_at` joined by the
+    /// requested character's `account_id` (same join shape as
+    /// `BEGIN_LOGIN_SQL`). Keyed by character id (not name) since every
+    /// caller already has a resolved `CharacterSummary`/live `Character`
+    /// (`/values`, C's `look_values_bg`, `tool.c:2903-2911` - see
+    /// `ugaris-core`'s `world::values::compute_paid_till` for what this
+    /// feeds). Returns `None` only if the character row itself (or its
+    /// `account_id` join) doesn't exist; a null `paid_until` column
+    /// surfaces as `PaidUntilInfo::raw_paid_until_unix: None` (C's
+    /// `row[2] ? atoi(row[2]) : 0` "never paid" case), not as an outer
+    /// `None`.
+    async fn find_paid_until_info(
+        &self,
+        character_id: CharacterId,
+    ) -> anyhow::Result<Option<PaidUntilInfo>>;
     /// C `exterminate`/`db_exterminate` (`database_admin.c:29-95,503-507`):
     /// `/exterminate <name>`'s DB half. Resolves `name` (case-insensitive,
     /// like every other by-name lookup in this file) to its owning
@@ -494,6 +523,22 @@ impl CharacterRepository for PgCharacterRepository {
         Ok(row.map(|(name,)| name))
     }
 
+    async fn find_paid_until_info(
+        &self,
+        character_id: CharacterId,
+    ) -> anyhow::Result<Option<PaidUntilInfo>> {
+        let row = sqlx::query_as::<_, (Option<i64>, i64)>(FIND_PAID_UNTIL_INFO_SQL)
+            .bind(character_id.0 as i64)
+            .fetch_optional(&self.pool)
+            .await?;
+        Ok(row.map(
+            |(raw_paid_until_unix, account_created_at_unix)| PaidUntilInfo {
+                raw_paid_until_unix,
+                account_created_at_unix,
+            },
+        ))
+    }
+
     async fn exterminate_account(&self, name: &str) -> anyhow::Result<Option<ExterminateOutcome>> {
         let mut tx = self.pool.begin().await?;
         let account_id: Option<(i64,)> =
@@ -537,6 +582,11 @@ impl CharacterRepository for PgCharacterRepository {
 }
 
 const FIND_NAME_BY_ID_SQL: &str = "select name from characters where id = $1";
+
+/// See [`CharacterRepository::find_paid_until_info`].
+const FIND_PAID_UNTIL_INFO_SQL: &str = "select extract(epoch from a.paid_until)::bigint, \
+extract(epoch from a.created_at)::bigint \
+from characters c join accounts a on a.id = c.account_id where c.id = $1";
 
 const SAVE_CHARACTER_BACKUP_SQL: &str = "update characters set \
 name = $1, description = $2, flags_bits = $3, speed_mode = $4, \
@@ -1092,6 +1142,14 @@ mod tests {
             FIND_NAME_BY_ID_SQL,
             "select name from characters where id = $1"
         );
+    }
+
+    #[test]
+    fn find_paid_until_info_sql_joins_accounts_by_character_id() {
+        assert!(FIND_PAID_UNTIL_INFO_SQL.contains("join accounts a on a.id = c.account_id"));
+        assert!(FIND_PAID_UNTIL_INFO_SQL.contains("where c.id = $1"));
+        assert!(FIND_PAID_UNTIL_INFO_SQL.contains("extract(epoch from a.paid_until)"));
+        assert!(FIND_PAID_UNTIL_INFO_SQL.contains("extract(epoch from a.created_at)"));
     }
 
     #[test]

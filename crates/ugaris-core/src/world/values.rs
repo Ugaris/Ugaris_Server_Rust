@@ -214,6 +214,86 @@ fn class_value_lines(character: &Character) -> Vec<String> {
     }
 }
 
+/// C `load_char_pwd`'s paid-account expiration computation
+/// (`database_character.c:619-703`), the value `ch[cn].paid_till` holds
+/// after a successful login and what `/values`' still-unported "Paying
+/// player: ..." line (`tool.c:2903-2911`) would display for it - see
+/// this module's doc comment for why `/values` itself remains a future
+/// slice; this function is the first piece of that slice's DB-value
+/// plumbing (`ugaris-db`'s `CharacterRepository::find_paid_until_info`
+/// supplies `raw_paid_until_unix`/`account_created_at_unix`).
+///
+/// Deliberately skips the `#ifdef STAFF` branch (`database_character.c:
+/// 675-677`, "Staff accounts always get 24 hours") - `STAFF` is a
+/// special staff-test-server compile flag never `#define`d anywhere in
+/// the legacy C tree's Makefile/config (grepped the whole tree), so the
+/// normal production/dev server this codebase ports never takes it.
+///
+/// - `raw_paid_until_unix`: `accounts.paid_until` (`None` = SQL NULL =
+///   C's `row[2] ? atoi(row[2]) : 0` "never paid" case, i.e. `0`).
+/// - `account_created_at_unix`: `accounts.created_at` (C's `subscriber.
+///   creation_time`).
+/// - `now_unix`: C's global `time_now`.
+///
+/// Returns `(t, is_paid)`: `t` is the rounded/clamped expiration C
+/// stores back into `ch[cn].paid_till` - an *odd* `t` marks a "12 hour
+/// paid account" (`/values`' HH:MM:SS branch, `t` passed through
+/// unrounded); an *even* `t` is either a whole-day-rounded regular paid
+/// account or the free-account 28-day grace period from account
+/// creation (`/values`' "%d days left" branch). `is_paid` mirrors C's
+/// `*ppaid` out-parameter (the `CF_PAID` flag's source at login),
+/// `false` for the free-account branch.
+///
+/// Every login this codebase ports already gates on `t >= now_unix`
+/// (`LoginOutcome::NotPaid`, C's `load_char_pwd` returning `4`) before a
+/// character can be online at all, so by the time a future `/values`
+/// caller reads a *live* (already-logged-in) target character, `t -
+/// now_unix` is always `>= 0` - no expired-but-still-online case exists
+/// to handle in the display line.
+pub fn compute_paid_till(
+    raw_paid_until_unix: Option<i64>,
+    account_created_at_unix: i64,
+    now_unix: i64,
+) -> (i64, bool) {
+    const DAY: i64 = 60 * 60 * 24;
+    let paid_till = raw_paid_until_unix.unwrap_or(0);
+    if paid_till != 0 && (paid_till > now_unix || paid_till > account_created_at_unix + DAY * 7 * 4)
+    {
+        let t = if paid_till & 1 != 0 {
+            paid_till
+        } else {
+            (paid_till + DAY - 1) & !1
+        };
+        (t, true)
+    } else {
+        let t = (account_created_at_unix + DAY * 28 + DAY - 1) & !1;
+        (t, false)
+    }
+}
+
+/// C `show_values_bg`'s "Paying player: ..." line (`tool.c:2903-2911`),
+/// given [`compute_paid_till`]'s `t` output and the target's `CF_PAID`
+/// flag for the "yes"/"no" word (C's `ch[co].flags & CF_PAID`, a
+/// separately-stored bit set at login time from `compute_paid_till`'s
+/// `is_paid` - kept as a caller-supplied `bool` here rather than always
+/// trusting the freshly recomputed `is_paid`, matching C reading the
+/// *stored* flag rather than recomputing it live). Branches on `t & 1`
+/// exactly like C: an odd `t` (a "12 hour paid account") prints an
+/// `HH:MM:SS` countdown; an even `t` prints whole days remaining.
+pub fn paid_player_line(is_paid_flag: bool, t_unix: i64, now_unix: i64) -> String {
+    let paid_word = if is_paid_flag { "yes" } else { "no" };
+    let remaining = t_unix - now_unix;
+    if t_unix & 1 != 0 {
+        let hours = remaining / (60 * 60);
+        let minutes = (remaining / 60) % 60;
+        let seconds = remaining % 60;
+        format!("Paying player: {paid_word} ({hours:02}:{minutes:02}:{seconds:02} hours left)")
+    } else {
+        let days = remaining / (60 * 60 * 24);
+        format!("Paying player: {paid_word} ({days} days left)")
+    }
+}
+
 /// C `show_values_bg` in full (`tool.c:2940-3096`), minus the
 /// `getfirst_char`/`getnext_char` scan (the caller already has a resolved
 /// `&Character`) and the "Sent." confirmation (queued separately by the
