@@ -138,38 +138,12 @@ impl World {
         candidates.first().map(|character| character.id)
     }
 
-    /// C `give_char_item(cn, in)` (`src/system/tool.c:3371-3394`): places
-    /// `item_id` into `target_id`'s cursor if empty, else the first free
-    /// inventory slot; fails if both are full.
-    fn trader_give_char_item(&mut self, target_id: CharacterId, item_id: ItemId) -> bool {
-        let Some(target) = self.characters.get_mut(&target_id) else {
-            return false;
-        };
-        if target.cursor_item.is_none() {
-            target.cursor_item = Some(item_id);
-        } else {
-            let Some(slot) = target
-                .inventory
-                .iter_mut()
-                .skip(INVENTORY_START_INVENTORY)
-                .find(|slot| slot.is_none())
-            else {
-                return false;
-            };
-            *slot = Some(item_id);
-        }
-        target.flags.insert(CharacterFlags::ITEMS);
-        if let Some(item) = self.items.get_mut(&item_id) {
-            item.carried_by = Some(target_id);
-        }
-        true
-    }
-
     /// C `trader_driver`'s `NT_GIVE` early-exit paths (`base.c:4475-4478`,
     /// `4484-4487`): `if (ch[cn].citem && !give_char_item(co,
     /// ch[cn].citem)) destroy_item(...); ch[cn].citem = 0;` - try handing
     /// the trader's held cursor item back to `target_id`, destroying it
-    /// on failure.
+    /// on failure. Uses the shared `World::give_char_item` (the plain,
+    /// non-"smart" give C itself calls here).
     fn trader_return_or_destroy_cursor_item(
         &mut self,
         trader_id: CharacterId,
@@ -182,7 +156,7 @@ impl World {
         else {
             return;
         };
-        if !self.trader_give_char_item(target_id, item_id) {
+        if !self.give_char_item(target_id, item_id) {
             self.destroy_item(item_id);
         }
     }
@@ -196,8 +170,7 @@ impl World {
             if let Some(item) = self.items.get_mut(&item_id) {
                 item.flags.remove(ItemFlags::VOID);
             }
-            let given =
-                c1_target.is_some_and(|target_id| self.trader_give_char_item(target_id, item_id));
+            let given = c1_target.is_some_and(|target_id| self.give_char_item(target_id, item_id));
             if !given {
                 self.destroy_item(item_id);
             }
@@ -208,8 +181,7 @@ impl World {
             if let Some(item) = self.items.get_mut(&item_id) {
                 item.flags.remove(ItemFlags::VOID);
             }
-            let given =
-                c2_target.is_some_and(|target_id| self.trader_give_char_item(target_id, item_id));
+            let given = c2_target.is_some_and(|target_id| self.give_char_item(target_id, item_id));
             if !given {
                 self.destroy_item(item_id);
             }

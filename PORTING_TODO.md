@@ -11770,21 +11770,25 @@ Ordered by player progression; the C file is the oracle.
   talisman/leftover-give branches it also handles, `:996-1217`),
   `terion_driver` (`CDR_TERION`, the village's ambient lore/storyteller
   NPC, `:1228-1472`), `gwendylon_driver` (`CDR_GWENDYLON`, the main
-  quest-giver mage's four-skull quest chain, `:234-673`), and
+  quest-giver mage's four-skull quest chain, `:234-673`),
   `greeter_driver` (`CDR_GREETER`, the tutorial-town Governor's class-
   aware weapon/rest-area/movement civics dialogue plus its "learn"/
-  "repeat" text-command rewind branches, `:1485-1798`) are ported so
-  far - see the Progress Log entries below and
-  `crates/ugaris-core/src/world/camhermit.rs`/`world/yoakin.rs`/
-  `world/terion.rs`/`world/gwendylon.rs`/`world/greeter.rs`'s own module
-  doc comments for their documented gaps (camhermit's `monster_dead`
-  bear-kill counter is still unported, so its `CAMHERMIT_STATE_QUEST1DO`
-  branch can never actually complete on a live server yet; yoakin's and
-  gwendylon's `destroy_item_byID` sweeps do not reach the account depot;
-  terion and greeter are pure ambient/tutorial dialogue with no gaps of
-  their own beyond the documented `COL_LIGHT_BLUE`/`COL_RESET` marker
-  drop). Every other NPC in this file is still unported:
-  `jessica_driver` (`:1809-2073`), `jiu_driver` (`:2074-
+  "repeat" text-command rewind branches, `:1485-1798`), and
+  `jessica_driver` (`CDR_JESSICA`, the robber-operations two-quest chain,
+  `:1809-2065`) are ported so far - see the Progress Log entries below
+  and `crates/ugaris-core/src/world/camhermit.rs`/`world/yoakin.rs`/
+  `world/terion.rs`/`world/gwendylon.rs`/`world/greeter.rs`/
+  `world/jessica.rs`'s own module doc comments for their documented gaps
+  (camhermit's `monster_dead` bear-kill counter is still unported, so its
+  `CAMHERMIT_STATE_QUEST1DO` branch can never actually complete on a live
+  server yet; yoakin's and gwendylon's `destroy_item_byID` sweeps do not
+  reach the account depot; jessica's `JESSICA_STATE_QUEST2_DO` ->
+  `QUEST2_FINISH` transition needs the still-unported `bredel_dead`
+  death hook, so her kill-quest chain also cannot yet complete on a live
+  server; terion and greeter are pure ambient/tutorial dialogue with no
+  gaps of their own beyond the documented `COL_LIGHT_BLUE`/`COL_RESET`
+  marker drop). Every other NPC in this file is still unported:
+  `jiu_driver` (`:2074-
   2255`), `forest_ranger_driver` (`:2284-2473`), `brithildie_driver`
   (`:2474-2826`), `james_driver` (`:2901-3179`), `nook_driver` (`:3180-
   3457`), `lydia_driver` (`:3458-3703`), `balltrap_skelly_driver` (`:3712-
@@ -11795,7 +11799,7 @@ Ordered by player progression; the C file is the oracle.
   `reskin_driver` (`:4105-4424`), `asturin_driver` (`:4425-`), `guiwynn_
   driver`/`logain_driver` and the rest through `ch_driver`'s dispatch
   table (`:6076-6155`), plus `monster_dead`/the shared area-1 death-hook
-  tail (`:5200-`).
+  tail (`:5200-`, including `bredel_dead` for jessica's boss kill).
 - [ ] **Area 2 - `src/area/2/area2.c`** - remaining character drivers
   (zombie lord, priests). Item drivers done.
 - [ ] **Area 3 - `src/area/3/area3.c`** - palace story NPCs, lamp ghost
@@ -12525,3 +12529,42 @@ Add one line per completed task: date, task, ledger section touched.
   1084 server, all green, zero failures, zero warnings), `cargo build -p
   ugaris-server`/`--workspace` all clean; boot-smoked (10s run, "entering
   Rust game loop" `area_id=1`, tick loop advancing, no panics).
+- 2026-07-06: Area 1 `jessica_driver` (P4, slice) - ported the
+  robber-operations two-quest chain (`CDR_JESSICA 125`, `gwendylon.c:
+  1809-2065`) to new `crates/ugaris-core/src/world/jessica.rs` (+13
+  tests): `NT_CHAR` 13-state dialogue machine (entry gated on
+  `QLOG_NOOK` being done, five intro lines, `QUEST1_DO`/`QUEST2_DO`
+  60-second reminder gates, `QUEST1_FINISH`/`QUEST2_FINISH` auto-advance
+  with `questlog_open`/`questlog_done`), `NT_TEXT` via the shared
+  `GWENDYLON_QA`/`analyse_text_qa` table with the "repeat" case resetting
+  either quest's `_GIVE_1` checkpoint, and `NT_GIVE` turning in
+  `IID_AREA1_ROBBER2NOTE` to finish quest 1 (new `IID_AREA1_ROBBER2NOTE`/
+  `DEV_ID_KW` constants in `item_driver`). Preserved a genuine C behavior
+  difference: jessica's own unwanted-item give-back calls plain
+  `give_char_item` (`tool.c:3371-3394`), not `give_char_item_smart` like
+  every sibling NPC in this file - added a new shared
+  `World::give_char_item` in `world/items.rs` (promoted from a private
+  `trader.rs` duplicate, which now calls the shared method instead) since
+  no plain-give port existed yet. New `CDR_JESSICA`/`JessicaDriverData`/
+  `CharacterDriverState::Jessica` in `character_driver.rs` (plus the two
+  exhaustive-match call sites in `npc_fight.rs`/`npc_idle.rs`), new
+  `pub(crate)` `JESSICA_STATE_QUEST1_DO`/`QUEST2_DO` constants and
+  `pub(crate)` visibility on `JESSICA_STATE_QUEST1_FINISH`/
+  `QUEST2_FINISH` in `quest.rs` (state accessors/`Area1QuestState`
+  already existed from earlier `showppd`/`questlog_init_area1` work),
+  `CDR_JESSICA` default driver-state wiring in `zone.rs`. Extended
+  `crates/ugaris-server/src/area1.rs` (facts snapshot incl.
+  `quest_log.is_done(QLOG_NOOK)`, event application - no achievement
+  wiring needed since jessica's own quests carry no gold reward) and
+  wired into `main.rs`'s tick loop right after the greeter block.
+  Documented gap: the `QUEST2_DO` -> `QUEST2_FINISH` transition is driven
+  by a separate `bredel_dead` monster-death hook (`gwendylon.c:2825-
+  2842`) that is not ported anywhere yet (same class of gap as
+  camhermit's `monster_dead` bear-kill counter), so the kill-quest cannot
+  fully complete on a live server until that hook (or the broader
+  `monster_dead` death-dispatch table) is ported; this driver's own
+  dialogue already handles `QUEST2_FINISH` correctly once reached. `cargo
+  fmt --all`, `cargo test --workspace` (2338 core + 1084 server, all
+  green, zero failures, zero warnings), `cargo build -p ugaris-server`/
+  `--workspace` all clean; boot-smoked (10s run, "entering Rust game
+  loop" `area_id=1`, tick loop advancing, no panics).

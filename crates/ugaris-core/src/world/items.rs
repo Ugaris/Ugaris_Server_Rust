@@ -532,6 +532,42 @@ impl World {
             Some(GiveCharItemSmartResult::Destroyed)
         }
     }
+
+    /// C `give_char_item(cn, in)` (`src/system/tool.c:3371-3394`): the
+    /// plain (non-"smart") give - places `item_id` into `target_id`'s
+    /// cursor if empty, else the first free inventory slot (index `>=
+    /// 30`); fails (returns `false`) if both are full, with no ground-drop
+    /// or `IF_MONEY`/`IF_NODROP` handling at all (unlike
+    /// `give_char_item_smart`). Several NPC drivers call this exact
+    /// simpler variant for their "unwanted item" give-back branch (e.g.
+    /// `jessica_driver`, `gwendylon.c:2040`; `trader_driver`, `base.c:
+    /// 4475-4487`) rather than `give_char_item_smart` - a genuine C
+    /// behavioral difference (no ground-drop fallback), not a
+    /// simplification, so it is kept as its own method rather than folded
+    /// into `give_char_item_smart`.
+    pub(crate) fn give_char_item(&mut self, target_id: CharacterId, item_id: ItemId) -> bool {
+        let Some(target) = self.characters.get_mut(&target_id) else {
+            return false;
+        };
+        if target.cursor_item.is_none() {
+            target.cursor_item = Some(item_id);
+        } else {
+            let Some(slot) = target
+                .inventory
+                .iter_mut()
+                .skip(INVENTORY_START_INVENTORY)
+                .find(|slot| slot.is_none())
+            else {
+                return false;
+            };
+            *slot = Some(item_id);
+        }
+        target.flags.insert(CharacterFlags::ITEMS);
+        if let Some(item) = self.items.get_mut(&item_id) {
+            item.carried_by = Some(target_id);
+        }
+        true
+    }
 }
 
 /// C `give_money`'s message half (`src/system/tool.c:1460-1474`): `"%ds"`

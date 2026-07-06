@@ -561,6 +561,12 @@ pub const IID_AREA1_BIGBEAR_TOOTH: u32 = make_item_id(DEV_ID_DB, 0x000001);
 /// `world::yoakin` needs it outside the `item_driver` module.
 pub const IID_SHRIKE_TALISMAN: u32 = make_item_id(DEV_ID_DB, 0x000092);
 
+/// C `IID_AREA1_ROBBER2NOTE` (`src/common/item_id.h:375`): `jessica_driver`'s
+/// robber-operations quest proof item, turned in to finish quest 1
+/// (`QLOG_JESSICA_ROBBER_NOTE`). `pub` (not `pub(crate)`) since
+/// `world::jessica` needs it outside the `item_driver` module.
+pub const IID_AREA1_ROBBER2NOTE: u32 = make_item_id(DEV_ID_KW, 0x000001);
+
 /// C `IID_AREA1_SKELKEY1` (`src/common/item_id.h:61`): `gwendylon_driver`'s
 /// first-skull quest key, destroyed (not scored) alongside the skull item
 /// on turn-in. `pub` (not `pub(crate)`) since `world::gwendylon` needs it

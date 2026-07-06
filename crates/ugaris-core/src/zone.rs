@@ -9,11 +9,11 @@ use crate::{
         parse_clubmaster_driver_args, ArenaFighterDriverData, ArenaMasterDriverData,
         CamhermitDriverData, CharacterDriverState, DungeonmasterDriverData, GateFightDriverData,
         GateWelcomeDriverData, GreeterDriverData, GwendylonDriverData, JanitorDriverData,
-        TerionDriverData, TraderDriverData, YoakinDriverData, ARENA_FIGHTER_REST_POS,
-        CDR_ARENAFIGHTER, CDR_ARENAMANAGER, CDR_ARENAMASTER, CDR_CAMHERMIT, CDR_CLANCLERK,
-        CDR_CLANMASTER, CDR_CLUBMASTER, CDR_DUNGEONMASTER, CDR_GATE_FIGHT, CDR_GATE_WELCOME,
-        CDR_GREETER, CDR_GWENDYLON, CDR_JANITOR, CDR_LAB2UNDEAD, CDR_SIMPLEBADDY, CDR_TERION,
-        CDR_TRADER, CDR_YOAKIN, NT_CREATE,
+        JessicaDriverData, TerionDriverData, TraderDriverData, YoakinDriverData,
+        ARENA_FIGHTER_REST_POS, CDR_ARENAFIGHTER, CDR_ARENAMANAGER, CDR_ARENAMASTER, CDR_CAMHERMIT,
+        CDR_CLANCLERK, CDR_CLANMASTER, CDR_CLUBMASTER, CDR_DUNGEONMASTER, CDR_GATE_FIGHT,
+        CDR_GATE_WELCOME, CDR_GREETER, CDR_GWENDYLON, CDR_JANITOR, CDR_JESSICA, CDR_LAB2UNDEAD,
+        CDR_SIMPLEBADDY, CDR_TERION, CDR_TRADER, CDR_YOAKIN, NT_CREATE,
     },
     entity::{
         Character, CharacterFlags, Item, ItemFlags, CHARACTER_VALUE_COUNT, INVENTORY_SIZE,
@@ -643,6 +643,13 @@ impl ZoneLoader {
             // args to read here, same as `CDR_GATE_WELCOME` above.
             character.driver_state =
                 Some(CharacterDriverState::Greeter(GreeterDriverData::default()));
+        }
+        if template.driver == CDR_JESSICA {
+            // C never parses zone-file args into `struct
+            // jessica_driver_data` (`set_data` zero-initializes it) - no
+            // args to read here, same as `CDR_GATE_WELCOME` above.
+            character.driver_state =
+                Some(CharacterDriverState::Jessica(JessicaDriverData::default()));
         }
 
         Ok((character, inventory_items))

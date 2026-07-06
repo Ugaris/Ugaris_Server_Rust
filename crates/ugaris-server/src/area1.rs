@@ -1,34 +1,39 @@
-//! Server-side wiring for area 1's forest hermit, hunter, lore, and
-//! town-greeter NPCs
+//! Server-side wiring for area 1's forest hermit, hunter, lore,
+//! town-greeter, and robber-quest NPCs
 //! (`CDR_CAMHERMIT`/`ugaris_core::world::camhermit::process_camhermit_actions`,
 //! `CDR_YOAKIN`/`ugaris_core::world::yoakin::process_yoakin_actions`,
 //! `CDR_TERION`/`ugaris_core::world::terion::process_terion_actions`,
-//! `CDR_GREETER`/`ugaris_core::world::greeter::process_greeter_actions`).
+//! `CDR_GREETER`/`ugaris_core::world::greeter::process_greeter_actions`,
+//! `CDR_JESSICA`/`ugaris_core::world::jessica::process_jessica_actions`).
 //!
 //! Mirrors the `World`/`PlayerRuntime` split already established for
 //! `world::gatekeeper`'s `GateWelcomePlayerFacts`/`GateWelcomeOutcomeEvent`
 //! (see `world::camhermit`'s module doc comment): [`camhermit_player_facts`]/
-//! [`yoakin_player_facts`]/[`terion_player_facts`]/[`greeter_player_facts`]
-//! snapshot the per-player `area1_ppd`/`quest_log` facts each NPC's
-//! dialogue needs before the tick, and [`apply_camhermit_events`]/
-//! [`apply_yoakin_events`]/[`apply_terion_events`]/[`apply_greeter_events`]
-//! apply the returned events afterward, including the `QLOG_HERMIT_QUEST1/
-//! 2`/`QLOG_YOAKIN` `questlog_open`/`questlog_done`/`questlog_reopen` calls
+//! [`yoakin_player_facts`]/[`terion_player_facts`]/[`greeter_player_facts`]/
+//! [`jessica_player_facts`] snapshot the per-player `area1_ppd`/`quest_log`
+//! facts each NPC's dialogue needs before the tick, and
+//! [`apply_camhermit_events`]/[`apply_yoakin_events`]/[`apply_terion_events`]/
+//! [`apply_greeter_events`]/[`apply_jessica_events`] apply the returned
+//! events afterward, including the `QLOG_HERMIT_QUEST1/2`/`QLOG_YOAKIN`/
+//! `QLOG_JESSICA_*` `questlog_open`/`questlog_done`/`questlog_reopen` calls
 //! C's own drivers make (each of which unconditionally resends the legacy
 //! questlog packet, matching `apply_military_mission_kill_check`'s
 //! precedent) and each quest's reward gold wealth-achievement tracking
 //! (`give_money`'s `achievement_add_gold_earned` half - see `World::
 //! give_char_item_smart`'s doc comment for why that split exists). Terion
 //! and the greeter are pure ambient/tutorial dialogue (no quest log
-//! writes), so their own facts/events are the simplest of the four - the
+//! writes), so their own facts/events are the simplest of the group - the
 //! greeter only *reads* `QLOG_LYDIA`'s completion flag, never writes it.
+//! Jessica's own quest completions (unlike every sibling above) carry no
+//! gold reward at all, so [`apply_jessica_events`] needs no achievement
+//! wiring.
 
 use super::*;
-use ugaris_core::quest::{QLOG_HERMIT_QUEST2, QLOG_LYDIA, QLOG_YOAKIN};
+use ugaris_core::quest::{QLOG_HERMIT_QUEST2, QLOG_LYDIA, QLOG_NOOK, QLOG_YOAKIN};
 use ugaris_core::world::{
     CamhermitOutcomeEvent, CamhermitPlayerFacts, GreeterOutcomeEvent, GreeterPlayerFacts,
-    GwendylonOutcomeEvent, GwendylonPlayerFacts, TerionOutcomeEvent, TerionPlayerFacts,
-    YoakinOutcomeEvent, YoakinPlayerFacts,
+    GwendylonOutcomeEvent, GwendylonPlayerFacts, JessicaOutcomeEvent, JessicaPlayerFacts,
+    TerionOutcomeEvent, TerionPlayerFacts, YoakinOutcomeEvent, YoakinPlayerFacts,
 };
 
 pub(crate) fn camhermit_player_facts(
@@ -515,6 +520,96 @@ pub(crate) fn apply_greeter_events(
                 };
                 player.set_area1_greeter_seen_timer(value);
                 applied += 1;
+            }
+        }
+    }
+    applied
+}
+
+pub(crate) fn jessica_player_facts(
+    runtime: &ServerRuntime,
+) -> HashMap<CharacterId, JessicaPlayerFacts> {
+    runtime
+        .players
+        .values()
+        .filter_map(|player| {
+            let character_id = player.character_id?;
+            Some((
+                character_id,
+                JessicaPlayerFacts {
+                    state: player.area1_jessica_state(),
+                    seen_timer: player.area1_jessica_seen_timer(),
+                    nook_quest_done: player.quest_log.is_done(QLOG_NOOK),
+                },
+            ))
+        })
+        .collect()
+}
+
+/// Applies each [`JessicaOutcomeEvent`] queued by
+/// `World::process_jessica_actions`. See the module doc comment.
+pub(crate) fn apply_jessica_events(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    events: Vec<JessicaOutcomeEvent>,
+) -> usize {
+    let mut applied = 0;
+    for event in events {
+        match event {
+            JessicaOutcomeEvent::UpdateState {
+                player_id,
+                new_state,
+            } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.set_area1_jessica_state(new_state);
+                applied += 1;
+            }
+            JessicaOutcomeEvent::UpdateSeenTimer { player_id, value } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.set_area1_jessica_seen_timer(value);
+                applied += 1;
+            }
+            // C `questlog_open(co, ...)` (`src/system/questlog.c:204-217`):
+            // sets the flag and unconditionally resends the questlog.
+            JessicaOutcomeEvent::QuestOpen { player_id, quest } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.quest_log.open(quest);
+                let payload = legacy_questlog_payload(player);
+                for (session_id, _) in runtime.sessions_for_character(player_id) {
+                    runtime.send_to_session(session_id, payload.clone());
+                }
+                applied += 1;
+            }
+            // C `questlog_done(co, ...)` (`src/system/questlog.c:267-305`):
+            // full exp-reward port via `QuestLog::complete_legacy`,
+            // applied through `World::give_exp` (matching every other
+            // quest-completion exp grant in this codebase), plus the
+            // unconditional questlog resend. Jessica's own two quests
+            // carry no gold reward (unlike her siblings above), so no
+            // achievement wiring is needed here.
+            JessicaOutcomeEvent::QuestDone { player_id, quest } => {
+                let Some(level) = world.characters.get(&player_id).map(|c| c.level) else {
+                    continue;
+                };
+                let level_val = level_value(level);
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                if let Some(completion) = player.quest_log.complete_legacy(quest, level, level_val)
+                {
+                    let payload = legacy_questlog_payload(player);
+                    world.give_exp(player_id, completion.granted_exp, u32::from(world.area_id));
+                    for (session_id, _) in runtime.sessions_for_character(player_id) {
+                        runtime.send_to_session(session_id, payload.clone());
+                    }
+                    applied += 1;
+                }
             }
         }
     }

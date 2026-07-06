@@ -56,6 +56,10 @@ pub const CDR_GWENDYLON: u16 = 8;
 /// in area1, stronghold" (Cameron, the tutorial-town Governor) greeting
 /// NPC (`src/area/1/gwendylon.c::greeter_driver`).
 pub const CDR_GREETER: u16 = 13;
+/// C `#define CDR_JESSICA 125` (`src/system/drvlib.h`, "Cameron: robbers"):
+/// the area-1 robber-operations quest NPC
+/// (`src/area/1/gwendylon.c::jessica_driver`).
+pub const CDR_JESSICA: u16 = 125;
 /// C `#define CDR_GATE_WELCOME 39` (`src/system/drvlib.h`): the stationary
 /// gatekeeper-welcome NPC (`gate_welcome` template,
 /// `src/system/gatekeeper.c::gate_welcome_driver`).
@@ -203,6 +207,7 @@ pub enum CharacterDriverState {
     Terion(TerionDriverData),
     Gwendylon(GwendylonDriverData),
     Greeter(GreeterDriverData),
+    Jessica(JessicaDriverData),
 }
 
 /// C `struct lostcon_driver_data` (`src/module/lostcon.c`): the linger-timer
@@ -541,6 +546,18 @@ pub struct GreeterDriverData {
 /// dead even in C - so they are not ported.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct GwendylonDriverData {
+    #[serde(default)]
+    pub last_talk: u64,
+    pub current_victim: Option<CharacterId>,
+}
+
+/// C `struct jessica_driver_data` (`src/area/1/gwendylon.c:1802-1805`): the
+/// robber-quest NPC's own driver memory (`CDR_JESSICA`, distinct from the
+/// per-player `jessica_state`/`jessica_seen_timer` fields in
+/// `crate::player::PlayerRuntime`'s `area1_ppd` - see `world::jessica`'s
+/// module doc comment for the split).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct JessicaDriverData {
     #[serde(default)]
     pub last_talk: u64,
     pub current_victim: Option<CharacterId>,
@@ -2767,7 +2784,8 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::Yoakin(_)
             | CharacterDriverState::Terion(_)
             | CharacterDriverState::Gwendylon(_)
-            | CharacterDriverState::Greeter(_),
+            | CharacterDriverState::Greeter(_)
+            | CharacterDriverState::Jessica(_),
         ) => SimpleBaddyDriverData::default(),
         None => SimpleBaddyDriverData::default(),
     };

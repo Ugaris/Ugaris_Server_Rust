@@ -46,6 +46,7 @@ mod item_outcomes;
 mod items;
 mod jail;
 mod janitor;
+mod jessica;
 mod lab2_undead;
 mod lastseen;
 mod light;
@@ -116,6 +117,7 @@ pub use hurt::*;
 pub(crate) use item_outcomes::*;
 pub(crate) use items::*;
 pub use jail::*;
+pub use jessica::*;
 #[allow(unused_imports)]
 pub(crate) use lab2_undead::*;
 pub use lastseen::*;

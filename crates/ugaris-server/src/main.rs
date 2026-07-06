@@ -7674,6 +7674,23 @@ async fn main() -> anyhow::Result<()> {
                         "applied greeter dialogue events"
                     );
                 }
+                // C `jessica_driver`: area 1's robber-operations quest NPC
+                // (`src/area/1/gwendylon.c`).
+                let jessica_facts = jessica_player_facts(&runtime);
+                let jessica_events = world.process_jessica_actions(
+                    &jessica_facts,
+                    current_unix_time() as i32,
+                    config.area_id,
+                );
+                let jessica_events_applied =
+                    apply_jessica_events(&mut world, &mut runtime, jessica_events);
+                if jessica_events_applied != 0 {
+                    info!(
+                        jessica_events_applied,
+                        tick = world.tick.0,
+                        "applied jessica dialogue events"
+                    );
+                }
                 // C `gate_welcome_driver`: the Ishtar labyrinth gatekeeper
                 // greeter NPC (`src/system/gatekeeper.c`).
                 let gate_welcome_facts = gate_welcome_player_facts(&runtime);

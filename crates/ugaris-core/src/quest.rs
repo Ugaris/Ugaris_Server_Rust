@@ -1244,9 +1244,16 @@ pub(crate) const GWENDYLON_STATE_SECOND_SKULL_DONE: i32 = 10;
 pub(crate) const GWENDYLON_STATE_THIRD_SKULL_DONE: i32 = 14;
 pub(crate) const GWENDYLON_STATE_FOUL_MAGICIAN_DONE: i32 = 18;
 pub(crate) const JESSICA_STATE_QUEST1_GIVE_1: i32 = 1;
-const JESSICA_STATE_QUEST1_FINISH: i32 = 7;
+/// C `JESSICA_STATE_QUEST1_DO` (`src/common/npc_states.h:90`), needed by
+/// `world::jessica::process_jessica_actions` (`jessica_driver`,
+/// `src/area/1/gwendylon.c:1809-2065`) but not by `questlog_init_area1`.
+pub(crate) const JESSICA_STATE_QUEST1_DO: i32 = 6;
+pub(crate) const JESSICA_STATE_QUEST1_FINISH: i32 = 7;
 pub(crate) const JESSICA_STATE_QUEST2_GIVE_1: i32 = 8;
-const JESSICA_STATE_QUEST2_FINISH: i32 = 11;
+/// C `JESSICA_STATE_QUEST2_DO` (`src/common/npc_states.h:94`), same
+/// rationale as `JESSICA_STATE_QUEST1_DO` above.
+pub(crate) const JESSICA_STATE_QUEST2_DO: i32 = 10;
+pub(crate) const JESSICA_STATE_QUEST2_FINISH: i32 = 11;
 const BRITHILDIE_STATE_NOMORETALES_QOPEN: i32 = 20;
 const BRITHILDIE_STATE_NOMORETALES_QDONE: i32 = 21;
 pub(crate) const CAMHERMIT_STATE_QUEST1DO: i32 = 5;
