@@ -7786,15 +7786,50 @@
         "Error message: JSON Parse error: Unable to parse JSON string",
         "Err(DungeonRaidError::NoSuchClan)"
       ]
+    },
+    {
+      "iteration": 242,
+      "startedAt": "2026-07-06T17:04:52.959Z",
+      "endedAt": "2026-07-06T17:37:42.847Z",
+      "durationMs": 1968965,
+      "agent": "opencode",
+      "model": "anthropic/claude-sonnet-5",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "PORTING_TODO.md",
+        "crates/ugaris-core/src/macro_daemon.rs",
+        "crates/ugaris-core/src/world/macro_npc.rs",
+        "crates/ugaris-core/src/world/mod.rs",
+        "crates/ugaris-core/src/world/tests/macro_npc.rs",
+        "crates/ugaris-server/src/macro_daemon.rs",
+        "crates/ugaris-server/src/main.rs",
+        "crates/ugaris-server/src/tests/macro_daemon.rs",
+        "crates/ugaris-server/src/world_events.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "Good, that import path works from `ugaris-server`. Now let's rewrite the failing test and add new ones.",
+        "Good. Now let's rewrite the failing test and add three additional tests (cross-server banishment, correct-answer local return, cross-server pickup scan).",
+        "- Updated/added integration tests in `ugaris-server/src/tests/macro_daemon.rs` (one pre-existing test had to be revised since 2 prior failures now correctly triggers banishment before a normal 3rd cha",
+        "test result: ok. 1079 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "1130-    pub total_failed: i32,",
+        "1177-            total_failed: 0,",
+        "test macro_daemon::tests::correct_answer_raises_karma_resets_failures_and_lowers_suspicion ... ok",
+        "test macro_daemon::tests::prior_failure_bumps_difficulty_tier_by_one ... ok",
+        "test macro_daemon::tests::first_failure_is_a_gentle_warning_with_ten_to_twenty_minute_reschedule ... ok"
+      ]
     }
   ],
-  "totalDurationMs": 280274661,
+  "totalDurationMs": 282243626,
   "struggleIndicators": {
     "repeatedErrors": {
       "1011 (up from 998 earlier) - all passing, zero failures. Now let's build the server binary and run a": 1,
       "Everything is green: `cargo fmt --all` clean, full workspace test suite passing (1011 core tests + o": 1,
       "test result: ok. 327 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 4,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 241,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 242,
       "test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 998 filtered out; finished in 0.00s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1010 filtered out; finished in 0.00s": 1,
       "error: could not compile `ugaris-db` (lib test) due to 1 previous error": 3,
@@ -8803,15 +8838,20 @@
       "test result: ok. 2195 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.18s": 1,
       "- `cargo test --workspace` — 2217 ugaris-core (+13 new tests) + 78 db + 3 net + 45 protocol + 1073 s": 1,
       "test result: ok. 2204 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.19s": 1,
-      "test macro_daemon::tests::correct_answer_raises_karma_resets_failures_and_lowers_suspicion ... ok": 1,
-      "test macro_daemon::tests::first_failure_is_a_gentle_warning_with_ten_to_twenty_minute_reschedule ...": 1,
-      "test macro_daemon::tests::prior_failure_bumps_difficulty_tier_by_one ... ok": 1,
+      "test macro_daemon::tests::correct_answer_raises_karma_resets_failures_and_lowers_suspicion ... ok": 2,
+      "test macro_daemon::tests::first_failure_is_a_gentle_warning_with_ten_to_twenty_minute_reschedule ...": 2,
+      "test macro_daemon::tests::prior_failure_bumps_difficulty_tier_by_one ... ok": 2,
       "test macro_daemon::tests::second_failure_is_a_sterner_warning ... ok": 1,
       "test macro_daemon::tests::suspicion_clamps_at_one_hundred_before_third_failure_subtracts ... ok": 1,
       "test result: ok. 1073 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s": 1,
       "test result: ok. 2246 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.21s": 1,
-      "1130-    pub total_failed: i32,": 1,
-      "error: could not compile `ugaris-core` (lib) due to 3 previous errors": 1
+      "1130-    pub total_failed: i32,": 2,
+      "error: could not compile `ugaris-core` (lib) due to 3 previous errors": 1,
+      "Good, that import path works from `ugaris-server`. Now let's rewrite the failing test and add new on": 1,
+      "Good. Now let's rewrite the failing test and add three additional tests (cross-server banishment, co": 1,
+      "- Updated/added integration tests in `ugaris-server/src/tests/macro_daemon.rs` (one pre-existing tes": 1,
+      "test result: ok. 1079 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s": 1,
+      "1177-            total_failed: 0,": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

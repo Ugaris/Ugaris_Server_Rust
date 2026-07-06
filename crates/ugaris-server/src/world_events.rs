@@ -3273,6 +3273,57 @@ pub(crate) async fn apply_jail_cross_area_transfers(
     applied
 }
 
+/// The Macro Daemon's cross-server "challenge room" hand-off (C
+/// `change_area`, `src/module/base.c:1110` for the suspicion-triggered
+/// banishment, `848-850` for the correct-answer return trip): resolves
+/// every `World::drain_pending_macro_cross_area_transfers` entry (queued
+/// by `ugaris-server/src/macro_daemon.rs` when the challenge-room/
+/// original-area destination differs from this area server's own
+/// `area_id` - see `world/macro_npc.rs`'s module doc comment) via the
+/// shared `attempt_cross_area_transfer` helper, same as every other
+/// cross-area call site. Like C's own `change_area` call sites here, a
+/// failed hand-off is not specially handled - C never checks `change_
+/// area`'s return value at either call site either, so a down target
+/// area server simply leaves the character in place with no message
+/// (weaker than `apply_dungeon_eviction_transfers`'s "system-triggered,
+/// no caller to notify" precedent, which at least falls back to
+/// `remove_character` - not needed here since `attempt_cross_area_
+/// transfer` itself already guarantees no despawn happened on a lookup
+/// failure, so "leave the character exactly where they were" is already
+/// the correct fallback with no extra code).
+pub(crate) async fn apply_macro_cross_area_transfers(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    character_repository: &Option<ugaris_db::PgCharacterRepository>,
+    area_repository: &Option<ugaris_db::PgAreaRepository>,
+    area_id: u16,
+    mirror_id: u16,
+) -> usize {
+    let transfers = world.drain_pending_macro_cross_area_transfers();
+    if transfers.is_empty() {
+        return 0;
+    }
+    let mut applied = 0;
+    for transfer in transfers {
+        attempt_cross_area_transfer(
+            world,
+            runtime,
+            character_repository,
+            area_repository,
+            area_id,
+            mirror_id,
+            transfer.character_id,
+            transfer.target_area,
+            u32::from(mirror_id),
+            transfer.target_x,
+            transfer.target_y,
+        )
+        .await;
+        applied += 1;
+    }
+    applied
+}
+
 /// `build_remove_tile`'s evicted-player cross-area rescue (C
 /// `change_area(cn, ch[cn].resta, ch[cn].restx, ch[cn].resty)`,
 /// `src/area/13/dungeon.c:754`'s tail): resolves every `World::
@@ -5735,6 +5786,55 @@ mod dungeon_eviction_transfer_tests {
         assert!(!world.characters.contains_key(&CharacterId(1)));
         assert!(world.drain_pending_system_texts().is_empty());
         assert!(world.drain_pending_dungeon_eviction_transfers().is_empty());
+    }
+}
+
+#[cfg(test)]
+mod macro_cross_area_transfer_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn no_transfers_queued_is_a_cheap_no_op() {
+        let mut world = World::default();
+        let mut runtime = ServerRuntime::default();
+        let applied =
+            apply_macro_cross_area_transfers(&mut world, &mut runtime, &None, &None, 1, 0).await;
+        assert_eq!(applied, 0);
+        assert!(world.drain_pending_system_texts().is_empty());
+    }
+
+    #[tokio::test]
+    async fn missing_repository_pair_leaves_the_character_in_place_with_no_message() {
+        // Mirrors `attempt_cross_area_transfer`'s own
+        // `cross_area_transfer_stays_put_without_a_registered_repository_pair`
+        // coverage (`tests/cross_area.rs`): without a live
+        // `AreaRepository`/`CharacterRepository` pair, the shared helper
+        // can't resolve the target and never despawns the character - C
+        // never checks `change_area`'s return value at either macro-
+        // daemon call site either, so this hand-off has no "target area
+        // server is down" message to send and no fallback action beyond
+        // leaving the character exactly where it already was.
+        let mut world = World::default();
+        let mut runtime = ServerRuntime::default();
+        world.area_id = 1;
+        let login = LoginBlock {
+            name: "Victim".to_string(),
+            password: String::new(),
+            vendor: 0,
+            client_version: Some(3),
+            his_ip: 0,
+            our_ip: 0,
+            unique: 0,
+        };
+        assert!(world.spawn_character(login_character(CharacterId(1), &login, 1, 10, 10), 10, 10));
+        world.queue_macro_cross_area_transfer(CharacterId(1), 3, 178, 248);
+
+        let applied =
+            apply_macro_cross_area_transfers(&mut world, &mut runtime, &None, &None, 1, 0).await;
+        assert_eq!(applied, 1);
+        assert!(world.characters.contains_key(&CharacterId(1)));
+        assert!(world.drain_pending_system_texts().is_empty());
+        assert!(world.drain_pending_macro_cross_area_transfers().is_empty());
     }
 }
 

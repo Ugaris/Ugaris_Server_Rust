@@ -11475,7 +11475,7 @@ Unlocks every quest NPC. Do these before any P4 area work.
   potion+recall reaction, `autobless`/`autopulse` via the iteration-237
   player-tick consumer) - this task is complete.
 
-- [~] **Macro-detection engine (`macro_driver`, `src/module/base.c:802-
+- [x] **Macro-detection engine (`macro_driver`, `src/module/base.c:802-
   1243`, ~800 lines)** - anti-macro/anti-bot detection: activity
   tracking, math/type-word/reverse/multiple-choice challenge generation
   and checking, reward/failure handling, and the cross-server "challenge
@@ -11619,6 +11619,69 @@ Unlocks every quest NPC. Do these before any P4 area work.
   panic. Next iteration: the cross-server challenge-room hand-off
   (reuse `attempt_cross_area_transfer`, same shape as `world/jail.rs`)
   is the last substantial gap before this task can close.
+
+  DONE (iteration 242): closed the last gap - the cross-server
+  "challenge room" teleport-and-restore flow (`base.c:1054-1123`'s
+  banishment, `840-891`'s return trip). New pure helpers in
+  `ugaris-core/src/macro_daemon.rs` (`macro_should_banish_to_
+  challenge_room`/`macro_is_pents_area`/`macro_begin_challenge_room_
+  banishment`/`macro_save_pentagram_progress`, 6 tests) plus new
+  `World` methods in `world/macro_npc.rs` (`macro_banish_to_
+  challenge_room`/`macro_restore_original_respawn`/
+  `queue_macro_cross_area_transfer`/`drain_pending_macro_cross_area_
+  transfers`, a new `MacroCrossAreaTransfer` queue mirroring `world/
+  jail.rs`'s `JailCrossAreaTransfer` shape exactly, 4 tests). Wired
+  live in `ugaris-server/src/macro_daemon.rs`: `MACRO_STATE_FOUND` now
+  checks `suspicion > 50 || challenge_failures >= 2` and, on a hit,
+  stashes the victim's position/respawn point (restoring
+  `PentagramDebugData` into `MacroPpd::saved_pent_*` when banishing
+  from one of the four Pentagram areas - C saves but never restores
+  these fields either, so this port doesn't invent a restore path C
+  itself lacks), then either teleports locally (same-area, area 3)
+  and falls through into the existing `TELEPORTED`/`CHALLENGING`
+  cascade, or queues a `MacroCrossAreaTransfer` and goes straight back
+  to `Idle` (cross-area, matching C's own early `return` before its
+  "brought to a challenge room" message - that message is therefore
+  local-only, exactly like C). `MACRO_STATE_IDLE`'s victim search now
+  also runs an area-3-only "cross-server pickup" scan
+  (`in_challenge_room && needs_challenge`) that skips straight to
+  `MACRO_STATE_TELEPORTED`, for victims `change_area` already
+  delivered to the challenge room via a normal reconnect. Correct
+  answers now restore the original respawn point and teleport back
+  (locally or via another `MacroCrossAreaTransfer`) before the reward
+  roll, clearing `in_challenge_room`. The `MACRO_STATE_CHALLENGING`
+  visibility-loss branch and `MACRO_STATE_TIMEOUT` both now apply
+  `macro_handle_failure`'s trailing "you remain in the challenge room"
+  message when `teleported_to_jail && in_challenge_room` - matching
+  C's asymmetry that an *ordinary* (non-banished) victim who steps out
+  of sight mid-challenge gets no failure penalty at all, only a
+  banished one does. The actual cross-area hand-off itself
+  (`attempt_cross_area_transfer`) happens one tick-step later in a new
+  `world_events.rs::apply_macro_cross_area_transfers` (wired into
+  `main.rs`'s tick loop right after `apply_jail_cross_area_transfers`)
+  - like C's own `change_area` call sites here, a failed hand-off is
+  not specially handled (C never checks the return value either), so
+  a down target area server just leaves the character in place with
+  no message. 4 new integration tests in `ugaris-server/src/tests/
+  macro_daemon.rs` (local banishment-then-timeout-while-banished
+  cascade, cross-server banishment queuing + no local message,
+  correct-answer-from-the-challenge-room restore, cross-server pickup
+  scan) plus 2 new `world_events.rs` tests for the new hand-off
+  function; `timeout_kicks_the_player_after_three_failures` was
+  rewritten to tick as the challenge room area itself, since two prior
+  failures now correctly triggers banishment before a third normal
+  challenge would ever be reachable (real C behavior, not a
+  regression). Remaining, disclosed gaps (see the new code's own doc
+  comments): C's `realtime - ch[co].login_time < 60*5` recent-login
+  grace period (still not tracked anywhere); `macro_teleport_char_
+  driver`'s `MF_SOUNDBLOCK`/`MF_SHOUTBLOCK` destination-tile pre-check
+  (still reuses plain `World::teleport_char_driver`) - both narrow,
+  pre-existing, non-blocking edge cases. `cargo fmt --all`, `cargo
+  test --workspace` (2261 ugaris-core [+9] + 78 db + 3 net + 45
+  protocol + 1084 server [+5], all green, zero failures), `cargo build
+  -p ugaris-server`/`--workspace` clean with zero warnings, 10s
+  boot-smoke confirmed "entering Rust game loop" with no panic. This
+  task is now closed.
 
 - [x] **`.pre` zone preprocessor parity** - `src/system/create.c` expands
   `.pre` template includes; the Rust `ZoneLoader` skips them. Check which

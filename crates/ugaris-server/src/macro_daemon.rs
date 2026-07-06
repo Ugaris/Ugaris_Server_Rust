@@ -29,12 +29,27 @@
 //! `PlayerRuntime`-plus-`World::legacy_random_seed` wrappers, all in
 //! `ugaris-core/src/world/macro_npc.rs`) for everything that doesn't.
 //!
+//! The cross-server "challenge room" teleport-and-restore flow (`base.c:
+//! 1054-1123`'s banishment, `840-891`'s return trip) *is* wired: the
+//! suspicion/failure-triggered banishment in `MACRO_STATE_FOUND`, the
+//! area-3-only cross-server pickup scan in `MACRO_STATE_IDLE`, the
+//! correct-answer return teleport, and the "you remain in the challenge
+//! room" failure message are all applied here, using `World::
+//! macro_banish_to_challenge_room`/`macro_restore_original_respawn`/
+//! `queue_macro_cross_area_transfer` (`ugaris-core/src/world/
+//! macro_npc.rs`) plus `ugaris-core::macro_daemon`'s
+//! `macro_should_banish_to_challenge_room`/
+//! `macro_begin_challenge_room_banishment`/`macro_save_pentagram_progress`
+//! pure helpers for the `MacroPpd` half. The actual cross-area hand-off
+//! (`change_area`) itself happens one step later, in `world_events.rs::
+//! apply_macro_cross_area_transfers`, via the shared
+//! `attempt_cross_area_transfer` helper - `World` has no DB handle or
+//! `ServerRuntime` of its own, same reason `world/jail.rs`'s
+//! `JailCrossAreaTransfer` defers there too.
+//!
 //! Disclosed, deliberate simplifications (see `ugaris-core/src/
 //! macro_daemon.rs` and `world/macro_npc.rs`'s own module doc comments for
-//! the full list): the `force_summon` admin-triggered pickup *is* wired
-//! (closing `/summonmacro`'s loop end-to-end), but the cross-server
-//! "challenge room" pickup/banishment/return-teleport, the pentagram-
-//! progress save/restore, and the recent-login grace period are not; the
+//! the full list): the recent-login grace period is not applied; the
 //! `isxmas` reskin *is* wired (via `is_xmas`, `ugaris-server`'s own xmas-
 //! event awareness, `World` has none).
 
@@ -43,9 +58,12 @@ use ugaris_core::character_driver::{MacroDriverData, MacroDriverState, NT_GIVE, 
 use ugaris_core::drvlib::offset2dx;
 use ugaris_core::see::char_see_char;
 use ugaris_core::world::{
-    macro_ask_challenge_lines, macro_check_answer, macro_is_player_active, macro_reward_fallback,
-    macro_reward_item_template, macro_reward_success_message, macro_roll_reward,
-    macro_xmas_reward_message, MacroReward, MACRO_CHALLENGE_TIME, MACRO_REPEAT_INTERVAL,
+    macro_ask_challenge_lines, macro_begin_challenge_room_banishment, macro_check_answer,
+    macro_is_pents_area, macro_is_player_active, macro_reward_fallback, macro_reward_item_template,
+    macro_reward_success_message, macro_roll_reward, macro_save_pentagram_progress,
+    macro_should_banish_to_challenge_room, macro_xmas_reward_message, MacroReward,
+    CHALLENGE_ROOM_AREA, CHALLENGE_ROOM_X, CHALLENGE_ROOM_Y, MACRO_CHALLENGE_TIME,
+    MACRO_REPEAT_INTERVAL,
 };
 
 /// Drains `World`'s `pending_exp_gain_events`/`pending_combat_events`/
@@ -235,6 +253,11 @@ fn macro_resolve_correct_answer(
         .unwrap_or(0);
     let response_time = (world.tick.0 as i64 - dat.start as i64) / TICKS_PER_SECOND as i64;
 
+    // Challenge-room return trip (`base.c:840-853`): `dat.teleported_to_
+    // jail && ppd.in_challenge_room` - restore the original respawn point
+    // and teleport (locally or cross-server) back to where the victim
+    // was banished from, before the reward is rolled.
+    let mut return_trip: Option<(bool, i32, i32, u16)> = None;
     let karma = if let Some(player) = runtime.player_for_character_mut(victim_id) {
         world.macro_apply_correct_answer_seeded(
             &mut player.macro_ppd,
@@ -242,10 +265,39 @@ fn macro_resolve_correct_answer(
             response_time as i32,
             challenge_type,
         );
+        if dat.teleported_to_jail && player.macro_ppd.in_challenge_room {
+            return_trip = Some((
+                player.macro_ppd.original_area == i32::from(area_id),
+                player.macro_ppd.original_x,
+                player.macro_ppd.original_y,
+                player.macro_ppd.original_area as u16,
+            ));
+            world.macro_restore_original_respawn(
+                victim_id,
+                player.macro_ppd.original_restx,
+                player.macro_ppd.original_resty,
+                player.macro_ppd.original_resta,
+            );
+            player.macro_ppd.in_challenge_room = false;
+        }
         Some(player.macro_ppd.karma)
     } else {
         None
     };
+
+    if let Some((same_area, target_x, target_y, target_area)) = return_trip {
+        world.npc_say(macro_id, "Excellent! Let me send you back now.");
+        if same_area {
+            world.teleport_char_driver(victim_id, target_x as u16, target_y as u16);
+        } else {
+            world.queue_macro_cross_area_transfer(
+                victim_id,
+                target_area,
+                target_x as u16,
+                target_y as u16,
+            );
+        }
+    }
 
     let victim_level = world
         .characters
@@ -304,11 +356,10 @@ fn macro_resolve_correct_answer(
 }
 
 /// C `macro_driver`'s `MACRO_STATE_*` cascade (`base.c:923-1234`): the
-/// victim search (force-summon scan plus the normal candidate search;
-/// the cross-server "challenge room" pickup is not ported, see this
-/// module's doc comment), the teleport-to-victim/challenge-room-
-/// banishment step (banishment likewise not ported), asking/repeating the
-/// challenge, the timeout, and the idle mutterings.
+/// victim search (force-summon scan, the area-3-only cross-server
+/// challenge-room pickup, then the normal candidate search), the
+/// teleport-to-victim/challenge-room-banishment step, asking/repeating
+/// the challenge, the timeout, and the idle mutterings.
 fn macro_run_state_machine(
     world: &mut World,
     runtime: &mut ServerRuntime,
@@ -339,10 +390,27 @@ fn macro_run_state_machine(
             }
         }
 
-        // Cross-server "challenge room" pickup (`base.c:940-960`): not
-        // ported, `in_challenge_room`/`needs_challenge` never become
-        // `true` yet (see this module's doc comment), so this branch
-        // would never fire in practice.
+        // Cross-server "challenge room" pickup (`base.c:940-960`): only
+        // this area server's own challenge room (area 3) ever scans for
+        // arrivals; a player's `in_challenge_room && needs_challenge`
+        // both become `true` together in the `MACRO_STATE_FOUND`
+        // banishment step below (the cross-server branch), and only
+        // become visible here once the player has actually reconnected
+        // to area 3 (normal login, `change_area`'s hand-off already
+        // wrote their `resta`/`restx`/`resty` to the challenge room).
+        let mut cross_server_pickup = false;
+        if found.is_none() && area_id == CHALLENGE_ROOM_AREA {
+            for candidate in &player_ids {
+                if let Some(player) = runtime.player_for_character_mut(*candidate) {
+                    if player.macro_ppd.in_challenge_room && player.macro_ppd.needs_challenge {
+                        player.macro_ppd.needs_challenge = false;
+                        found = Some(*candidate);
+                        cross_server_pickup = true;
+                        break;
+                    }
+                }
+            }
+        }
 
         if found.is_none() {
             for candidate in world.macro_search_candidates(area_id, dat.search_cursor) {
@@ -374,8 +442,29 @@ fn macro_run_state_machine(
 
         dat.victim = Some(victim_id);
         dat.search_cursor = victim_id.0;
-        dat.state = MacroDriverState::Found;
-        dat.teleported_to_jail = false;
+
+        if cross_server_pickup {
+            // Cross-server pickup: the player is already sitting in the
+            // challenge room (`change_area` put them there), so skip
+            // `MACRO_STATE_FOUND` entirely and teleport the daemon
+            // straight to them (`base.c:997-1008`).
+            dat.teleported_to_jail = true;
+            let Some(victim) = world.characters.get(&victim_id).cloned() else {
+                dat.victim = None;
+                dat.state = MacroDriverState::Idle;
+                return;
+            };
+            if world.teleport_char_driver(macro_id, victim.x, victim.y) {
+                dat.state = MacroDriverState::Teleported;
+            } else {
+                dat.victim = None;
+                dat.state = MacroDriverState::Idle;
+                return;
+            }
+        } else {
+            dat.state = MacroDriverState::Found;
+            dat.teleported_to_jail = false;
+        }
     }
 
     if dat.state == MacroDriverState::Found {
@@ -383,10 +472,70 @@ fn macro_run_state_machine(
             dat.state = MacroDriverState::Idle;
             return;
         };
+
         // Suspicion/failure-triggered challenge-room banishment
-        // (`base.c:1054-1123`): not ported, see this module's doc
-        // comment - suspicious players proceed straight to a normal
-        // challenge instead.
+        // (`base.c:1054-1123`).
+        let (suspicion, challenge_failures) = runtime
+            .player_for_character(victim_id)
+            .map(|player| {
+                (
+                    player.macro_ppd.suspicion,
+                    player.macro_ppd.challenge_failures,
+                )
+            })
+            .unwrap_or((0, 0));
+        if macro_should_banish_to_challenge_room(suspicion, challenge_failures) {
+            if let Some((orig_x, orig_y, orig_restx, orig_resty, orig_resta)) =
+                world.macro_banish_to_challenge_room(victim_id)
+            {
+                let pent_data = runtime
+                    .player_for_character(victim_id)
+                    .map(|player| player.pentagram_debug);
+                if let Some(player) = runtime.player_for_character_mut(victim_id) {
+                    macro_begin_challenge_room_banishment(
+                        &mut player.macro_ppd,
+                        orig_x,
+                        orig_y,
+                        i32::from(area_id),
+                        orig_restx,
+                        orig_resty,
+                        orig_resta,
+                    );
+                    macro_save_pentagram_progress(
+                        &mut player.macro_ppd,
+                        pent_data.as_ref().filter(|_| macro_is_pents_area(area_id)),
+                    );
+                }
+
+                if area_id == CHALLENGE_ROOM_AREA {
+                    world.teleport_char_driver(victim_id, CHALLENGE_ROOM_X, CHALLENGE_ROOM_Y);
+                    dat.teleported_to_jail = true;
+                    if let Some(player) = runtime.player_for_character_mut(victim_id) {
+                        player.macro_ppd.needs_challenge = false;
+                    }
+                    world.queue_system_text(
+                        victim_id,
+                        "You've been brought to a challenge room. Answer correctly to return."
+                            .to_string(),
+                    );
+                } else {
+                    if let Some(player) = runtime.player_for_character_mut(victim_id) {
+                        player.macro_ppd.needs_challenge = true;
+                    }
+                    dat.teleported_to_jail = false;
+                    world.queue_macro_cross_area_transfer(
+                        victim_id,
+                        CHALLENGE_ROOM_AREA,
+                        CHALLENGE_ROOM_X,
+                        CHALLENGE_ROOM_Y,
+                    );
+                    dat.search_cursor = victim_id.0.saturating_add(1);
+                    dat.victim = None;
+                    dat.state = MacroDriverState::Idle;
+                    return;
+                }
+            }
+        }
 
         let Some(victim) = world.characters.get(&victim_id).cloned() else {
             dat.search_cursor = victim_id.0.saturating_add(1);
@@ -481,8 +630,48 @@ fn macro_run_state_machine(
             _ => false,
         };
         if victim.is_none() || !visible {
-            // In-challenge-room failure (`base.c:1170-1174`): not
-            // ported, unreachable (see this module's doc comment).
+            // In-challenge-room failure (`base.c:1170-1174`): unlike
+            // `MACRO_STATE_TIMEOUT` below (which always calls
+            // `macro_handle_failure`), C only penalizes a victim who
+            // vanishes/goes invisible mid-challenge if they were banished
+            // to the challenge room (`ppd->in_challenge_room`) - an
+            // ordinary victim who simply steps out of sight is let go
+            // with no suspicion/failure consequence at all.
+            if let Some(v) = victim.as_ref() {
+                let in_challenge_room = runtime
+                    .player_for_character(victim_id)
+                    .map(|player| player.macro_ppd.in_challenge_room)
+                    .unwrap_or(false);
+                if in_challenge_room {
+                    let challenge_type = dat
+                        .challenge
+                        .as_ref()
+                        .map(|challenge| challenge.challenge_type)
+                        .unwrap_or(0);
+                    if let Some(player) = runtime.player_for_character_mut(victim_id) {
+                        let update = world.macro_apply_failure_seeded(
+                            &mut player.macro_ppd,
+                            &v.name,
+                            now,
+                            challenge_type,
+                        );
+                        world.npc_say(macro_id, &update.victim_message);
+                        world.queue_system_text(victim_id, update.log_message);
+                        if update.kicked {
+                            if let Some(vc) = world.characters.get_mut(&victim_id) {
+                                vc.flags.insert(CharacterFlags::KICKED);
+                            }
+                        }
+                        if dat.teleported_to_jail && player.macro_ppd.in_challenge_room {
+                            world.queue_system_text(
+                                victim_id,
+                                "You remain in the challenge room. Answer correctly to leave."
+                                    .to_string(),
+                            );
+                        }
+                    }
+                }
+            }
             dat.search_cursor = victim_id.0.saturating_add(1);
             dat.victim = None;
             dat.state = MacroDriverState::Idle;
@@ -550,8 +739,16 @@ fn macro_run_state_machine(
                     v.flags.insert(CharacterFlags::KICKED);
                 }
             }
-            // "You remain in the challenge room" (`base.c:782-785`): not
-            // ported, unreachable (see this module's doc comment).
+            // "You remain in the challenge room" (`base.c:782-785`):
+            // `dat.teleported_to_jail && ppd.in_challenge_room` - the
+            // daemon will pick them up again next tick with a new
+            // question; only `/unjail` or a correct answer gets them out.
+            if dat.teleported_to_jail && player.macro_ppd.in_challenge_room {
+                world.queue_system_text(
+                    victim_id,
+                    "You remain in the challenge room. Answer correctly to leave.".to_string(),
+                );
+            }
         }
 
         dat.search_cursor = victim_id.0.saturating_add(1);

@@ -18,33 +18,51 @@
 //! [`World::macro_handle_give_message`]/[`World::macro_idle_mutter`] below
 //! for the parts that don't need it.
 //!
+//! [`World::macro_banish_to_challenge_room`]/[`World::
+//! macro_restore_original_respawn`] plus [`MacroCrossAreaTransfer`]/
+//! [`World::queue_macro_cross_area_transfer`]/[`World::
+//! drain_pending_macro_cross_area_transfers`] below are the `World`-side
+//! half of the cross-server "challenge room" teleport-and-restore flow
+//! (`base.c:1054-1123`'s banishment, `840-891`'s return trip): the
+//! `Character`-side mutations (respawn fields, `CF_RESPAWN`, position)
+//! and the cross-area hand-off queue, mirroring `world/jail.rs`'s
+//! `JailCrossAreaTransfer` shape exactly (`World` has no DB handle or
+//! `ServerRuntime` of its own, so the actual `attempt_cross_area_transfer`
+//! call happens in `ugaris-server`'s `world_events.rs::
+//! apply_macro_cross_area_transfers`). The `MacroPpd`-side halves of both
+//! the banishment and the return trip (`macro_begin_challenge_room_
+//! banishment`/`macro_save_pentagram_progress` from [`crate::
+//! macro_daemon`], plus the `in_challenge_room`/`needs_challenge` reads
+//! and the `original_*` restore) are applied directly in
+//! `ugaris-server/src/macro_daemon.rs`, which is the only place with
+//! both a `World` and a `PlayerRuntime` in hand.
+//!
 //! Known, disclosed simplifications carried over from `macro_daemon.rs`'s
 //! own module doc comment (not resolved by this slice either): the
-//! `force_summon`/cross-server "challenge room" pickup branches of
-//! `MACRO_STATE_IDLE`, `MACRO_STATE_FOUND`'s suspicion/failure-triggered
-//! challenge-room banishment, the reward item grants' `ZoneLoader`
-//! dependency, and the `isxmas`/pentagram-restore fields. Two further
-//! simplifications specific to this slice: (1) C's `realtime - ch[co].
-//! login_time < 60*5` recent-login grace period is not applied - this
-//! codebase does not yet track a player's login timestamp anywhere on
-//! `Character`/`World`/`PlayerRuntime`, so a just-logged-in player is not
-//! given the 5-minute grace period C grants before being eligible for a
-//! challenge; (2) `macro_teleport_char_driver`'s `MF_SOUNDBLOCK`/
-//! `MF_SHOUTBLOCK` destination-tile pre-check (`base.c:417-421`) is
-//! skipped, reusing the plain [`World::teleport_char_driver`] instead -
-//! both are narrow, rarely-hit edge cases, not central to anti-macro
-//! gameplay.
+//! reward item grants' `ZoneLoader` dependency and the `isxmas` reskin
+//! field. Two further simplifications specific to this slice: (1) C's
+//! `realtime - ch[co].login_time < 60*5` recent-login grace period is not
+//! applied - this codebase does not yet track a player's login timestamp
+//! anywhere on `Character`/`World`/`PlayerRuntime`, so a just-logged-in
+//! player is not given the 5-minute grace period C grants before being
+//! eligible for a challenge; (2) `macro_teleport_char_driver`'s
+//! `MF_SOUNDBLOCK`/`MF_SHOUTBLOCK` destination-tile pre-check (`base.c:
+//! 417-421`) is skipped, reusing the plain [`World::teleport_char_driver`]
+//! instead - both are narrow, rarely-hit edge cases, not central to
+//! anti-macro gameplay.
 
 use super::*;
 use crate::character_driver::CDR_MACRO;
 
 pub use crate::character_driver::{MacroDriverData, MacroDriverState};
 pub use crate::macro_daemon::{
-    macro_apply_correct_answer, macro_apply_failure, macro_ask_challenge_lines, macro_check_answer,
-    macro_generate_challenge, macro_is_area_excluded, macro_is_player_active,
-    macro_next_check_delay, macro_record_history, macro_reward_fallback,
-    macro_reward_item_template, macro_reward_success_message, macro_roll_reward,
-    macro_xmas_reward_message, MacroChallenge, MacroFailureUpdate, MacroReward,
+    macro_apply_correct_answer, macro_apply_failure, macro_ask_challenge_lines,
+    macro_begin_challenge_room_banishment, macro_check_answer, macro_generate_challenge,
+    macro_is_area_excluded, macro_is_pents_area, macro_is_player_active, macro_next_check_delay,
+    macro_record_history, macro_reward_fallback, macro_reward_item_template,
+    macro_reward_success_message, macro_roll_reward, macro_save_pentagram_progress,
+    macro_should_banish_to_challenge_room, macro_xmas_reward_message, MacroChallenge,
+    MacroFailureUpdate, MacroReward, CHALLENGE_ROOM_AREA, CHALLENGE_ROOM_X, CHALLENGE_ROOM_Y,
     MACRO_ACTIVITY_TIMEOUT, MACRO_CHALLENGE_TIME, MACRO_REPEAT_INTERVAL,
 };
 
@@ -63,6 +81,22 @@ const MACRO_MUTTERINGS: [&str; 12] = [
     "Is it paranoia if they really ARE scripting?",
     "I should get a cape. Every daemon deserves a cape.",
 ];
+
+/// A macro-daemon-triggered "challenge room" hand-off whose destination
+/// area differs from this area server's own `area_id` - queued for
+/// `ugaris-server`'s `world_events.rs::apply_macro_cross_area_transfers`
+/// since `World` has no DB handle or `ServerRuntime` to perform the
+/// `change_area` hand-off itself, same shape as `world/jail.rs`'s
+/// `JailCrossAreaTransfer`. Used for both directions of the trip: the
+/// initial banishment (`target_area/x/y` = the challenge room) and the
+/// correct-answer return (`target_area/x/y` = `MacroPpd::original_*`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MacroCrossAreaTransfer {
+    pub character_id: CharacterId,
+    pub target_area: u16,
+    pub target_x: u16,
+    pub target_y: u16,
+}
 
 impl World {
     /// C `macro_driver`'s appearance-update block (`base.c:912-921`).
@@ -213,6 +247,80 @@ impl World {
         let roll = legacy_random_below_from_seed(&mut seed, random_span.max(1));
         self.legacy_random_seed = seed;
         base + roll
+    }
+
+    /// C `macro_driver`'s `MACRO_STATE_FOUND` banishment's `Character`
+    /// half (`base.c:1060-1069`): stashes the victim's current position
+    /// and respawn point, then points their respawn at the challenge room
+    /// and flags `CF_RESPAWN` - unconditionally, matching C's own
+    /// unconditional field writes that happen before the local-vs-
+    /// cross-server branch. Returns `(original_x, original_y,
+    /// original_restx, original_resty, original_resta)` for the caller to
+    /// mirror into `MacroPpd` (`macro_begin_challenge_room_banishment`,
+    /// `ugaris-server`'s job - `World` cannot reach `PlayerRuntime`); this
+    /// area server's own `area_id` is `original_area`, not returned here
+    /// since the caller already has it. `None` if `victim_id` no longer
+    /// resolves.
+    pub fn macro_banish_to_challenge_room(
+        &mut self,
+        victim_id: CharacterId,
+    ) -> Option<(i32, i32, i32, i32, i32)> {
+        let character = self.characters.get_mut(&victim_id)?;
+        let original = (
+            i32::from(character.x),
+            i32::from(character.y),
+            i32::from(character.rest_x),
+            i32::from(character.rest_y),
+            i32::from(character.rest_area),
+        );
+        character.rest_x = CHALLENGE_ROOM_X;
+        character.rest_y = CHALLENGE_ROOM_Y;
+        character.rest_area = CHALLENGE_ROOM_AREA;
+        character.flags.insert(CharacterFlags::RESPAWN);
+        Some(original)
+    }
+
+    /// C `macro_driver`'s correct-answer return trip's respawn-point
+    /// restore (`base.c:872-874`): `ch[co].restx/resty/resta =
+    /// ppd->original_restx/resty/resta`. `CF_RESPAWN` is deliberately left
+    /// set - C never clears it here either. A no-op if `victim_id` no
+    /// longer resolves.
+    pub fn macro_restore_original_respawn(
+        &mut self,
+        victim_id: CharacterId,
+        original_restx: i32,
+        original_resty: i32,
+        original_resta: i32,
+    ) {
+        if let Some(character) = self.characters.get_mut(&victim_id) {
+            character.rest_x = original_restx as u16;
+            character.rest_y = original_resty as u16;
+            character.rest_area = original_resta as u16;
+        }
+    }
+
+    /// Queues a cross-server "challenge room" hand-off - see
+    /// [`MacroCrossAreaTransfer`].
+    pub fn queue_macro_cross_area_transfer(
+        &mut self,
+        character_id: CharacterId,
+        target_area: u16,
+        target_x: u16,
+        target_y: u16,
+    ) {
+        self.pending_macro_cross_area_transfers
+            .push(MacroCrossAreaTransfer {
+                character_id,
+                target_area,
+                target_x,
+                target_y,
+            });
+    }
+
+    /// Drains every cross-server "challenge room" hand-off queued this
+    /// tick - see [`MacroCrossAreaTransfer`].
+    pub fn drain_pending_macro_cross_area_transfers(&mut self) -> Vec<MacroCrossAreaTransfer> {
+        self.pending_macro_cross_area_transfers.drain(..).collect()
     }
 }
 

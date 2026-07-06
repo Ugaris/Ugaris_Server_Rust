@@ -1,6 +1,9 @@
 use super::*;
 use crate::character_driver::CDR_MACRO;
-use crate::world::macro_npc::MACRO_MUTTERINGS_FOR_TESTS;
+use crate::world::macro_npc::{
+    MacroCrossAreaTransfer, CHALLENGE_ROOM_AREA, CHALLENGE_ROOM_X, CHALLENGE_ROOM_Y,
+    MACRO_MUTTERINGS_FOR_TESTS,
+};
 
 fn macro_daemon(id: u32) -> Character {
     let mut daemon = character(id);
@@ -107,6 +110,71 @@ fn give_message_destroys_any_cursor_item() {
         .cursor_item
         .is_none());
     assert!(!world.items.contains_key(&ItemId(900)));
+}
+
+#[test]
+fn banish_to_challenge_room_stashes_original_respawn_and_sets_challenge_room_respawn() {
+    let mut world = World::default();
+    let mut victim = player_at(30, 20);
+    victim.rest_x = 55;
+    victim.rest_y = 66;
+    victim.rest_area = 2;
+    assert!(world.spawn_character(victim, 12, 34));
+
+    let original = world
+        .macro_banish_to_challenge_room(CharacterId(30))
+        .expect("victim resolves");
+    assert_eq!(original, (12, 34, 55, 66, 2));
+
+    let character = world.characters.get(&CharacterId(30)).unwrap();
+    assert_eq!(character.rest_x, CHALLENGE_ROOM_X);
+    assert_eq!(character.rest_y, CHALLENGE_ROOM_Y);
+    assert_eq!(character.rest_area, CHALLENGE_ROOM_AREA);
+    assert!(character.flags.contains(CharacterFlags::RESPAWN));
+}
+
+#[test]
+fn banish_to_challenge_room_is_a_no_op_for_an_unknown_character() {
+    let mut world = World::default();
+    assert!(world
+        .macro_banish_to_challenge_room(CharacterId(999))
+        .is_none());
+}
+
+#[test]
+fn restore_original_respawn_writes_back_the_saved_fields_without_clearing_respawn_flag() {
+    let mut world = World::default();
+    let mut victim = player_at(31, 20);
+    victim.flags.insert(CharacterFlags::RESPAWN);
+    assert!(world.spawn_character(victim, 12, 34));
+
+    world.macro_restore_original_respawn(CharacterId(31), 55, 66, 2);
+
+    let character = world.characters.get(&CharacterId(31)).unwrap();
+    assert_eq!(character.rest_x, 55);
+    assert_eq!(character.rest_y, 66);
+    assert_eq!(character.rest_area, 2);
+    // C never clears `CF_RESPAWN` on the return trip either.
+    assert!(character.flags.contains(CharacterFlags::RESPAWN));
+}
+
+#[test]
+fn macro_cross_area_transfer_queue_round_trips() {
+    let mut world = World::default();
+    assert!(world.drain_pending_macro_cross_area_transfers().is_empty());
+
+    world.queue_macro_cross_area_transfer(CharacterId(5), CHALLENGE_ROOM_AREA, 178, 248);
+    let drained = world.drain_pending_macro_cross_area_transfers();
+    assert_eq!(
+        drained,
+        vec![MacroCrossAreaTransfer {
+            character_id: CharacterId(5),
+            target_area: CHALLENGE_ROOM_AREA,
+            target_x: 178,
+            target_y: 248,
+        }]
+    );
+    assert!(world.drain_pending_macro_cross_area_transfers().is_empty());
 }
 
 #[test]

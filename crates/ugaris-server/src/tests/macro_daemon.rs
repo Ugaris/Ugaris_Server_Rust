@@ -1,5 +1,6 @@
 use super::*;
 use ugaris_core::character_driver::{MacroDriverState, CDR_MACRO};
+use ugaris_core::world::{CHALLENGE_ROOM_AREA, CHALLENGE_ROOM_X, CHALLENGE_ROOM_Y};
 
 const AREA_ID: u16 = 1;
 
@@ -200,6 +201,19 @@ lollipop: name="Lollipop" flag=IF_TAKE driver=64 ;"#,
 
 #[test]
 fn timeout_kicks_the_player_after_three_failures() {
+    // Real C behavior: once `challenge_failures >= 2`, the *next* time
+    // this victim is found they are banished to the challenge room
+    // first (`macro_should_banish_to_challenge_room`) - a normal, non-
+    // banished third challenge is unreachable once two failures have
+    // already accrued. So this test exercises the full local (same-area)
+    // banishment-then-timeout cascade instead: found with 2 prior
+    // failures -> banished to the challenge room (ticked as area 3
+    // itself, so the hand-off resolves locally, same tick, into
+    // `Challenging`) -> timeout -> third failure kicks, and the "you
+    // remain in the challenge room" message fires since the victim was
+    // banished there. See `cross_server_banishment_queues_a_challenge_
+    // room_transfer_and_goes_idle` below for the cross-area banishment
+    // branch.
     let macro_id = CharacterId(1);
     let victim_id = CharacterId(2);
     let mut world = World::default();
@@ -212,24 +226,239 @@ fn timeout_kicks_the_player_after_three_failures() {
         let player = runtime.player_for_character_mut(victim_id).unwrap();
         player.macro_ppd.last_combat = 1_000;
         player.macro_ppd.challenge_failures = 2;
+        // Force-summon so the victim is found regardless of area 3's own
+        // section-20 candidate-search restriction (irrelevant to the
+        // banishment check itself, which runs on any found victim).
+        player.macro_ppd.force_summon = true;
     }
     let mut loader = ZoneLoader::new();
 
-    apply_macro_events(&mut world, &mut runtime, &mut loader, AREA_ID, false, 1_000);
-    assert_eq!(
-        macro_state(&world, macro_id).state,
-        MacroDriverState::Challenging
+    apply_macro_events(
+        &mut world,
+        &mut runtime,
+        &mut loader,
+        CHALLENGE_ROOM_AREA,
+        false,
+        1_000,
     );
+    let dat = macro_state(&world, macro_id);
+    assert_eq!(dat.state, MacroDriverState::Challenging);
+    assert!(dat.teleported_to_jail);
+
+    let player = runtime.player_for_character(victim_id).unwrap();
+    assert!(player.macro_ppd.in_challenge_room);
+    assert_eq!(
+        player.macro_ppd.original_area,
+        i32::from(CHALLENGE_ROOM_AREA)
+    );
+    let victim = &world.characters[&victim_id];
+    assert_eq!(victim.x, CHALLENGE_ROOM_X);
+    assert_eq!(victim.y, CHALLENGE_ROOM_Y);
+    assert_eq!(victim.rest_x, CHALLENGE_ROOM_X);
+    assert_eq!(victim.rest_y, CHALLENGE_ROOM_Y);
+    assert_eq!(victim.rest_area, CHALLENGE_ROOM_AREA);
+    assert!(victim.flags.contains(CharacterFlags::RESPAWN));
+    let banishment_texts = world.drain_pending_system_texts();
+    assert!(banishment_texts
+        .iter()
+        .any(|text| text.message.contains("brought to a challenge room")));
 
     // Advance past `MACRO_CHALLENGE_TIME` (180s) with no answer.
     world.tick.0 += TICKS_PER_SECOND * 200;
-    apply_macro_events(&mut world, &mut runtime, &mut loader, AREA_ID, false, 1_300);
+    apply_macro_events(
+        &mut world,
+        &mut runtime,
+        &mut loader,
+        CHALLENGE_ROOM_AREA,
+        false,
+        1_300,
+    );
 
     let player = runtime.player_for_character(victim_id).unwrap();
     assert_eq!(player.macro_ppd.challenge_failures, 0);
     let victim = &world.characters[&victim_id];
     assert!(victim.flags.contains(CharacterFlags::KICKED));
     assert_eq!(macro_state(&world, macro_id).state, MacroDriverState::Idle);
+
+    let timeout_texts = world.drain_pending_system_texts();
+    assert!(timeout_texts
+        .iter()
+        .any(|text| text.message.contains("You remain in the challenge room")));
+}
+
+#[test]
+fn cross_server_banishment_queues_a_challenge_room_transfer_and_goes_idle() {
+    // Same banishment trigger as above, but ticked as an ordinary area
+    // (not the challenge room area itself) - C's cross-server branch
+    // (`base.c:1101-1112`) queues the hand-off and returns to `Idle`
+    // immediately, without asking a challenge this tick and without the
+    // "brought to a challenge room" message (C's own `log_char` call for
+    // that message sits after the `return` the cross-server branch
+    // takes).
+    let macro_id = CharacterId(1);
+    let victim_id = CharacterId(2);
+    let mut world = World::default();
+    assert!(world.spawn_character(macro_npc(1, 10, 10), 10, 10));
+    assert!(world.spawn_character(eligible_player(2, 12, 12), 12, 12));
+
+    let mut runtime = ServerRuntime::default();
+    connect_player(&mut runtime, 1, victim_id);
+    {
+        let player = runtime.player_for_character_mut(victim_id).unwrap();
+        player.macro_ppd.last_combat = 1_000;
+        player.macro_ppd.suspicion = 60;
+        player.macro_ppd.force_summon = true;
+    }
+    let mut loader = ZoneLoader::new();
+
+    apply_macro_events(&mut world, &mut runtime, &mut loader, AREA_ID, false, 1_000);
+
+    let dat = macro_state(&world, macro_id);
+    assert_eq!(dat.state, MacroDriverState::Idle);
+    assert_eq!(dat.victim, None);
+    assert!(!dat.teleported_to_jail);
+
+    let player = runtime.player_for_character(victim_id).unwrap();
+    assert!(player.macro_ppd.in_challenge_room);
+    assert!(player.macro_ppd.needs_challenge);
+    assert_eq!(player.macro_ppd.original_area, i32::from(AREA_ID));
+    assert_eq!(player.macro_ppd.original_x, 12);
+    assert_eq!(player.macro_ppd.original_y, 12);
+
+    let transfers = world.drain_pending_macro_cross_area_transfers();
+    assert_eq!(
+        transfers,
+        vec![ugaris_core::world::MacroCrossAreaTransfer {
+            character_id: victim_id,
+            target_area: CHALLENGE_ROOM_AREA,
+            target_x: CHALLENGE_ROOM_X,
+            target_y: CHALLENGE_ROOM_Y,
+        }]
+    );
+    // No "brought to a challenge room" message on the cross-server path
+    // (C's own `log_char` call is unreachable there, see this test's
+    // doc comment).
+    let texts = world.drain_pending_system_texts();
+    assert!(!texts
+        .iter()
+        .any(|text| text.message.contains("brought to a challenge room")));
+}
+
+#[test]
+fn correct_answer_from_the_challenge_room_restores_original_position_and_respawn() {
+    let macro_id = CharacterId(1);
+    let victim_id = CharacterId(2);
+    let mut world = World::default();
+    assert!(world.spawn_character(macro_npc(1, 10, 10), 10, 10));
+    let mut victim = eligible_player(2, 12, 12);
+    victim.rest_x = 40;
+    victim.rest_y = 41;
+    victim.rest_area = 7;
+    assert!(world.spawn_character(victim, 12, 12));
+
+    let mut runtime = ServerRuntime::default();
+    connect_player(&mut runtime, 1, victim_id);
+    {
+        let player = runtime.player_for_character_mut(victim_id).unwrap();
+        player.macro_ppd.last_combat = 1_000;
+        player.macro_ppd.challenge_failures = 2;
+        player.macro_ppd.force_summon = true;
+    }
+    let mut loader = ZoneLoader::new();
+
+    apply_macro_events(
+        &mut world,
+        &mut runtime,
+        &mut loader,
+        CHALLENGE_ROOM_AREA,
+        false,
+        1_000,
+    );
+    let dat = macro_state(&world, macro_id);
+    assert_eq!(dat.state, MacroDriverState::Challenging);
+    let challenge = dat.challenge.clone().expect("challenge asked");
+    let answer = match challenge.challenge_type {
+        ugaris_core::macro_daemon::MACRO_CHALLENGE_MATH => {
+            (challenge.val1 + challenge.val2).to_string()
+        }
+        _ => challenge.expected_answer.clone(),
+    };
+
+    if let Some(daemon) = world.characters.get_mut(&macro_id) {
+        daemon.push_driver_text_message(victim_id, answer);
+    }
+    apply_macro_events(
+        &mut world,
+        &mut runtime,
+        &mut loader,
+        CHALLENGE_ROOM_AREA,
+        false,
+        1_100,
+    );
+
+    let player = runtime.player_for_character(victim_id).unwrap();
+    assert!(!player.macro_ppd.in_challenge_room);
+    let victim = &world.characters[&victim_id];
+    // Restored to the position/respawn point stashed at banishment time
+    // (12, 12 / 40, 41, area 7 - see the setup above).
+    assert_eq!(victim.x, 12);
+    assert_eq!(victim.y, 12);
+    assert_eq!(victim.rest_x, 40);
+    assert_eq!(victim.rest_y, 41);
+    assert_eq!(victim.rest_area, 7);
+
+    let texts = world.drain_pending_area_texts();
+    assert!(texts.iter().any(|text| text
+        .message
+        .contains("Excellent! Let me send you back now.")));
+}
+
+#[test]
+fn cross_server_pickup_scan_finds_a_victim_already_in_the_challenge_room() {
+    // The victim is already sitting in the challenge room (as if
+    // `change_area` just delivered them there) with `in_challenge_room
+    // && needs_challenge` both set - the area-3-only idle scan
+    // (`base.c:942-960`) must find them even though they would otherwise
+    // fail the normal candidate search's section-20 restriction (no
+    // section data is mapped in this test, so `macro_is_area_excluded`
+    // would normally exclude them).
+    let macro_id = CharacterId(1);
+    let victim_id = CharacterId(2);
+    let mut world = World::default();
+    // Far enough apart that `teleport_char_driver`'s own minimum-distance
+    // gate doesn't reject the daemon's teleport-to-victim step.
+    assert!(world.spawn_character(macro_npc(1, 10, 10), 10, 10));
+    assert!(world.spawn_character(
+        eligible_player(2, CHALLENGE_ROOM_X as usize, CHALLENGE_ROOM_Y as usize),
+        CHALLENGE_ROOM_X as usize,
+        CHALLENGE_ROOM_Y as usize
+    ));
+
+    let mut runtime = ServerRuntime::default();
+    connect_player(&mut runtime, 1, victim_id);
+    {
+        let player = runtime.player_for_character_mut(victim_id).unwrap();
+        player.macro_ppd.in_challenge_room = true;
+        player.macro_ppd.needs_challenge = true;
+    }
+    let mut loader = ZoneLoader::new();
+
+    apply_macro_events(
+        &mut world,
+        &mut runtime,
+        &mut loader,
+        CHALLENGE_ROOM_AREA,
+        false,
+        1_000,
+    );
+
+    let dat = macro_state(&world, macro_id);
+    assert_eq!(dat.victim, Some(victim_id));
+    assert_eq!(dat.state, MacroDriverState::Challenging);
+    assert!(dat.teleported_to_jail);
+    let player = runtime.player_for_character(victim_id).unwrap();
+    assert!(!player.macro_ppd.needs_challenge);
+    assert!(player.macro_ppd.in_challenge_room);
 }
 
 #[test]

@@ -7227,6 +7227,27 @@ async fn main() -> anyhow::Result<()> {
                         "applied /jail cross-area transfers"
                     );
                 }
+                // The Macro Daemon's cross-server "challenge room"
+                // hand-off (C `change_area`, `src/module/base.c:1110`/
+                // `848-850`), queued by `apply_macro_events` above when
+                // the challenge-room/original-area destination differs
+                // from this area server's own `area_id`.
+                let macro_cross_area_transfers_applied = apply_macro_cross_area_transfers(
+                    &mut world,
+                    &mut runtime,
+                    &character_repository,
+                    &area_repository,
+                    config.area_id,
+                    config.mirror_id,
+                )
+                .await;
+                if macro_cross_area_transfers_applied != 0 {
+                    info!(
+                        macro_cross_area_transfers_applied,
+                        tick = world.tick.0,
+                        "applied Macro Daemon cross-area challenge-room transfers"
+                    );
+                }
                 // `build_remove_tile`'s evicted-player cross-area rescue
                 // (C `change_area`, `area/13/dungeon.c:754`'s tail),
                 // queued by `World::build_remove_tile` when the evicted

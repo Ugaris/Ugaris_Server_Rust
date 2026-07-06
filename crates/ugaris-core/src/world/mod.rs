@@ -428,6 +428,10 @@ pub struct World {
     /// this area server's own `area_id` - see `world/jail.rs`'s module
     /// doc comment.
     pending_jail_cross_area_transfers: Vec<JailCrossAreaTransfer>,
+    /// Macro-daemon "challenge room" banishments/returns whose
+    /// destination area differs from this area server's own `area_id` -
+    /// see `world/macro_npc.rs`'s module doc comment.
+    pending_macro_cross_area_transfers: Vec<MacroCrossAreaTransfer>,
     /// `/rmdeath` targets not found among the currently loaded characters
     /// yet - see `world/rmdeath.rs`'s module doc comment.
     pending_rmdeath_lookups: Vec<RmdeathLookup>,

@@ -275,6 +275,81 @@ pub fn macro_is_area_excluded(area_id: u16, x: usize, y: usize) -> bool {
     false
 }
 
+/// C `macro_driver`'s `MACRO_STATE_FOUND` challenge-room trigger
+/// (`base.c:1057`): `ppd->suspicion > 50 || ppd->challenge_failures >=
+/// 2`.
+pub fn macro_should_banish_to_challenge_room(suspicion: i32, challenge_failures: i32) -> bool {
+    suspicion > 50 || challenge_failures >= 2
+}
+
+/// C `macro_driver`'s pentagram-progress-save area gate (`base.c:1074`):
+/// the four Pentagram-gameplay areas (Earth/Fire/Ice/Hell-test) whose
+/// `DRD_PENT_NPPD` session progress would otherwise be silently lost on a
+/// cross-area challenge-room banishment.
+pub fn macro_is_pents_area(area_id: u16) -> bool {
+    matches!(area_id, 4 | 7 | 9 | 21)
+}
+
+/// C `macro_driver`'s `MACRO_STATE_FOUND` banishment's `MacroPpd` half
+/// (`base.c:1060-1069`): stashes the victim's current position/area and
+/// original respawn point, and flips `in_challenge_room` on. Called
+/// unconditionally once [`macro_should_banish_to_challenge_room`] fires,
+/// regardless of whether the actual teleport ends up local (same area
+/// server) or cross-server (see `ugaris-server/src/macro_daemon.rs`'s
+/// call site) - matching C's own unconditional field writes, which
+/// happen before the `areaID == CHALLENGE_ROOM_AREA` branch. The
+/// `Character`-side mutations (respawn fields, `CF_RESPAWN`, the actual
+/// teleport) are `World`'s job (`World::macro_banish_to_challenge_room`,
+/// `world/macro_npc.rs`).
+#[allow(clippy::too_many_arguments)]
+pub fn macro_begin_challenge_room_banishment(
+    ppd: &mut MacroPpd,
+    original_x: i32,
+    original_y: i32,
+    original_area: i32,
+    original_restx: i32,
+    original_resty: i32,
+    original_resta: i32,
+) {
+    ppd.original_x = original_x;
+    ppd.original_y = original_y;
+    ppd.original_area = original_area;
+    ppd.in_challenge_room = true;
+    ppd.original_restx = original_restx;
+    ppd.original_resty = original_resty;
+    ppd.original_resta = original_resta;
+}
+
+/// C `macro_driver`'s pentagram-progress save (`base.c:1074-1092`):
+/// copies the live `PentagramDebugData` into `MacroPpd::saved_pent_*`
+/// when banishing from one of the four Pentagram areas
+/// ([`macro_is_pents_area`]), else marks the saved data invalid
+/// (`ppd->saved_pent_valid = 0`). `pent` should be `None` whenever
+/// `!macro_is_pents_area(area_id)`, matching C's own `if (is_pents_area)
+/// { ... } else { ppd->saved_pent_valid = 0; }` branch. Note: C never
+/// reads these fields back anywhere in `base.c` - this saves but does not
+/// restore, matching that (apparently unfinished) gap in the oracle
+/// exactly rather than inventing a restore path C itself lacks.
+pub fn macro_save_pentagram_progress(
+    ppd: &mut MacroPpd,
+    pent: Option<&crate::player::PentagramDebugData>,
+) {
+    match pent {
+        Some(pent) => {
+            ppd.saved_pent_valid = true;
+            ppd.saved_pent_status = pent.status;
+            ppd.saved_pent_it = pent.pent_it;
+            ppd.saved_pent_color = pent.pent_color;
+            ppd.saved_pent_value = pent.pent_value;
+            ppd.saved_pent_worth = pent.pent_worth;
+            ppd.saved_pent_bonus = pent.bonus;
+            ppd.saved_pent_cnt = pent.pent_cnt;
+            ppd.saved_pent_lucky = pent.lucky_pents_this_solve;
+        }
+        None => ppd.saved_pent_valid = false,
+    }
+}
+
 /// C `macro_generate_challenge` (`base.c:507-566`): higher `suspicion`/
 /// any prior `challenge_failures` raises the difficulty tier, which picks
 /// a harder challenge type. `seed` is threaded through
@@ -718,6 +793,71 @@ mod tests {
         // An ordinary area/position combination with no section mapped
         // and outside any special rectangle is not excluded.
         assert!(!macro_is_area_excluded(1, 5, 5));
+    }
+
+    #[test]
+    fn should_banish_gates_on_suspicion_or_two_failures() {
+        assert!(!macro_should_banish_to_challenge_room(0, 0));
+        assert!(!macro_should_banish_to_challenge_room(50, 1));
+        assert!(macro_should_banish_to_challenge_room(51, 0));
+        assert!(macro_should_banish_to_challenge_room(0, 2));
+        assert!(macro_should_banish_to_challenge_room(0, 3));
+    }
+
+    #[test]
+    fn pents_area_matches_c_hardcoded_set() {
+        assert!(macro_is_pents_area(4));
+        assert!(macro_is_pents_area(7));
+        assert!(macro_is_pents_area(9));
+        assert!(macro_is_pents_area(21));
+        assert!(!macro_is_pents_area(3));
+        assert!(!macro_is_pents_area(1));
+    }
+
+    #[test]
+    fn begin_banishment_stashes_position_and_respawn_and_flips_flag() {
+        let mut ppd = MacroPpd::default();
+        macro_begin_challenge_room_banishment(&mut ppd, 10, 20, 5, 30, 40, 5);
+        assert_eq!(ppd.original_x, 10);
+        assert_eq!(ppd.original_y, 20);
+        assert_eq!(ppd.original_area, 5);
+        assert!(ppd.in_challenge_room);
+        assert_eq!(ppd.original_restx, 30);
+        assert_eq!(ppd.original_resty, 40);
+        assert_eq!(ppd.original_resta, 5);
+    }
+
+    #[test]
+    fn save_pentagram_progress_copies_fields_when_present() {
+        let mut ppd = MacroPpd::default();
+        let pent = crate::player::PentagramDebugData {
+            status: 3,
+            pent_it: [1, 2, 3, 4, 5, 6],
+            pent_color: [7, 8, 9, 10, 11, 12],
+            pent_value: [13, 14, 15, 16, 17, 18],
+            pent_worth: [19, 20, 21, 22, 23, 24],
+            bonus: 25,
+            pent_cnt: 26,
+            lucky_pents_this_solve: 27,
+        };
+        macro_save_pentagram_progress(&mut ppd, Some(&pent));
+        assert!(ppd.saved_pent_valid);
+        assert_eq!(ppd.saved_pent_status, 3);
+        assert_eq!(ppd.saved_pent_it, [1, 2, 3, 4, 5, 6]);
+        assert_eq!(ppd.saved_pent_color, [7, 8, 9, 10, 11, 12]);
+        assert_eq!(ppd.saved_pent_value, [13, 14, 15, 16, 17, 18]);
+        assert_eq!(ppd.saved_pent_worth, [19, 20, 21, 22, 23, 24]);
+        assert_eq!(ppd.saved_pent_bonus, 25);
+        assert_eq!(ppd.saved_pent_cnt, 26);
+        assert_eq!(ppd.saved_pent_lucky, 27);
+    }
+
+    #[test]
+    fn save_pentagram_progress_marks_invalid_when_not_a_pents_area() {
+        let mut ppd = MacroPpd::default();
+        ppd.saved_pent_valid = true;
+        macro_save_pentagram_progress(&mut ppd, None);
+        assert!(!ppd.saved_pent_valid);
     }
 
     #[test]
