@@ -3273,6 +3273,57 @@ pub(crate) async fn apply_jail_cross_area_transfers(
     applied
 }
 
+/// `build_remove_tile`'s evicted-player cross-area rescue (C
+/// `change_area(cn, ch[cn].resta, ch[cn].restx, ch[cn].resty)`,
+/// `src/area/13/dungeon.c:754`'s tail): resolves every `World::
+/// drain_pending_dungeon_eviction_transfers` entry (queued by
+/// `World::build_remove_tile` when the evicted player's own `rest_area`
+/// differs from this area server's own `area_id` - see
+/// `world/dungeon_master.rs`'s module doc comment) via the shared
+/// `attempt_cross_area_transfer` helper, same as every other cross-area
+/// call site. The destination mirror always equals this process's own
+/// `mirror_id` (rest points carry no mirror field of their own, matching
+/// C's `change_area` reading `ch[cn].mirror`). Unlike every other
+/// call site, C's own fallback on failure is `exit_char(cn)` (no
+/// message - the character has no "down" feedback path here since
+/// `exit_char` disconnects them entirely), so a failed hand-off calls
+/// `World::remove_character` instead of queuing a system text.
+pub(crate) async fn apply_dungeon_eviction_transfers(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    character_repository: &Option<ugaris_db::PgCharacterRepository>,
+    area_repository: &Option<ugaris_db::PgAreaRepository>,
+    area_id: u16,
+    mirror_id: u16,
+) -> usize {
+    let transfers = world.drain_pending_dungeon_eviction_transfers();
+    if transfers.is_empty() {
+        return 0;
+    }
+    let mut applied = 0;
+    for transfer in transfers {
+        let transferred = attempt_cross_area_transfer(
+            world,
+            runtime,
+            character_repository,
+            area_repository,
+            area_id,
+            mirror_id,
+            transfer.character_id,
+            transfer.target_area,
+            u32::from(mirror_id),
+            transfer.target_x,
+            transfer.target_y,
+        )
+        .await;
+        if !transferred {
+            world.remove_character(transfer.character_id);
+        }
+        applied += 1;
+    }
+    applied
+}
+
 /// `/rmdeath`'s async DB round trip (C `lookup_name`, `system/lookup.c:
 /// 42-98` + `system/database/database_lookup.c:57-83`): resolves every
 /// `World::drain_pending_rmdeath_lookups` entry (queued by a
@@ -5343,6 +5394,70 @@ mod jail_cross_area_transfer_tests {
             "Nothing happens - target area server is down."
         );
         assert!(world.drain_pending_jail_cross_area_transfers().is_empty());
+    }
+}
+
+#[cfg(test)]
+mod dungeon_eviction_transfer_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn no_transfers_queued_is_a_cheap_no_op() {
+        let mut world = World::default();
+        let mut runtime = ServerRuntime::default();
+        let applied =
+            apply_dungeon_eviction_transfers(&mut world, &mut runtime, &None, &None, 1, 0).await;
+        assert_eq!(applied, 0);
+        assert!(world.drain_pending_system_texts().is_empty());
+    }
+
+    #[tokio::test]
+    async fn missing_repository_pair_falls_back_to_removing_the_character() {
+        // Mirrors `attempt_cross_area_transfer`'s own
+        // `cross_area_transfer_stays_put_without_a_registered_repository_pair`
+        // coverage (`tests/cross_area.rs`): without a live
+        // `AreaRepository`/`CharacterRepository` pair, the shared helper
+        // can't resolve the target, so - unlike every other cross-area
+        // call site, which sends "Nothing happens - target area server
+        // is down." - this one mirrors C's `exit_char(cn)` fallback and
+        // removes the character outright instead (see
+        // `world/dungeon_master.rs`'s module doc comment).
+        let mut world = World::default();
+        let mut runtime = ServerRuntime::default();
+        world.area_id = 13;
+        let login = LoginBlock {
+            name: "Raider".to_string(),
+            password: String::new(),
+            vendor: 0,
+            client_version: Some(3),
+            his_ip: 0,
+            our_ip: 0,
+            unique: 0,
+        };
+        let mut raider = login_character(CharacterId(1), &login, 13, 10, 10);
+        raider.rest_area = 3; // a different area - queues a cross-area transfer
+        raider.rest_x = 50;
+        raider.rest_y = 60;
+        assert!(world.spawn_character(raider, 10, 10));
+        for (x, y) in [(245, 250), (240, 250), (235, 250), (230, 250)] {
+            for dx in -1..=1_i32 {
+                for dy in -1..=1_i32 {
+                    let tx = (x as i32 + dx) as usize;
+                    let ty = (y as i32 + dy) as usize;
+                    world.map.tile_mut(tx, ty).unwrap().flags |=
+                        ugaris_core::map::MapFlags::MOVEBLOCK;
+                }
+            }
+        }
+        world.build_remove_tile(10, 10);
+        world.drain_pending_system_texts();
+
+        let applied =
+            apply_dungeon_eviction_transfers(&mut world, &mut runtime, &None, &None, 13, 0).await;
+        assert_eq!(applied, 1);
+        assert!(!world.characters.contains_key(&CharacterId(1)));
+        assert!(world.drain_pending_system_texts().is_empty());
+        assert!(world.drain_pending_dungeon_eviction_transfers().is_empty());
     }
 }
 

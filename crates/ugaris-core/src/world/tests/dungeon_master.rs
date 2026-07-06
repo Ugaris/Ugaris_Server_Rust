@@ -508,13 +508,13 @@ fn build_remove_tile_falls_back_to_rest_point_in_the_same_area_when_the_safe_zon
 }
 
 #[test]
-fn build_remove_tile_evicts_the_player_when_the_rest_point_is_in_a_different_area() {
+fn build_remove_tile_queues_a_cross_area_transfer_when_the_rest_point_is_in_a_different_area() {
     let mut world = World::default();
     world.area_id = 13;
     let mut raider = player(1, "Raider");
     raider.x = 10;
     raider.y = 10;
-    raider.rest_area = 3; // a different area - unreachable, no cross-area transfer
+    raider.rest_area = 3; // a different area - queued for cross-area hand-off
     raider.rest_x = 50;
     raider.rest_y = 60;
     assert!(world.spawn_character(raider, 10, 10));
@@ -531,7 +531,20 @@ fn build_remove_tile_evicts_the_player_when_the_rest_point_is_in_a_different_are
 
     world.build_remove_tile(10, 10);
 
-    assert!(!world.characters.contains_key(&CharacterId(1)));
+    // Not removed outright yet - the transfer is deferred to
+    // `ugaris-server`'s `apply_dungeon_eviction_transfers`, which only
+    // calls `World::remove_character` if the hand-off itself fails.
+    assert!(world.characters.contains_key(&CharacterId(1)));
+    let transfers = world.drain_pending_dungeon_eviction_transfers();
+    assert_eq!(
+        transfers,
+        vec![DungeonEvictionTransfer {
+            character_id: CharacterId(1),
+            target_area: 3,
+            target_x: 50,
+            target_y: 60,
+        }]
+    );
 }
 
 #[test]

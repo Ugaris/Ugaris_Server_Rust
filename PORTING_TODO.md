@@ -10635,6 +10635,54 @@ Unlocks every quest NPC. Do these before any P4 area work.
   `server_chat`-equivalent design once (1) fully lands. The actual
   DB-backed save+redirect path itself still has no live-Postgres test
   (same gap as before).
+  REMAINING (iteration 225): wired the last remaining
+  `area_id != config.area_id` call site - the **dungeon-master eviction
+  rescue** (`World::build_remove_tile`, C `build_remove` in
+  `src/area/13/dungeon.c:743-786`'s tail: `change_area(cn, ch[cn].resta,
+  ch[cn].restx, ch[cn].resty)`, falling back to `exit_char(cn)`). Unlike
+  `/jail`/`/office`/`/goto` (which have a direct command caller to
+  message on failure), this call site has none - matching the module
+  doc comment's existing note that C's own fallback here is a silent
+  `exit_char(cn)`, not a "down" message. Added
+  `DungeonEvictionTransfer { character_id, target_area, target_x,
+  target_y }` plus a new `World::pending_dungeon_eviction_transfers`
+  queue (drained via `World::drain_pending_dungeon_eviction_transfers`,
+  same pattern as `JailCrossAreaTransfer`); `build_remove_tile`'s
+  same-area branch is unchanged (still an immediate
+  `teleport_character_same_area` call, falling back to
+  `remove_character` if that single teleport itself fails - matching
+  `change_area`'s own same-area short-circuit), while a differing-area
+  `rest_area` now pushes onto the new queue instead of calling
+  `remove_character` immediately. A new `ugaris-server` function,
+  `world_events.rs::apply_dungeon_eviction_transfers`, drains that queue
+  once per tick (called from `main.rs` right after the existing
+  `apply_jail_cross_area_transfers` call) and, for each entry, calls the
+  shared `attempt_cross_area_transfer` helper with `target_mirror =
+  u32::from(config.mirror_id)` (rest points carry no mirror field of
+  their own, matching every other same-mirror call site) - but unlike
+  every other call site, a failed hand-off calls `World::
+  remove_character` directly instead of queuing a "down" message,
+  reproducing C's `exit_char(cn)` fallback exactly (there being no
+  message to send in C either). Updated the one existing unit test that
+  previously asserted immediate `remove_character` on a cross-area rest
+  point to instead assert the transfer is queued with the exact
+  `(character_id, target_area, target_x, target_y)` tuple and the
+  character still present; added two new tests for
+  `apply_dungeon_eviction_transfers` itself (no-op on an empty queue;
+  missing-repository-pair falls back to `remove_character`, exercised via
+  a real `build_remove_tile` call rather than reaching into the private
+  queue directly). `cargo fmt --all`, `cargo test --workspace` (2108
+  ugaris-core + 73 db + 3 net + 45 protocol + 1060 server, all green,
+  zero failures), `cargo build -p ugaris-server`/`cargo build --workspace`
+  clean with zero warnings, 10s boot-smoke confirmed "entering Rust game
+  loop" with no panic. Still missing, same as before: (1) a periodic
+  `mark_alive` heartbeat (still startup-only) - the only remaining
+  `area_id != config.area_id` call site work is now this heartbeat, since
+  every actual transfer call site is wired; (2) the three blocked
+  commands (`/exterminate`/`/values`+`/showvalues`/`/allow`) still need
+  their own `server_chat`-equivalent design; (3) the DB-backed
+  save+redirect path itself still has no live-Postgres test (same gap as
+  before, only offline/no-repository-pair paths are unit-tested).
 
 - [ ] **Player-side fight-driver auto-combat (lostcon self-defense +
   no*/auto* toggle family)** - `fight_driver_attack_enemy`/

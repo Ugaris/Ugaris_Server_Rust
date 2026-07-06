@@ -7030,6 +7030,27 @@ async fn main() -> anyhow::Result<()> {
                         "applied /jail cross-area transfers"
                     );
                 }
+                // `build_remove_tile`'s evicted-player cross-area rescue
+                // (C `change_area`, `area/13/dungeon.c:754`'s tail),
+                // queued by `World::build_remove_tile` when the evicted
+                // player's own `rest_area` differs from this area
+                // server's own `area_id`.
+                let dungeon_eviction_transfers_applied = apply_dungeon_eviction_transfers(
+                    &mut world,
+                    &mut runtime,
+                    &character_repository,
+                    &area_repository,
+                    config.area_id,
+                    config.mirror_id,
+                )
+                .await;
+                if dungeon_eviction_transfers_applied != 0 {
+                    info!(
+                        dungeon_eviction_transfers_applied,
+                        tick = world.tick.0,
+                        "applied dungeon-eviction cross-area transfers"
+                    );
+                }
                 // `/rmdeath <name>`'s async DB round-trip (C
                 // `lookup_name`, `system/lookup.c:42-98` + `system/
                 // database/database_lookup.c:57-83`), queued by

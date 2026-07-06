@@ -30,23 +30,21 @@
 //! module's remaining gaps - every primitive it needs
 //! (`teleport_character_same_area`/`remove_character`/`destroy_item`/
 //! `remove_effect_from_map`/`set_item_expire`/`queue_system_text`)
-//! already exists on `World`. One real gap remains: C's
-//! `build_remove` falls back from four same-area `teleport_char_driver`
-//! attempts to `change_area(cn, ch[cn].resta, ch[cn].restx,
-//! ch[cn].resty)` (the player's stored rest/recall point, which may be
-//! in a *different* area) before finally giving up with `exit_char(cn)`.
-//! This codebase runs one area per server process (see `World::area_id`'s
-//! own doc comment) with no cross-area transfer yet (`PORTING_TODO.md`'s
-//! "Cross-area transfer" P4 task - every existing cross-area path in
-//! `crates/ugaris-server` reports "target area server is down" instead of
-//! actually moving the character, see `transport.rs`'s
-//! `TransportTravelResult::CrossArea`). `build_remove_tile` mirrors that
-//! same precedent: if the evicted player's own `rest_area` happens to
-//! equal this running area, their rest point is honored as a same-area
-//! teleport (exactly what `change_area` would reduce to in that case);
-//! otherwise the cross-area case is unreachable here and the player is
-//! evicted via `remove_character` exactly like C's `exit_char(cn)`
-//! fallback.
+//! already exists on `World`. `build_remove` falls back from four
+//! same-area `teleport_char_driver` attempts to `change_area(cn,
+//! ch[cn].resta, ch[cn].restx, ch[cn].resty)` (the player's stored
+//! rest/recall point, which may be in a *different* area) before
+//! finally giving up with `exit_char(cn)`. `build_remove_tile` matches
+//! this: if the evicted player's own `rest_area` equals this running
+//! area, their rest point is honored as a same-area teleport (exactly
+//! what `change_area` would reduce to in that case); otherwise a
+//! [`DungeonEvictionTransfer`] is queued for `ugaris-server`'s
+//! `world_events.rs::apply_dungeon_eviction_transfers` to hand off to the
+//! shared `attempt_cross_area_transfer` helper (`World` has no DB handle
+//! or `ServerRuntime` of its own, same reason `world/jail.rs`'s
+//! `JailCrossAreaTransfer` is deferred) - matching C's `change_area`
+//! call exactly; the player is only evicted via `remove_character`
+//! (C's `exit_char(cn)` fallback) if that hand-off itself fails.
 //!
 //! `struct master_data`'s 9-slot catacomb-tracking arrays are ported as
 //! [`DungeonmasterDriverData`], passed by reference rather than stored
@@ -62,6 +60,19 @@ use crate::character_driver::{
 use crate::clan::score_to_level;
 
 pub use crate::character_driver::{DungeonmasterDriverData, DUNGEON_SLOT_COUNT};
+
+/// A `build_remove_tile` evicted-player rescue whose `rest_area` differs
+/// from this area server's own `area_id` - queued for `ugaris-server`'s
+/// `world_events.rs::apply_dungeon_eviction_transfers` since `World` has
+/// no DB handle or `ServerRuntime` to perform the `change_area` hand-off
+/// itself. See the module doc comment.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DungeonEvictionTransfer {
+    pub character_id: CharacterId,
+    pub target_area: u16,
+    pub target_x: u16,
+    pub target_y: u16,
+}
 
 /// C `create_dungeon`'s `say(...)` error branches (`dungeon.c:1384-
 /// 1448`), in the same order C checks them.
@@ -218,6 +229,12 @@ impl World {
     /// Drains every [`DungeonJewelStealEvent`] queued this tick.
     pub fn drain_pending_dungeon_jewel_steals(&mut self) -> Vec<DungeonJewelStealEvent> {
         std::mem::take(&mut self.pending_dungeon_jewel_steals)
+    }
+
+    /// Drains every cross-area `build_remove_tile` eviction hand-off
+    /// queued this tick - see [`DungeonEvictionTransfer`].
+    pub fn drain_pending_dungeon_eviction_transfers(&mut self) -> Vec<DungeonEvictionTransfer> {
+        std::mem::take(&mut self.pending_dungeon_eviction_transfers)
     }
 
     /// C `dungeondoor`'s `first_solve` block (`area/13/dungeon.c:1855-
@@ -539,19 +556,39 @@ impl World {
                 if !escaped {
                     // C: `change_area(cn, ch[cn].resta, ch[cn].restx,
                     // ch[cn].resty)`, falling back to `exit_char(cn)` on
-                    // failure - see this module's doc comment for why
-                    // only the same-area case of `change_area` is
-                    // reachable here.
+                    // failure. Same-area rest points teleport immediately;
+                    // cross-area ones are queued for `ugaris-server`'s
+                    // `apply_dungeon_eviction_transfers` (see the module
+                    // doc comment), which itself falls back to
+                    // `remove_character` (C's `exit_char(cn)`) if the
+                    // hand-off fails.
                     let rest = self
                         .characters
                         .get(&character_id)
                         .map(|character| (character.rest_area, character.rest_x, character.rest_y));
-                    let recalled = matches!(rest, Some((area, _, _)) if area == self.area_id)
-                        && rest.is_some_and(|(_, rest_x, rest_y)| {
-                            self.teleport_character_same_area(character_id, rest_x, rest_y, false)
-                        });
-                    if !recalled {
-                        self.remove_character(character_id);
+                    match rest {
+                        Some((area, rest_x, rest_y)) if area == self.area_id => {
+                            if !self.teleport_character_same_area(
+                                character_id,
+                                rest_x,
+                                rest_y,
+                                false,
+                            ) {
+                                self.remove_character(character_id);
+                            }
+                        }
+                        Some((target_area, target_x, target_y)) => {
+                            self.pending_dungeon_eviction_transfers
+                                .push(DungeonEvictionTransfer {
+                                    character_id,
+                                    target_area,
+                                    target_x,
+                                    target_y,
+                                });
+                        }
+                        None => {
+                            self.remove_character(character_id);
+                        }
                     }
                 }
             } else {

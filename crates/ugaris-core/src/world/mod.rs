@@ -475,6 +475,10 @@ pub struct World {
     /// caller's own id to reply to) - see `world/look.rs`'s module doc
     /// comment.
     pending_klog_requests: Vec<CharacterId>,
+    /// `build_remove_tile`'s evicted-player rescue whose `rest_area`
+    /// differs from this area server's own `area_id` - see
+    /// `world/dungeon_master.rs`'s module doc comment.
+    pending_dungeon_eviction_transfers: Vec<DungeonEvictionTransfer>,
 }
 
 impl Default for Tick {
