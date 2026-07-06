@@ -209,3 +209,47 @@ fn queue_and_drain_ac_violations_lookup_round_trips() {
     assert_eq!(queued[0].session_id, 105);
     assert!(world.drain_pending_ac_violations_lookups().is_empty());
 }
+
+#[test]
+fn queue_and_drain_ac_siglist_lookup_round_trips() {
+    let mut world = World::default();
+    world.queue_ac_siglist_lookup(CharacterId(15));
+
+    let queued = world.drain_pending_ac_siglist_lookups();
+    assert_eq!(queued.len(), 1);
+    assert_eq!(queued[0].caller_id, CharacterId(15));
+    assert!(world.drain_pending_ac_siglist_lookups().is_empty());
+}
+
+#[test]
+fn queue_and_drain_ac_sigadd_lookup_round_trips() {
+    let mut world = World::default();
+    world.queue_ac_sigadd_lookup(
+        CharacterId(16),
+        "hardware_hash".to_string(),
+        "deadbeef".to_string(),
+        "Known Cheat Tool".to_string(),
+        "TestGod".to_string(),
+    );
+
+    let queued = world.drain_pending_ac_sigadd_lookups();
+    assert_eq!(queued.len(), 1);
+    assert_eq!(queued[0].caller_id, CharacterId(16));
+    assert_eq!(queued[0].sig_type, "hardware_hash");
+    assert_eq!(queued[0].sig_value, "deadbeef");
+    assert_eq!(queued[0].name, "Known Cheat Tool");
+    assert_eq!(queued[0].created_by, "TestGod");
+    assert!(world.drain_pending_ac_sigadd_lookups().is_empty());
+}
+
+#[test]
+fn queue_and_drain_ac_sigdel_lookup_round_trips() {
+    let mut world = World::default();
+    world.queue_ac_sigdel_lookup(CharacterId(17), 42);
+
+    let queued = world.drain_pending_ac_sigdel_lookups();
+    assert_eq!(queued.len(), 1);
+    assert_eq!(queued[0].caller_id, CharacterId(17));
+    assert_eq!(queued[0].signature_id, 42);
+    assert!(world.drain_pending_ac_sigdel_lookups().is_empty());
+}

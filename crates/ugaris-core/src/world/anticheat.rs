@@ -221,6 +221,45 @@ pub struct AcViolationsLookup {
     pub session_id: i64,
 }
 
+/// `#acsiglist` (`ac_cmd_siglist`, `anticheat.c:1192-1215`), `CF_GOD`-
+/// only, exact-word (`cmdcmp(ptr, "acsiglist", 9)`). No player name to
+/// resolve - a pure "list every row in the new `ac_known_signatures`
+/// table" async DB round trip, same no-target shape as
+/// `AcCleanupLookup`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AcSiglistLookup {
+    pub caller_id: CharacterId,
+}
+
+/// `#acsigadd <type> <value> <name>` (`ac_cmd_sigadd`, `anticheat.c:
+/// 1216-1245`), `CF_GOD`-only, exact-word. `sig_type`/`sig_value`/`name`
+/// are parsed and validated entirely synchronously in
+/// `commands_admin.rs` (C's own `sscanf(args, "%31s %255s %63[^\n]", ...)`
+/// three-token parse plus the fixed `sig_type` allow-list check, both
+/// pure string logic with no DB dependency - see `apply_ac_sigadd_
+/// events` for the async insert itself). `created_by` is the caller's
+/// own name (C's `ch[cn].name`), captured here alongside `caller_id`
+/// since the DB write needs the *name* string, not just the character
+/// id `queue_system_text` addresses replies to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AcSigaddLookup {
+    pub caller_id: CharacterId,
+    pub sig_type: String,
+    pub sig_value: String,
+    pub name: String,
+    pub created_by: String,
+}
+
+/// `#acsigdel <id>` (`ac_cmd_sigdel`, `anticheat.c:1246-1266`), `CF_GOD`-
+/// only, exact-word. `signature_id` is parsed and range-checked
+/// synchronously in `commands_admin.rs` (C's own `atoi` + `== 0` invalid-
+/// id check).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AcSigdelLookup {
+    pub caller_id: CharacterId,
+    pub signature_id: i64,
+}
+
 impl World {
     pub fn queue_ac_status_lookup(
         &mut self,
@@ -417,6 +456,47 @@ impl World {
 
     pub fn drain_pending_ac_violations_lookups(&mut self) -> Vec<AcViolationsLookup> {
         self.pending_ac_violations_lookups.drain(..).collect()
+    }
+
+    pub fn queue_ac_siglist_lookup(&mut self, caller_id: CharacterId) {
+        self.pending_ac_siglist_lookups
+            .push(AcSiglistLookup { caller_id });
+    }
+
+    pub fn drain_pending_ac_siglist_lookups(&mut self) -> Vec<AcSiglistLookup> {
+        self.pending_ac_siglist_lookups.drain(..).collect()
+    }
+
+    pub fn queue_ac_sigadd_lookup(
+        &mut self,
+        caller_id: CharacterId,
+        sig_type: String,
+        sig_value: String,
+        name: String,
+        created_by: String,
+    ) {
+        self.pending_ac_sigadd_lookups.push(AcSigaddLookup {
+            caller_id,
+            sig_type,
+            sig_value,
+            name,
+            created_by,
+        });
+    }
+
+    pub fn drain_pending_ac_sigadd_lookups(&mut self) -> Vec<AcSigaddLookup> {
+        self.pending_ac_sigadd_lookups.drain(..).collect()
+    }
+
+    pub fn queue_ac_sigdel_lookup(&mut self, caller_id: CharacterId, signature_id: i64) {
+        self.pending_ac_sigdel_lookups.push(AcSigdelLookup {
+            caller_id,
+            signature_id,
+        });
+    }
+
+    pub fn drain_pending_ac_sigdel_lookups(&mut self) -> Vec<AcSigdelLookup> {
+        self.pending_ac_sigdel_lookups.drain(..).collect()
     }
 }
 

@@ -137,6 +137,42 @@ pub(crate) fn parse_setskill_args(rest: &str) -> (String, i64, i64) {
     (name, pos, val)
 }
 
+/// `#acsigadd <type> <value> <name>`'s argument parse (`ac_cmd_sigadd`'s
+/// `sscanf(args, "%31s %255s %63[^\n]", type, value, name)`,
+/// `anticheat.c:1223-1227`): `type`/`value` are the first two
+/// whitespace-delimited tokens (any run of whitespace between/around
+/// them is skipped, matching scanf's own `" "` conversion-skip
+/// semantics), `name` is everything remaining after the second token's
+/// trailing whitespace run - unlike `type`/`value`, it may itself contain
+/// spaces, since `%63[^\n]` matches everything up to a newline, not just
+/// up to the next space. Each token is truncated to the same buffer size
+/// (minus the null terminator) C's local stack arrays hold. Returns
+/// `None` when fewer than three tokens are present, matching `sscanf`
+/// returning `< 3`.
+pub(crate) fn parse_ac_sigadd_args(args: &str) -> Option<(String, String, String)> {
+    let trimmed = args.trim_start();
+    let mut parts = trimmed.splitn(2, char::is_whitespace);
+    let sig_type = parts.next().unwrap_or("");
+    if sig_type.is_empty() {
+        return None;
+    }
+    let after_type = parts.next().unwrap_or("").trim_start();
+    let mut parts = after_type.splitn(2, char::is_whitespace);
+    let sig_value = parts.next().unwrap_or("");
+    if sig_value.is_empty() {
+        return None;
+    }
+    let name = parts.next().unwrap_or("").trim_start();
+    if name.is_empty() {
+        return None;
+    }
+    Some((
+        legacy_truncate_c_string(sig_type, 31),
+        legacy_truncate_c_string(sig_value, 255),
+        legacy_truncate_c_string(name, 63),
+    ))
+}
+
 pub(crate) fn parse_exp_command_target(
     world: &World,
     character_id: CharacterId,
@@ -5471,11 +5507,11 @@ pub(crate) fn apply_admin_character_command(
     // these six of the ~20-member family are ported so far (see
     // `PORTING_TODO.md`'s remaining-text-commands task's REMAINING note);
     // `acreset`/`acflag`/`acwatch`/`acunflag`/`actrust`/`acuntrust`/
-    // `acwarn`/`acsessions` are also ported, further below;
-    // `achistory`/`acviolations`/`acsharedip`/`acsharedhw`/`achighrisk`/
-    // `aclookup`/`acsiglist`/`acsigadd`/`acsigdel` remain unported.
-    // `#accleanup` (below, right after this block) needs no name
-    // resolution at all, so it isn't part of this shared `lower ==` arm.
+    // `acwarn`/`acsessions`/`acviolations` are also ported, further
+    // below; `achistory`/`acsharedip`/`acsharedhw`/`achighrisk`/
+    // `aclookup` remain unported. `#accleanup`/`#acsiglist`/`#acsigadd`/
+    // `#acsigdel` (below, further down) need no name resolution at all,
+    // so they aren't part of this shared `lower ==` arm.
     if lower == "achelp" {
         let Some(caller) = world.characters.get(&character_id) else {
             return Some(KeyringCommandResult::default());
@@ -6136,6 +6172,118 @@ pub(crate) fn apply_admin_character_command(
             });
         };
         world.queue_ac_violations_lookup(character_id, target_name, session_id);
+        return Some(KeyringCommandResult::default());
+    }
+
+    // C `#acsiglist` (`command.c:10291-10294` dispatch, `CF_GOD`-only,
+    // exact-word; `ac_cmd_siglist`, `anticheat.c:1192-1215`). No player
+    // name to resolve - unlike every other command in this file except
+    // `#accleanup` - so this simply queues a caller id and lets `apply_
+    // ac_siglist_events` list every row in the new `ac_known_signatures`
+    // table (`migrations/0016_ac_known_signatures.sql`).
+    if lower == "acsiglist" {
+        let Some(caller) = world.characters.get(&character_id) else {
+            return Some(KeyringCommandResult::default());
+        };
+        if !caller.flags.contains(CharacterFlags::GOD) {
+            return None;
+        }
+        world.queue_ac_siglist_lookup(character_id);
+        return Some(KeyringCommandResult::default());
+    }
+
+    // C `#acsigadd <type> <value> <name>` (`command.c:10296-10302`
+    // dispatch, `CF_GOD`-only, exact-word; `ac_cmd_sigadd`, `anticheat.c:
+    // 1216-1245`). Reproduces C's `sscanf(args, "%31s %255s %63[^\n]",
+    // type, value, name)` three-token parse: `type`/`value` are the
+    // first two whitespace-delimited tokens, `name` is everything after
+    // the second token's trailing whitespace run (so it may itself
+    // contain spaces, unlike `type`/`value`), each truncated to the same
+    // buffer sizes C's stack arrays hold (31/255/63 bytes). `type` is
+    // then checked against the same fixed five-member allow-list C's
+    // `strcmp` chain checks, case-sensitively (no `to_ascii_lowercase`
+    // anywhere in the C original). The DB insert itself is async (see
+    // `apply_ac_sigadd_events`), so - unlike C's own unconditional,
+    // same-thread "Added signature: ..." reply - the confirmation is
+    // only sent once that insert actually succeeds.
+    if lower == "acsigadd" {
+        let Some(caller) = world.characters.get(&character_id) else {
+            return Some(KeyringCommandResult::default());
+        };
+        if !caller.flags.contains(CharacterFlags::GOD) {
+            return None;
+        }
+        let args = rest.trim_start();
+        if args.is_empty() {
+            return Some(KeyringCommandResult {
+                messages: vec![
+                    "Usage: #acsigadd <type> <value> <name>".to_string(),
+                    "Types: hardware_hash, code_hash, dll_hash, process_name, hardware_id"
+                        .to_string(),
+                ],
+                ..Default::default()
+            });
+        }
+        let Some((sig_type, sig_value, name)) = parse_ac_sigadd_args(args) else {
+            return Some(KeyringCommandResult {
+                messages: vec!["Usage: #acsigadd <type> <value> <name>".to_string()],
+                ..Default::default()
+            });
+        };
+        const VALID_SIGNATURE_TYPES: [&str; 5] = [
+            "hardware_hash",
+            "code_hash",
+            "dll_hash",
+            "process_name",
+            "hardware_id",
+        ];
+        if !VALID_SIGNATURE_TYPES.contains(&sig_type.as_str()) {
+            return Some(KeyringCommandResult {
+                messages: vec![
+                    "Invalid type. Use: hardware_hash, code_hash, dll_hash, process_name, \
+                     hardware_id"
+                        .to_string(),
+                ],
+                ..Default::default()
+            });
+        }
+        let created_by = caller.name.clone();
+        world.queue_ac_sigadd_lookup(character_id, sig_type, sig_value, name, created_by);
+        return Some(KeyringCommandResult::default());
+    }
+
+    // C `#acsigdel <id>` (`command.c:10305-10311` dispatch, `CF_GOD`-only,
+    // exact-word; `ac_cmd_sigdel`, `anticheat.c:1246-1266`). `id` is
+    // parsed with the same `atoi` + `== 0` invalid-id rejection C uses
+    // (C then casts to `unsigned int`, so a negative input wraps around
+    // to a huge, practically-never-matching id rather than being
+    // rejected outright; this port instead keeps the parsed value as a
+    // signed `i64` and lets the DB lookup's own "not found" branch
+    // handle it - functionally equivalent, since a negative id can never
+    // match a `bigserial` primary key either way, without needing to
+    // replicate the exact wrapped bit pattern).
+    if lower == "acsigdel" {
+        let Some(caller) = world.characters.get(&character_id) else {
+            return Some(KeyringCommandResult::default());
+        };
+        if !caller.flags.contains(CharacterFlags::GOD) {
+            return None;
+        }
+        let id_str = rest.trim_start();
+        if id_str.is_empty() {
+            return Some(KeyringCommandResult {
+                messages: vec!["Usage: #acsigdel <id>".to_string()],
+                ..Default::default()
+            });
+        }
+        let signature_id = legacy_atoi_prefix(id_str);
+        if signature_id == 0 {
+            return Some(KeyringCommandResult {
+                messages: vec!["Invalid signature ID.".to_string()],
+                ..Default::default()
+            });
+        }
+        world.queue_ac_sigdel_lookup(character_id, signature_id);
         return Some(KeyringCommandResult::default());
     }
 

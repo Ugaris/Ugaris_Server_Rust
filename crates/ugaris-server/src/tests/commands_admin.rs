@@ -8364,6 +8364,219 @@ fn accleanup_at_or_above_the_minimum_queues_the_lookup_and_confirms() {
 }
 
 #[test]
+fn acsiglist_is_god_only_unlike_its_staff_accessible_siblings_and_queues_the_lookup() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+    let mut staff = login_character(CharacterId(20), &login_block("Staffer"), 1, 12, 10);
+    staff.flags.insert(CharacterFlags::STAFF);
+    world.add_character(staff);
+
+    assert!(
+        apply_admin_character_command(&mut world, &mut runtime, target_id, "#acsiglist", 1)
+            .is_none()
+    );
+    assert!(apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        CharacterId(20),
+        "#acsiglist",
+        1
+    )
+    .is_none());
+
+    let result = apply_admin_character_command(&mut world, &mut runtime, god_id, "#acsiglist", 1)
+        .expect("god acsiglist should be recognized");
+    assert!(result.messages.is_empty());
+    let queued = world.drain_pending_ac_siglist_lookups();
+    assert_eq!(queued.len(), 1);
+    assert_eq!(queued[0].caller_id, god_id);
+}
+
+#[test]
+fn acsigadd_is_god_only_unlike_its_staff_accessible_siblings() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (_god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+    let mut staff = login_character(CharacterId(20), &login_block("Staffer"), 1, 12, 10);
+    staff.flags.insert(CharacterFlags::STAFF);
+    world.add_character(staff);
+
+    assert!(apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        target_id,
+        "#acsigadd hardware_hash deadbeef Bad Tool",
+        1
+    )
+    .is_none());
+    assert!(apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        CharacterId(20),
+        "#acsigadd hardware_hash deadbeef Bad Tool",
+        1
+    )
+    .is_none());
+}
+
+#[test]
+fn acsigadd_without_any_arguments_shows_usage_and_types() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+
+    let result = apply_admin_character_command(&mut world, &mut runtime, god_id, "#acsigadd", 1)
+        .expect("god acsigadd should be recognized");
+    assert_eq!(
+        result.messages,
+        vec![
+            "Usage: #acsigadd <type> <value> <name>",
+            "Types: hardware_hash, code_hash, dll_hash, process_name, hardware_id",
+        ]
+    );
+    assert!(world.drain_pending_ac_sigadd_lookups().is_empty());
+}
+
+#[test]
+fn acsigadd_with_fewer_than_three_tokens_shows_the_short_usage_message() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+
+    for args in ["hardware_hash", "hardware_hash deadbeef"] {
+        let result = apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            god_id,
+            &format!("#acsigadd {args}"),
+            1,
+        )
+        .expect("god acsigadd should be recognized");
+        assert_eq!(
+            result.messages,
+            vec!["Usage: #acsigadd <type> <value> <name>"]
+        );
+    }
+    assert!(world.drain_pending_ac_sigadd_lookups().is_empty());
+}
+
+#[test]
+fn acsigadd_rejects_a_type_outside_the_fixed_allow_list() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+
+    let result = apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        god_id,
+        "#acsigadd bogus_type deadbeef Bad Tool",
+        1,
+    )
+    .expect("god acsigadd should be recognized");
+    assert_eq!(
+        result.messages,
+        vec!["Invalid type. Use: hardware_hash, code_hash, dll_hash, process_name, hardware_id"]
+    );
+    assert!(world.drain_pending_ac_sigadd_lookups().is_empty());
+}
+
+#[test]
+fn acsigadd_with_a_valid_call_queues_the_lookup_with_a_multi_word_name() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+
+    let result = apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        god_id,
+        "#acsigadd hardware_hash deadbeef Known Cheat Tool",
+        1,
+    )
+    .expect("god acsigadd should be recognized");
+    assert!(result.messages.is_empty());
+    let queued = world.drain_pending_ac_sigadd_lookups();
+    assert_eq!(queued.len(), 1);
+    assert_eq!(queued[0].caller_id, god_id);
+    assert_eq!(queued[0].sig_type, "hardware_hash");
+    assert_eq!(queued[0].sig_value, "deadbeef");
+    assert_eq!(queued[0].name, "Known Cheat Tool");
+    assert_eq!(queued[0].created_by, "Godmode");
+}
+
+#[test]
+fn acsigdel_is_god_only_unlike_its_staff_accessible_siblings() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (_god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+    let mut staff = login_character(CharacterId(20), &login_block("Staffer"), 1, 12, 10);
+    staff.flags.insert(CharacterFlags::STAFF);
+    world.add_character(staff);
+
+    assert!(
+        apply_admin_character_command(&mut world, &mut runtime, target_id, "#acsigdel 4", 1)
+            .is_none()
+    );
+    assert!(apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        CharacterId(20),
+        "#acsigdel 4",
+        1
+    )
+    .is_none());
+}
+
+#[test]
+fn acsigdel_without_an_id_shows_usage() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+
+    let result = apply_admin_character_command(&mut world, &mut runtime, god_id, "#acsigdel", 1)
+        .expect("god acsigdel should be recognized");
+    assert_eq!(result.messages, vec!["Usage: #acsigdel <id>"]);
+    assert!(world.drain_pending_ac_sigdel_lookups().is_empty());
+}
+
+#[test]
+fn acsigdel_with_a_zero_or_non_numeric_id_is_rejected() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+
+    for id in ["0", "notanumber"] {
+        let result = apply_admin_character_command(
+            &mut world,
+            &mut runtime,
+            god_id,
+            &format!("#acsigdel {id}"),
+            1,
+        )
+        .expect("god acsigdel should be recognized");
+        assert_eq!(result.messages, vec!["Invalid signature ID."]);
+    }
+    assert!(world.drain_pending_ac_sigdel_lookups().is_empty());
+}
+
+#[test]
+fn acsigdel_with_a_valid_id_queues_the_lookup() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+
+    let result = apply_admin_character_command(&mut world, &mut runtime, god_id, "#acsigdel 42", 1)
+        .expect("god acsigdel should be recognized");
+    assert!(result.messages.is_empty());
+    let queued = world.drain_pending_ac_sigdel_lookups();
+    assert_eq!(queued.len(), 1);
+    assert_eq!(queued[0].caller_id, god_id);
+    assert_eq!(queued[0].signature_id, 42);
+}
+
+#[test]
 fn acreset_is_god_only_unlike_its_staff_accessible_siblings() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();

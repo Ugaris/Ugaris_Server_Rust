@@ -108,6 +108,28 @@ pub struct AntiCheatViolationRow {
     pub details: Option<String>,
 }
 
+/// `#acsiglist`'s per-row shape (`db_ac_signature_result`,
+/// `database_anticheat.h:589-598`), backed by the new `ac_known_
+/// signatures` table (`migrations/0016_ac_known_signatures.sql`) - C's
+/// own `ac_known_signatures` table existed only as a name referenced by
+/// `db_ac_get_signatures`/`db_ac_add_signature`/`db_ac_delete_signature`,
+/// never itself defined anywhere in this codebase before this slice.
+/// `signature_value` is deliberately absent: C's own `db_ac_get_
+/// signatures` query never selects it either (only `#acsigadd` ever
+/// writes it - no admin command reads it back), reproduced as-is rather
+/// than "fixed".
+#[derive(Debug, Clone, PartialEq)]
+pub struct AntiCheatSignatureRow {
+    pub id: i64,
+    pub signature_type: String,
+    pub name: String,
+    pub severity: i32,
+    pub auto_flag: bool,
+    pub auto_ban: bool,
+    pub times_detected: i32,
+    pub is_active: bool,
+}
+
 #[async_trait]
 pub trait AntiCheatRepository: Send + Sync {
     async fn create_session(&self, request: AntiCheatSessionCreate) -> anyhow::Result<i64>;
@@ -222,6 +244,30 @@ pub trait AntiCheatRepository: Send + Sync {
         account_id: i64,
         max_count: i64,
     ) -> anyhow::Result<Vec<AntiCheatViolationRow>>;
+    /// `#acsiglist`'s backing query (`db_ac_get_signatures`,
+    /// `database_anticheat.c:1143-1180`): every row in `ac_known_
+    /// signatures`, ordered by `times_detected` descending (matching C's
+    /// own `ORDER BY times_detected DESC`), capped at `max_count` (C's
+    /// own `results[20]` stack array) - see `AntiCheatSignatureRow`'s doc
+    /// comment for why `signature_value` is never selected.
+    async fn list_signatures(&self, max_count: i64) -> anyhow::Result<Vec<AntiCheatSignatureRow>>;
+    /// `#acsigadd <type> <value> <name>`'s backing mutation
+    /// (`db_ac_add_signature`, `database_anticheat.c:1182-1206`): a plain
+    /// insert with no upsert/conflict handling, matching C's own query
+    /// exactly - adding the same signature twice creates two rows, a
+    /// genuine quirk preserved as-is.
+    async fn add_signature(
+        &self,
+        signature_type: &str,
+        signature_value: &str,
+        name: &str,
+        created_by: &str,
+    ) -> anyhow::Result<()>;
+    /// `#acsigdel <id>`'s backing mutation (`db_ac_delete_signature`,
+    /// `database_anticheat.c:1208-1216`): `Ok(false)` when no row with
+    /// that id exists (C's own `affected == 0` branch), matching every
+    /// other `bool`-returning mutator in this trait.
+    async fn delete_signature(&self, signature_id: i64) -> anyhow::Result<bool>;
 }
 
 #[derive(Debug, Clone)]
@@ -645,6 +691,70 @@ impl AntiCheatRepository for PgAntiCheatRepository {
                 },
             )
             .collect())
+    }
+
+    async fn list_signatures(&self, max_count: i64) -> anyhow::Result<Vec<AntiCheatSignatureRow>> {
+        let rows = sqlx::query_as::<_, (i64, String, String, i32, bool, bool, i32, bool)>(
+            "select id, signature_type, name, severity, auto_flag, auto_ban, times_detected, \
+             is_active from ac_known_signatures order by times_detected desc limit $1",
+        )
+        .bind(max_count)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .into_iter()
+            .map(
+                |(
+                    id,
+                    signature_type,
+                    name,
+                    severity,
+                    auto_flag,
+                    auto_ban,
+                    times_detected,
+                    is_active,
+                )| {
+                    AntiCheatSignatureRow {
+                        id,
+                        signature_type,
+                        name,
+                        severity,
+                        auto_flag,
+                        auto_ban,
+                        times_detected,
+                        is_active,
+                    }
+                },
+            )
+            .collect())
+    }
+
+    async fn add_signature(
+        &self,
+        signature_type: &str,
+        signature_value: &str,
+        name: &str,
+        created_by: &str,
+    ) -> anyhow::Result<()> {
+        sqlx::query(
+            "insert into ac_known_signatures (signature_type, signature_value, name, created_by) \
+             values ($1, $2, $3, $4)",
+        )
+        .bind(signature_type)
+        .bind(signature_value)
+        .bind(name)
+        .bind(created_by)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    async fn delete_signature(&self, signature_id: i64) -> anyhow::Result<bool> {
+        let result = sqlx::query("delete from ac_known_signatures where id = $1")
+            .bind(signature_id)
+            .execute(&self.pool)
+            .await?;
+        Ok(result.rows_affected() > 0)
     }
 }
 
@@ -1335,6 +1445,112 @@ mod tests {
                 .execute(&pool)
                 .await
                 .expect("cleanup fixture account");
+        }
+
+        /// `#acsigadd`/`#acsiglist`/`#acsigdel`'s full round trip: add two
+        /// signatures with different `times_detected` (bumped directly by
+        /// SQL, since `add_signature` itself always inserts a fresh row at
+        /// `0` - matching C's own insert, which never seeds a detection
+        /// count), confirm `list_signatures` orders by `times_detected`
+        /// descending with a `limit` of `1` keeping only the highest one,
+        /// then delete both and confirm `delete_signature` reports
+        /// `Ok(false)` for an id that no longer exists (C's own `affected
+        /// == 0` branch).
+        #[tokio::test]
+        async fn add_list_and_delete_signature_round_trip() {
+            let Some(pool) = connect().await else {
+                return;
+            };
+            let repo = PgAntiCheatRepository::new(pool.clone());
+
+            sqlx::query("delete from ac_known_signatures where name = any($1)")
+                .bind(["Sig Fixture Low", "Sig Fixture High"])
+                .execute(&pool)
+                .await
+                .expect("pre-clean fixture signatures");
+
+            repo.add_signature("hardware_hash", "deadbeef", "Sig Fixture Low", "TestGod")
+                .await
+                .expect("add low-detection signature");
+            repo.add_signature(
+                "process_name",
+                "cheatengine.exe",
+                "Sig Fixture High",
+                "TestGod",
+            )
+            .await
+            .expect("add high-detection signature");
+
+            let (low_id, high_id): (i64, i64) = {
+                let low: (i64,) =
+                    sqlx::query_as("select id from ac_known_signatures where name = $1")
+                        .bind("Sig Fixture Low")
+                        .fetch_one(&pool)
+                        .await
+                        .expect("fetch low fixture id");
+                let high: (i64,) =
+                    sqlx::query_as("select id from ac_known_signatures where name = $1")
+                        .bind("Sig Fixture High")
+                        .fetch_one(&pool)
+                        .await
+                        .expect("fetch high fixture id");
+                (low.0, high.0)
+            };
+            sqlx::query("update ac_known_signatures set times_detected = 5 where id = $1")
+                .bind(high_id)
+                .execute(&pool)
+                .await
+                .expect("bump high-detection fixture's counter");
+
+            let rows = repo.list_signatures(50).await.expect("list_signatures");
+            let low_row = rows
+                .iter()
+                .find(|row| row.id == low_id)
+                .expect("low fixture row present");
+            let high_row = rows
+                .iter()
+                .find(|row| row.id == high_id)
+                .expect("high fixture row present");
+            assert_eq!(low_row.signature_type, "hardware_hash");
+            assert_eq!(low_row.severity, 0);
+            assert!(!low_row.auto_flag);
+            assert!(!low_row.auto_ban);
+            assert_eq!(low_row.times_detected, 0);
+            assert!(low_row.is_active);
+            assert_eq!(high_row.signature_type, "process_name");
+            assert_eq!(high_row.times_detected, 5);
+            let high_index = rows.iter().position(|row| row.id == high_id).unwrap();
+            let low_index = rows.iter().position(|row| row.id == low_id).unwrap();
+            assert!(
+                high_index < low_index,
+                "higher times_detected must sort first"
+            );
+
+            let limited = repo
+                .list_signatures(1)
+                .await
+                .expect("list_signatures with limit 1");
+            assert_eq!(limited.len(), 1);
+            assert_eq!(
+                limited[0].id, high_id,
+                "limit must keep only the highest-detection row"
+            );
+
+            assert!(
+                repo.delete_signature(low_id).await.expect("delete low"),
+                "deleting an existing row must report true"
+            );
+            assert!(
+                repo.delete_signature(high_id).await.expect("delete high"),
+                "deleting an existing row must report true"
+            );
+            assert!(
+                !repo
+                    .delete_signature(low_id)
+                    .await
+                    .expect("delete already-deleted row"),
+                "deleting a vanished id must report false, not error"
+            );
         }
     }
 }

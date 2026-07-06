@@ -10055,6 +10055,96 @@ Unlocks every quest NPC. Do these before any P4 area work.
   `acsigadd`/`acsigdel` and gaps (b)/(d)/(e)/(f)/(g) remain untouched,
   same as noted above.
 
+  Progress Log (iteration 213): closed gap (a)'s `acsiglist`/`acsigadd`/
+  `acsigdel` trio (`ac_cmd_siglist`/`ac_cmd_sigadd`/`ac_cmd_sigdel`,
+  `anticheat.c:1192-1266`, `command.c:10291-10311` dispatch, all
+  `CF_GOD`-only exact-word) in one slice, since all three share the same
+  new backing table and no player-name resolution at all - the simplest
+  remaining member of the `ac*` family, unlike `acsharedip`/`acsharedhw`/
+  `achighrisk`/`aclookup` (cross-account joins) or `achistory` (needs the
+  session-end rollup mechanism first). C's own `ac_known_signatures`
+  table was referenced by `db_ac_get_signatures`/`db_ac_add_signature`/
+  `db_ac_delete_signature` but never itself defined anywhere in this
+  codebase before this iteration; added it fresh
+  (`migrations/0016_ac_known_signatures.sql`, columns matching `struct
+  db_ac_signature_result` plus the two write-only columns
+  `signature_value`/`created_by` no read query ever selects back -
+  reproduced as-is, not "fixed", exactly like C's own query). New
+  `ugaris-db` `AntiCheatRepository::list_signatures`/`add_signature`/
+  `delete_signature` (`anticheat.rs`) and new `ugaris-core` `world/
+  anticheat.rs` types `AcSiglistLookup` (no target at all, same shape as
+  `AcCleanupLookup`), `AcSigaddLookup`/`AcSigdelLookup` (pure parsed-
+  argument carriers, no online-name resolution needed since these
+  operate on the global signature table, not a player). Dispatch
+  (`commands_admin.rs`, right after `#acviolations`): `#acsiglist` just
+  queues the caller id; `#acsigadd <type> <value> <name>` reproduces C's
+  `sscanf(args, "%31s %255s %63[^\n]", type, value, name)` three-token
+  parse letter for letter via new helper `parse_ac_sigadd_args` (type/
+  value are whitespace-delimited tokens, name is everything after the
+  second token's trailing whitespace and may itself contain spaces, each
+  truncated to the same 31/255/63-byte buffers via the pre-existing
+  `legacy_truncate_c_string`) plus the fixed five-member case-sensitive
+  type allow-list check; `#acsigdel <id>` parses with `legacy_atoi_
+  prefix` and rejects `0` immediately (C's own `atoi` + `== 0` check,
+  though C then casts to `unsigned int` so a negative input wraps to a
+  huge practically-never-matching id rather than being rejected outright
+  - this port instead keeps the value as a signed `i64` and lets the DB
+  "not found" branch handle negatives, functionally equivalent since a
+  negative id can never match a `bigserial` primary key either way).
+  New `apply_ac_siglist_events`/`apply_ac_sigadd_events`/`apply_ac_
+  sigdel_events` (`world_events.rs`) drain the three queues each tick;
+  `#acsigdel`'s "not found" reply is genuinely user-facing text in C
+  (unlike most siblings' silent-skip-on-DB-error convention), reproduced
+  by checking the mutator's `bool` result rather than only `Result::
+  Ok`-ness. New pure `ac_siglist_lines` formatter reproduces `ac_cmd_
+  siglist`'s exact line shape with `COL_*` wrapping dropped (this file's
+  established plain-text-admin-display convention) but otherwise
+  preserves C's literal double-space quirk before `Det:` when a
+  signature has neither `auto_flag` nor `auto_ban` set (C's own format
+  string has a bare `" "` literal immediately followed by the two
+  optional `"Flag "`/`"Ban "` tokens, then another literal `" Det:"`) -
+  reproduced as-is, not "cleaned up". The `#acsiglist`/`#acsigadd`/
+  `#acsigdel` help lines already existed unwired in `#achelp`'s static
+  text (like several other gaps this file's REMAINING note has found
+  before) - no help-text change needed; updated `#achelp`'s own leading
+  doc-comment note (which still listed all three as unported) instead.
+  1 new `ugaris-db` live test (`add_list_and_delete_signature_round_
+  trip`: two fixture signatures with different `times_detected` values -
+  one bumped directly by SQL, since `add_signature` itself always
+  inserts a fresh row at `0`, matching C's own insert which never seeds
+  a detection count - confirms `list_signatures` orders by `times_
+  detected` descending with a `limit` of `1` keeping only the highest
+  row, then confirms `delete_signature` returns `true` for both existing
+  rows and `false` for an id that no longer exists), 3 new `ugaris-core`
+  tests (queue/drain round trips for all three new lookup types), 6 new
+  `ugaris-server` tests in `world_events.rs` (the standard no-lookups/
+  missing-repository no-op pairs for all three `apply_ac_sig*_events`
+  functions, plus two pure `ac_siglist_lines` formatting tests covering
+  the empty case and the double-space quirk for both the "both flags
+  set" and "neither flag set" rows), and 12 new `ugaris-server` dispatch
+  tests in `tests/commands_admin.rs` (permission gates for all three
+  commands; `#acsigadd`'s no-argument usage-plus-types message, fewer-
+  than-three-token short usage message, invalid-type rejection, and a
+  successful call with a multi-word name confirming truncation-free
+  pass-through and `created_by` capturing the caller's own name;
+  `#acsigdel`'s no-argument usage, zero/non-numeric-id rejection, and a
+  successful call). `cargo fmt --all`, `cargo test --workspace` (2104
+  ugaris-core [+3] + 71 db [+1] + 3 net + 44 protocol + 1013 server
+  [+18], all green, zero failures), `cargo build -p ugaris-server` /
+  `cargo build --workspace` clean with zero warnings, 10s boot-smoke
+  confirmed "entering Rust game loop" with no panic. Verified the new
+  table and queries for real by spinning up a throwaway `postgres:16-
+  alpine` container, applying all 16 `migrations/*.sql` files by hand,
+  and running `cargo test -p ugaris-db anticheat` against it directly
+  (9/9 passed, including the new live test) before destroying the
+  container. This closes the `acsiglist`/`acsigadd`/`acsigdel` gaps
+  entirely. REMAINING: gap (a) now has only `achistory` (needs the
+  session-end rollup mechanism first) and `acsharedip`/`acsharedhw`/
+  `achighrisk`/`aclookup` (cross-account joins on `ip_address`/
+  `hardware_hash`/`bot_score` aggregates - each needs its own query
+  design, not a shared slice) left; gaps (b)/(d)/(e)/(f)/(g) remain
+  untouched, same as noted above.
+
 - [ ] **Cross-area transfer** - the big multi-server feature. Every
   cross-area teleport currently returns "target server down". Decide the
   single-process stance first (likely: run multiple areas in one process
