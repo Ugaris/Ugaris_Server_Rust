@@ -7708,6 +7708,23 @@ async fn main() -> anyhow::Result<()> {
                         "applied jiu dialogue events"
                     );
                 }
+                // C `forest_ranger_driver`: area 1's bear-attack warning
+                // sentry NPC (`src/area/1/gwendylon.c`).
+                let forest_ranger_facts = forest_ranger_player_facts(&runtime);
+                let forest_ranger_events = world.process_forest_ranger_actions(
+                    &forest_ranger_facts,
+                    current_unix_time() as i32,
+                    config.area_id,
+                );
+                let forest_ranger_events_applied =
+                    apply_forest_ranger_events(&mut runtime, forest_ranger_events);
+                if forest_ranger_events_applied != 0 {
+                    info!(
+                        forest_ranger_events_applied,
+                        tick = world.tick.0,
+                        "applied forest ranger dialogue events"
+                    );
+                }
                 // C `gate_welcome_driver`: the Ishtar labyrinth gatekeeper
                 // greeter NPC (`src/system/gatekeeper.c`).
                 let gate_welcome_facts = gate_welcome_player_facts(&runtime);

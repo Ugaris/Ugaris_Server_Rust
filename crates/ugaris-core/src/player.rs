@@ -483,6 +483,8 @@ const AREA1_PPD_ACLERK_SEEN_TIMER_OFFSET: usize = 31 * 4;
 const AREA1_PPD_CAMHERMIT_SEEN_TIMER_OFFSET: usize = 33 * 4;
 const AREA1_PPD_CAMHERMIT_KILLS_OFFSET: usize = 34 * 4;
 const AREA1_PPD_JESSICA_SEEN_TIMER_OFFSET: usize = 36 * 4;
+const AREA1_PPD_FOREST_RANGER_STATE_OFFSET: usize = 37 * 4;
+const AREA1_PPD_FOREST_RANGER_SEEN_TIMER_OFFSET: usize = 38 * 4;
 // `struct nomad_ppd` field offsets (`src/common/nomad_ppd.h:9-13`):
 // `nomad_state[MAXNOMAD]` then `nomad_win[MAXNOMAD]` then the four open-
 // roll/bet ints then `tribe_member`.
@@ -4190,6 +4192,22 @@ impl PlayerRuntime {
 
     pub fn set_area1_jessica_seen_timer(&mut self, value: i32) {
         self.write_area1_i32(AREA1_PPD_JESSICA_SEEN_TIMER_OFFSET, value);
+    }
+
+    pub fn area1_forest_ranger_state(&self) -> i32 {
+        self.read_area1_i32(AREA1_PPD_FOREST_RANGER_STATE_OFFSET)
+    }
+
+    pub fn set_area1_forest_ranger_state(&mut self, state: i32) {
+        self.write_area1_i32(AREA1_PPD_FOREST_RANGER_STATE_OFFSET, state);
+    }
+
+    pub fn area1_forest_ranger_seen_timer(&self) -> i32 {
+        self.read_area1_i32(AREA1_PPD_FOREST_RANGER_SEEN_TIMER_OFFSET)
+    }
+
+    pub fn set_area1_forest_ranger_seen_timer(&mut self, value: i32) {
+        self.write_area1_i32(AREA1_PPD_FOREST_RANGER_SEEN_TIMER_OFFSET, value);
     }
 
     /// Snapshot of the `area1_ppd` fields consumed by
@@ -9915,7 +9933,11 @@ mod tests {
     /// area1` branch reads (`src/system/command.c:303-336`) that had no
     /// prior accessor - i.e. everything except the 10 quest-driver states
     /// already covered by `area1_ppd_codec_matches_legacy_c_layout` and the
-    /// two never-read `forest_ranger_*` fields.
+    /// two `forest_ranger_*` fields, which `cmd_showppd` itself never reads
+    /// (confirmed by reading the whole function) even though they now back
+    /// a real gameplay driver - see `world::forest_ranger` and
+    /// `area1_ppd_codec_matches_legacy_c_layout`'s own `forest_ranger_state`
+    /// coverage.
     #[test]
     fn area1_ppd_exposes_remaining_fields_for_showppd() {
         let mut player = PlayerRuntime::connected(1, 0);
@@ -9945,6 +9967,7 @@ mod tests {
         player.set_area1_camhermit_seen_timer(24);
         player.set_area1_camhermit_kills(25);
         player.set_area1_jessica_seen_timer(26);
+        player.set_area1_forest_ranger_seen_timer(27);
 
         let encoded = player.encode_legacy_area1_ppd();
         let mut decoded = PlayerRuntime::connected(2, 0);
@@ -9976,6 +9999,7 @@ mod tests {
         assert_eq!(decoded.area1_camhermit_seen_timer(), 24);
         assert_eq!(decoded.area1_camhermit_kills(), 25);
         assert_eq!(decoded.area1_jessica_seen_timer(), 26);
+        assert_eq!(decoded.area1_forest_ranger_seen_timer(), 27);
     }
 
     #[test]
@@ -10015,6 +10039,7 @@ mod tests {
         player.set_area1_brithildie_state(21);
         player.set_area1_camhermit_state(13);
         player.set_area1_jessica_state(11);
+        player.set_area1_forest_ranger_state(4);
 
         let encoded = player.encode_legacy_area1_ppd();
         assert_eq!(encoded.len(), LEGACY_AREA1_PPD_SIZE);
@@ -10028,6 +10053,7 @@ mod tests {
         assert_eq!(read_i32(&encoded, AREA1_PPD_BRITHILDIE_STATE_OFFSET), 21);
         assert_eq!(read_i32(&encoded, AREA1_PPD_CAMHERMIT_STATE_OFFSET), 13);
         assert_eq!(read_i32(&encoded, AREA1_PPD_JESSICA_STATE_OFFSET), 11);
+        assert_eq!(read_i32(&encoded, AREA1_PPD_FOREST_RANGER_STATE_OFFSET), 4);
 
         let mut decoded = PlayerRuntime::connected(2, 0);
         assert!(decoded.decode_legacy_area1_ppd(&encoded));
@@ -10040,6 +10066,7 @@ mod tests {
         assert_eq!(decoded.area1_reskin_state(), 8);
         assert_eq!(decoded.area1_brithildie_state(), 21);
         assert_eq!(decoded.area1_camhermit_state(), 13);
+        assert_eq!(decoded.area1_forest_ranger_state(), 4);
         assert_eq!(decoded.area1_jessica_state(), 11);
 
         let state = decoded.area1_quest_state();

@@ -584,7 +584,8 @@ impl World {
             | CharacterDriverState::Gwendylon(_)
             | CharacterDriverState::Greeter(_)
             | CharacterDriverState::Jessica(_)
-            | CharacterDriverState::Jiu(_) => None,
+            | CharacterDriverState::Jiu(_)
+            | CharacterDriverState::ForestRanger(_) => None,
         }
     }
 

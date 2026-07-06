@@ -26,6 +26,7 @@ mod effect_tick;
 mod effects;
 mod exp;
 mod exterminate;
+mod forest_ranger;
 mod gate_fight;
 mod gatekeeper;
 mod greeter;

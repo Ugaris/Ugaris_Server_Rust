@@ -1,21 +1,24 @@
 //! Server-side wiring for area 1's forest hermit, hunter, lore,
-//! town-greeter, and robber-quest NPCs
+//! town-greeter, robber-quest, and forest-ranger NPCs
 //! (`CDR_CAMHERMIT`/`ugaris_core::world::camhermit::process_camhermit_actions`,
 //! `CDR_YOAKIN`/`ugaris_core::world::yoakin::process_yoakin_actions`,
 //! `CDR_TERION`/`ugaris_core::world::terion::process_terion_actions`,
 //! `CDR_GREETER`/`ugaris_core::world::greeter::process_greeter_actions`,
 //! `CDR_JESSICA`/`ugaris_core::world::jessica::process_jessica_actions`,
-//! `CDR_JIU`/`ugaris_core::world::jiu::process_jiu_actions`).
+//! `CDR_JIU`/`ugaris_core::world::jiu::process_jiu_actions`,
+//! `CDR_FOREST_RANGER`/`ugaris_core::world::forest_ranger::
+//! process_forest_ranger_actions`).
 //!
 //! Mirrors the `World`/`PlayerRuntime` split already established for
 //! `world::gatekeeper`'s `GateWelcomePlayerFacts`/`GateWelcomeOutcomeEvent`
 //! (see `world::camhermit`'s module doc comment): [`camhermit_player_facts`]/
 //! [`yoakin_player_facts`]/[`terion_player_facts`]/[`greeter_player_facts`]/
-//! [`jessica_player_facts`]/[`jiu_player_facts`] snapshot the per-player
-//! `area1_ppd`/`quest_log` facts each NPC's dialogue needs before the tick,
-//! and
+//! [`jessica_player_facts`]/[`jiu_player_facts`]/[`forest_ranger_player_facts`]
+//! snapshot the per-player `area1_ppd`/`quest_log` facts each NPC's
+//! dialogue needs before the tick, and
 //! [`apply_camhermit_events`]/[`apply_yoakin_events`]/[`apply_terion_events`]/
-//! [`apply_greeter_events`]/[`apply_jessica_events`]/[`apply_jiu_events`]
+//! [`apply_greeter_events`]/[`apply_jessica_events`]/[`apply_jiu_events`]/
+//! [`apply_forest_ranger_events`]
 //! apply the returned events afterward, including the
 //! `QLOG_HERMIT_QUEST1/2`/`QLOG_YOAKIN`/`QLOG_JESSICA_*`/`QLOG_JIU`
 //! `questlog_open`/`questlog_done`/`questlog_reopen` calls C's own drivers
@@ -31,15 +34,18 @@
 //! carry no gold reward at all, so [`apply_jessica_events`]/
 //! [`apply_jiu_events`] need no achievement wiring. See `world::jiu`'s own
 //! module doc comment for the still-missing `riverbeast_dead` death-hook
-//! gap this NPC's quest completion depends on.
+//! gap this NPC's quest completion depends on. The forest ranger has no
+//! quest log at all (a pure ambient warning NPC, like Terion), so
+//! [`apply_forest_ranger_events`] only ever writes the two plain
+//! `area1_ppd` fields.
 
 use super::*;
 use ugaris_core::quest::{QLOG_HERMIT_QUEST2, QLOG_JIU, QLOG_LYDIA, QLOG_NOOK, QLOG_YOAKIN};
 use ugaris_core::world::{
-    CamhermitOutcomeEvent, CamhermitPlayerFacts, GreeterOutcomeEvent, GreeterPlayerFacts,
-    GwendylonOutcomeEvent, GwendylonPlayerFacts, JessicaOutcomeEvent, JessicaPlayerFacts,
-    JiuOutcomeEvent, JiuPlayerFacts, TerionOutcomeEvent, TerionPlayerFacts, YoakinOutcomeEvent,
-    YoakinPlayerFacts,
+    CamhermitOutcomeEvent, CamhermitPlayerFacts, ForestRangerOutcomeEvent, ForestRangerPlayerFacts,
+    GreeterOutcomeEvent, GreeterPlayerFacts, GwendylonOutcomeEvent, GwendylonPlayerFacts,
+    JessicaOutcomeEvent, JessicaPlayerFacts, JiuOutcomeEvent, JiuPlayerFacts, TerionOutcomeEvent,
+    TerionPlayerFacts, YoakinOutcomeEvent, YoakinPlayerFacts,
 };
 
 pub(crate) fn camhermit_player_facts(
@@ -704,6 +710,56 @@ pub(crate) fn apply_jiu_events(
                     }
                     applied += 1;
                 }
+            }
+        }
+    }
+    applied
+}
+
+pub(crate) fn forest_ranger_player_facts(
+    runtime: &ServerRuntime,
+) -> HashMap<CharacterId, ForestRangerPlayerFacts> {
+    runtime
+        .players
+        .values()
+        .filter_map(|player| {
+            let character_id = player.character_id?;
+            Some((
+                character_id,
+                ForestRangerPlayerFacts {
+                    state: player.area1_forest_ranger_state(),
+                    seen_timer: player.area1_forest_ranger_seen_timer(),
+                },
+            ))
+        })
+        .collect()
+}
+
+/// Applies each [`ForestRangerOutcomeEvent`] queued by
+/// `World::process_forest_ranger_actions`. See the module doc comment.
+pub(crate) fn apply_forest_ranger_events(
+    runtime: &mut ServerRuntime,
+    events: Vec<ForestRangerOutcomeEvent>,
+) -> usize {
+    let mut applied = 0;
+    for event in events {
+        match event {
+            ForestRangerOutcomeEvent::UpdateState {
+                player_id,
+                new_state,
+            } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.set_area1_forest_ranger_state(new_state);
+                applied += 1;
+            }
+            ForestRangerOutcomeEvent::UpdateSeenTimer { player_id, value } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.set_area1_forest_ranger_seen_timer(value);
+                applied += 1;
             }
         }
     }

@@ -11775,12 +11775,17 @@ Ordered by player progression; the C file is the oracle.
   aware weapon/rest-area/movement civics dialogue plus its "learn"/
   "repeat" text-command rewind branches, `:1485-1798`), `jessica_driver`
   (`CDR_JESSICA`, the robber-operations two-quest chain, `:1809-2065`),
-  and `jiu_driver` (`CDR_JIU`, the forest sanctuary pilgrim's riverbeast-
-  kill quest, `:2074-2247`) are ported so far - see the Progress Log
-  entries below and `crates/ugaris-core/src/world/camhermit.rs`/
-  `world/yoakin.rs`/`world/terion.rs`/`world/gwendylon.rs`/
-  `world/greeter.rs`/`world/jessica.rs`/`world/jiu.rs`'s own module doc
-  comments for their documented gaps. The shared area-1 `monster_dead`/
+  `jiu_driver` (`CDR_JIU`, the forest sanctuary pilgrim's riverbeast-
+  kill quest, `:2074-2247`), and `forest_ranger_driver` (`CDR_FOREST_
+  RANGER`, the bear-attack warning sentry near the stone circle,
+  `:2284-2473`) are ported so far - see the Progress Log entries below
+  and `crates/ugaris-core/src/world/camhermit.rs`/`world/yoakin.rs`/
+  `world/terion.rs`/`world/gwendylon.rs`/`world/greeter.rs`/
+  `world/jessica.rs`/`world/jiu.rs`/`world/forest_ranger.rs`'s own module
+  doc comments for their documented gaps (forest_ranger's own gap: the
+  `WN_LHAND` torch-relight idle upkeep is not ported, a cosmetic
+  light-radius detail - see its module doc comment). The shared area-1
+  `monster_dead`/
   `bredel_dead`/`riverbeast_dead` death-hook trio (`:2255-2272`, `:2825-
   2842`, `:5201-5231`) that camhermit/jessica/jiu's own doc comments
   called out as their remaining blocker is now ported: `CDR_RIVERBEAST`/
@@ -11801,8 +11806,8 @@ Ordered by player progression; the C file is the oracle.
   complete end-to-end on a live server. yoakin's and gwendylon's
   `destroy_item_byID` sweeps still do not reach the account depot
   (unrelated, separate gap). Every other NPC in this file is still
-  unported: `forest_ranger_driver` (`:2284-2473`), `brithildie_driver`
-  (`:2474-2826`, including its own `bigbadspider_dead` death hook,
+  unported: `brithildie_driver` (`:2474-2826`, including its own
+  `bigbadspider_dead` death hook,
   `:2848-2867`, still unported since `brithildie_state` has no
   `PlayerRuntime` wiring yet), `james_driver` (`:2901-3179`), `nook_
   driver` (`:3180-3457`), `lydia_driver` (`:3458-3703`),
@@ -12655,3 +12660,56 @@ Add one line per completed task: date, task, ledger section touched.
   note above (forest_ranger/brithildie/bigbadspider_dead/james/nook/
   lydia/balltrap_skelly/robber/sanoa/reskin/asturin/guiwynn/logain, plus
   the shared `gwendylon_dead`/`asturin_dead` tail).
+- 2026-07-07: Area 1 (`gwendylon.c`) (P4, continued) - ported
+  `forest_ranger_driver` (`CDR_FOREST_RANGER` = 155, `:2284-2473`), the
+  bear-attack warning sentry near the forest stone circle. New
+  `crates/ugaris-core/src/world/forest_ranger.rs`
+  (`process_forest_ranger_actions`/`ForestRangerPlayerFacts`/
+  `ForestRangerOutcomeEvent`, same `World`/`PlayerRuntime` split as
+  `world::terion`/`world::yoakin`), `ForestRangerDriverData`/
+  `CharacterDriverState::ForestRanger` (`character_driver.rs`),
+  `area1_forest_ranger_state`/`area1_forest_ranger_seen_timer` accessors
+  at the correct `area1_ppd` field offsets 37/38
+  (`crates/ugaris-core/src/player.rs`), zone-spawn wiring for the
+  `forest_ranger` template (`crates/ugaris-core/src/zone.rs`), and
+  server-side facts/apply wiring
+  (`crates/ugaris-server/src/area1.rs`/`main.rs`, appended after the
+  jiu wiring in the tick loop). Ported the `ENTRY`/`WARNING_1`/
+  `WARNING_2`/`HINT_1`/`GREET` state machine exactly, including two
+  genuine C-source quirks preserved rather than "fixed": the `ENTRY`
+  branch gates on the *ranger's own* `ch[cn].level`, not the greeted
+  player's (unique among this file's ambient NPCs), and the `NT_CHAR`
+  branch's second throttle check is unreachable dead code in C itself
+  (both conditions test the identical `ticker < last_talk + TICKS*10`,
+  so the second can never fire once the first has already passed) -
+  documented in the module doc comment, not silently dropped. Also
+  ported the wider `char_dist(cn, co) > 15` greet range (every sibling
+  NPC in this file uses `10`). Deliberately NOT ported: the idle body's
+  `WN_LHAND` torch-relight upkeep (`gwendylon.c:2438-2451`) - a cosmetic
+  light-radius detail around a single stationary `CF_IMMORTAL` NPC that
+  would require threading the full `execute_item_driver_request`/
+  `apply_item_driver_outcome` pipeline (built for player-initiated `use`
+  requests) through a new NPC-idle call site; documented as a gap in the
+  module doc comment. Added 13 `World`-level tests
+  (`crates/ugaris-core/src/world/tests/forest_ranger.rs`): both entry
+  branches (ranger level above/below 30), each dialogue state's text and
+  transition, the greet-repeat timing window (both sides), the wider
+  15-tile greet distance vs. the shared 10-tile threshold, the `NT_TEXT`
+  "repeat" reset (both the `GREET`-only gate and the non-`GREET` no-op),
+  the `NT_GIVE` item-return, and the `TICKS*10` talk throttle. Extended
+  `player.rs`'s existing `area1_ppd` codec tests
+  (`area1_ppd_codec_matches_legacy_c_layout`/
+  `area1_ppd_exposes_remaining_fields_for_showppd`) to cover the two new
+  fields and corrected the latter's doc comment, which previously
+  (accurately, before this iteration) called `forest_ranger_state`/
+  `forest_ranger_seen_timer` "never read" - they now back a real
+  gameplay driver, even though `cmd_showppd` itself still never prints
+  them (confirmed by re-reading the whole C function). `cargo fmt --all`,
+  `cargo test --workspace` (2363 core + 1088 server, all green, zero
+  failures, zero warnings), `cargo build -p ugaris-server` clean;
+  boot-smoked (10s run, "entering Rust game loop" `area_id=1`, tick loop
+  advancing, no panics). REMAINING for Area 1: every other NPC/death-hook
+  branch listed in the task's own REMAINING note above (brithildie/
+  bigbadspider_dead/james/nook/lydia/balltrap_skelly/robber/sanoa/
+  reskin/asturin/guiwynn/logain, plus the shared `gwendylon_dead`/
+  `asturin_dead` tail).

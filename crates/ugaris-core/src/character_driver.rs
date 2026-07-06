@@ -88,6 +88,11 @@ pub const CDR_CAMERON_FORESTMONSTER: u16 = 129;
 /// `crate::world::jessica`/`ugaris-server::world_events::
 /// apply_bredel_death_from_hurt_event`.
 pub const CDR_BREDEL: u16 = 154;
+/// C `#define CDR_FOREST_RANGER 155` (`src/system/drvlib.h`, "Cameron:
+/// Forest Ranger (warns from bigbadspider)"): the stationary
+/// bear-attack-warning sentry near area 1's stone circle
+/// (`src/area/1/gwendylon.c::forest_ranger_driver`).
+pub const CDR_FOREST_RANGER: u16 = 155;
 /// C `#define CDR_GATE_WELCOME 39` (`src/system/drvlib.h`): the stationary
 /// gatekeeper-welcome NPC (`gate_welcome` template,
 /// `src/system/gatekeeper.c::gate_welcome_driver`).
@@ -237,6 +242,7 @@ pub enum CharacterDriverState {
     Greeter(GreeterDriverData),
     Jessica(JessicaDriverData),
     Jiu(JiuDriverData),
+    ForestRanger(ForestRangerDriverData),
 }
 
 /// C `struct lostcon_driver_data` (`src/module/lostcon.c`): the linger-timer
@@ -599,6 +605,19 @@ pub struct JessicaDriverData {
 /// module doc comment for the split).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct JiuDriverData {
+    #[serde(default)]
+    pub last_talk: u64,
+    pub current_victim: Option<CharacterId>,
+}
+
+/// C `struct forest_ranger_driver_data` (`src/area/1/gwendylon.c:2275-
+/// 2278`): the bear-attack-warning sentry NPC's own driver memory
+/// (`CDR_FOREST_RANGER`, distinct from the per-player
+/// `forest_ranger_state`/`forest_ranger_seen_timer` fields in
+/// `crate::player::PlayerRuntime`'s `area1_ppd` - see
+/// `world::forest_ranger`'s module doc comment for the split).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ForestRangerDriverData {
     #[serde(default)]
     pub last_talk: u64,
     pub current_victim: Option<CharacterId>,
@@ -2827,7 +2846,8 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::Gwendylon(_)
             | CharacterDriverState::Greeter(_)
             | CharacterDriverState::Jessica(_)
-            | CharacterDriverState::Jiu(_),
+            | CharacterDriverState::Jiu(_)
+            | CharacterDriverState::ForestRanger(_),
         ) => SimpleBaddyDriverData::default(),
         None => SimpleBaddyDriverData::default(),
     };
