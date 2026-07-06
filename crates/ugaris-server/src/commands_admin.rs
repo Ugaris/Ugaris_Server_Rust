@@ -4721,6 +4721,88 @@ pub(crate) fn apply_admin_character_command(
         return Some(KeyringCommandResult::default());
     }
 
+    // C `/punish <name> <level> <reason>` (`command.c:6500-6507` dispatch
+    // -> `cmd_punish`, `command.c:2354-2406`), `CF_GOD|CF_STAFF`-gated,
+    // full-word only (`cmdcmp`'s `minlen` is 6, the full length of
+    // "punish", no abbreviation accepted). Parses an `isalpha`-only name
+    // token (`take_legacy_alpha_name`, truncated to the 79-byte buffer
+    // cap like `/rename`), then `level = atoi(ptr); while (isdigit(*ptr))
+    // ptr++;` (a leading `-`/`+` sign, if any, is *not* skipped by this
+    // second loop even though `atoi` itself parsed it - a genuine C quirk
+    // only reachable with a malformed negative level, reproduced here by
+    // only ever skipping digit characters, never a sign), then the
+    // remaining raw bytes (not alpha-filtered, unlike the name) become
+    // `reason`, capped at 79 bytes with `reason_overflowed` recording
+    // whether the original text was longer - see `World::
+    // queue_punish_command`'s doc comment for the validation this hands
+    // off to. Always returns a `default()` result immediately; the real
+    // reply arrives later via `World::queue_system_text` (same
+    // fire-and-forget async pattern as `/jail`/`/rmdeath`/`/rename`
+    // above).
+    if lower == "punish" {
+        let Some(caller) = world.characters.get(&character_id) else {
+            return Some(KeyringCommandResult::default());
+        };
+        if !caller
+            .flags
+            .intersects(CharacterFlags::STAFF | CharacterFlags::GOD)
+        {
+            return None;
+        }
+        let (name, after_name) = take_legacy_alpha_name(rest.trim_start());
+        let name = &name[..name.len().min(79)];
+        let after_level = after_name.trim_start();
+        let level = legacy_atoi_prefix(after_level) as i32;
+        let digits_end = after_level
+            .find(|ch: char| !ch.is_ascii_digit())
+            .unwrap_or(after_level.len());
+        let reason_raw = after_level[digits_end..].trim_start();
+        let reason_overflowed = reason_raw.len() > 79;
+        let mut reason_end = reason_raw.len().min(79);
+        while reason_end > 0 && !reason_raw.is_char_boundary(reason_end) {
+            reason_end -= 1;
+        }
+        let reason = &reason_raw[..reason_end];
+        let messages =
+            world.queue_punish_command(character_id, name, level, reason, reason_overflowed);
+        if messages.is_empty() {
+            return Some(KeyringCommandResult::default());
+        }
+        return Some(KeyringCommandResult {
+            messages,
+            ..Default::default()
+        });
+    }
+
+    // C `/unpunish <name> <note id>` (`command.c:6541-6547` dispatch ->
+    // `cmd_unpunish`, `command.c:2706-2731`), `CF_GOD`-only-gated,
+    // full-word only (`cmdcmp`'s `minlen` is 8, the full length of
+    // "unpunish", no abbreviation accepted). Parses an `isalpha`-only name
+    // token, truncated to the 79-byte buffer cap, then `atoi`'s the
+    // remaining text as the note id. Always returns a `default()` result
+    // immediately; the real reply arrives later via `World::
+    // queue_system_text` (same fire-and-forget async pattern as
+    // `/punish` above).
+    if lower == "unpunish" {
+        let Some(caller) = world.characters.get(&character_id) else {
+            return Some(KeyringCommandResult::default());
+        };
+        if !caller.flags.contains(CharacterFlags::GOD) {
+            return None;
+        }
+        let (name, after_name) = take_legacy_alpha_name(rest.trim_start());
+        let name = &name[..name.len().min(79)];
+        let note_id = legacy_atoi_prefix(after_name.trim_start());
+        let messages = world.queue_unpunish_command(character_id, name, note_id);
+        if messages.is_empty() {
+            return Some(KeyringCommandResult::default());
+        }
+        return Some(KeyringCommandResult {
+            messages,
+            ..Default::default()
+        });
+    }
+
     // C `/showflags` (`command.c:8798-8805`, `cmd_show_flags`,
     // `command.c:4839-5061`), `CF_GOD`-gated, full-word only (`cmdcmp`'s
     // `minlen` is 9, the full length of "showflags", so no abbreviation

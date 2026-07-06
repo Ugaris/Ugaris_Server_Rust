@@ -8813,3 +8813,203 @@ fn showppd_area3_reports_only_kassim_state() {
             .expect("god showppd should be recognized");
     assert_eq!(result.messages, vec!["Kassim state: 42"]);
 }
+
+// C `/punish <name> <level> <reason>` (`command.c:6500-6507` dispatch ->
+// `cmd_punish`, `command.c:2354-2406`), `CF_GOD|CF_STAFF`-gated, full-word
+// only.
+
+#[test]
+fn punish_command_requires_god_or_staff() {
+    let mut world = goto_test_world();
+    let caller_id = CharacterId(1);
+    let caller = login_character(caller_id, &login_block("Ralph"), 3, 10, 10);
+    assert!(world.spawn_character(caller, 10, 10));
+    let mut runtime = ServerRuntime::default();
+
+    assert!(apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        caller_id,
+        "/punish Baddie 3 being quite mean",
+        3
+    )
+    .is_none());
+}
+
+#[test]
+fn punish_command_accepts_staff_alone() {
+    let mut world = goto_test_world();
+    let caller_id = CharacterId(1);
+    let mut caller = login_character(caller_id, &login_block("Ralph"), 3, 10, 10);
+    caller.flags.insert(CharacterFlags::STAFF);
+    assert!(world.spawn_character(caller, 10, 10));
+    let mut runtime = ServerRuntime::default();
+
+    let result = apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        caller_id,
+        "/punish Baddie 3 being quite mean",
+        3,
+    )
+    .expect("staff punish command should be recognized");
+    assert!(result.messages.is_empty());
+    let queued = world.drain_pending_punish_requests();
+    assert_eq!(queued.len(), 1);
+    assert_eq!(queued[0].target_name, "Baddie");
+    assert_eq!(queued[0].level, 3);
+    assert_eq!(queued[0].reason, "being quite mean");
+}
+
+#[test]
+fn punish_command_rejects_invalid_name_immediately() {
+    let mut world = goto_test_world();
+    let caller_id = CharacterId(1);
+    let mut caller = login_character(caller_id, &login_block("Ralph"), 3, 10, 10);
+    caller.flags.insert(CharacterFlags::GOD);
+    assert!(world.spawn_character(caller, 10, 10));
+    let mut runtime = ServerRuntime::default();
+
+    let result = apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        caller_id,
+        "/punish A 3 being quite mean",
+        3,
+    )
+    .expect("god punish command should be recognized");
+    assert_eq!(result.messages, vec!["Sorry, no player by the name A."]);
+    assert!(world.drain_pending_punish_requests().is_empty());
+}
+
+#[test]
+fn punish_command_rejects_short_reason() {
+    let mut world = goto_test_world();
+    let caller_id = CharacterId(1);
+    let mut caller = login_character(caller_id, &login_block("Ralph"), 3, 10, 10);
+    caller.flags.insert(CharacterFlags::GOD);
+    assert!(world.spawn_character(caller, 10, 10));
+    let mut runtime = ServerRuntime::default();
+
+    let result = apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        caller_id,
+        "/punish Baddie 3 bad",
+        3,
+    )
+    .expect("god punish command should be recognized");
+    assert_eq!(result.messages, vec!["Sorry, the reason bad is too short."]);
+    assert!(world.drain_pending_punish_requests().is_empty());
+}
+
+#[test]
+fn punish_command_rejects_out_of_bounds_level() {
+    let mut world = goto_test_world();
+    let caller_id = CharacterId(1);
+    let mut caller = login_character(caller_id, &login_block("Ralph"), 3, 10, 10);
+    caller.flags.insert(CharacterFlags::GOD);
+    assert!(world.spawn_character(caller, 10, 10));
+    let mut runtime = ServerRuntime::default();
+
+    let result = apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        caller_id,
+        "/punish Baddie 9 being quite mean",
+        3,
+    )
+    .expect("god punish command should be recognized");
+    assert_eq!(
+        result.messages,
+        vec!["Sorry, the level is out of bounds (0-6)."]
+    );
+    assert!(world.drain_pending_punish_requests().is_empty());
+}
+
+#[test]
+fn punish_command_abbreviation_is_not_recognized() {
+    // C `cmdcmp(ptr, "punish", 6)` requires the full six-letter word.
+    let mut world = goto_test_world();
+    let caller_id = CharacterId(1);
+    let mut caller = login_character(caller_id, &login_block("Ralph"), 3, 10, 10);
+    caller.flags.insert(CharacterFlags::GOD);
+    assert!(world.spawn_character(caller, 10, 10));
+    let mut runtime = ServerRuntime::default();
+
+    assert!(apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        caller_id,
+        "/punis Baddie 3 being quite mean",
+        3
+    )
+    .is_none());
+}
+
+// C `/unpunish <name> <note id>` (`command.c:6541-6547` dispatch ->
+// `cmd_unpunish`, `command.c:2706-2731`), `CF_GOD`-only-gated, full-word
+// only.
+
+#[test]
+fn unpunish_command_requires_god_not_just_staff() {
+    let mut world = goto_test_world();
+    let caller_id = CharacterId(1);
+    let mut caller = login_character(caller_id, &login_block("Ralph"), 3, 10, 10);
+    caller.flags.insert(CharacterFlags::STAFF);
+    assert!(world.spawn_character(caller, 10, 10));
+    let mut runtime = ServerRuntime::default();
+
+    assert!(apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        caller_id,
+        "/unpunish Baddie 42",
+        3
+    )
+    .is_none());
+}
+
+#[test]
+fn unpunish_command_queues_a_valid_request_with_no_immediate_reply() {
+    let mut world = goto_test_world();
+    let caller_id = CharacterId(1);
+    let mut caller = login_character(caller_id, &login_block("Ralph"), 3, 10, 10);
+    caller.flags.insert(CharacterFlags::GOD);
+    assert!(world.spawn_character(caller, 10, 10));
+    let mut runtime = ServerRuntime::default();
+
+    let result = apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        caller_id,
+        "/unpunish Baddie 42",
+        3,
+    )
+    .expect("god unpunish command should be recognized");
+    assert!(result.messages.is_empty());
+    let queued = world.drain_pending_unpunish_requests();
+    assert_eq!(queued.len(), 1);
+    assert_eq!(queued[0].target_name, "Baddie");
+    assert_eq!(queued[0].note_id, 42);
+}
+
+#[test]
+fn unpunish_command_abbreviation_is_not_recognized() {
+    // C `cmdcmp(ptr, "unpunish", 8)` requires the full eight-letter word.
+    let mut world = goto_test_world();
+    let caller_id = CharacterId(1);
+    let mut caller = login_character(caller_id, &login_block("Ralph"), 3, 10, 10);
+    caller.flags.insert(CharacterFlags::GOD);
+    assert!(world.spawn_character(caller, 10, 10));
+    let mut runtime = ServerRuntime::default();
+
+    assert!(apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        caller_id,
+        "/unpunis Baddie 42",
+        3
+    )
+    .is_none());
+}

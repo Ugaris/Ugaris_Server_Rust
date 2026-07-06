@@ -53,6 +53,7 @@ mod military;
 mod npc_fight;
 mod npc_idle;
 mod npc_messages;
+mod punish;
 mod querystats;
 mod regen;
 mod rename;
@@ -113,6 +114,7 @@ pub(crate) use npc_fight::*;
 pub(crate) use npc_idle::*;
 #[allow(unused_imports)]
 pub(crate) use npc_messages::*;
+pub use punish::*;
 pub use querystats::*;
 #[allow(unused_imports)]
 pub(crate) use regen::*;
@@ -399,6 +401,12 @@ pub struct World {
     /// `/unlockname <name>` async DB round trips - see
     /// `world/lockname.rs`'s module doc comment.
     pending_unlockname_lookups: Vec<UnlockNameLookup>,
+    /// `/punish <name> <level> <reason>` async DB round trips - see
+    /// `world/punish.rs`'s module doc comment.
+    pending_punish_requests: Vec<PunishRequest>,
+    /// `/unpunish <name> <note id>` async DB round trips - see
+    /// `world/punish.rs`'s module doc comment.
+    pending_unpunish_requests: Vec<UnpunishRequest>,
 }
 
 impl Default for Tick {

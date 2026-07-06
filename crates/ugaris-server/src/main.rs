@@ -172,14 +172,15 @@ use ugaris_core::{
     },
     tick::TICKS_PER_SECOND,
     world::{
-        ac_status_string, army_rank_for_points, army_rank_name, exp2level, legacy_save_number,
-        level2exp, level2maxitem, level_value, merchant_buy_price, merchant_sales_price,
-        AcOnlineTarget, ArenaMasterEvent, BankEvent, ClanclerkEvent, ClanmasterEvent,
-        ClubmasterEvent, DungeonRaidBuildRequest, FirstKillCheck, GateWelcomeOutcomeEvent,
-        GateWelcomePlayerFacts, LegacyHurtEvent, LookMapRequest, LootKiller, LootRegistry,
-        MerchantTradeResult, PendingDeathLootRoll, RaiseSkillOutcome, StealOutcome, StoreWare,
-        TraderEvent, WorldActionCompletion, AC_STATUS_FLAGGED, AC_STATUS_SUSPICIOUS,
-        MERCHANT_STORE_SIZE,
+        ac_status_string, apply_punishment, apply_unpunishment, army_rank_for_points,
+        army_rank_name, decode_punishment_note, encode_punishment_note, exp2level,
+        legacy_save_number, level2exp, level2maxitem, level_value, merchant_buy_price,
+        merchant_sales_price, AcOnlineTarget, ArenaMasterEvent, BankEvent, ClanclerkEvent,
+        ClanmasterEvent, ClubmasterEvent, DungeonRaidBuildRequest, FirstKillCheck,
+        GateWelcomeOutcomeEvent, GateWelcomePlayerFacts, LegacyHurtEvent, LookMapRequest,
+        LootKiller, LootRegistry, MerchantTradeResult, PendingDeathLootRoll, PunishmentNote,
+        RaiseSkillOutcome, StealOutcome, StoreWare, TraderEvent, WorldActionCompletion,
+        AC_STATUS_FLAGGED, AC_STATUS_SUSPICIOUS, MERCHANT_STORE_SIZE, PUNISHMENT_NOTE_KIND,
     },
     zone::ZoneLoader,
     ServerConfig, TickRate, World,
@@ -189,7 +190,7 @@ use ugaris_db::{
     AntiCheatRepository, AuctionRepository, CharacterRepository, CharacterSaveMode,
     CharacterSaveRequest, CharacterSnapshot, ClanRegistryRepository, LoginOutcome, LoginRequest,
     MerchantRepository, MerchantStoreSnapshot, MerchantWareSnapshot,
-    MilitaryAdvisorStorageRepository, MilitaryMasterStorageRepository,
+    MilitaryAdvisorStorageRepository, MilitaryMasterStorageRepository, NotesRepository,
 };
 
 use ugaris_net::{NetServer, SessionCommand, SessionEvent};
@@ -708,6 +709,7 @@ async fn main() -> anyhow::Result<()> {
         military_master_storage_repository,
         military_advisor_storage_repository,
         anticheat_repository,
+        notes_repository,
     ) = if let Some(database_url) = args.database_url.as_deref() {
         let db = ugaris_db::Database::connect(database_url, 8).await?;
         db.ping().await?;
@@ -730,10 +732,11 @@ async fn main() -> anyhow::Result<()> {
             Some(db.military_master_storage()),
             Some(db.military_advisor_storage()),
             Some(db.anticheat()),
+            Some(db.notes()),
         )
     } else {
         warn!("DATABASE_URL not set; starting without persistence");
-        (None, None, None, None, None, None, None, None, None)
+        (None, None, None, None, None, None, None, None, None, None)
     };
 
     let (events_tx, mut events_rx) = mpsc::channel(1024);
@@ -6803,6 +6806,42 @@ async fn main() -> anyhow::Result<()> {
                         unlockname_events_applied,
                         tick = world.tick.0,
                         "applied /unlockname lookups"
+                    );
+                }
+                // `/punish <name> <level> <reason>`'s async DB round trip
+                // (C `task_punish_player`/`punish_player`/`punish`,
+                // `src/system/task.c` + `src/system/punish.c`), queued by
+                // `World::queue_punish_command` above.
+                let punish_events_applied = apply_punish_events(
+                    &mut world,
+                    &mut runtime,
+                    &character_repository,
+                    &notes_repository,
+                    current_unix_time(),
+                )
+                .await;
+                if punish_events_applied != 0 {
+                    info!(
+                        punish_events_applied,
+                        tick = world.tick.0,
+                        "applied /punish events"
+                    );
+                }
+                // `/unpunish <name> <note id>`'s async DB round trip (C
+                // `task_unpunish_player`/`unpunish_player`/`unpunish`,
+                // `src/system/task.c` + `src/system/punish.c`), queued by
+                // `World::queue_unpunish_command` above.
+                let unpunish_events_applied = apply_unpunish_events(
+                    &mut world,
+                    &character_repository,
+                    &notes_repository,
+                )
+                .await;
+                if unpunish_events_applied != 0 {
+                    info!(
+                        unpunish_events_applied,
+                        tick = world.tick.0,
+                        "applied /unpunish events"
                     );
                 }
                 // C `military_master_driver`: the mission-giving Military

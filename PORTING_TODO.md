@@ -9570,6 +9570,92 @@ Unlocks every quest NPC. Do these before any P4 area work.
   a future port of either should extend `PlayerRuntime::depot` rather
   than reinventing it.
 
+  Progress Log (iteration 207): closed most of gap (b) - made the shared
+  DB-task-queue infra decision the previous iteration's note flagged and
+  ported `/punish <name> <level> <reason>` (`command.c:6500-6507`
+  dispatch -> `cmd_punish`, `command.c:2354-2406`, `CF_GOD|CF_STAFF`-
+  gated) and `/unpunish <name> <note id>` (`command.c:6541-6547` dispatch
+  -> `cmd_unpunish`, `command.c:2706-2731`, `CF_GOD`-only) in full,
+  including their shared C `task.c`/`punish.c` machinery
+  (`task_punish_player`/`punish_player`/`punish` and
+  `task_unpunish_player`/`unpunish_player`/`unpunish`). Added a brand
+  new generic `notes` Postgres table (`migrations/0013_notes.sql`,
+  mirroring C's schema-less `notes` table) plus `crates/ugaris-db/src/
+  notes.rs`'s `NotesRepository`/`PgNotesRepository` (`add_note`/
+  `take_note`, the latter a select-then-delete matching `db_unpunish`'s
+  no-`uID`-scoping quirk exactly - any valid note id can be "unpunished"
+  regardless of which character it was actually filed against, preserved
+  as-is), and a new `CharacterRepository::set_character_locked` method
+  (a plain `characters.locked` column setter, since C's own `set_task`
+  writes it as a third, unrelated column alongside the `chr`/karma/clan/
+  exp columns its `UPDATE` already touches). New `ugaris-core` module
+  `world/punish.rs`: `PunishmentNote`/`encode_punishment_note`/
+  `decode_punishment_note` (C `struct punishment`'s exact 92-byte layout,
+  three little-endian `i32`s then a fixed 80-byte NUL-padded `reason`),
+  `apply_punishment`/`apply_unpunishment` (the pure, `World`-independent
+  karma/exp mutation halves of `punish()`/`unpunish()`, reused identically
+  whether the target is a live `World::characters` entry or a freshly
+  loaded DB snapshot), and `World::queue_punish_command`/
+  `queue_unpunish_command` (the C `cmd_punish`/`cmd_unpunish` validation
+  order, all before ever queuing anything, since none of it depends on
+  the deferred DB resolution). Made the shared infra decision explicitly:
+  reused the exact "online (any loaded character, no `CF_PLAYER` filter)
+  first, else read/mutate/write the persisted row, else silently no-op if
+  logged in elsewhere" shape `world/admin_flag.rs`'s `cmd_flag` offline
+  fallback already established (`ugaris-server`'s new `apply_punish_
+  events`/`apply_unpunish_events`, `world_events.rs`), rather than
+  building a literal generic task-queue abstraction - this codebase's
+  existing per-command offline-DB-round-trip pattern already covers every
+  behavior C's real task queue provides here. The lock/kick disconnect
+  (C `kick_player`, `player.c:174-202`, triggered by `karma <= -12` or
+  unpaid-and-`karma <= -5`) turned out simpler than expected once traced
+  fully: `kick_player` does *not* run `exit_char` (unlike `/kick`'s own
+  handler) - it only detaches the socket and marks the character
+  `CDR_LOSTCON`, so `apply_punish_events` just sends the exit packet and
+  requests a session disconnect, which funnels through this codebase's
+  *already-existing* `SessionEvent::Disconnected` ->
+  `enter_lostcon_on_disconnect` machinery exactly like a real network
+  drop - no new disconnect/lostcon logic was needed at all. Deliberately
+  simplified vs. C (documented in `world/punish.rs`'s module doc
+  comment): `add_note`'s write is best-effort (a failure doesn't roll
+  back the karma/exp mutation or suppress messages, unlike C's own
+  `punish()` gating all of `punish_player`'s messaging on `add_note`'s
+  return value - this codebase has no cross-table transaction spanning
+  `characters` and `notes`); `write_scrollback`/`server_chat(31, ...)`
+  (moderation-evidence email + cross-server broadcast) are skipped,
+  matching the established skip-untracked-C-side-effect convention. 17
+  new `ugaris-core` tests (`world/tests/punish.rs`: note encode/decode
+  round trip and truncation, the full per-level exp/karma table against
+  C's `death_loss(10_000) == 400` arithmetic, lock/kick threshold edge
+  cases including "paid never kicks", unpunish refund, and the
+  queue/validation-order tests for both commands), 2 new `ugaris-db`
+  tests (`notes.rs`: SQL-shape only, plus 2 `#[ignore]`-free but
+  `DATABASE_URL`-gated live round-trip tests matching every sibling
+  repository's convention), 13 new `ugaris-server` tests (9 in
+  `tests/commands_admin.rs`: the `CF_GOD|CF_STAFF` vs. `CF_GOD`-only
+  permission-gate asymmetry between the two commands, invalid-name/
+  short-reason/out-of-bounds-level immediate rejections, valid queuing,
+  and full-word-only abbreviation rejection for both; 4 in
+  `world_events.rs`'s `punish_tests`: no-requests/missing-repository
+  no-op pairs for both events, matching every sibling offline-DB-mutation
+  event's established test shape). `cargo fmt --all`, `cargo test
+  --workspace` (2090 ugaris-core [+17] + 62 db [+4] + 3 net + 44 protocol
+  + 945 server [+13], all green, zero failures), `cargo build -p
+  ugaris-server` / `cargo build --workspace` clean with zero warnings,
+  10s boot-smoke confirmed "entering Rust game loop" with no panic. This
+  closes the `punish`/`unpunish` slice of gap (b) entirely. REMAINING:
+  `shutup`/`exterminate` (both still need the `subscriber_id`/
+  `subscribers`-adjacent schema gap for `db_exterminate`, or `server_chat`
+  for `shutup`'s cross-server relay - see iteration 205's note; neither
+  is unblocked by this iteration's work) close out gap (b); gap (a) (`ac*`
+  subscriber_id/aggregate-query/multi-account/signature-management
+  sub-gaps) and gap (c) (`look`/`klog`/`values`/`showvalues`, notes-*read*
+  subsystem - `db_read_notes`/`list_punishment`, which could now reuse
+  this iteration's `notes` table/`NotesRepository` for the read side,
+  though `list_punishment`'s own `lookup_ID` ID->name cache is still a
+  separate, unported gap) remain open; next iteration should pick one of
+  those.
+
 - [ ] **Cross-area transfer** - the big multi-server feature. Every
   cross-area teleport currently returns "target server down". Decide the
   single-process stance first (likely: run multiple areas in one process

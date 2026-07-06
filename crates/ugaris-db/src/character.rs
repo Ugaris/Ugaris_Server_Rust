@@ -209,6 +209,23 @@ pub trait CharacterRepository: Send + Sync {
     /// C `db_unlockname` (`database_admin.c:436-467`): `/unlockname`'s DB
     /// half, the mirror image of [`Self::lock_name`].
     async fn unlock_name(&self, name: &str) -> anyhow::Result<bool>;
+    /// C `set_task`'s `chr`-row `locked` column write (`task.c:262-267`),
+    /// the account-lock half of `/punish`/`/unpunish` (`ugaris-core`'s
+    /// `world/punish.rs`): C's own SQL builds the assigned value as one of
+    /// `'Y'`/`'N'`/the literal column name `locked` (a self-assignment
+    /// no-op) depending on whether `plock` is `1`/`-1`/`0` - modeled here
+    /// as a plain boolean setter, only ever called for the two real
+    /// (non-no-op) cases. Lives on this trait for the same reason
+    /// [`Self::rename_character`] does: a straight `characters` table
+    /// mutation that isn't part of the `character_json`/`ppd_blob`
+    /// snapshot `save_character_snapshot` writes, reusing the
+    /// already-threaded `PgPool`/`Option<PgCharacterRepository>` plumbing
+    /// rather than adding a whole new repository for one column.
+    async fn set_character_locked(
+        &self,
+        character_id: CharacterId,
+        locked: bool,
+    ) -> anyhow::Result<()>;
 }
 
 #[derive(Debug, Clone)]
@@ -419,6 +436,19 @@ impl CharacterRepository for PgCharacterRepository {
             .execute(&self.pool)
             .await?;
         Ok(result.rows_affected() > 0)
+    }
+
+    async fn set_character_locked(
+        &self,
+        character_id: CharacterId,
+        locked: bool,
+    ) -> anyhow::Result<()> {
+        sqlx::query("update characters set locked = $1 where id = $2")
+            .bind(locked)
+            .bind(character_id.0 as i64)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
     }
 }
 

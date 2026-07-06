@@ -7,6 +7,7 @@ pub mod clan;
 pub mod clan_log;
 pub mod merchant;
 pub mod military;
+pub mod notes;
 
 use sqlx::{postgres::PgPoolOptions, PgPool};
 
@@ -37,6 +38,7 @@ pub use military::{
     MilitaryAdvisorStorageRepository, MilitaryMasterStorageRepository,
     PgMilitaryAdvisorStorageRepository, PgMilitaryMasterStorageRepository,
 };
+pub use notes::{NotesRepository, PgNotesRepository};
 
 #[derive(Debug, Clone)]
 pub struct Database {
@@ -99,5 +101,9 @@ impl Database {
 
     pub fn military_advisor_storage(&self) -> PgMilitaryAdvisorStorageRepository {
         PgMilitaryAdvisorStorageRepository::new(self.pool.clone())
+    }
+
+    pub fn notes(&self) -> PgNotesRepository {
+        PgNotesRepository::new(self.pool.clone())
     }
 }
