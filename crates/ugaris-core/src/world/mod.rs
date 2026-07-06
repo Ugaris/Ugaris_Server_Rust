@@ -430,6 +430,21 @@ pub struct World {
     /// `#acsigdel <id>` async DB round trips (id parsed synchronously by
     /// the caller) - see `world/anticheat.rs`'s module doc comment.
     pending_ac_sigdel_lookups: Vec<AcSigdelLookup>,
+    /// `#acsharedip <name>` async DB round trips (session id already
+    /// resolved synchronously by the caller) - see `world/anticheat.rs`'s
+    /// module doc comment.
+    pending_ac_sharedip_lookups: Vec<AcSharedIpLookup>,
+    /// `#acsharedhw <name>` async DB round trips (session id already
+    /// resolved synchronously by the caller) - see `world/anticheat.rs`'s
+    /// module doc comment.
+    pending_ac_sharedhw_lookups: Vec<AcSharedHwLookup>,
+    /// `#achighrisk` async DB round trips - see `world/anticheat.rs`'s
+    /// module doc comment.
+    pending_ac_highrisk_lookups: Vec<AcHighriskLookup>,
+    /// `#aclookup <subscriber_id>` async DB round trips (id parsed
+    /// synchronously by the caller) - see `world/anticheat.rs`'s module
+    /// doc comment.
+    pending_ac_lookup_lookups: Vec<AcLookupLookup>,
     /// `#querystats`/`/querystats` async DB round trips - see
     /// `world/querystats.rs`'s module doc comment.
     pending_querystats_lookups: Vec<QueryStatsLookup>,

@@ -253,3 +253,52 @@ fn queue_and_drain_ac_sigdel_lookup_round_trips() {
     assert_eq!(queued[0].signature_id, 42);
     assert!(world.drain_pending_ac_sigdel_lookups().is_empty());
 }
+
+#[test]
+fn queue_and_drain_ac_sharedip_lookup_round_trips() {
+    let mut world = World::default();
+    world.queue_ac_sharedip_lookup(CharacterId(18), "Baddie".to_string(), 106);
+
+    let queued = world.drain_pending_ac_sharedip_lookups();
+    assert_eq!(queued.len(), 1);
+    assert_eq!(queued[0].caller_id, CharacterId(18));
+    assert_eq!(queued[0].target_name, "Baddie");
+    assert_eq!(queued[0].session_id, 106);
+    assert!(world.drain_pending_ac_sharedip_lookups().is_empty());
+}
+
+#[test]
+fn queue_and_drain_ac_sharedhw_lookup_round_trips() {
+    let mut world = World::default();
+    world.queue_ac_sharedhw_lookup(CharacterId(19), "Baddie".to_string(), 107);
+
+    let queued = world.drain_pending_ac_sharedhw_lookups();
+    assert_eq!(queued.len(), 1);
+    assert_eq!(queued[0].caller_id, CharacterId(19));
+    assert_eq!(queued[0].target_name, "Baddie");
+    assert_eq!(queued[0].session_id, 107);
+    assert!(world.drain_pending_ac_sharedhw_lookups().is_empty());
+}
+
+#[test]
+fn queue_and_drain_ac_highrisk_lookup_round_trips() {
+    let mut world = World::default();
+    world.queue_ac_highrisk_lookup(CharacterId(20));
+
+    let queued = world.drain_pending_ac_highrisk_lookups();
+    assert_eq!(queued.len(), 1);
+    assert_eq!(queued[0].caller_id, CharacterId(20));
+    assert!(world.drain_pending_ac_highrisk_lookups().is_empty());
+}
+
+#[test]
+fn queue_and_drain_ac_lookup_lookup_round_trips() {
+    let mut world = World::default();
+    world.queue_ac_lookup_lookup(CharacterId(21), 99);
+
+    let queued = world.drain_pending_ac_lookup_lookups();
+    assert_eq!(queued.len(), 1);
+    assert_eq!(queued[0].caller_id, CharacterId(21));
+    assert_eq!(queued[0].subscriber_id, 99);
+    assert!(world.drain_pending_ac_lookup_lookups().is_empty());
+}

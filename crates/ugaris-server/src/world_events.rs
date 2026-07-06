@@ -2735,6 +2735,250 @@ fn ac_history_lines(
     ]
 }
 
+/// `#acsharedip <player>`'s async round trip - see `ugaris-core`'s
+/// `world/anticheat.rs` module doc comment for the general async-DB-
+/// round-trip pattern this family shares, and `AcSharedIpLookup`'s own
+/// doc comment for why this is the same single-name-target resolution
+/// shape as `#acsessions`/`#acviolations`/`#achistory`.
+pub(crate) async fn apply_ac_sharedip_events(
+    world: &mut World,
+    anticheat_repository: &Option<ugaris_db::PgAntiCheatRepository>,
+) -> usize {
+    let lookups = world.drain_pending_ac_sharedip_lookups();
+    if lookups.is_empty() {
+        return 0;
+    }
+    let Some(repository) = anticheat_repository else {
+        return 0;
+    };
+    let mut applied = 0;
+    for lookup in lookups {
+        let Ok(Some(account_id)) = repository.account_id_for_session(lookup.session_id).await
+        else {
+            continue;
+        };
+        let Ok(rows) = repository.shared_ips(account_id, 20).await else {
+            continue;
+        };
+        for line in ac_sharedip_lines(&lookup.target_name, &rows) {
+            world.queue_system_text(lookup.caller_id, line);
+        }
+        applied += 1;
+    }
+    applied
+}
+
+/// Pure message-formatting half of [`apply_ac_sharedip_events`], split
+/// out so it can be unit-tested without a live database - same
+/// established convention as `ac_sessions_lines`/`ac_violations_lines`.
+/// C `ac_cmd_sharedip` (`anticheat.c:1058-1088`) - color wrapping
+/// dropped, matching this file's established plain-text simplification;
+/// the trailing "Found %d accounts sharing IPs." summary line is
+/// reproduced as-is. `email` is replaced by `username` throughout - see
+/// `AntiCheatSharedIpRow`'s doc comment.
+fn ac_sharedip_lines(target_name: &str, rows: &[ugaris_db::AntiCheatSharedIpRow]) -> Vec<String> {
+    if rows.is_empty() {
+        return vec![format!("No shared IPs found for {target_name}.")];
+    }
+    let mut lines = vec![format!("--- Accounts Sharing IP with {target_name} ---")];
+    for row in rows {
+        lines.push(format!(
+            "{} - {} (sessions: {}, last: {})",
+            row.username,
+            std::net::Ipv4Addr::from(row.ip_address as u32),
+            row.session_count,
+            row.last_seen
+        ));
+    }
+    lines.push(format!("Found {} accounts sharing IPs.", rows.len()));
+    lines
+}
+
+/// `#acsharedhw <player>`'s async round trip - see `ugaris-core`'s
+/// `world/anticheat.rs` module doc comment for the general async-DB-
+/// round-trip pattern this family shares, and `AcSharedHwLookup`'s own
+/// doc comment for why this is the same single-name-target resolution
+/// shape as `#acsharedip` above.
+pub(crate) async fn apply_ac_sharedhw_events(
+    world: &mut World,
+    anticheat_repository: &Option<ugaris_db::PgAntiCheatRepository>,
+) -> usize {
+    let lookups = world.drain_pending_ac_sharedhw_lookups();
+    if lookups.is_empty() {
+        return 0;
+    }
+    let Some(repository) = anticheat_repository else {
+        return 0;
+    };
+    let mut applied = 0;
+    for lookup in lookups {
+        let Ok(Some(account_id)) = repository.account_id_for_session(lookup.session_id).await
+        else {
+            continue;
+        };
+        let Ok(rows) = repository.shared_hardware(account_id, 20).await else {
+            continue;
+        };
+        for line in ac_sharedhw_lines(&lookup.target_name, &rows) {
+            world.queue_system_text(lookup.caller_id, line);
+        }
+        applied += 1;
+    }
+    applied
+}
+
+/// Pure message-formatting half of [`apply_ac_sharedhw_events`], split
+/// out so it can be unit-tested without a live database - same
+/// established convention as `ac_sharedip_lines` above. C `ac_cmd_
+/// sharedhw` (`anticheat.c:1096-1126`) - color wrapping dropped; `email`
+/// replaced by `username`, matching `ac_sharedip_lines`.
+fn ac_sharedhw_lines(target_name: &str, rows: &[ugaris_db::AntiCheatSharedHwRow]) -> Vec<String> {
+    if rows.is_empty() {
+        return vec![format!("No shared hardware found for {target_name}.")];
+    }
+    let mut lines = vec![format!(
+        "--- Accounts Sharing Hardware with {target_name} ---"
+    )];
+    for row in rows {
+        lines.push(format!(
+            "{} - Hash: {}, Screen: {}x{} (last: {})",
+            row.username,
+            row.hardware_hash,
+            row.screen_w.unwrap_or(0),
+            row.screen_h.unwrap_or(0),
+            row.last_seen
+        ));
+    }
+    lines.push(format!("Found {} accounts sharing hardware.", rows.len()));
+    lines
+}
+
+/// `#achighrisk`'s async round trip - see `ugaris-core`'s `world/
+/// anticheat.rs` module doc comment for the general async-DB-round-trip
+/// pattern this family shares. No name/session resolution at all (unlike
+/// every other member of the family except `#acsiglist`/`#accleanup`),
+/// so this simply lists every high-risk `ac_player_stats` row.
+pub(crate) async fn apply_ac_highrisk_events(
+    world: &mut World,
+    anticheat_repository: &Option<ugaris_db::PgAntiCheatRepository>,
+) -> usize {
+    let lookups = world.drain_pending_ac_highrisk_lookups();
+    if lookups.is_empty() {
+        return 0;
+    }
+    let Some(repository) = anticheat_repository else {
+        return 0;
+    };
+    let mut applied = 0;
+    for lookup in lookups {
+        let Ok(rows) = repository.high_risk_players(20).await else {
+            continue;
+        };
+        for line in ac_highrisk_lines(&rows) {
+            world.queue_system_text(lookup.caller_id, line);
+        }
+        applied += 1;
+    }
+    applied
+}
+
+/// Pure message-formatting half of [`apply_ac_highrisk_events`], split
+/// out so it can be unit-tested without a live database - same
+/// established convention as `ac_siglist_lines`. C `ac_cmd_highrisk`
+/// (`anticheat.c:1134-1157`) - risk-level-based color wrapping dropped;
+/// `email` replaced by `username`, matching `ac_sharedip_lines`.
+fn ac_highrisk_lines(rows: &[ugaris_db::AntiCheatHighRiskRow]) -> Vec<String> {
+    if rows.is_empty() {
+        return vec!["No high-risk players found.".to_string()];
+    }
+    let mut lines = vec!["--- High-Risk Players ---".to_string()];
+    for row in rows {
+        lines.push(format!(
+            "[{}] {} - {} Bot:{:.2} Flag:{} (seen: {})",
+            row.subscriber_id,
+            row.username,
+            row.risk_level,
+            row.max_bot_score,
+            row.flagged_sessions,
+            row.last_seen.as_deref().unwrap_or("")
+        ));
+    }
+    lines
+}
+
+/// `#aclookup <subscriber_id>`'s async round trip - see `ugaris-core`'s
+/// `world/anticheat.rs` module doc comment for the general async-DB-
+/// round-trip pattern this family shares, and `AcLookupLookup`'s own doc
+/// comment for why `subscriber_id` is parsed directly rather than
+/// resolved from an online character name.
+pub(crate) async fn apply_ac_lookup_events(
+    world: &mut World,
+    anticheat_repository: &Option<ugaris_db::PgAntiCheatRepository>,
+) -> usize {
+    let lookups = world.drain_pending_ac_lookup_lookups();
+    if lookups.is_empty() {
+        return 0;
+    }
+    let Some(repository) = anticheat_repository else {
+        return 0;
+    };
+    let mut applied = 0;
+    for lookup in lookups {
+        let Ok(result) = repository.lookup_subscriber(lookup.subscriber_id).await else {
+            continue;
+        };
+        for line in ac_lookup_lines(lookup.subscriber_id, result.as_ref()) {
+            world.queue_system_text(lookup.caller_id, line);
+        }
+        applied += 1;
+    }
+    applied
+}
+
+/// Pure message-formatting half of [`apply_ac_lookup_events`], split out
+/// so it can be unit-tested without a live database - same established
+/// convention as `ac_history_lines`. C `ac_cmd_lookup` (`anticheat.c:
+/// 1158-1191`); the `"Email: %s"` line has no equivalent in this
+/// codebase's schema (see `AntiCheatSubscriberLookup`'s doc comment) so
+/// it is folded into the header line as `"--- Subscriber {id} ({
+/// username}) ---"` instead of being dropped outright, keeping the
+/// account's identity visible in the reply.
+fn ac_lookup_lines(
+    subscriber_id: i64,
+    result: Option<&ugaris_db::AntiCheatSubscriberLookup>,
+) -> Vec<String> {
+    let Some(result) = result else {
+        return vec![format!("Subscriber ID {subscriber_id} not found.")];
+    };
+    let mut lines = vec![format!(
+        "--- Subscriber {subscriber_id} ({}) ---",
+        result.username
+    )];
+    let Some(stats) = &result.stats else {
+        lines.push("No AC data for this subscriber.".to_string());
+        return lines;
+    };
+    lines.push(format!(
+        "Sessions: {} total, {} flagged",
+        stats.total_sessions, stats.flagged_sessions
+    ));
+    lines.push(format!(
+        "Max Bot Score: {:.2}, Risk: {}",
+        stats.max_session_bot_score, stats.risk_level
+    ));
+    lines.push(format!(
+        "Flagged: {}, Trusted: {}",
+        if stats.is_flagged { "YES" } else { "no" },
+        if stats.is_trusted { "YES" } else { "no" }
+    ));
+    lines.push(format!(
+        "First: {}, Last: {}",
+        stats.first_seen,
+        stats.last_seen.as_deref().unwrap_or("")
+    ));
+    lines
+}
+
 /// `#acsiglist`'s async round trip - see `ugaris-core`'s `world/
 /// anticheat.rs` module doc comment for the general async-DB-round-trip
 /// pattern this family shares. No name/session resolution at all (unlike
@@ -4504,6 +4748,276 @@ mod ac_history_tests {
         };
         let lines = ac_history_lines("Newbie", 7, Some(&stats));
         assert_eq!(lines.last().unwrap(), "Last seen: ");
+    }
+}
+
+#[cfg(test)]
+mod ac_sharedip_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn no_lookups_queued_is_a_cheap_no_op() {
+        let mut world = World::default();
+        let applied = apply_ac_sharedip_events(&mut world, &None).await;
+        assert_eq!(applied, 0);
+        assert!(world.drain_pending_system_texts().is_empty());
+    }
+
+    #[tokio::test]
+    async fn missing_repository_leaves_the_lookup_queued_state_untouched_but_drained() {
+        let mut world = World::default();
+        world.queue_ac_sharedip_lookup(CharacterId(7), "Baddie".to_string(), 30);
+
+        let applied = apply_ac_sharedip_events(&mut world, &None).await;
+        assert_eq!(applied, 0);
+        assert!(world.drain_pending_system_texts().is_empty());
+        assert!(world.drain_pending_ac_sharedip_lookups().is_empty());
+    }
+
+    #[test]
+    fn ac_sharedip_lines_reports_no_shared_ips_when_empty() {
+        let lines = ac_sharedip_lines("Baddie", &[]);
+        assert_eq!(lines, vec!["No shared IPs found for Baddie.".to_string()]);
+    }
+
+    #[test]
+    fn ac_sharedip_lines_formats_header_rows_and_summary() {
+        let rows = vec![
+            ugaris_db::AntiCheatSharedIpRow {
+                username: "altaccount".to_string(),
+                ip_address: 0x7f00_0001u32 as i32, // 127.0.0.1
+                session_count: 3,
+                last_seen: "2026-07-06".to_string(),
+            },
+            ugaris_db::AntiCheatSharedIpRow {
+                username: "another".to_string(),
+                ip_address: 0xc0a8_0102u32 as i32, // 192.168.1.2
+                session_count: 1,
+                last_seen: "2026-07-01".to_string(),
+            },
+        ];
+        let lines = ac_sharedip_lines("Baddie", &rows);
+        assert_eq!(
+            lines,
+            vec![
+                "--- Accounts Sharing IP with Baddie ---".to_string(),
+                "altaccount - 127.0.0.1 (sessions: 3, last: 2026-07-06)".to_string(),
+                "another - 192.168.1.2 (sessions: 1, last: 2026-07-01)".to_string(),
+                "Found 2 accounts sharing IPs.".to_string(),
+            ]
+        );
+    }
+}
+
+#[cfg(test)]
+mod ac_sharedhw_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn no_lookups_queued_is_a_cheap_no_op() {
+        let mut world = World::default();
+        let applied = apply_ac_sharedhw_events(&mut world, &None).await;
+        assert_eq!(applied, 0);
+        assert!(world.drain_pending_system_texts().is_empty());
+    }
+
+    #[tokio::test]
+    async fn missing_repository_leaves_the_lookup_queued_state_untouched_but_drained() {
+        let mut world = World::default();
+        world.queue_ac_sharedhw_lookup(CharacterId(7), "Baddie".to_string(), 30);
+
+        let applied = apply_ac_sharedhw_events(&mut world, &None).await;
+        assert_eq!(applied, 0);
+        assert!(world.drain_pending_system_texts().is_empty());
+        assert!(world.drain_pending_ac_sharedhw_lookups().is_empty());
+    }
+
+    #[test]
+    fn ac_sharedhw_lines_reports_no_shared_hardware_when_empty() {
+        let lines = ac_sharedhw_lines("Baddie", &[]);
+        assert_eq!(
+            lines,
+            vec!["No shared hardware found for Baddie.".to_string()]
+        );
+    }
+
+    #[test]
+    fn ac_sharedhw_lines_formats_header_rows_and_summary() {
+        let rows = vec![ugaris_db::AntiCheatSharedHwRow {
+            username: "altaccount".to_string(),
+            hardware_hash: 123456789,
+            screen_w: Some(1920),
+            screen_h: Some(1080),
+            last_seen: "2026-07-06".to_string(),
+        }];
+        let lines = ac_sharedhw_lines("Baddie", &rows);
+        assert_eq!(
+            lines,
+            vec![
+                "--- Accounts Sharing Hardware with Baddie ---".to_string(),
+                "altaccount - Hash: 123456789, Screen: 1920x1080 (last: 2026-07-06)".to_string(),
+                "Found 1 accounts sharing hardware.".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn ac_sharedhw_lines_defaults_missing_screen_dimensions_to_zero() {
+        let rows = vec![ugaris_db::AntiCheatSharedHwRow {
+            username: "altaccount".to_string(),
+            hardware_hash: 42,
+            screen_w: None,
+            screen_h: None,
+            last_seen: "2026-07-06".to_string(),
+        }];
+        let lines = ac_sharedhw_lines("Baddie", &rows);
+        assert_eq!(
+            lines[1],
+            "altaccount - Hash: 42, Screen: 0x0 (last: 2026-07-06)"
+        );
+    }
+}
+
+#[cfg(test)]
+mod ac_highrisk_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn no_lookups_queued_is_a_cheap_no_op() {
+        let mut world = World::default();
+        let applied = apply_ac_highrisk_events(&mut world, &None).await;
+        assert_eq!(applied, 0);
+        assert!(world.drain_pending_system_texts().is_empty());
+    }
+
+    #[tokio::test]
+    async fn missing_repository_leaves_the_lookup_queued_state_untouched_but_drained() {
+        let mut world = World::default();
+        world.queue_ac_highrisk_lookup(CharacterId(7));
+
+        let applied = apply_ac_highrisk_events(&mut world, &None).await;
+        assert_eq!(applied, 0);
+        assert!(world.drain_pending_system_texts().is_empty());
+        assert!(world.drain_pending_ac_highrisk_lookups().is_empty());
+    }
+
+    #[test]
+    fn ac_highrisk_lines_reports_no_players_when_empty() {
+        let lines = ac_highrisk_lines(&[]);
+        assert_eq!(lines, vec!["No high-risk players found.".to_string()]);
+    }
+
+    #[test]
+    fn ac_highrisk_lines_formats_header_and_rows() {
+        let rows = vec![
+            ugaris_db::AntiCheatHighRiskRow {
+                subscriber_id: 3,
+                username: "cheater".to_string(),
+                risk_level: "critical".to_string(),
+                max_bot_score: 1.0,
+                flagged_sessions: 4,
+                last_seen: Some("07-06 10:00".to_string()),
+            },
+            ugaris_db::AntiCheatHighRiskRow {
+                subscriber_id: 5,
+                username: "suspect".to_string(),
+                risk_level: "high".to_string(),
+                max_bot_score: 0.85,
+                flagged_sessions: 1,
+                last_seen: None,
+            },
+        ];
+        let lines = ac_highrisk_lines(&rows);
+        assert_eq!(
+            lines,
+            vec![
+                "--- High-Risk Players ---".to_string(),
+                "[3] cheater - critical Bot:1.00 Flag:4 (seen: 07-06 10:00)".to_string(),
+                "[5] suspect - high Bot:0.85 Flag:1 (seen: )".to_string(),
+            ]
+        );
+    }
+}
+
+#[cfg(test)]
+mod ac_lookup_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn no_lookups_queued_is_a_cheap_no_op() {
+        let mut world = World::default();
+        let applied = apply_ac_lookup_events(&mut world, &None).await;
+        assert_eq!(applied, 0);
+        assert!(world.drain_pending_system_texts().is_empty());
+    }
+
+    #[tokio::test]
+    async fn missing_repository_leaves_the_lookup_queued_state_untouched_but_drained() {
+        let mut world = World::default();
+        world.queue_ac_lookup_lookup(CharacterId(7), 99);
+
+        let applied = apply_ac_lookup_events(&mut world, &None).await;
+        assert_eq!(applied, 0);
+        assert!(world.drain_pending_system_texts().is_empty());
+        assert!(world.drain_pending_ac_lookup_lookups().is_empty());
+    }
+
+    #[test]
+    fn ac_lookup_lines_reports_not_found_when_subscriber_missing() {
+        let lines = ac_lookup_lines(99, None);
+        assert_eq!(lines, vec!["Subscriber ID 99 not found.".to_string()]);
+    }
+
+    #[test]
+    fn ac_lookup_lines_reports_no_ac_data_when_stats_missing() {
+        let result = ugaris_db::AntiCheatSubscriberLookup {
+            username: "newbie".to_string(),
+            stats: None,
+        };
+        let lines = ac_lookup_lines(7, Some(&result));
+        assert_eq!(
+            lines,
+            vec![
+                "--- Subscriber 7 (newbie) ---".to_string(),
+                "No AC data for this subscriber.".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn ac_lookup_lines_formats_every_field_when_stats_present() {
+        let stats = ugaris_db::AntiCheatPlayerStatsRow {
+            total_sessions: 12,
+            flagged_sessions: 2,
+            suspicious_sessions: 3,
+            total_heartbeat_violations: 4,
+            total_state_violations: 5,
+            total_challenge_failures: 6,
+            total_anomalies: 7,
+            max_session_bot_score: 0.91,
+            avg_session_bot_score: 0.4,
+            risk_level: "high".to_string(),
+            is_flagged: true,
+            is_trusted: false,
+            warnings_issued: 3,
+            first_seen: "01-01 00:00".to_string(),
+            last_seen: Some("07-06 10:00".to_string()),
+        };
+        let result = ugaris_db::AntiCheatSubscriberLookup {
+            username: "cheater".to_string(),
+            stats: Some(stats),
+        };
+        let lines = ac_lookup_lines(3, Some(&result));
+        assert_eq!(
+            lines,
+            vec![
+                "--- Subscriber 3 (cheater) ---".to_string(),
+                "Sessions: 12 total, 2 flagged".to_string(),
+                "Max Bot Score: 0.91, Risk: high".to_string(),
+                "Flagged: YES, Trusted: no".to_string(),
+                "First: 01-01 00:00, Last: 07-06 10:00".to_string(),
+            ]
+        );
     }
 }
 

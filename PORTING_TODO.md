@@ -10275,8 +10275,85 @@ Unlocks every quest NPC. Do these before any P4 area work.
   `anticheat`/`clan_log` tests iterations 212-214 already noted (confirmed
   again, not investigated further - irrelevant to the default `cargo test
   --workspace` contract, which skips every live test cleanly with no
-  `DATABASE_URL` set). REMAINING: gap (a) now has only `acsharedip`/
-  `acsharedhw`/`achighrisk`/`aclookup` left (see the note directly above).
+  `DATABASE_URL` set). REMAINING (iteration 216): gap (a) is now closed
+  entirely - `acsharedip`/`acsharedhw`/`achighrisk`/`aclookup` (the last
+  four members) are ported, see the Progress Log entry below for the
+  live-derivation-over-new-schema approach used for the shared-IP/
+  shared-hardware queries and the `username`-for-legacy-`email`
+  substitution used throughout (this codebase's `accounts` table has no
+  email column). What's left overall in this task per the last full
+  sweep (iteration 173, since drifted): gap (b)'s `punish`/`shutup`/
+  `unpunish` (blocked on `lookup_name` + DB task-queue infra, see the
+  note earlier in this same paragraph) and `exterminate` (subscriber_id
+  schema), `/allow` (blocked on the cross-area `server_chat` DB relay),
+  the `CDR_LOSTCON` autopilot behavior the lag-control toggle family
+  gates (no dedicated task exists yet), and the ~90 `CF_GOD`-gated
+  `ac*`/`macro*` anticheat-detection-engine and macro-detection commands
+  never itemized individually in this note. A fresh full pass comparing
+   every `cmdcmp(ptr, "...")` name in `command.c` against `crates/ugaris-
+   server/src/commands_*.rs`/`weather.rs`/`clan_command.rs` is still
+   recommended before assuming this list is exhaustive.
+
+  Progress Log (iteration 216): closed gap (a) entirely - ported its last
+  four members, `#acsharedip <player>` (`ac_cmd_sharedip`, `anticheat.c:
+  1058-1088`), `#acsharedhw <player>` (`ac_cmd_sharedhw`, `anticheat.c:
+  1096-1126`), `#achighrisk` (`ac_cmd_highrisk`, `anticheat.c:1134-1157`)
+  and `#aclookup <subscriber_id>` (`ac_cmd_lookup`, `anticheat.c:1158-
+  1191`), all `CF_GOD|CF_STAFF`-gated, exact-word (`command.c:10259-
+  10289`). `#acsharedip`/`#acsharedhw` reuse the same single-name-target
+  resolution shape as `#acsessions`/`#acviolations`/`#achistory` (online
+  `CF_PLAYER` name scan synchronously in `commands_admin.rs`, then an
+  async `account_id_for_session` + query round trip); `#achighrisk` needs
+  no target at all (same shape as `#acsiglist`); `#aclookup` is unique in
+  this family - its target is a raw numeric subscriber (account) id (C's
+  own `atoi`), not an online character name, so it's parsed directly with
+  the pre-existing `legacy_atoi_prefix` helper (`commands_player.rs`,
+  already used by `#acsigdel`) with no online-name-scan step at all.
+  C's own `db_ac_get_shared_ips`/`db_ac_get_shared_hardware` read from
+  dedicated `ac_ip_history`/`ac_hardware_history` aggregate tables this
+  codebase never ported (populated by an unported `db_ac_track_ip`/
+  `db_ac_track_hardware` writer); instead, following this file's
+  established "reuse the existing session/event log over introducing new
+  schema" convention (`recent_sessions`/`recent_violations`), the new
+  `AntiCheatRepository::shared_ips`/`shared_hardware` derive the same
+  shape live by self-joining `anticheat_sessions` on `ip_address`/
+  `hardware_hash` (both already captured per session) and grouping by
+  the other account, matching `session_count`/`last_seen` against what
+  an incremental history row would report. Every one of these four
+  commands' C format strings displays `subscriber.email`, a column this
+  codebase's `accounts` table has never had; `accounts.username` - the
+  same table already treated everywhere else in this family as the Rust
+  equivalent of legacy `subscriber.ID` - stands in for it throughout
+  (documented on each new row struct), with `#aclookup`'s missing
+  `"Email: %s"` line folded into its header (`"--- Subscriber {id} ({
+  username}) ---"`) rather than dropped outright, keeping the account's
+  identity visible in the reply. Added `AntiCheatSharedIpRow`/
+  `AntiCheatSharedHwRow`/`AntiCheatHighRiskRow`/`AntiCheatSubscriberLookup`
+  plus the four new `AntiCheatRepository` methods (`ugaris-db/src/
+  anticheat.rs`, re-exported from `lib.rs`); `AcSharedIpLookup`/
+  `AcSharedHwLookup`/`AcHighriskLookup`/`AcLookupLookup` plus their queue/
+  drain pairs and `World` fields (`ugaris-core/src/world/anticheat.rs` +
+  `world/mod.rs`); `apply_ac_sharedip_events`/`apply_ac_sharedhw_events`/
+  `apply_ac_highrisk_events`/`apply_ac_lookup_events` plus their pure
+  `_lines` formatters (`ugaris-server/src/world_events.rs`); the four
+  dispatch arms in `commands_admin.rs` right after `#achistory`; and the
+  four tick-loop calls in `main.rs` right after `#achistory`'s, matching
+  every sibling's shape exactly. 12 new tests in `ugaris-core` (queue/
+  drain round trips for all four lookup types) and 21 in `ugaris-server`
+  (`ac_sharedip_tests`/`ac_sharedhw_tests`/`ac_highrisk_tests`/
+  `ac_lookup_tests`: no-lookups/missing-repository no-op pairs plus
+  `_lines` formatting tests covering the empty-result branch, the
+  multi-row/header/summary shape, and - for `#acsharedhw` - the missing-
+  screen-dimension-defaults-to-0x0 edge case). No live `ugaris-db` test
+  was added for the two new joined queries (`shared_ips`/`shared_
+  hardware`/`high_risk_players`/`lookup_subscriber`) - a gap the next
+  iteration touching this area should close with a throwaway-Postgres
+  fixture test, same shape as `find_player_stats_reports_none_then_
+  round_trips_every_column`. `cargo fmt --all`, `cargo test --workspace`
+  (2108 ugaris-core [+12] + 73 db + 3 net + 44 protocol + 1036 server
+  [+21], all green, zero failures), `cargo build -p ugaris-server` /
+  `cargo build --workspace` clean with zero warnings, 10s boot-smoke
+  confirmed "entering Rust game loop" with no panic.
 
 - [ ] **Cross-area transfer** - the big multi-server feature. Every
   cross-area teleport currently returns "target server down". Decide the

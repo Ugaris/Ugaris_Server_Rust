@@ -276,6 +276,55 @@ pub struct AcSigdelLookup {
     pub signature_id: i64,
 }
 
+/// `#acsharedip <player>` (`ac_cmd_sharedip`, `anticheat.c:1058-1088`),
+/// `CF_GOD|CF_STAFF`-gated, exact-word (`cmdcmp(ptr, "acsharedip", 10)`).
+/// Same single-name-target resolution as `#acsessions`/`#acviolations`/
+/// `#achistory` (the caller resolves `session_id` synchronously via the
+/// online-name-scan; `apply_ac_sharedip_events` resolves the subscriber's
+/// `account_id` from it via `account_id_for_session` before querying
+/// every other account sharing one of its IP addresses).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AcSharedIpLookup {
+    pub caller_id: CharacterId,
+    pub target_name: String,
+    pub session_id: i64,
+}
+
+/// `#acsharedhw <player>` (`ac_cmd_sharedhw`, `anticheat.c:1096-1126`),
+/// `CF_GOD|CF_STAFF`-gated, exact-word (`cmdcmp(ptr, "acsharedhw", 10)`).
+/// Identical shape to `AcSharedIpLookup` above, this time gathering every
+/// other account sharing one of the subscriber's hardware fingerprints.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AcSharedHwLookup {
+    pub caller_id: CharacterId,
+    pub target_name: String,
+    pub session_id: i64,
+}
+
+/// `#achighrisk` (`ac_cmd_highrisk`, `anticheat.c:1134-1157`),
+/// `CF_GOD|CF_STAFF`-gated, exact-word (`cmdcmp(ptr, "achighrisk", 10)`).
+/// No player name to resolve - a pure "list every high-risk `ac_player_
+/// stats` row" async DB round trip, same no-target shape as
+/// `AcSiglistLookup`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AcHighriskLookup {
+    pub caller_id: CharacterId,
+}
+
+/// `#aclookup <subscriber_id>` (`ac_cmd_lookup`, `anticheat.c:1158-1191`),
+/// `CF_GOD|CF_STAFF`-gated, exact-word (`cmdcmp(ptr, "aclookup", 8)`).
+/// Unlike every other member of this family, the target is a raw numeric
+/// subscriber (account) id (C's own `atoi(id_str)`), not an online
+/// character name - so there is no online-name-scan or `session_id` to
+/// resolve synchronously; `subscriber_id` is parsed and range-checked
+/// (`<= 0` rejected, matching C's own check) directly in
+/// `commands_admin.rs` before queuing.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AcLookupLookup {
+    pub caller_id: CharacterId,
+    pub subscriber_id: i64,
+}
+
 impl World {
     pub fn queue_ac_status_lookup(
         &mut self,
@@ -530,6 +579,60 @@ impl World {
 
     pub fn drain_pending_ac_sigdel_lookups(&mut self) -> Vec<AcSigdelLookup> {
         self.pending_ac_sigdel_lookups.drain(..).collect()
+    }
+
+    pub fn queue_ac_sharedip_lookup(
+        &mut self,
+        caller_id: CharacterId,
+        target_name: String,
+        session_id: i64,
+    ) {
+        self.pending_ac_sharedip_lookups.push(AcSharedIpLookup {
+            caller_id,
+            target_name,
+            session_id,
+        });
+    }
+
+    pub fn drain_pending_ac_sharedip_lookups(&mut self) -> Vec<AcSharedIpLookup> {
+        self.pending_ac_sharedip_lookups.drain(..).collect()
+    }
+
+    pub fn queue_ac_sharedhw_lookup(
+        &mut self,
+        caller_id: CharacterId,
+        target_name: String,
+        session_id: i64,
+    ) {
+        self.pending_ac_sharedhw_lookups.push(AcSharedHwLookup {
+            caller_id,
+            target_name,
+            session_id,
+        });
+    }
+
+    pub fn drain_pending_ac_sharedhw_lookups(&mut self) -> Vec<AcSharedHwLookup> {
+        self.pending_ac_sharedhw_lookups.drain(..).collect()
+    }
+
+    pub fn queue_ac_highrisk_lookup(&mut self, caller_id: CharacterId) {
+        self.pending_ac_highrisk_lookups
+            .push(AcHighriskLookup { caller_id });
+    }
+
+    pub fn drain_pending_ac_highrisk_lookups(&mut self) -> Vec<AcHighriskLookup> {
+        self.pending_ac_highrisk_lookups.drain(..).collect()
+    }
+
+    pub fn queue_ac_lookup_lookup(&mut self, caller_id: CharacterId, subscriber_id: i64) {
+        self.pending_ac_lookup_lookups.push(AcLookupLookup {
+            caller_id,
+            subscriber_id,
+        });
+    }
+
+    pub fn drain_pending_ac_lookup_lookups(&mut self) -> Vec<AcLookupLookup> {
+        self.pending_ac_lookup_lookups.drain(..).collect()
     }
 }
 

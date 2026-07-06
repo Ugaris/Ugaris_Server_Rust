@@ -158,6 +158,80 @@ pub struct AntiCheatPlayerStatsRow {
     pub last_seen: Option<String>,
 }
 
+/// `#acsharedip <player>`'s per-row shape (`db_ac_shared_ip_result`,
+/// `database_anticheat.h:501-511`). C's own query reads from a dedicated
+/// `ac_ip_history` aggregate table (one row per `(subscriber_id,
+/// ip_address)` pair, incrementally maintained by a `db_ac_track_ip`
+/// writer this codebase never ported); this codebase instead derives the
+/// same shape live from `anticheat_sessions` (already every login's IP,
+/// per `AntiCheatSessionHistoryRow`'s doc comment on reusing that table
+/// over introducing new schema) by self-joining on `ip_address` and
+/// grouping by the other account, matching `session_count`/`last_seen`
+/// (`MAX(started_at)`) directly against what an incremental `ac_ip_
+/// history` row would report. `email` has no equivalent column in this
+/// codebase's `accounts` table (see this module's other `username`-for-
+/// `email` substitutions); `accounts.username` - the same table/column
+/// `#acstatus`'s sibling commands already treat as the Rust equivalent
+/// of legacy `subscriber.ID`'s identity - stands in for it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AntiCheatSharedIpRow {
+    pub username: String,
+    pub ip_address: i32,
+    pub session_count: i64,
+    pub last_seen: String,
+}
+
+/// `#acsharedhw <player>`'s per-row shape (`db_ac_shared_hw_result`,
+/// `database_anticheat.h:521-531`). Same live-derivation-over-a-
+/// dedicated-history-table approach as `AntiCheatSharedIpRow` above, this
+/// time self-joining `anticheat_sessions` on `hardware_hash` (already
+/// captured per session by `set_fingerprint`) instead of reading a
+/// `db_ac_track_hardware`-maintained `ac_hardware_history` row; grouped
+/// by `(username, hardware_hash, screen_w, screen_h)` since a shared
+/// hardware fingerprint's screen resolution can differ per session
+/// (`ac_hardware_history` only ever stores its own history row's single
+/// latest resolution, so this is a superset shape, not a narrower one).
+#[derive(Debug, Clone, PartialEq)]
+pub struct AntiCheatSharedHwRow {
+    pub username: String,
+    pub hardware_hash: i64,
+    pub screen_w: Option<i32>,
+    pub screen_h: Option<i32>,
+    pub last_seen: String,
+}
+
+/// `#achighrisk`'s per-row shape (`db_ac_high_risk_result`,
+/// `database_anticheat.h:541-552`). Reads the same `ac_player_stats`
+/// table `#achistory`'s `AntiCheatPlayerStatsRow` reads, joined against
+/// `accounts` for the `username`-for-`email` substitution (see
+/// `AntiCheatSharedIpRow`'s doc comment); `total_anomalies`/`is_flagged`
+/// are omitted since C's own format string (`ac_cmd_highrisk`,
+/// `anticheat.c:1134-1157`) never displays them either (only
+/// `is_flagged`'s effect on the `WHERE` filter matters, not its value).
+#[derive(Debug, Clone, PartialEq)]
+pub struct AntiCheatHighRiskRow {
+    pub subscriber_id: i64,
+    pub username: String,
+    pub risk_level: String,
+    pub max_bot_score: f32,
+    pub flagged_sessions: i32,
+    pub last_seen: Option<String>,
+}
+
+/// `#aclookup <subscriber_id>`'s backing query result (`db_ac_lookup_
+/// subscriber`, `database_anticheat.c:1093-1140`). C's own `result.
+/// found` flag (0 when `subscriber.ID` itself doesn't exist) is folded
+/// into the outer `Option` (`None` = no such account); the inner
+/// `stats: Option<AntiCheatPlayerStatsRow>` mirrors C's own `result.
+/// total_sessions > 0` branch (a real account whose `ac_player_stats`
+/// row - a `LEFT JOIN` in C's query - doesn't exist yet because it has
+/// never triggered any anticheat activity).
+#[derive(Debug, Clone, PartialEq)]
+pub struct AntiCheatSubscriberLookup {
+    pub username: String,
+    pub stats: Option<AntiCheatPlayerStatsRow>,
+}
+
 #[async_trait]
 pub trait AntiCheatRepository: Send + Sync {
     async fn create_session(&self, request: AntiCheatSessionCreate) -> anyhow::Result<i64>;
@@ -340,6 +414,47 @@ pub trait AntiCheatRepository: Send + Sync {
         &self,
         subscriber_id: i64,
     ) -> anyhow::Result<Option<AntiCheatPlayerStatsRow>>;
+    /// `#acsharedip <player>`'s backing query (`db_ac_get_shared_ips`,
+    /// `database_anticheat.c:963-999`): every other account that has
+    /// logged in from one of `account_id`'s own IP addresses, newest
+    /// shared session first - see `AntiCheatSharedIpRow`'s doc comment
+    /// for why this is derived live from `anticheat_sessions` rather
+    /// than a dedicated `ac_ip_history` table.
+    async fn shared_ips(
+        &self,
+        account_id: i64,
+        max_count: i64,
+    ) -> anyhow::Result<Vec<AntiCheatSharedIpRow>>;
+    /// `#acsharedhw <player>`'s backing query (`db_ac_get_shared_
+    /// hardware`, `database_anticheat.c:1005-1040`): every other account
+    /// that has logged in with one of `account_id`'s own hardware
+    /// fingerprints, newest shared session first - see
+    /// `AntiCheatSharedHwRow`'s doc comment for why this is derived live
+    /// from `anticheat_sessions` rather than a dedicated `ac_hardware_
+    /// history` table.
+    async fn shared_hardware(
+        &self,
+        account_id: i64,
+        max_count: i64,
+    ) -> anyhow::Result<Vec<AntiCheatSharedHwRow>>;
+    /// `#achighrisk`'s backing query (`db_ac_get_high_risk_players`,
+    /// `database_anticheat.c:1048-1091`): every `ac_player_stats` row
+    /// whose `risk_level` is `high`/`critical` or whose `is_flagged` is
+    /// set, ordered by `max_session_bot_score` descending (matching C's
+    /// own `ORDER BY`), capped at `max_count` (C's own `results[20]`
+    /// stack array).
+    async fn high_risk_players(&self, max_count: i64) -> anyhow::Result<Vec<AntiCheatHighRiskRow>>;
+    /// `#aclookup <subscriber_id>`'s backing query (`db_ac_lookup_
+    /// subscriber`, `database_anticheat.c:1093-1140`): `None` when no
+    /// `accounts` row with that id exists at all (C's own `result.found
+    /// == 0` branch); `Some` with a `None` `stats` field when the account
+    /// exists but has never triggered any anticheat activity (C's own
+    /// `LEFT JOIN ac_player_stats` producing a null-filled row) - see
+    /// `AntiCheatSubscriberLookup`'s doc comment.
+    async fn lookup_subscriber(
+        &self,
+        subscriber_id: i64,
+    ) -> anyhow::Result<Option<AntiCheatSubscriberLookup>>;
 }
 
 #[derive(Debug, Clone)]
@@ -972,6 +1087,127 @@ impl AntiCheatRepository for PgAntiCheatRepository {
                 last_seen,
             },
         ))
+    }
+
+    async fn shared_ips(
+        &self,
+        account_id: i64,
+        max_count: i64,
+    ) -> anyhow::Result<Vec<AntiCheatSharedIpRow>> {
+        let rows = sqlx::query_as::<_, (String, i32, i64, String)>(
+            "select a2.username, s2.ip_address, count(*) as session_count, \
+             to_char(max(s2.started_at), 'YYYY-MM-DD') as last_seen \
+             from anticheat_sessions s1 \
+             join anticheat_sessions s2 \
+               on s2.ip_address = s1.ip_address and s2.account_id != s1.account_id \
+             join accounts a2 on a2.id = s2.account_id \
+             where s1.account_id = $1 \
+             group by a2.username, s2.ip_address \
+             order by max(s2.started_at) desc \
+             limit $2",
+        )
+        .bind(account_id)
+        .bind(max_count)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .into_iter()
+            .map(
+                |(username, ip_address, session_count, last_seen)| AntiCheatSharedIpRow {
+                    username,
+                    ip_address,
+                    session_count,
+                    last_seen,
+                },
+            )
+            .collect())
+    }
+
+    async fn shared_hardware(
+        &self,
+        account_id: i64,
+        max_count: i64,
+    ) -> anyhow::Result<Vec<AntiCheatSharedHwRow>> {
+        let rows = sqlx::query_as::<_, (String, i64, Option<i32>, Option<i32>, String)>(
+            "select a2.username, s2.hardware_hash, s2.screen_w, s2.screen_h, \
+             to_char(max(s2.started_at), 'YYYY-MM-DD') as last_seen \
+             from anticheat_sessions s1 \
+             join anticheat_sessions s2 \
+               on s2.hardware_hash = s1.hardware_hash and s2.account_id != s1.account_id \
+             join accounts a2 on a2.id = s2.account_id \
+             where s1.account_id = $1 and s1.hardware_hash is not null \
+             group by a2.username, s2.hardware_hash, s2.screen_w, s2.screen_h \
+             order by max(s2.started_at) desc \
+             limit $2",
+        )
+        .bind(account_id)
+        .bind(max_count)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .into_iter()
+            .map(
+                |(username, hardware_hash, screen_w, screen_h, last_seen)| AntiCheatSharedHwRow {
+                    username,
+                    hardware_hash,
+                    screen_w,
+                    screen_h,
+                    last_seen,
+                },
+            )
+            .collect())
+    }
+
+    async fn high_risk_players(&self, max_count: i64) -> anyhow::Result<Vec<AntiCheatHighRiskRow>> {
+        let rows = sqlx::query_as::<_, (i64, String, String, f32, i32, Option<String>)>(
+            "select ps.subscriber_id, a.username, ps.risk_level, ps.max_session_bot_score, \
+             ps.flagged_sessions, to_char(ps.last_seen, 'MM-DD HH24:MI') \
+             from ac_player_stats ps \
+             join accounts a on a.id = ps.subscriber_id \
+             where ps.risk_level in ('high', 'critical') or ps.is_flagged = true \
+             order by ps.max_session_bot_score desc \
+             limit $1",
+        )
+        .bind(max_count)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .into_iter()
+            .map(
+                |(
+                    subscriber_id,
+                    username,
+                    risk_level,
+                    max_bot_score,
+                    flagged_sessions,
+                    last_seen,
+                )| {
+                    AntiCheatHighRiskRow {
+                        subscriber_id,
+                        username,
+                        risk_level,
+                        max_bot_score,
+                        flagged_sessions,
+                        last_seen,
+                    }
+                },
+            )
+            .collect())
+    }
+
+    async fn lookup_subscriber(
+        &self,
+        subscriber_id: i64,
+    ) -> anyhow::Result<Option<AntiCheatSubscriberLookup>> {
+        let account = sqlx::query_as::<_, (String,)>("select username from accounts where id = $1")
+            .bind(subscriber_id)
+            .fetch_optional(&self.pool)
+            .await?;
+        let Some((username,)) = account else {
+            return Ok(None);
+        };
+        let stats = self.find_player_stats(subscriber_id).await?;
+        Ok(Some(AntiCheatSubscriberLookup { username, stats }))
     }
 }
 

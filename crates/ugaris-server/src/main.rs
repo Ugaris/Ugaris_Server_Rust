@@ -6763,6 +6763,42 @@ async fn main() -> anyhow::Result<()> {
                         "applied #achistory lookups"
                     );
                 }
+                let ac_sharedip_events_applied =
+                    apply_ac_sharedip_events(&mut world, &anticheat_repository).await;
+                if ac_sharedip_events_applied != 0 {
+                    info!(
+                        ac_sharedip_events_applied,
+                        tick = world.tick.0,
+                        "applied #acsharedip lookups"
+                    );
+                }
+                let ac_sharedhw_events_applied =
+                    apply_ac_sharedhw_events(&mut world, &anticheat_repository).await;
+                if ac_sharedhw_events_applied != 0 {
+                    info!(
+                        ac_sharedhw_events_applied,
+                        tick = world.tick.0,
+                        "applied #acsharedhw lookups"
+                    );
+                }
+                let ac_highrisk_events_applied =
+                    apply_ac_highrisk_events(&mut world, &anticheat_repository).await;
+                if ac_highrisk_events_applied != 0 {
+                    info!(
+                        ac_highrisk_events_applied,
+                        tick = world.tick.0,
+                        "applied #achighrisk lookups"
+                    );
+                }
+                let ac_lookup_events_applied =
+                    apply_ac_lookup_events(&mut world, &anticheat_repository).await;
+                if ac_lookup_events_applied != 0 {
+                    info!(
+                        ac_lookup_events_applied,
+                        tick = world.tick.0,
+                        "applied #aclookup lookups"
+                    );
+                }
                 let ac_siglist_events_applied =
                     apply_ac_siglist_events(&mut world, &anticheat_repository).await;
                 if ac_siglist_events_applied != 0 {

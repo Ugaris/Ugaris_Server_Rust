@@ -5507,11 +5507,13 @@ pub(crate) fn apply_admin_character_command(
     // these six of the ~20-member family are ported so far (see
     // `PORTING_TODO.md`'s remaining-text-commands task's REMAINING note);
     // `acreset`/`acflag`/`acwatch`/`acunflag`/`actrust`/`acuntrust`/
-    // `acwarn`/`acsessions`/`acviolations`/`achistory` are also ported,
-    // further below; `acsharedip`/`acsharedhw`/`achighrisk`/`aclookup`
-    // remain unported. `#accleanup`/`#acsiglist`/`#acsigadd`/
-    // `#acsigdel` (below, further down) need no name resolution at all,
-    // so they aren't part of this shared `lower ==` arm.
+    // `acwarn`/`acsessions`/`acviolations`/`achistory`/`acsharedip`/
+    // `acsharedhw`/`achighrisk`/`aclookup` are also ported, further below
+    // (the last two, `achighrisk`/`aclookup`, need no online-name-scan at
+    // all - see their own dispatch arms). `#accleanup`/`#acsiglist`/
+    // `#acsigadd`/`#acsigdel` (below, further down) need no name
+    // resolution at all, so they aren't part of this shared `lower ==`
+    // arm.
     if lower == "achelp" {
         let Some(caller) = world.characters.get(&character_id) else {
             return Some(KeyringCommandResult::default());
@@ -6224,6 +6226,164 @@ pub(crate) fn apply_admin_character_command(
             });
         };
         world.queue_ac_history_lookup(character_id, target_name, session_id);
+        return Some(KeyringCommandResult::default());
+    }
+
+    // C `#acsharedip <player>` (`command.c:10259-10267` dispatch,
+    // `CF_GOD|CF_STAFF`-gated, exact-word; `ac_cmd_sharedip`, `anticheat.
+    // c:1058-1088`). Identical single-name-target resolution shape to
+    // `#acsessions`/`#acviolations`/`#achistory` above - see
+    // `apply_ac_sharedip_events` for the subscriber-id resolution and the
+    // shared-IP query itself.
+    if lower == "acsharedip" {
+        let Some(caller) = world.characters.get(&character_id) else {
+            return Some(KeyringCommandResult::default());
+        };
+        if !caller
+            .flags
+            .intersects(CharacterFlags::STAFF | CharacterFlags::GOD)
+        {
+            return None;
+        }
+        let name = rest.trim_start();
+        if name.is_empty() {
+            return Some(KeyringCommandResult {
+                messages: vec!["Usage: #acsharedip <player>".to_string()],
+                ..Default::default()
+            });
+        }
+        let mut candidates: Vec<&Character> = world
+            .characters
+            .values()
+            .filter(|character| {
+                character.flags.contains(CharacterFlags::PLAYER)
+                    && character.name.eq_ignore_ascii_case(name)
+            })
+            .collect();
+        candidates.sort_by_key(|character| character.id.0);
+        let Some(target_id) = candidates.first().map(|character| character.id) else {
+            return Some(KeyringCommandResult {
+                messages: vec![format!("Player '{name}' not found online.")],
+                ..Default::default()
+            });
+        };
+        let target_name = world.characters[&target_id].name.clone();
+        let Some(session_id) = runtime
+            .player_for_character(target_id)
+            .and_then(|player| player.anticheat_session_id)
+        else {
+            return Some(KeyringCommandResult {
+                messages: vec![format!("Player '{target_name}' has no connection data.")],
+                ..Default::default()
+            });
+        };
+        world.queue_ac_sharedip_lookup(character_id, target_name, session_id);
+        return Some(KeyringCommandResult::default());
+    }
+
+    // C `#acsharedhw <player>` (`command.c:10268-10276` dispatch,
+    // `CF_GOD|CF_STAFF`-gated, exact-word; `ac_cmd_sharedhw`, `anticheat.
+    // c:1096-1126`). Identical single-name-target resolution shape to
+    // `#acsharedip` above - see `apply_ac_sharedhw_events` for the
+    // subscriber-id resolution and the shared-hardware query itself.
+    if lower == "acsharedhw" {
+        let Some(caller) = world.characters.get(&character_id) else {
+            return Some(KeyringCommandResult::default());
+        };
+        if !caller
+            .flags
+            .intersects(CharacterFlags::STAFF | CharacterFlags::GOD)
+        {
+            return None;
+        }
+        let name = rest.trim_start();
+        if name.is_empty() {
+            return Some(KeyringCommandResult {
+                messages: vec!["Usage: #acsharedhw <player>".to_string()],
+                ..Default::default()
+            });
+        }
+        let mut candidates: Vec<&Character> = world
+            .characters
+            .values()
+            .filter(|character| {
+                character.flags.contains(CharacterFlags::PLAYER)
+                    && character.name.eq_ignore_ascii_case(name)
+            })
+            .collect();
+        candidates.sort_by_key(|character| character.id.0);
+        let Some(target_id) = candidates.first().map(|character| character.id) else {
+            return Some(KeyringCommandResult {
+                messages: vec![format!("Player '{name}' not found online.")],
+                ..Default::default()
+            });
+        };
+        let target_name = world.characters[&target_id].name.clone();
+        let Some(session_id) = runtime
+            .player_for_character(target_id)
+            .and_then(|player| player.anticheat_session_id)
+        else {
+            return Some(KeyringCommandResult {
+                messages: vec![format!("Player '{target_name}' has no connection data.")],
+                ..Default::default()
+            });
+        };
+        world.queue_ac_sharedhw_lookup(character_id, target_name, session_id);
+        return Some(KeyringCommandResult::default());
+    }
+
+    // C `#achighrisk` (`command.c:10277-10280` dispatch, `CF_GOD|
+    // CF_STAFF`-gated, exact-word; `ac_cmd_highrisk`, `anticheat.c:1134-
+    // 1157`). No player name to resolve - same no-target shape as
+    // `#acsiglist` below, so this simply queues a caller id and lets
+    // `apply_ac_highrisk_events` list every high-risk `ac_player_stats`
+    // row.
+    if lower == "achighrisk" {
+        let Some(caller) = world.characters.get(&character_id) else {
+            return Some(KeyringCommandResult::default());
+        };
+        if !caller
+            .flags
+            .intersects(CharacterFlags::STAFF | CharacterFlags::GOD)
+        {
+            return None;
+        }
+        world.queue_ac_highrisk_lookup(character_id);
+        return Some(KeyringCommandResult::default());
+    }
+
+    // C `#aclookup <subscriber_id>` (`command.c:10282-10289` dispatch,
+    // `CF_GOD|CF_STAFF`-gated, exact-word; `ac_cmd_lookup`, `anticheat.c:
+    // 1158-1191`). Unlike every other member of this family, the target
+    // is a raw numeric subscriber (account) id (C's own `atoi(id_str)`),
+    // not an online character name - parsed and range-checked (`<= 0`
+    // rejected, matching C's own check) directly here, with no online-
+    // name-scan at all.
+    if lower == "aclookup" {
+        let Some(caller) = world.characters.get(&character_id) else {
+            return Some(KeyringCommandResult::default());
+        };
+        if !caller
+            .flags
+            .intersects(CharacterFlags::STAFF | CharacterFlags::GOD)
+        {
+            return None;
+        }
+        let id_str = rest.trim_start();
+        if id_str.is_empty() {
+            return Some(KeyringCommandResult {
+                messages: vec!["Usage: #aclookup <subscriber_id>".to_string()],
+                ..Default::default()
+            });
+        }
+        let subscriber_id = legacy_atoi_prefix(id_str);
+        if subscriber_id <= 0 {
+            return Some(KeyringCommandResult {
+                messages: vec!["Invalid subscriber ID.".to_string()],
+                ..Default::default()
+            });
+        }
+        world.queue_ac_lookup_lookup(character_id, subscriber_id);
         return Some(KeyringCommandResult::default());
     }
 
