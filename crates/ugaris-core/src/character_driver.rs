@@ -60,6 +60,10 @@ pub const CDR_GREETER: u16 = 13;
 /// the area-1 robber-operations quest NPC
 /// (`src/area/1/gwendylon.c::jessica_driver`).
 pub const CDR_JESSICA: u16 = 125;
+/// C `#define CDR_JIU 127` (`src/system/drvlib.h`, "Cameron: Jiu"): the
+/// riverbeast quest-giving pilgrim NPC
+/// (`src/area/1/gwendylon.c::jiu_driver`).
+pub const CDR_JIU: u16 = 127;
 /// C `#define CDR_GATE_WELCOME 39` (`src/system/drvlib.h`): the stationary
 /// gatekeeper-welcome NPC (`gate_welcome` template,
 /// `src/system/gatekeeper.c::gate_welcome_driver`).
@@ -208,6 +212,7 @@ pub enum CharacterDriverState {
     Gwendylon(GwendylonDriverData),
     Greeter(GreeterDriverData),
     Jessica(JessicaDriverData),
+    Jiu(JiuDriverData),
 }
 
 /// C `struct lostcon_driver_data` (`src/module/lostcon.c`): the linger-timer
@@ -558,6 +563,18 @@ pub struct GwendylonDriverData {
 /// module doc comment for the split).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct JessicaDriverData {
+    #[serde(default)]
+    pub last_talk: u64,
+    pub current_victim: Option<CharacterId>,
+}
+
+/// C `struct jiu_driver_data` (`src/area/1/gwendylon.c:2069-2072`): the
+/// riverbeast-quest pilgrim NPC's own driver memory (`CDR_JIU`, distinct
+/// from the per-player `jiu_state`/`jiu_seen_timer` fields in
+/// `crate::player::PlayerRuntime`'s `area1_ppd` - see `world::jiu`'s
+/// module doc comment for the split).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct JiuDriverData {
     #[serde(default)]
     pub last_talk: u64,
     pub current_victim: Option<CharacterId>,
@@ -2785,7 +2802,8 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::Terion(_)
             | CharacterDriverState::Gwendylon(_)
             | CharacterDriverState::Greeter(_)
-            | CharacterDriverState::Jessica(_),
+            | CharacterDriverState::Jessica(_)
+            | CharacterDriverState::Jiu(_),
         ) => SimpleBaddyDriverData::default(),
         None => SimpleBaddyDriverData::default(),
     };

@@ -36,6 +36,7 @@ mod items;
 mod jail;
 mod janitor;
 mod jessica;
+mod jiu;
 mod lab2_undead;
 mod lastseen;
 mod light;

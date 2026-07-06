@@ -11773,23 +11773,26 @@ Ordered by player progression; the C file is the oracle.
   quest-giver mage's four-skull quest chain, `:234-673`),
   `greeter_driver` (`CDR_GREETER`, the tutorial-town Governor's class-
   aware weapon/rest-area/movement civics dialogue plus its "learn"/
-  "repeat" text-command rewind branches, `:1485-1798`), and
-  `jessica_driver` (`CDR_JESSICA`, the robber-operations two-quest chain,
-  `:1809-2065`) are ported so far - see the Progress Log entries below
-  and `crates/ugaris-core/src/world/camhermit.rs`/`world/yoakin.rs`/
-  `world/terion.rs`/`world/gwendylon.rs`/`world/greeter.rs`/
-  `world/jessica.rs`'s own module doc comments for their documented gaps
-  (camhermit's `monster_dead` bear-kill counter is still unported, so its
-  `CAMHERMIT_STATE_QUEST1DO` branch can never actually complete on a live
-  server yet; yoakin's and gwendylon's `destroy_item_byID` sweeps do not
-  reach the account depot; jessica's `JESSICA_STATE_QUEST2_DO` ->
-  `QUEST2_FINISH` transition needs the still-unported `bredel_dead`
-  death hook, so her kill-quest chain also cannot yet complete on a live
-  server; terion and greeter are pure ambient/tutorial dialogue with no
-  gaps of their own beyond the documented `COL_LIGHT_BLUE`/`COL_RESET`
-  marker drop). Every other NPC in this file is still unported:
-  `jiu_driver` (`:2074-
-  2255`), `forest_ranger_driver` (`:2284-2473`), `brithildie_driver`
+  "repeat" text-command rewind branches, `:1485-1798`), `jessica_driver`
+  (`CDR_JESSICA`, the robber-operations two-quest chain, `:1809-2065`),
+  and `jiu_driver` (`CDR_JIU`, the forest sanctuary pilgrim's riverbeast-
+  kill quest, `:2074-2247`) are ported so far - see the Progress Log
+  entries below and `crates/ugaris-core/src/world/camhermit.rs`/
+  `world/yoakin.rs`/`world/terion.rs`/`world/gwendylon.rs`/
+  `world/greeter.rs`/`world/jessica.rs`/`world/jiu.rs`'s own module doc
+  comments for their documented gaps (camhermit's `monster_dead` bear-
+  kill counter is still unported, so its `CAMHERMIT_STATE_QUEST1DO`
+  branch can never actually complete on a live server yet; yoakin's and
+  gwendylon's `destroy_item_byID` sweeps do not reach the account depot;
+  jessica's `JESSICA_STATE_QUEST2_DO` -> `QUEST2_FINISH` transition needs
+  the still-unported `bredel_dead` death hook, so her kill-quest chain
+  also cannot yet complete on a live server; jiu's `JIU_STATE_WAIT_FOR_
+  KILL` -> `_BEAST_KILLED` transition likewise needs the still-unported
+  `riverbeast_dead` death hook, so her quest also cannot yet complete on
+  a live server; terion and greeter are pure ambient/tutorial dialogue
+  with no gaps of their own beyond the documented `COL_LIGHT_BLUE`/
+  `COL_RESET` marker drop). Every other NPC in this file is still
+  unported: `forest_ranger_driver` (`:2284-2473`), `brithildie_driver`
   (`:2474-2826`), `james_driver` (`:2901-3179`), `nook_driver` (`:3180-
   3457`), `lydia_driver` (`:3458-3703`), `balltrap_skelly_driver` (`:3712-
   3774`, a fight-driver archer that needs the generic multi-enemy
@@ -11799,7 +11802,8 @@ Ordered by player progression; the C file is the oracle.
   `reskin_driver` (`:4105-4424`), `asturin_driver` (`:4425-`), `guiwynn_
   driver`/`logain_driver` and the rest through `ch_driver`'s dispatch
   table (`:6076-6155`), plus `monster_dead`/the shared area-1 death-hook
-  tail (`:5200-`, including `bredel_dead` for jessica's boss kill).
+  tail (`:5200-`, including `bredel_dead` for jessica's boss kill and
+  `riverbeast_dead` for jiu's beast kill).
 - [ ] **Area 2 - `src/area/2/area2.c`** - remaining character drivers
   (zombie lord, priests). Item drivers done.
 - [ ] **Area 3 - `src/area/3/area3.c`** - palace story NPCs, lamp ghost
@@ -12566,5 +12570,37 @@ Add one line per completed task: date, task, ledger section touched.
   dialogue already handles `QUEST2_FINISH` correctly once reached. `cargo
   fmt --all`, `cargo test --workspace` (2338 core + 1084 server, all
   green, zero failures, zero warnings), `cargo build -p ugaris-server`/
+  `--workspace` all clean; boot-smoked (10s run, "entering Rust game
+  loop" `area_id=1`, tick loop advancing, no panics).
+- 2026-07-06: Area 1 - `src/area/1/gwendylon.c` (P4, `[~]`) - ported its
+  seventh self-contained NPC slice: `jiu_driver` (`CDR_JIU = 127`, the
+  forest sanctuary pilgrim's riverbeast-kill quest, `QLOG_JIU`,
+  `:2074-2247`) to new `crates/ugaris-core/src/world/jiu.rs`
+  (`JiuDriverData`/`CDR_JIU`/`CharacterDriverState::Jiu` added to
+  `character_driver.rs` with its two exhaustive-match update sites in
+  `world/npc_fight.rs`/`world/npc_idle.rs`, `CDR_JIU` default driver-
+  state wiring in `zone.rs`). Ports the full `NT_CHAR` 5-state dialogue
+  machine (level-39-gated entry split, `STORY1`'s `questlog_open`,
+  `WAIT_FOR_KILL`'s silent no-op, `BEAST_KILLED`'s thanks-plus-
+  `questlog_done`), `NT_TEXT`'s "repeat" via the shared `GWENDYLON_QA`
+  table, and the generic `NT_GIVE` give-back. `QLOG_JIU`/
+  `area1_jiu_state`/`area1_jiu_seen_timer` already existed as unused
+  surface, so no new `PlayerRuntime` accessors were needed. Preserved a
+  genuine C dead-code quirk instead of "fixing" it: `jiu_driver`'s two
+  consecutive `NT_CHAR` throttle checks both gate on the identical
+  `TICKS*10` threshold (unlike yoakin's distinct `TICKS*5`/`TICKS*10`
+  pair), making the second unreachable - ported as the single effective
+  check. Extended `crates/ugaris-server/src/area1.rs` (`jiu_player_facts`/
+  `apply_jiu_events`, no achievement wiring needed since Jiu's quest
+  carries no gold reward) and wired into `main.rs`'s tick loop right
+  after the jessica block. Documented gap: `riverbeast_dead`
+  (`gwendylon.c:2255-2272`) is not ported anywhere yet - same class of
+  gap as jessica's `bredel_dead`/camhermit's `monster_dead` - so the
+  `_WAIT_FOR_KILL` -> `_BEAST_KILLED` transition cannot fire on a live
+  server until that hook (or the broader `monster_dead`/`ch_died_driver`
+  death-dispatch table) is ported; this driver's own dialogue already
+  handles `_BEAST_KILLED`/`_DONE` correctly once reached. `cargo fmt
+  --all`, `cargo test --workspace` (2348 core + 1084 server, all green,
+  zero failures, zero warnings), `cargo build -p ugaris-server`/
   `--workspace` all clean; boot-smoked (10s run, "entering Rust game
   loop" `area_id=1`, tick loop advancing, no panics).

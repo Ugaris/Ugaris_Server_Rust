@@ -7691,6 +7691,22 @@ async fn main() -> anyhow::Result<()> {
                         "applied jessica dialogue events"
                     );
                 }
+                // C `jiu_driver`: area 1's riverbeast quest-giving pilgrim
+                // NPC (`src/area/1/gwendylon.c`).
+                let jiu_facts = jiu_player_facts(&runtime);
+                let jiu_events = world.process_jiu_actions(
+                    &jiu_facts,
+                    current_unix_time() as i32,
+                    config.area_id,
+                );
+                let jiu_events_applied = apply_jiu_events(&mut world, &mut runtime, jiu_events);
+                if jiu_events_applied != 0 {
+                    info!(
+                        jiu_events_applied,
+                        tick = world.tick.0,
+                        "applied jiu dialogue events"
+                    );
+                }
                 // C `gate_welcome_driver`: the Ishtar labyrinth gatekeeper
                 // greeter NPC (`src/system/gatekeeper.c`).
                 let gate_welcome_facts = gate_welcome_player_facts(&runtime);
