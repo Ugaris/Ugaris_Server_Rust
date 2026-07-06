@@ -4669,6 +4669,58 @@ pub(crate) fn apply_admin_character_command(
         return Some(KeyringCommandResult::default());
     }
 
+    // C `/rename <from> <to>` (`command.c:6517-6524` dispatch ->
+    // `cmd_rename`, `command.c:2657-2676`), `CF_GOD`-gated, full-word
+    // only (`cmdcmp`'s `minlen` is 6, the full length of "rename", no
+    // abbreviation accepted). Parses two consecutive `isalpha`-only name
+    // tokens (`take_legacy_alpha_name`, mirroring C's own two scan
+    // loops, `command.c:2661-2670`), each truncated to the C buffer's
+    // 79-byte cap; hands both to `World::queue_rename_command`, which
+    // performs all further validation and DB resolution - see that
+    // function's and `world/rename.rs`'s module doc comment for the full
+    // behavior. Always returns a `default()` result immediately; the
+    // real reply arrives later via `World::queue_system_text` (same
+    // fire-and-forget async pattern as `/jail`/`/rmdeath` above).
+    if lower == "rename" {
+        let Some(caller) = world.characters.get(&character_id) else {
+            return Some(KeyringCommandResult::default());
+        };
+        if !caller.flags.contains(CharacterFlags::GOD) {
+            return None;
+        }
+        let (from, remainder) = take_legacy_alpha_name(rest.trim_start());
+        let from = &from[..from.len().min(79)];
+        let (to, _remainder) = take_legacy_alpha_name(remainder.trim_start());
+        let to = &to[..to.len().min(79)];
+        world.queue_rename_command(character_id, from, to);
+        return Some(KeyringCommandResult::default());
+    }
+
+    // C `/lockname <name>`/`/unlockname <name>` (`command.c:6528-6543`
+    // dispatch -> `cmd_lockname`/`cmd_unlockname`, `command.c:2679-2701`),
+    // both `CF_GOD`-gated, full-word only (`cmdcmp`'s `minlen` is 8/10,
+    // the full word length, no abbreviation accepted). Parses one
+    // `isalpha`-only name token, truncated to the C buffer's 79-byte cap;
+    // hands it to `World::queue_lockname_command`/
+    // `queue_unlockname_command` - see those functions' and
+    // `world/lockname.rs`'s module doc comment for the full behavior.
+    if lower == "lockname" || lower == "unlockname" {
+        let Some(caller) = world.characters.get(&character_id) else {
+            return Some(KeyringCommandResult::default());
+        };
+        if !caller.flags.contains(CharacterFlags::GOD) {
+            return None;
+        }
+        let (name, _remainder) = take_legacy_alpha_name(rest.trim_start());
+        let name = &name[..name.len().min(79)];
+        if lower == "lockname" {
+            world.queue_lockname_command(character_id, name);
+        } else {
+            world.queue_unlockname_command(character_id, name);
+        }
+        return Some(KeyringCommandResult::default());
+    }
+
     // C `/showflags` (`command.c:8798-8805`, `cmd_show_flags`,
     // `command.c:4839-5061`), `CF_GOD`-gated, full-word only (`cmdcmp`'s
     // `minlen` is 9, the full length of "showflags", so no abbreviation

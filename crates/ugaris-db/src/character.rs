@@ -185,6 +185,30 @@ pub trait CharacterRepository: Send + Sync {
         character_id: CharacterId,
     ) -> anyhow::Result<Option<CharacterSnapshot>>;
     async fn release_character(&self, character_id: CharacterId) -> anyhow::Result<()>;
+    /// C `db_rename` (`database_admin.c:296-355`): `/rename`'s DB half.
+    /// Renames the `characters` row matching `from` (case-insensitively,
+    /// like every other by-name lookup in this file) to `to`, returning
+    /// whether a row was actually touched - see `ugaris-server`'s
+    /// `world_events.rs::apply_rename_events` for the three-way reply
+    /// this return value (plus a query `Err`) drives. Note this is a
+    /// straight `characters` table mutation, not a character-specific
+    /// operation gated on a live `Character`/`CharacterId` - it lives on
+    /// this trait purely to reuse the already-threaded `PgPool`/
+    /// `Option<PgCharacterRepository>` plumbing (`ugaris-server`'s
+    /// `main.rs`), matching this file's own `query_stats()` precedent of
+    /// non-per-character methods sharing the same repository.
+    async fn rename_character(&self, from: &str, to: &str) -> anyhow::Result<bool>;
+    /// C `db_lockname` (`database_admin.c:365-398`): `/lockname`'s DB
+    /// half. Inserts `name` (already lowercased/alpha-validated by
+    /// `ugaris-core`'s `world/lockname.rs`) into `locked_names`,
+    /// returning whether a new row was actually inserted (`false` when
+    /// the name is already locked, mirroring C's `affected_rows == 0`
+    /// case) - see `migrations/0012_locked_names.sql` for why this
+    /// table has no other consumer in this codebase yet.
+    async fn lock_name(&self, name: &str) -> anyhow::Result<bool>;
+    /// C `db_unlockname` (`database_admin.c:436-467`): `/unlockname`'s DB
+    /// half, the mirror image of [`Self::lock_name`].
+    async fn unlock_name(&self, name: &str) -> anyhow::Result<bool>;
 }
 
 #[derive(Debug, Clone)]
@@ -369,6 +393,32 @@ impl CharacterRepository for PgCharacterRepository {
             .execute(&self.pool)
             .await?;
         Ok(())
+    }
+
+    async fn rename_character(&self, from: &str, to: &str) -> anyhow::Result<bool> {
+        let result = sqlx::query("update characters set name = $1 where lower(name) = lower($2)")
+            .bind(to)
+            .bind(from)
+            .execute(&self.pool)
+            .await?;
+        Ok(result.rows_affected() > 0)
+    }
+
+    async fn lock_name(&self, name: &str) -> anyhow::Result<bool> {
+        let result =
+            sqlx::query("insert into locked_names(name) values ($1) on conflict (name) do nothing")
+                .bind(name)
+                .execute(&self.pool)
+                .await?;
+        Ok(result.rows_affected() > 0)
+    }
+
+    async fn unlock_name(&self, name: &str) -> anyhow::Result<bool> {
+        let result = sqlx::query("delete from locked_names where name = $1")
+            .bind(name)
+            .execute(&self.pool)
+            .await?;
+        Ok(result.rows_affected() > 0)
     }
 }
 

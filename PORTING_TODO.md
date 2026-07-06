@@ -9377,6 +9377,82 @@ Unlocks every quest NPC. Do these before any P4 area work.
   legacy depot storage), and (g) (`respawn`, low-value, likely permanent
   skip) remain open - next iteration should pick one of (a)/(b)/(c)/(f).
 
+  Progress Log (iteration 205): re-examined gap (b) and found it was
+  actually two unrelated groups conflated together: `punish`/`shutup`/
+  `unpunish` genuinely need `lookup_name` (an offline name->ID cache) plus
+  C's DB task-queue (`task_punish_player`, `task.c`); `exterminate` needs
+  the same `subscriber_id`/`subscribers`-adjacent schema gap already
+  blocking half of gap (a) (`db_exterminate`, `database_admin.c:29-95`,
+  queries a `subscriber`/`iplog`/`ipban` table trio this codebase's
+  schema has none of). But `rename`/`lockname`/`unlockname`
+  (`cmd_rename`/`cmd_lockname`/`cmd_unlockname`, `command.c:2657-2701`)
+  call neither `lookup_name` nor any task-queue function at all -
+  `do_rename`/`do_lockname`/`do_unlockname` (`database_admin.c:291-467`)
+  run a single direct, synchronous-shaped `UPDATE`/`INSERT`/`DELETE`
+  query keyed by name, no online/offline distinction whatsoever. Ported
+  all three as their own genuinely independent sub-slice, reusing the
+  `world/complain.rs`/`world/admin_flag.rs` queue-then-drain async-bridge
+  pattern verbatim (`World` has no DB handle) since `ugaris-server`
+  already threads an `Option<PgCharacterRepository>` through the tick
+  loop for exactly this shape of offline DB round trip. Added 3 new
+  `CharacterRepository` trait methods (`rename_character`/`lock_name`/
+  `unlock_name`, `crates/ugaris-db/src/character.rs`) - deliberately
+  living on this trait rather than a new one, purely to reuse the
+  already-threaded `PgPool`/`Option<PgCharacterRepository>` plumbing,
+  matching this file's own `query_stats()` precedent of non-per-character
+  methods sharing the same repository - backed by a new `locked_names`
+  Postgres table (`migrations/0012_locked_names.sql`, this codebase's
+  equivalent of C's schema-less `badname` table, which no C code outside
+  `database_admin.c` itself ever queries either - it exists purely as an
+  admin-facing audit/blocklist record in both codebases). `world/
+  rename.rs`/`world/lockname.rs` (new modules) reproduce two genuinely
+  different validation orders found by reading both C functions fully:
+  `do_rename`'s `to`-name check is alpha-first (bailing "Illegal name."
+  on the first non-alphabetic character while capitalizing/lowercasing
+  in the same pass) *then* length-bounded (`3..=35`, "Name too long or
+  too short.") only once the whole string passes; `do_lockname`/
+  `do_unlockname` check length *first*, then alpha-validate - the exact
+  reverse order, preserved as two distinct code paths rather than a
+  shared "validate name" helper that would blur the difference.
+  `world_events.rs`'s three new `apply_rename_events`/
+  `apply_lockname_events`/`apply_unlockname_events` reproduce each C
+  function's exact three-way reply (query error / no-op / success
+  wording), always addressed back to the caller (`tell_chat(0,
+  masterID, ...)` in C is always the caller's own ID for these three,
+  never the target - unlike `/jail`'s two-party messaging), wired into
+  `main.rs`'s tick loop right after `apply_admin_flag_events`. Dispatch
+  (`commands_admin.rs`, right after `/rmdeath`) parses one or two
+  `isalpha`-only name tokens via the pre-existing `take_legacy_alpha_name`
+  helper, truncated to C's 79-byte buffer cap, matching this file's own
+  established precedent (`/showppd`, iteration 204) for that truncation.
+  10 new `ugaris-core` tests (`world/tests/rename.rs`,
+  `world/tests/lockname.rs`: valid-name queuing, both validation-order
+  edge cases per module, from-name passthrough) and 16 new
+  `ugaris-server` tests (10 in `tests/commands_admin.rs`: God-only gate
+  x3, valid-queue x3, invalid-name-rejected x2, abbreviation-not-
+  recognized x4 - some combined per test; 6 in `world_events.rs`'s
+  `rename_tests`/`lockname_tests`: no-lookups/missing-repository no-op
+  pairs for all three events, matching every sibling offline-DB-mutation
+  event's established test shape - no live-Postgres round-trip test
+  exists for any of them, consistent with `admin_flag_tests`/
+  `ac_reset_tests` and the rest of this file's own precedent). `cargo fmt
+  --all`, `cargo test --workspace` (2070 ugaris-core [+10] + 58 db + 3 net
+  + 44 protocol + 920 server [+16], all green, zero failures), `cargo
+  build -p ugaris-server` / `cargo build --workspace` clean with zero
+  warnings, 10s boot-smoke confirmed "entering Rust game loop" with no
+  panic. This closes the `rename`/`lockname`/`unlockname` slice of gap
+  (b) entirely. REMAINING: gap (b)'s `punish`/`shutup`/`unpunish`
+  (lookup_name + DB task-queue) and `exterminate` (subscriber_id schema)
+  are still open, alongside gap (a) (`ac*` subscriber_id/aggregate-query/
+  multi-account/signature-management sub-gaps), (c) (`look`/`klog`/
+  `values`/`showvalues`, notes subsystem/cross-area relay), (f)
+  (`depotsort`, unported per-character legacy depot storage), and (g)
+  (`respawn`, low-value, likely permanent skip) - next iteration should
+  pick one of (a)/(b: punish family)/(c)/(f), or make the `lookup_name`+
+  DB-task-queue design decision gap (b)'s remainder and gap (c) both
+  ultimately need (a real, shared, worthwhile piece of infra at this
+  point given how many commands across both gaps depend on it).
+
 - [ ] **Cross-area transfer** - the big multi-server feature. Every
   cross-area teleport currently returns "target server down". Decide the
   single-process stance first (likely: run multiple areas in one process

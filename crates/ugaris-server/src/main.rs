@@ -6729,6 +6729,42 @@ async fn main() -> anyhow::Result<()> {
                         "applied admin flag-toggle events"
                     );
                 }
+                // `/rename <from> <to>`'s async DB round trip (C
+                // `do_rename`/`db_rename`, `src/system/database/
+                // database_admin.c:291-355`), queued by
+                // `World::queue_rename_command` above.
+                let rename_events_applied =
+                    apply_rename_events(&mut world, &character_repository).await;
+                if rename_events_applied != 0 {
+                    info!(
+                        rename_events_applied,
+                        tick = world.tick.0,
+                        "applied /rename lookups"
+                    );
+                }
+                // `/lockname`/`/unlockname <name>`'s async DB round trip
+                // (C `do_lockname`/`do_unlockname`, `src/system/database/
+                // database_admin.c:357-434`), queued by `World::
+                // queue_lockname_command`/`queue_unlockname_command`
+                // above.
+                let lockname_events_applied =
+                    apply_lockname_events(&mut world, &character_repository).await;
+                if lockname_events_applied != 0 {
+                    info!(
+                        lockname_events_applied,
+                        tick = world.tick.0,
+                        "applied /lockname lookups"
+                    );
+                }
+                let unlockname_events_applied =
+                    apply_unlockname_events(&mut world, &character_repository).await;
+                if unlockname_events_applied != 0 {
+                    info!(
+                        unlockname_events_applied,
+                        tick = world.tick.0,
+                        "applied /unlockname lookups"
+                    );
+                }
                 // C `military_master_driver`: the mission-giving Military
                 // Master NPC (`src/module/military.c`).
                 world.process_military_master_actions(config.area_id, current_unix_time());

@@ -6540,15 +6540,54 @@
         "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 44 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
       ]
+    },
+    {
+      "iteration": 205,
+      "startedAt": "2026-07-06T02:46:07.195Z",
+      "endedAt": "2026-07-06T03:11:30.735Z",
+      "durationMs": 1522873,
+      "agent": "opencode",
+      "model": "anthropic/claude-sonnet-5",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "PORTING_TODO.md",
+        "crates/ugaris-core/src/world/mod.rs",
+        "crates/ugaris-core/src/world/tests/mod.rs",
+        "crates/ugaris-db/src/character.rs",
+        "crates/ugaris-server/src/commands_admin.rs",
+        "crates/ugaris-server/src/main.rs",
+        "crates/ugaris-server/src/tests/commands_admin.rs",
+        "crates/ugaris-server/src/world_events.rs",
+        "crates/ugaris-core/src/world/lockname.rs",
+        "crates/ugaris-core/src/world/rename.rs",
+        "crates/ugaris-core/src/world/tests/lockname.rs",
+        "crates/ugaris-core/src/world/tests/rename.rs",
+        "migrations/0012_locked_names.sql"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "- `cargo test --workspace` — 2070 ugaris-core + 58 db + 3 net + 44 protocol + 920 server, all green, zero failures",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "tell_chat(0, masterID, 1, \"Internal error: Memory allocation failed.\");",
+        "error: unexpected argument 'lockname' found",
+        "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 2065 filtered out; finished in 0.00s",
+        "test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 2060 filtered out; finished in 0.00s",
+        "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 914 filtered out; finished in 0.00s",
+        "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 916 filtered out; finished in 0.00s",
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 918 filtered out; finished in 0.00s",
+        "error: unexpected argument 'lockname_tests' found"
+      ]
     }
   ],
-  "totalDurationMs": 228912317,
+  "totalDurationMs": 230435190,
   "struggleIndicators": {
     "repeatedErrors": {
       "1011 (up from 998 earlier) - all passing, zero failures. Now let's build the server binary and run a": 1,
       "Everything is green: `cargo fmt --all` clean, full workspace test suite passing (1011 core tests + o": 1,
       "test result: ok. 327 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s": 4,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 204,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 205,
       "test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 998 filtered out; finished in 0.00s": 1,
       "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1010 filtered out; finished in 0.00s": 1,
       "error: could not compile `ugaris-db` (lib test) due to 1 previous error": 3,
@@ -7439,7 +7478,16 @@
       "Health check passed. Let's check for full test results (any failures earlier in output) and then loo": 1,
       "- Verified: `cargo fmt --all`, `cargo test --workspace` (2058/58/3/44/898, all green, zero failures)": 1,
       "test result: ok. 2058 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s": 2,
-      "test result: ok. 58 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 2
+      "test result: ok. 58 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 2,
+      "- `cargo test --workspace` — 2070 ugaris-core + 58 db + 3 net + 44 protocol + 920 server, all green,": 1,
+      "tell_chat(0, masterID, 1, \"Internal error: Memory allocation failed.\");": 1,
+      "error: unexpected argument 'lockname' found": 1,
+      "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 2065 filtered out; finished in 0.00s": 1,
+      "test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 2060 filtered out; finished in 0.00s": 1,
+      "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 914 filtered out; finished in 0.00s": 1,
+      "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 916 filtered out; finished in 0.00s": 1,
+      "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 918 filtered out; finished in 0.00s": 1,
+      "error: unexpected argument 'lockname_tests' found": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

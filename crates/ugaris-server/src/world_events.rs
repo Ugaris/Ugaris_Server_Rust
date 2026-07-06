@@ -2620,6 +2620,169 @@ pub(crate) async fn apply_admin_flag_events(
     applied
 }
 
+/// `/rename <from> <to>`'s async DB round trip (C `do_rename`/
+/// `db_rename`, `src/system/database/database_admin.c:291-355`):
+/// resolves every `World::drain_pending_rename_lookups` entry (queued by
+/// a validly-shaped `to` name - see `World::queue_rename_command`'s and
+/// `world/rename.rs`'s module doc comment) against `PgCharacterRepository
+/// ::rename_character`.
+///
+/// - a query error (including a unique-name-constraint violation on
+///   `to`, which C's own query would likewise fail on if `chars.name` is
+///   unique) -> "Failed to change name."
+/// - no row matched `from` -> "Didn't work, most probable cause: %s not
+///   found."
+/// - success -> "Changed %s to %s. The change will be visible after the
+///   next login."
+///
+/// No-ops entirely (silent, but still drains the queue) when no
+/// `character_repository` is configured, matching every sibling
+/// offline-DB-mutation event in this file.
+pub(crate) async fn apply_rename_events(
+    world: &mut World,
+    character_repository: &Option<ugaris_db::PgCharacterRepository>,
+) -> usize {
+    let lookups = world.drain_pending_rename_lookups();
+    if lookups.is_empty() {
+        return 0;
+    }
+    let Some(repository) = character_repository else {
+        return 0;
+    };
+    let mut applied = 0;
+    for lookup in lookups {
+        match repository
+            .rename_character(&lookup.from_name, &lookup.to_name)
+            .await
+        {
+            Ok(true) => {
+                world.queue_system_text(
+                    lookup.requester_id,
+                    format!(
+                        "Changed {} to {}. The change will be visible after the next login.",
+                        lookup.from_name, lookup.to_name
+                    ),
+                );
+            }
+            Ok(false) => {
+                world.queue_system_text(
+                    lookup.requester_id,
+                    format!(
+                        "Didn't work, most probable cause: {} not found.",
+                        lookup.from_name
+                    ),
+                );
+            }
+            Err(_) => {
+                world.queue_system_text(lookup.requester_id, "Failed to change name.".to_string());
+            }
+        }
+        applied += 1;
+    }
+    applied
+}
+
+/// `/lockname <name>`'s async DB round trip (C `do_lockname`/
+/// `db_lockname`, `src/system/database/database_admin.c:357-398`):
+/// resolves every `World::drain_pending_lockname_lookups` entry against
+/// `PgCharacterRepository::lock_name` - see `world/lockname.rs`'s module
+/// doc comment for the shared validation this queue entry already
+/// passed.
+///
+/// - a query error -> "Failed to insert name."
+/// - already locked (no new row inserted) -> "Didn't work, most probable
+///   cause: %s already in bad name database."
+/// - success -> "Added %s to bad name database."
+///
+/// Every message uses the *original* (un-lowercased) name, matching C's
+/// own `name` parameter (not its `lowercase_name` scratch buffer). No-ops
+/// entirely (silent, but still drains the queue) when no
+/// `character_repository` is configured, matching every sibling
+/// offline-DB-mutation event in this file.
+pub(crate) async fn apply_lockname_events(
+    world: &mut World,
+    character_repository: &Option<ugaris_db::PgCharacterRepository>,
+) -> usize {
+    let lookups = world.drain_pending_lockname_lookups();
+    if lookups.is_empty() {
+        return 0;
+    }
+    let Some(repository) = character_repository else {
+        return 0;
+    };
+    let mut applied = 0;
+    for lookup in lookups {
+        match repository.lock_name(&lookup.lookup_name).await {
+            Ok(true) => {
+                world.queue_system_text(
+                    lookup.requester_id,
+                    format!("Added {} to bad name database.", lookup.original_name),
+                );
+            }
+            Ok(false) => {
+                world.queue_system_text(
+                    lookup.requester_id,
+                    format!(
+                        "Didn't work, most probable cause: {} already in bad name database.",
+                        lookup.original_name
+                    ),
+                );
+            }
+            Err(_) => {
+                world.queue_system_text(lookup.requester_id, "Failed to insert name.".to_string());
+            }
+        }
+        applied += 1;
+    }
+    applied
+}
+
+/// `/unlockname <name>`'s async DB round trip (C `do_unlockname`/
+/// `db_unlockname`, `src/system/database/database_admin.c:436-467`), the
+/// mirror image of [`apply_lockname_events`].
+///
+/// - a query error -> "Failed to delete name."
+/// - not locked (no row deleted) -> "Didn't work, most probable cause:
+///   %s not in bad name database."
+/// - success -> "Deleted %s from bad name database."
+pub(crate) async fn apply_unlockname_events(
+    world: &mut World,
+    character_repository: &Option<ugaris_db::PgCharacterRepository>,
+) -> usize {
+    let lookups = world.drain_pending_unlockname_lookups();
+    if lookups.is_empty() {
+        return 0;
+    }
+    let Some(repository) = character_repository else {
+        return 0;
+    };
+    let mut applied = 0;
+    for lookup in lookups {
+        match repository.unlock_name(&lookup.lookup_name).await {
+            Ok(true) => {
+                world.queue_system_text(
+                    lookup.requester_id,
+                    format!("Deleted {} from bad name database.", lookup.original_name),
+                );
+            }
+            Ok(false) => {
+                world.queue_system_text(
+                    lookup.requester_id,
+                    format!(
+                        "Didn't work, most probable cause: {} not in bad name database.",
+                        lookup.original_name
+                    ),
+                );
+            }
+            Err(_) => {
+                world.queue_system_text(lookup.requester_id, "Failed to delete name.".to_string());
+            }
+        }
+        applied += 1;
+    }
+    applied
+}
+
 #[cfg(test)]
 mod lastseen_tests {
     use super::*;
@@ -3088,5 +3251,75 @@ mod admin_flag_tests {
         assert_eq!(applied, 0);
         assert!(world.drain_pending_system_texts().is_empty());
         assert!(world.drain_pending_admin_flag_toggles().is_empty());
+    }
+}
+
+#[cfg(test)]
+mod rename_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn no_lookups_queued_is_a_cheap_no_op() {
+        let mut world = World::default();
+        let applied = apply_rename_events(&mut world, &None).await;
+        assert_eq!(applied, 0);
+        assert!(world.drain_pending_system_texts().is_empty());
+    }
+
+    #[tokio::test]
+    async fn missing_repository_drains_the_queue_without_a_reply() {
+        let mut world = World::default();
+        world.queue_rename_command(CharacterId(1), "Baddie", "Newname");
+        assert!(world.drain_pending_system_texts().is_empty());
+
+        let applied = apply_rename_events(&mut world, &None).await;
+        assert_eq!(applied, 0);
+        assert!(world.drain_pending_system_texts().is_empty());
+        assert!(world.drain_pending_rename_lookups().is_empty());
+    }
+}
+
+#[cfg(test)]
+mod lockname_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn no_lockname_lookups_queued_is_a_cheap_no_op() {
+        let mut world = World::default();
+        let applied = apply_lockname_events(&mut world, &None).await;
+        assert_eq!(applied, 0);
+        assert!(world.drain_pending_system_texts().is_empty());
+    }
+
+    #[tokio::test]
+    async fn missing_repository_drains_the_lockname_queue_without_a_reply() {
+        let mut world = World::default();
+        world.queue_lockname_command(CharacterId(1), "BadName");
+        assert!(world.drain_pending_system_texts().is_empty());
+
+        let applied = apply_lockname_events(&mut world, &None).await;
+        assert_eq!(applied, 0);
+        assert!(world.drain_pending_system_texts().is_empty());
+        assert!(world.drain_pending_lockname_lookups().is_empty());
+    }
+
+    #[tokio::test]
+    async fn no_unlockname_lookups_queued_is_a_cheap_no_op() {
+        let mut world = World::default();
+        let applied = apply_unlockname_events(&mut world, &None).await;
+        assert_eq!(applied, 0);
+        assert!(world.drain_pending_system_texts().is_empty());
+    }
+
+    #[tokio::test]
+    async fn missing_repository_drains_the_unlockname_queue_without_a_reply() {
+        let mut world = World::default();
+        world.queue_unlockname_command(CharacterId(1), "BadName");
+        assert!(world.drain_pending_system_texts().is_empty());
+
+        let applied = apply_unlockname_events(&mut world, &None).await;
+        assert_eq!(applied, 0);
+        assert!(world.drain_pending_system_texts().is_empty());
+        assert!(world.drain_pending_unlockname_lookups().is_empty());
     }
 }

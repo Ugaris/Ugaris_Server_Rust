@@ -5992,6 +5992,217 @@ fn rmdeath_command_abbreviation_is_not_recognized() {
     .is_none());
 }
 
+// C `/rename <from> <to>` (`command.c:6517-6524` dispatch -> `cmd_rename`,
+// `command.c:2657-2676`), `CF_GOD`-gated, full-word only.
+
+#[test]
+fn rename_command_requires_god() {
+    let mut world = goto_test_world();
+    let caller_id = CharacterId(1);
+    let mut caller = login_character(caller_id, &login_block("Ralph"), 3, 10, 10);
+    caller.flags.insert(CharacterFlags::STAFF);
+    assert!(world.spawn_character(caller, 10, 10));
+    let mut runtime = ServerRuntime::default();
+
+    assert!(apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        caller_id,
+        "/rename Baddie Newname",
+        3
+    )
+    .is_none());
+    assert!(world.drain_pending_rename_lookups().is_empty());
+}
+
+#[test]
+fn rename_command_queues_both_names() {
+    let mut world = goto_test_world();
+    let caller_id = CharacterId(1);
+    let mut caller = login_character(caller_id, &login_block("Ralph"), 3, 10, 10);
+    caller.flags.insert(CharacterFlags::GOD);
+    assert!(world.spawn_character(caller, 10, 10));
+    let mut runtime = ServerRuntime::default();
+
+    let result = apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        caller_id,
+        "/rename Baddie newname",
+        3,
+    )
+    .expect("god rename command should be recognized");
+    assert!(result.messages.is_empty());
+    let queued = world.drain_pending_rename_lookups();
+    assert_eq!(queued.len(), 1);
+    assert_eq!(queued[0].requester_id, caller_id);
+    assert_eq!(queued[0].from_name, "Baddie");
+    assert_eq!(queued[0].to_name, "Newname");
+}
+
+#[test]
+fn rename_command_with_an_illegal_to_name_is_rejected_immediately() {
+    let mut world = goto_test_world();
+    let caller_id = CharacterId(1);
+    let mut caller = login_character(caller_id, &login_block("Ralph"), 3, 10, 10);
+    caller.flags.insert(CharacterFlags::GOD);
+    assert!(world.spawn_character(caller, 10, 10));
+    let mut runtime = ServerRuntime::default();
+
+    let result =
+        apply_admin_character_command(&mut world, &mut runtime, caller_id, "/rename Baddie ab", 3)
+            .expect("god rename command should be recognized");
+    assert!(result.messages.is_empty());
+    let texts = world.drain_pending_system_texts();
+    assert_eq!(texts.len(), 1);
+    assert_eq!(texts[0].character_id, caller_id);
+    assert_eq!(texts[0].message, "Name too long or too short.");
+    assert!(world.drain_pending_rename_lookups().is_empty());
+}
+
+#[test]
+fn rename_command_abbreviation_is_not_recognized() {
+    // C `cmdcmp(ptr, "rename", 6)` requires the full six-letter word.
+    let mut world = goto_test_world();
+    let caller_id = CharacterId(1);
+    let mut caller = login_character(caller_id, &login_block("Ralph"), 3, 10, 10);
+    caller.flags.insert(CharacterFlags::GOD);
+    assert!(world.spawn_character(caller, 10, 10));
+    let mut runtime = ServerRuntime::default();
+
+    assert!(apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        caller_id,
+        "/renam Baddie Newname",
+        3
+    )
+    .is_none());
+}
+
+// C `/lockname <name>`/`/unlockname <name>` (`command.c:6528-6543`
+// dispatch -> `cmd_lockname`/`cmd_unlockname`, `command.c:2679-2701`),
+// both `CF_GOD`-gated, full-word only.
+
+#[test]
+fn lockname_command_requires_god() {
+    let mut world = goto_test_world();
+    let caller_id = CharacterId(1);
+    let mut caller = login_character(caller_id, &login_block("Ralph"), 3, 10, 10);
+    caller.flags.insert(CharacterFlags::STAFF);
+    assert!(world.spawn_character(caller, 10, 10));
+    let mut runtime = ServerRuntime::default();
+
+    assert!(apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        caller_id,
+        "/lockname Baddie",
+        3
+    )
+    .is_none());
+    assert!(world.drain_pending_lockname_lookups().is_empty());
+}
+
+#[test]
+fn lockname_command_queues_the_lowercased_name() {
+    let mut world = goto_test_world();
+    let caller_id = CharacterId(1);
+    let mut caller = login_character(caller_id, &login_block("Ralph"), 3, 10, 10);
+    caller.flags.insert(CharacterFlags::GOD);
+    assert!(world.spawn_character(caller, 10, 10));
+    let mut runtime = ServerRuntime::default();
+
+    let result =
+        apply_admin_character_command(&mut world, &mut runtime, caller_id, "/lockname Baddie", 3)
+            .expect("god lockname command should be recognized");
+    assert!(result.messages.is_empty());
+    let queued = world.drain_pending_lockname_lookups();
+    assert_eq!(queued.len(), 1);
+    assert_eq!(queued[0].requester_id, caller_id);
+    assert_eq!(queued[0].original_name, "Baddie");
+    assert_eq!(queued[0].lookup_name, "baddie");
+}
+
+#[test]
+fn unlockname_command_queues_the_lowercased_name() {
+    let mut world = goto_test_world();
+    let caller_id = CharacterId(1);
+    let mut caller = login_character(caller_id, &login_block("Ralph"), 3, 10, 10);
+    caller.flags.insert(CharacterFlags::GOD);
+    assert!(world.spawn_character(caller, 10, 10));
+    let mut runtime = ServerRuntime::default();
+
+    let result =
+        apply_admin_character_command(&mut world, &mut runtime, caller_id, "/unlockname Baddie", 3)
+            .expect("god unlockname command should be recognized");
+    assert!(result.messages.is_empty());
+    let queued = world.drain_pending_unlockname_lookups();
+    assert_eq!(queued.len(), 1);
+    assert_eq!(queued[0].original_name, "Baddie");
+    assert_eq!(queued[0].lookup_name, "baddie");
+}
+
+#[test]
+fn lockname_command_with_a_too_short_name_is_rejected_immediately() {
+    let mut world = goto_test_world();
+    let caller_id = CharacterId(1);
+    let mut caller = login_character(caller_id, &login_block("Ralph"), 3, 10, 10);
+    caller.flags.insert(CharacterFlags::GOD);
+    assert!(world.spawn_character(caller, 10, 10));
+    let mut runtime = ServerRuntime::default();
+
+    let result =
+        apply_admin_character_command(&mut world, &mut runtime, caller_id, "/lockname ab", 3)
+            .expect("god lockname command should be recognized");
+    assert!(result.messages.is_empty());
+    let texts = world.drain_pending_system_texts();
+    assert_eq!(texts.len(), 1);
+    assert_eq!(texts[0].character_id, caller_id);
+    assert_eq!(texts[0].message, "Name too long or too short.");
+    assert!(world.drain_pending_lockname_lookups().is_empty());
+}
+
+#[test]
+fn lockname_command_abbreviation_is_not_recognized() {
+    // C `cmdcmp(ptr, "lockname", 8)` requires the full eight-letter word.
+    let mut world = goto_test_world();
+    let caller_id = CharacterId(1);
+    let mut caller = login_character(caller_id, &login_block("Ralph"), 3, 10, 10);
+    caller.flags.insert(CharacterFlags::GOD);
+    assert!(world.spawn_character(caller, 10, 10));
+    let mut runtime = ServerRuntime::default();
+
+    assert!(apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        caller_id,
+        "/lockna Baddie",
+        3
+    )
+    .is_none());
+}
+
+#[test]
+fn unlockname_command_abbreviation_is_not_recognized() {
+    // C `cmdcmp(ptr, "unlockname", 10)` requires the full ten-letter word.
+    let mut world = goto_test_world();
+    let caller_id = CharacterId(1);
+    let mut caller = login_character(caller_id, &login_block("Ralph"), 3, 10, 10);
+    caller.flags.insert(CharacterFlags::GOD);
+    assert!(world.spawn_character(caller, 10, 10));
+    let mut runtime = ServerRuntime::default();
+
+    assert!(apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        caller_id,
+        "/unlockna Baddie",
+        3
+    )
+    .is_none());
+}
+
 // C `cmd_flag` (`command.c:2870-2937`), shared by `/god`, `/setsir`,
 // `/staff`, `/emaster`, `/devel`, `/hardcore`, and `/qmaster`
 // (`command.c:9257-9337`).

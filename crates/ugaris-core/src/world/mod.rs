@@ -44,6 +44,7 @@ mod janitor;
 mod lab2_undead;
 mod lastseen;
 mod light;
+mod lockname;
 mod loot;
 mod lostcon;
 mod lq;
@@ -54,6 +55,7 @@ mod npc_idle;
 mod npc_messages;
 mod querystats;
 mod regen;
+mod rename;
 mod rmdeath;
 mod skills;
 mod spawn;
@@ -101,6 +103,7 @@ pub use jail::*;
 pub(crate) use lab2_undead::*;
 pub use lastseen::*;
 pub(crate) use light::*;
+pub use lockname::*;
 pub use loot::*;
 pub use lq::*;
 pub use merchant::*;
@@ -113,6 +116,7 @@ pub(crate) use npc_messages::*;
 pub use querystats::*;
 #[allow(unused_imports)]
 pub(crate) use regen::*;
+pub use rename::*;
 pub use rmdeath::*;
 pub use skills::*;
 #[allow(unused_imports)]
@@ -386,6 +390,15 @@ pub struct World {
     /// `#querystats`/`/querystats` async DB round trips - see
     /// `world/querystats.rs`'s module doc comment.
     pending_querystats_lookups: Vec<QueryStatsLookup>,
+    /// `/rename <from> <to>` async DB round trips - see
+    /// `world/rename.rs`'s module doc comment.
+    pending_rename_lookups: Vec<RenameLookup>,
+    /// `/lockname <name>` async DB round trips - see
+    /// `world/lockname.rs`'s module doc comment.
+    pending_lockname_lookups: Vec<LockNameLookup>,
+    /// `/unlockname <name>` async DB round trips - see
+    /// `world/lockname.rs`'s module doc comment.
+    pending_unlockname_lookups: Vec<UnlockNameLookup>,
 }
 
 impl Default for Tick {
