@@ -4956,6 +4956,24 @@ pub(crate) fn apply_admin_character_command(
         return Some(KeyringCommandResult::default());
     }
 
+    // C `/allow <name>` (`command.c:8371-8378` -> `allow_body`,
+    // `src/system/death.c:1013-1029`), no permission gate - any player
+    // can use this, same as `/showvalues` above. Full-word
+    // *abbreviation* (`cmdcmp(ptr, "allow", 3)`'s `minlen` is 3, "all"
+    // up to "allow" all match - same idiom as `/showvalues`'s
+    // `starts_with` check) - trims leading whitespace, then passes the
+    // entire untokenized remainder to `World::queue_allow_command` (see
+    // `world/allow.rs`'s module doc comment for the full behavior:
+    // grants the resolved target access to every grave the caller owns,
+    // never the caller's own kills). Always returns a `default()` result
+    // immediately; every reply line arrives later via `World::
+    // queue_system_text` (same fire-and-forget async pattern as
+    // `/look`/`/klog`/`/showvalues` above).
+    if lower.len() >= 3 && "allow".starts_with(&lower) {
+        world.queue_allow_command(character_id, rest.trim_start());
+        return Some(KeyringCommandResult::default());
+    }
+
     // C `/showflags` (`command.c:8798-8805`, `cmd_show_flags`,
     // `command.c:4839-5061`), `CF_GOD`-gated, full-word only (`cmdcmp`'s
     // `minlen` is 9, the full length of "showflags", so no abbreviation

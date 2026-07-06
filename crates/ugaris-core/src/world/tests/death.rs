@@ -252,6 +252,49 @@ fn npc_death_drops_lootable_body_with_inventory_and_money() {
 }
 
 #[test]
+fn npc_death_stamps_grave_acl_with_victim_owner_and_killer() {
+    // C `die_char`'s `create_item_container(in)` success branch
+    // (`death.c:684-691`): the resulting body container's `owner` is
+    // always the dying character, and `killer` is the character who
+    // landed the killing blow - even for an NPC victim (this is the
+    // anti-kill-stealing mechanic: only the killer, not any other
+    // passerby, may loot the corpse until `/allow` grants a third party
+    // access).
+    let mut world = World::default();
+    let mut npc = character(1);
+    npc.hp = POWERSCALE;
+    npc.gold = 10;
+    assert!(world.spawn_character(npc, 10, 10));
+    let mut killer = character(2);
+    killer.flags |= CharacterFlags::PLAYER;
+    assert!(world.spawn_character(killer, 11, 10));
+    let mut stranger = character(3);
+    stranger.flags |= CharacterFlags::PLAYER;
+    assert!(world.spawn_character(stranger, 12, 10));
+
+    lethal_hurt(&mut world, 1, 2);
+    run_death_animation(&mut world);
+
+    let body = world
+        .items
+        .values()
+        .find(|item| item.name == "Body")
+        .expect("dead body dropped");
+    assert!(!crate::item_driver::grave_access_denied(
+        body,
+        CharacterId(1)
+    ));
+    assert!(!crate::item_driver::grave_access_denied(
+        body,
+        CharacterId(2)
+    ));
+    assert!(crate::item_driver::grave_access_denied(
+        body,
+        CharacterId(3)
+    ));
+}
+
+#[test]
 fn npc_death_queues_death_loot_roll_for_its_template() {
     // C `die_char` (`death.c:741`): `apply_death_loot_for_template(ct, co,
     // tmp)` runs right after the natural inventory transfer, for every

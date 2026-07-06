@@ -10472,7 +10472,7 @@ Unlocks every quest NPC. Do these before any P4 area work.
   protocol + 1050 server, all green, zero failures), `cargo build -p
   ugaris-server` clean with zero warnings.
 
-- [~] **Cross-area transfer** - the big multi-server feature. Every
+- [x] **Cross-area transfer** - the big multi-server feature. Every
   cross-area teleport currently returns "target server down". Decide the
   single-process stance first (likely: run multiple areas in one process
   or reject cleanly). If porting: C `change_area` in
@@ -11005,6 +11005,52 @@ Unlocks every quest NPC. Do these before any P4 area work.
    `server_chat`-equivalent design - the last of the three originally-
    blocked commands; (2) the actual DB-backed save+redirect path itself
    still has no live-Postgres test (long-standing gap, unchanged).
+   Progress Log (iteration 232, task closed): ported `/allow`
+   (`allow_body`/`allow_body_db`, `death.c:1013-1067`), the last blocked
+   command. First designed the grave-loot-ownership ACL flagged missing
+   since iteration 228: the `owner`/`killer`/`access` triad is stored
+   inline in a body-container item's own `driver_data` blob (bytes
+   12-23) via new `item_driver/helpers.rs::{set_grave_acl,
+   grave_owner_id, grant_grave_access, grave_access_denied}` -
+   deliberately *not* three new fields on the crate-wide `Item` struct
+   (would have touched ~24 unrelated literal construction sites) -
+   matching this codebase's existing `drdata_u32`/driver-private-state
+   convention. `world/death.rs::fill_body_container` (now also taking
+   `killer_id`) stamps every lootable body - NPC corpses included, not
+   just player graves, reproducing C's real anti-kill-stealing gate:
+   only the killer may loot an NPC's corpse until `/allow` grants a
+   third party access. The gate itself lives in `item_driver/
+   dispatch.rs::use_item`'s `content_id != 0` branch (C `do.c:1504-
+   1508`): a foreign character now gets `UseItemError::AccessDenied`
+   (the variant already existed, unused) instead of silently opening
+   someone else's grave; both `ugaris-server` call sites
+   (`inventory.rs::inventory_use_slot`, `main.rs`'s `item_use_requests`
+   loop) reply with C's exact "Permission denied." text. `/allow` itself
+   is new `world/allow.rs` + `world_events.rs::apply_allow_events`,
+   following `/showvalues`'s queue-then-drain shape via
+   `find_login_target`; a resolved target gets "Order scheduled." then
+   "Area %d: Allowed access to %d corpses." once `grant_grave_access_to`
+   (C `allow_body_db`) grants access to every grave this process's
+   `World` holds with `owner == caller` (never the caller's own kills -
+   a separate, non-revocable `killer` slot `/allow` never touches).
+   New `commands_admin.rs` dispatch arm (`"allow".starts_with(&lower)`,
+   `minlen` 3, no gate) is placed ahead of the pre-existing
+   `/allowbless` handler in the same sequential dispatch chain, matching
+   C's own `command()` if-chain ordering so a bare "allow" resolves to
+   this command first. Deliberately not ported: C's `owner_not_seyan`
+   ACL field - it only feeds a secondary quest-item hold-shift nuance
+   this codebase's container swap path doesn't implement at all yet.
+   12 new tests. `cargo fmt --all`, `cargo test --workspace` (2151
+   ugaris-core [+8] + 78 db + 3 net + 45 protocol + 1073 server [+2],
+   all green, zero failures), `cargo build -p ugaris-server`/
+   `--workspace` clean with zero warnings, 10s boot-smoke confirmed
+   "entering Rust game loop" with no panic. Every originally-listed
+   blocker on this task is now closed; only the long-standing
+   live-Postgres save+redirect round-trip test gap remains (a
+   cross-cutting gap shared by every DB-backed command in this
+   codebase, not specific to this task) - not a reason to keep this
+   task open indefinitely, matching the iteration-218 precedent for
+   closing tasks with only a permanently-deferred infra gap left.
 
 - [ ] **Player-side fight-driver auto-combat (lostcon self-defense +
   no*/auto* toggle family)** - `fight_driver_attack_enemy`/

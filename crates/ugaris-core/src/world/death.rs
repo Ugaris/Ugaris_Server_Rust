@@ -429,7 +429,7 @@ impl World {
             self.drop_given_items_and_destroy_rest(character_id, usize::from(x), usize::from(y));
         } else if !flags.contains(CharacterFlags::ITEMDEATH) {
             if let Some(body) = dropped_body {
-                self.fill_body_container(character_id, body, is_player);
+                self.fill_body_container(character_id, body, killer_id, is_player);
                 // C `die_char` (`death.c:741`): `if (!(ch[cn].flags &
                 // CF_PLAYER)) apply_death_loot_for_template(ct, co, tmp);`
                 // - runs after the natural inventory transfer so existing
@@ -624,8 +624,17 @@ impl World {
         &mut self,
         character_id: CharacterId,
         body_id: ItemId,
+        killer_id: Option<CharacterId>,
         _is_player: bool,
     ) {
+        // C `die_char`'s `create_item_container(in)` success branch
+        // (`death.c:684-691`): `con[ct].owner = charID(cn); ... con[ct].
+        // killer = charID(co); con[ct].access = 0;` - the grave-access ACL
+        // triad, run once right before the equipment-loss shuffle below.
+        if let Some(body) = self.items.get_mut(&body_id) {
+            crate::item_driver::set_grave_acl(body, character_id, killer_id);
+        }
+
         // C: shuffle of {0,1,2,3,4,5,7,8,9,10,11}, take first two.
         let mut slots = [0usize, 1, 2, 3, 4, 5, 7, 8, 9, 10, 11];
         for i in (1..slots.len()).rev() {

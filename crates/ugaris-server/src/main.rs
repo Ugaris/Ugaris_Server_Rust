@@ -6387,6 +6387,17 @@ async fn main() -> anyhow::Result<()> {
                                         }
                                     }
                                 }
+                                // C `use_item` (`src/system/do.c:1504-
+                                // 1508`): `log_char(cn, LOG_SYSTEM, 0,
+                                // "Permission denied.");` - the
+                                // grave-container access-denied reply.
+                                Err(ugaris_core::item_driver::UseItemError::AccessDenied) => {
+                                    feedback.push((
+                                        use_character_id,
+                                        "Permission denied.".to_string(),
+                                    ));
+                                    blocked += 1;
+                                }
                                 Err(_) => {
                                     failed += 1;
                                 }
@@ -7250,6 +7261,22 @@ async fn main() -> anyhow::Result<()> {
                         values_events_applied,
                         tick = world.tick.0,
                         "applied /values events"
+                    );
+                }
+                // `/allow <name>`'s async DB round trip (C `allow_body`/
+                // `allow_body_db`), queued by `World::
+                // queue_allow_command` above.
+                let allow_events_applied = apply_allow_events(
+                    &mut world,
+                    &character_repository,
+                    config.area_id,
+                )
+                .await;
+                if allow_events_applied != 0 {
+                    info!(
+                        allow_events_applied,
+                        tick = world.tick.0,
+                        "applied /allow events"
                     );
                 }
                 // C `military_master_driver`: the mission-giving Military

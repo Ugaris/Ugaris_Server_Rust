@@ -94,6 +94,9 @@ pub fn use_item(
     }
 
     if item.content_id != 0 {
+        if grave_access_denied(item, character.id) {
+            return Err(UseItemError::AccessDenied);
+        }
         character.current_container = Some(item.id);
         return Ok(UseItemOutcome::OpenContainer { item_id: item.id });
     }

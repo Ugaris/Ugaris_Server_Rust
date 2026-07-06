@@ -290,6 +290,14 @@ pub(crate) fn inventory_use_slot(
                 _ => InventoryCommandResult::Changed,
             }
         }
+        // C `use_item` (`src/system/do.c:1504-1508`): `log_char(cn,
+        // LOG_SYSTEM, 0, "Permission denied.");` - the grave-container
+        // access-denied reply, ported via `Look` since it is the same
+        // fire-and-forget system-text delivery every other inventory
+        // command feedback path already uses.
+        Err(ugaris_core::item_driver::UseItemError::AccessDenied) => {
+            InventoryCommandResult::Look("Permission denied.".to_string())
+        }
         Err(_) => InventoryCommandResult::Ignored,
     }
 }

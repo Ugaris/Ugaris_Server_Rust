@@ -4247,6 +4247,62 @@ pub(crate) async fn apply_values_events(
     applied
 }
 
+/// `/allow <name>`'s async DB round trip (C `command.c:8371-8378` ->
+/// `allow_body`, `src/system/death.c:1013-1029` + its `server_chat` body
+/// `allow_body_db`, `death.c:1045-1067`): resolves every `World::
+/// drain_pending_allow_requests` entry (queued by `World::
+/// queue_allow_command`) by name via `find_login_target` (C's
+/// synchronous `lookup_name`), then grants the resolved target access to
+/// every grave `World::grant_grave_access_to` finds owned by the caller
+/// in this process's own `World` (see `world/allow.rs`'s module doc
+/// comment for the single-process-only caveat shared with every other
+/// name-lookup command here).
+///
+/// - no matching character -> "No player by that name." (C's `coID ==
+///   -1` branch).
+/// - a match -> C's `allow_body` unconditionally logs "Order
+///   scheduled." once `lookup_name` resolves, then `allow_body_db`
+///   (run per-area-server against the broadcast) replies "Area %d:
+///   Allowed access to %d corpses." with its own local count - both
+///   lines are sent here, in that order, once resolution completes
+///   (this codebase collapses C's two-step broadcast-then-local-reply
+///   into one async round trip, matching every other documented
+///   cross-area gap).
+///
+/// No-ops entirely (silent, but still drains the queue) when
+/// `character_repository` is unconfigured.
+pub(crate) async fn apply_allow_events(
+    world: &mut World,
+    character_repository: &Option<ugaris_db::PgCharacterRepository>,
+    area_id: u16,
+) -> usize {
+    let requests = world.drain_pending_allow_requests();
+    if requests.is_empty() {
+        return 0;
+    }
+    let Some(character_repository) = character_repository else {
+        return 0;
+    };
+    let mut applied = 0;
+    for request in requests {
+        let Ok(Some(summary)) = character_repository
+            .find_login_target(&request.target_name)
+            .await
+        else {
+            world.queue_system_text(request.caller_id, "No player by that name.".to_string());
+            continue;
+        };
+        world.queue_system_text(request.caller_id, "Order scheduled.".to_string());
+        let count = world.grant_grave_access_to(request.caller_id, summary.id);
+        world.queue_system_text(
+            request.caller_id,
+            format!("Area {area_id}: Allowed access to {count} corpses."),
+        );
+        applied += 1;
+    }
+    applied
+}
+
 /// `/rename <from> <to>`'s async DB round trip (C `do_rename`/
 /// `db_rename`, `src/system/database/database_admin.c:291-355`):
 /// resolves every `World::drain_pending_rename_lookups` entry (queued by
@@ -6037,5 +6093,30 @@ mod values_tests {
         assert_eq!(applied, 0);
         assert!(world.drain_pending_system_texts().is_empty());
         assert!(world.drain_pending_values_requests().is_empty());
+    }
+}
+
+#[cfg(test)]
+mod allow_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn no_allow_requests_queued_is_a_cheap_no_op() {
+        let mut world = World::default();
+        let applied = apply_allow_events(&mut world, &None, 1).await;
+        assert_eq!(applied, 0);
+        assert!(world.drain_pending_system_texts().is_empty());
+    }
+
+    #[tokio::test]
+    async fn missing_repository_drains_the_allow_queue_without_a_reply() {
+        let mut world = World::default();
+        world.queue_allow_command(CharacterId(1), "Someone");
+        assert!(world.drain_pending_system_texts().is_empty());
+
+        let applied = apply_allow_events(&mut world, &None, 1).await;
+        assert_eq!(applied, 0);
+        assert!(world.drain_pending_system_texts().is_empty());
+        assert!(world.drain_pending_allow_requests().is_empty());
     }
 }

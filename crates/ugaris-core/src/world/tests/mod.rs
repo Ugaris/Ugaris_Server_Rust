@@ -3,6 +3,7 @@ use super::*;
 mod aclerk;
 mod actions;
 mod admin_flag;
+mod allow;
 mod anticheat;
 mod area_mech;
 mod arena;

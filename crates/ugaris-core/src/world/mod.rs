@@ -13,6 +13,7 @@
 mod aclerk;
 mod actions;
 mod admin_flag;
+mod allow;
 mod anticheat;
 mod area_mech;
 mod arena;
@@ -76,6 +77,7 @@ mod weather;
 
 pub use actions::*;
 pub use admin_flag::*;
+pub use allow::*;
 pub use anticheat::*;
 pub(crate) use area_mech::*;
 pub use arena::*;
@@ -492,6 +494,9 @@ pub struct World {
     /// `/values <name>` async DB round trips - see `world/values.rs`'s
     /// module doc comment.
     pending_values_requests: Vec<ValuesRequest>,
+    /// `/allow <name>` async DB round trips - see `world/allow.rs`'s
+    /// module doc comment.
+    pending_allow_requests: Vec<AllowRequest>,
 }
 
 impl Default for Tick {

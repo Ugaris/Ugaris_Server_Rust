@@ -64,6 +64,71 @@ fn use_item_opens_container_before_driver_dispatch() {
 }
 
 #[test]
+fn use_item_denies_access_to_a_grave_the_character_neither_owns_nor_killed() {
+    // C `container()`/`do.c:1504-1506`'s `access denied` branch, ported
+    // at the `use_item` container-open gate (`death.c:684-691`'s
+    // `con[ct].owner`/`killer`/`access` ACL, stored via `set_grave_acl`).
+    let mut owner = character(1);
+    let mut killer = character(2);
+    let mut allowed = character(3);
+    let mut stranger = character(4);
+    let mut grave = item(7, ItemFlags::USED | ItemFlags::USE, 1, 0);
+    set_grave_acl(&mut grave, CharacterId(1), Some(CharacterId(2)));
+
+    assert_eq!(
+        use_item(&mut stranger, &grave, request(4, 7, 0), false),
+        Err(UseItemError::AccessDenied)
+    );
+    assert_eq!(stranger.current_container, None);
+
+    assert_eq!(
+        use_item(&mut owner, &grave, request(1, 7, 0), false),
+        Ok(UseItemOutcome::OpenContainer { item_id: ItemId(7) })
+    );
+    assert_eq!(
+        use_item(&mut killer, &grave, request(2, 7, 0), false),
+        Ok(UseItemOutcome::OpenContainer { item_id: ItemId(7) })
+    );
+
+    // A third party denied until `/allow` grants access via
+    // `grant_grave_access`, then allowed - and granting a new character
+    // overwrites the previous grant (C's plain `con[n].access =` field
+    // assignment, only one grantable slot per grave).
+    assert_eq!(
+        use_item(&mut allowed, &grave, request(3, 7, 0), false),
+        Err(UseItemError::AccessDenied)
+    );
+    grant_grave_access(&mut grave, Some(CharacterId(3)));
+    assert_eq!(
+        use_item(&mut allowed, &grave, request(3, 7, 0), false),
+        Ok(UseItemOutcome::OpenContainer { item_id: ItemId(7) })
+    );
+    grant_grave_access(&mut grave, Some(CharacterId(4)));
+    assert_eq!(
+        use_item(&mut allowed, &grave, request(3, 7, 0), false),
+        Err(UseItemError::AccessDenied),
+        "granting a new character overwrites the previous access grant"
+    );
+    assert_eq!(
+        use_item(&mut stranger, &grave, request(4, 7, 0), false),
+        Ok(UseItemOutcome::OpenContainer { item_id: ItemId(7) })
+    );
+}
+
+#[test]
+fn use_item_ignores_grave_acl_for_ordinary_non_grave_containers() {
+    // A container with no owner set (`grave_owner_id == 0`, the default
+    // for every ordinary non-grave container item) is never restricted.
+    let mut stranger = character(4);
+    let bag = item(7, ItemFlags::USED | ItemFlags::USE, 1, 0);
+
+    assert_eq!(
+        use_item(&mut stranger, &bag, request(4, 7, 0), false),
+        Ok(UseItemOutcome::OpenContainer { item_id: ItemId(7) })
+    );
+}
+
+#[test]
 fn use_item_opens_depot_and_account_depot_like_legacy_order() {
     let mut character = character(1);
     let depot = item(7, ItemFlags::USED | ItemFlags::USE | ItemFlags::DEPOT, 0, 0);

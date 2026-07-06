@@ -71,6 +71,81 @@ pub(crate) fn set_drdata_u32(item: &mut Item, idx: usize, value: u32) {
     }
 }
 
+/// C `struct container`'s `owner`/`killer`/`access` ACL triad
+/// (`container.h:25-28`), stored inline in a body-container `Item`'s own
+/// `driver_data` blob (bytes 12-23, right after `create_dead_body_item`'s
+/// existing 2-byte-aligned player-color fields at bytes 2-8) instead of
+/// adding three generic fields to the crate-wide `Item` struct - matching
+/// this codebase's established convention for driver-private per-item
+/// state (`drdata_u32`/`set_drdata_u32` above, and every `item_driver/
+/// area*.rs` module). Deliberately does not port `owner_not_seyan`
+/// (`container.h:26`) - it only feeds a secondary "may bypass the
+/// quest-item hold-shift restriction" nuance
+/// (`src/system/do.c:1396-1399`) this codebase's container swap path
+/// does not implement yet, not the core access-grant/deny gate below.
+pub(crate) const GRAVE_OWNER_DRDATA_OFFSET: usize = 12;
+pub(crate) const GRAVE_KILLER_DRDATA_OFFSET: usize = 16;
+pub(crate) const GRAVE_ACCESS_DRDATA_OFFSET: usize = 20;
+
+/// C `die_char`'s `con[ct].owner = charID(cn); con[ct].killer =
+/// charID(co); con[ct].access = 0;` (`death.c:684-691`), run once at
+/// body-container creation. `owner_id` is the character whose body this
+/// is (may always access their own grave); `killer_id` is the character
+/// who landed the killing blow (`None` for environmental deaths, C's
+/// `co == 0` -> `charID(0) == 0`, matching `grave_access_denied`'s own
+/// `killer == 0` no-op branch below).
+pub(crate) fn set_grave_acl(
+    item: &mut Item,
+    owner_id: CharacterId,
+    killer_id: Option<CharacterId>,
+) {
+    set_drdata_u32(item, GRAVE_OWNER_DRDATA_OFFSET, owner_id.0);
+    set_drdata_u32(
+        item,
+        GRAVE_KILLER_DRDATA_OFFSET,
+        killer_id.map_or(0, |id| id.0),
+    );
+    set_drdata_u32(item, GRAVE_ACCESS_DRDATA_OFFSET, 0);
+}
+
+pub(crate) fn grave_owner_id(item: &Item) -> u32 {
+    drdata_u32(item, GRAVE_OWNER_DRDATA_OFFSET)
+}
+
+/// C `allow_body_db`'s `con[n].access = coID ? charID_ID(coID) : 0;`
+/// (`death.c:1058`) - a grave only ever holds one grantable third-party
+/// access slot, so granting to a new character silently overwrites any
+/// previous grant, exactly like C's plain field assignment.
+pub(crate) fn grant_grave_access(item: &mut Item, target_id: Option<CharacterId>) {
+    set_drdata_u32(
+        item,
+        GRAVE_ACCESS_DRDATA_OFFSET,
+        target_id.map_or(0, |id| id.0),
+    );
+}
+
+/// C's grave-container access-control check, enforced identically at
+/// every C call site (`act.c:1779-1781`, `do.c:1504-1506`,
+/// `do.c:1381-1391`): `if (con[ct].owner && cn != owner && cn != killer
+/// && cn != access) // access denied`. A container with no owner set
+/// (every ordinary non-grave container - `owner` defaults to `0`, and
+/// real character ids start at `1`) is never restricted.
+pub(crate) fn grave_access_denied(item: &Item, character_id: CharacterId) -> bool {
+    let owner = grave_owner_id(item);
+    if owner == 0 || owner == character_id.0 {
+        return false;
+    }
+    let killer = drdata_u32(item, GRAVE_KILLER_DRDATA_OFFSET);
+    if killer != 0 && killer == character_id.0 {
+        return false;
+    }
+    let access = drdata_u32(item, GRAVE_ACCESS_DRDATA_OFFSET);
+    if access != 0 && access == character_id.0 {
+        return false;
+    }
+    true
+}
+
 pub(crate) const EDEMON_SWITCH_COOLDOWN_TICKS: u64 = TICKS_PER_SECOND * 60 * 5;
 
 /// C `level_value(level)` (`src/system/tool.c:1282`). Delegates to the
