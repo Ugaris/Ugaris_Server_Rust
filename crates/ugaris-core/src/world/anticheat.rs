@@ -221,6 +221,22 @@ pub struct AcViolationsLookup {
     pub session_id: i64,
 }
 
+/// `#achistory <player>` (`ac_cmd_history`, `anticheat.c:924-972`),
+/// `CF_GOD|CF_STAFF`-gated, exact-word (`cmdcmp(ptr, "achistory", 9)`).
+/// Same single-name-target resolution as `#acsessions`/`#acviolations`
+/// above (the caller resolves `session_id` synchronously via the
+/// online-name-scan; `apply_ac_history_events` resolves the subscriber's
+/// `account_id` from it via `account_id_for_session` before reading the
+/// lifetime `ac_player_stats` row), but unlike its two siblings this
+/// reads a single rollup row (`AntiCheatRepository::find_player_stats`)
+/// rather than a per-event history list.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AcHistoryLookup {
+    pub caller_id: CharacterId,
+    pub target_name: String,
+    pub session_id: i64,
+}
+
 /// `#acsiglist` (`ac_cmd_siglist`, `anticheat.c:1192-1215`), `CF_GOD`-
 /// only, exact-word (`cmdcmp(ptr, "acsiglist", 9)`). No player name to
 /// resolve - a pure "list every row in the new `ac_known_signatures`
@@ -456,6 +472,23 @@ impl World {
 
     pub fn drain_pending_ac_violations_lookups(&mut self) -> Vec<AcViolationsLookup> {
         self.pending_ac_violations_lookups.drain(..).collect()
+    }
+
+    pub fn queue_ac_history_lookup(
+        &mut self,
+        caller_id: CharacterId,
+        target_name: String,
+        session_id: i64,
+    ) {
+        self.pending_ac_history_lookups.push(AcHistoryLookup {
+            caller_id,
+            target_name,
+            session_id,
+        });
+    }
+
+    pub fn drain_pending_ac_history_lookups(&mut self) -> Vec<AcHistoryLookup> {
+        self.pending_ac_history_lookups.drain(..).collect()
     }
 
     pub fn queue_ac_siglist_lookup(&mut self, caller_id: CharacterId) {

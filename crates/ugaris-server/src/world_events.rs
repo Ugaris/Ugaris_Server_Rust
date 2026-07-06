@@ -2654,6 +2654,87 @@ fn ac_violations_lines(
     lines
 }
 
+/// `#achistory <player>`'s async round trip - see `ugaris-core`'s
+/// `world/anticheat.rs` module doc comment for the general async-DB-
+/// round-trip pattern this family shares, and `AcHistoryLookup`'s own
+/// doc comment for why this is the same single-name-target resolution
+/// shape as `#acsessions`/`#acviolations`. Unlike those two siblings,
+/// this reads a single lifetime rollup row
+/// (`AntiCheatRepository::find_player_stats`) rather than a list of
+/// per-event rows.
+pub(crate) async fn apply_ac_history_events(
+    world: &mut World,
+    anticheat_repository: &Option<ugaris_db::PgAntiCheatRepository>,
+) -> usize {
+    let lookups = world.drain_pending_ac_history_lookups();
+    if lookups.is_empty() {
+        return 0;
+    }
+    let Some(repository) = anticheat_repository else {
+        return 0;
+    };
+    let mut applied = 0;
+    for lookup in lookups {
+        let Ok(Some(account_id)) = repository.account_id_for_session(lookup.session_id).await
+        else {
+            continue;
+        };
+        let Ok(stats) = repository.find_player_stats(account_id).await else {
+            continue;
+        };
+        for line in ac_history_lines(&lookup.target_name, account_id, stats.as_ref()) {
+            world.queue_system_text(lookup.caller_id, line);
+        }
+        applied += 1;
+    }
+    applied
+}
+
+/// Pure message-formatting half of [`apply_ac_history_events`], split out
+/// so it can be unit-tested without a live database - same established
+/// convention as `ac_sessions_lines`/`ac_violations_lines`. C `ac_cmd_
+/// history` (`anticheat.c:924-972`) - color wrapping (risk-level-based
+/// red/orange/yellow/green) dropped, matching this file's established
+/// plain-text simplification for admin-only displays. Reproduces C's
+/// exact 7-line body (plus the header) digit for digit, including the
+/// `%d flagged, %d suspicious` comma placement.
+fn ac_history_lines(
+    target_name: &str,
+    subscriber_id: i64,
+    stats: Option<&ugaris_db::AntiCheatPlayerStatsRow>,
+) -> Vec<String> {
+    let Some(stats) = stats else {
+        return vec![format!("No AC history found for {target_name}.")];
+    };
+    vec![
+        format!("--- AC History for {target_name} (ID: {subscriber_id}) ---"),
+        format!(
+            "Sessions: {} total, {} flagged, {} suspicious",
+            stats.total_sessions, stats.flagged_sessions, stats.suspicious_sessions
+        ),
+        format!(
+            "Violations: HB={}, State={}, Challenge={}, Anomalies={}",
+            stats.total_heartbeat_violations,
+            stats.total_state_violations,
+            stats.total_challenge_failures,
+            stats.total_anomalies
+        ),
+        format!(
+            "Bot Score: max={:.2}, avg={:.2}",
+            stats.max_session_bot_score, stats.avg_session_bot_score
+        ),
+        format!("Risk Level: {}", stats.risk_level),
+        format!(
+            "Flagged: {}, Trusted: {}, Warnings: {}",
+            if stats.is_flagged { "YES" } else { "no" },
+            if stats.is_trusted { "YES" } else { "no" },
+            stats.warnings_issued
+        ),
+        format!("First seen: {}", stats.first_seen),
+        format!("Last seen: {}", stats.last_seen.as_deref().unwrap_or("")),
+    ]
+}
+
 /// `#acsiglist`'s async round trip - see `ugaris-core`'s `world/
 /// anticheat.rs` module doc comment for the general async-DB-round-trip
 /// pattern this family shares. No name/session resolution at all (unlike
@@ -4335,6 +4416,94 @@ mod ac_violations_tests {
                 "07-05 09:00 [speedhack] sev=1 ".to_string(),
             ]
         );
+    }
+}
+
+#[cfg(test)]
+mod ac_history_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn no_lookups_queued_is_a_cheap_no_op() {
+        let mut world = World::default();
+        let applied = apply_ac_history_events(&mut world, &None).await;
+        assert_eq!(applied, 0);
+        assert!(world.drain_pending_system_texts().is_empty());
+    }
+
+    #[tokio::test]
+    async fn missing_repository_leaves_the_lookup_queued_state_untouched_but_drained() {
+        let mut world = World::default();
+        world.queue_ac_history_lookup(CharacterId(7), "Baddie".to_string(), 30);
+
+        let applied = apply_ac_history_events(&mut world, &None).await;
+        assert_eq!(applied, 0);
+        assert!(world.drain_pending_system_texts().is_empty());
+        assert!(world.drain_pending_ac_history_lookups().is_empty());
+    }
+
+    #[test]
+    fn ac_history_lines_reports_no_history_when_row_missing() {
+        let lines = ac_history_lines("Baddie", 42, None);
+        assert_eq!(lines, vec!["No AC history found for Baddie.".to_string()]);
+    }
+
+    #[test]
+    fn ac_history_lines_formats_every_field() {
+        let stats = ugaris_db::AntiCheatPlayerStatsRow {
+            total_sessions: 12,
+            flagged_sessions: 2,
+            suspicious_sessions: 3,
+            total_heartbeat_violations: 4,
+            total_state_violations: 5,
+            total_challenge_failures: 6,
+            total_anomalies: 7,
+            max_session_bot_score: 0.91,
+            avg_session_bot_score: 0.4,
+            risk_level: "high".to_string(),
+            is_flagged: true,
+            is_trusted: false,
+            warnings_issued: 3,
+            first_seen: "01-01 00:00".to_string(),
+            last_seen: Some("07-06 10:00".to_string()),
+        };
+        let lines = ac_history_lines("Baddie", 42, Some(&stats));
+        assert_eq!(
+            lines,
+            vec![
+                "--- AC History for Baddie (ID: 42) ---".to_string(),
+                "Sessions: 12 total, 2 flagged, 3 suspicious".to_string(),
+                "Violations: HB=4, State=5, Challenge=6, Anomalies=7".to_string(),
+                "Bot Score: max=0.91, avg=0.40".to_string(),
+                "Risk Level: high".to_string(),
+                "Flagged: YES, Trusted: no, Warnings: 3".to_string(),
+                "First seen: 01-01 00:00".to_string(),
+                "Last seen: 07-06 10:00".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn ac_history_lines_handles_a_missing_last_seen() {
+        let stats = ugaris_db::AntiCheatPlayerStatsRow {
+            total_sessions: 1,
+            flagged_sessions: 0,
+            suspicious_sessions: 0,
+            total_heartbeat_violations: 0,
+            total_state_violations: 0,
+            total_challenge_failures: 0,
+            total_anomalies: 0,
+            max_session_bot_score: 0.0,
+            avg_session_bot_score: 0.0,
+            risk_level: "low".to_string(),
+            is_flagged: false,
+            is_trusted: false,
+            warnings_issued: 0,
+            first_seen: "01-01 00:00".to_string(),
+            last_seen: None,
+        };
+        let lines = ac_history_lines("Newbie", 7, Some(&stats));
+        assert_eq!(lines.last().unwrap(), "Last seen: ");
     }
 }
 

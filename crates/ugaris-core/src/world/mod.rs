@@ -416,6 +416,10 @@ pub struct World {
     /// resolved synchronously by the caller) - see `world/anticheat.rs`'s
     /// module doc comment.
     pending_ac_violations_lookups: Vec<AcViolationsLookup>,
+    /// `#achistory <name>` async DB round trips (session id already
+    /// resolved synchronously by the caller) - see `world/anticheat.rs`'s
+    /// module doc comment.
+    pending_ac_history_lookups: Vec<AcHistoryLookup>,
     /// `#acsiglist` async DB round trips - see `world/anticheat.rs`'s
     /// module doc comment.
     pending_ac_siglist_lookups: Vec<AcSiglistLookup>,

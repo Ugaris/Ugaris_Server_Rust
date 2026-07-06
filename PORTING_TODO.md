@@ -10210,23 +10210,73 @@ Unlocks every quest NPC. Do these before any P4 area work.
   live_login` tests noted by iterations 212/213 (confirmed again here,
   not investigated further, irrelevant to the default `cargo test
   --workspace` contract which skips every live test cleanly without
-  `DATABASE_URL` set). REMAINING: `#achistory` itself (the display
-  command reading these now-real columns) is still unported - a natural
-  next slice now that its data actually accumulates, following the
-  `#acsessions`/`#acviolations` display-command pattern already
-  established for this family. `acsharedip`/`acsharedhw`/`achighrisk`/
-  `aclookup` remain the other open gap-(a) items; `acsharedip`/
-  `acsharedhw` in particular could plausibly reuse `anticheat_sessions`'
-  already-existing `ip_address`/`hardware_hash` columns instead of
-  porting C's separate `ac_ip_history`/`ac_hardware_history` tables (both
-  populated only by the unported `db_ac_record_ip`/fingerprint-on-login
-  calls) - worth trying before assuming new schema is needed, same
-  reuse-over-new-schema angle that already worked for `acsessions`/
-  `acviolations`/`acsiglist`; `achighrisk`/`aclookup` need the fuller
-  cross-subscriber `ac_player_stats` scan/lookup this iteration's
-  columns now make possible, but still require their own new query
-  surface. Gaps (b)/(d)/(e)/(f)/(g) remain untouched, same as noted
-  above.
+  `DATABASE_URL` set). REMAINING (closed by iteration 215 - see its own
+  Progress Log entry below): `#achistory` itself is now ported.
+  `acsharedip`/`acsharedhw`/`achighrisk`/`aclookup` remain the other open
+  gap-(a) items; `acsharedip`/`acsharedhw` in particular could plausibly
+  reuse `anticheat_sessions`' already-existing `ip_address`/
+  `hardware_hash` columns instead of porting C's separate `ac_ip_history`/
+  `ac_hardware_history` tables (both populated only by the unported
+  `db_ac_record_ip`/fingerprint-on-login calls) - worth trying before
+  assuming new schema is needed, same reuse-over-new-schema angle that
+  already worked for `acsessions`/`acviolations`/`acsiglist`;
+  `achighrisk`/`aclookup` need the fuller cross-subscriber `ac_player_
+  stats` scan/lookup iteration 214's rollup columns now make possible,
+  but still require their own new query surface. Gaps (b)/(d)/(e)/(f)/(g)
+  remain untouched, same as noted above.
+
+  Progress Log (iteration 215): closed gap (a)'s `#achistory <player>`
+  item (`ac_cmd_history`, `anticheat.c:924-972`, `CF_GOD|CF_STAFF`-gated,
+  exact-word), the last piece this same note had been tracking as
+  blocked-then-unblocked since iteration 210. Same single-name-target
+  resolution shape as `#acsessions`/`#acviolations` (added `AcHistory
+  Lookup` to `crates/ugaris-core/src/world/anticheat.rs` plus its `World`
+  queue/drain pair and `pending_ac_history_lookups` field), but reads a
+  single lifetime rollup row instead of a list: added `AntiCheatRepository
+  ::find_player_stats` (`crates/ugaris-db/src/anticheat.rs`) - the first
+  *read* of the `ac_player_stats` table `update_player_stats`/
+  `set_flagged`/`set_trusted`/`issue_warning` already write into - backed
+  by a new `AntiCheatPlayerStatsRow` struct. Added migration `0018_ac_
+  player_stats_first_seen.sql`, closing the one remaining schema gap
+  `0017`'s own doc comment had flagged for "a future iteration": a
+  `first_seen timestamptz not null default now()` column, populated once
+  on a subscriber's first `update_player_stats` insert and never touched
+  by that same method's `on conflict ... do update` clause (verified by a
+  new live test asserting it survives a second rollup call unchanged).
+  New `apply_ac_history_events`/`ac_history_lines` in `crates/ugaris-
+  server/src/world_events.rs` reproduce C's exact 7-line body (header +
+  sessions/violations/bot-score/risk/flagged-trusted-warnings/first-seen/
+  last-seen lines) digit for digit, `COL_*` color wrapping dropped
+  matching this file's established plain-text convention for admin-only
+  displays; "No AC history found for {name}." when no `ac_player_stats`
+  row exists yet, matching C's null-`db_ac_get_player_stats` branch.
+  Wired the dispatch arm into `commands_admin.rs` (same permission gate,
+  usage message, and "not found online"/"has no connection data" replies
+  as its `#acsessions`/`#acviolations` siblings) and the tick-loop call
+  into `main.rs` right next to them; updated the file's own top-of-family
+  doc comment listing which of the ~20 `ac*` commands are ported so far.
+  6 new tests: 2 dispatch-adjacent async-plumbing tests plus 3 pure
+  `ac_history_lines` formatting tests (missing row, full field round
+  trip, a `None` `last_seen`) in `world_events.rs`, and 1 new `ugaris-db`
+  live test (`find_player_stats_reports_none_then_round_trips_every_
+  column`: `None` before any row exists, then a full column round trip
+  including `first_seen` staying fixed across a second rollup call).
+  `cargo fmt --all`, `cargo test --workspace` (2104 ugaris-core + 73 db
+  [+1] + 3 net + 44 protocol + 1018 server [+5], all green, zero
+  failures), `cargo build -p ugaris-server` / `cargo build --workspace`
+  clean with zero warnings, 10s boot-smoke confirmed "entering Rust game
+  loop" with no panic. Verified the new migration and `find_player_stats`
+  for real against a throwaway `postgres:16-alpine` container (applied
+  all 18 `migrations/*.sql` files by hand, ran the new live test plus the
+  full `anticheat` live-test module with `--test-threads=1`, all 11
+  green) before destroying the container; a default parallel `cargo test
+  -p ugaris-db` run against the same container reproduces the same
+  pre-existing order/isolation-dependent flakiness in unrelated
+  `anticheat`/`clan_log` tests iterations 212-214 already noted (confirmed
+  again, not investigated further - irrelevant to the default `cargo test
+  --workspace` contract, which skips every live test cleanly with no
+  `DATABASE_URL` set). REMAINING: gap (a) now has only `acsharedip`/
+  `acsharedhw`/`achighrisk`/`aclookup` left (see the note directly above).
 
 - [ ] **Cross-area transfer** - the big multi-server feature. Every
   cross-area teleport currently returns "target server down". Decide the

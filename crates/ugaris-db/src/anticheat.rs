@@ -130,6 +130,34 @@ pub struct AntiCheatSignatureRow {
     pub is_active: bool,
 }
 
+/// `#achistory <player>`'s backing row shape (`db_ac_player_stats_
+/// result`, `database_anticheat.h:426-452`). Unlike `AntiCheatSessionInfo`
+/// (a single `anticheat_sessions` row), this reads the lifetime rollup
+/// `ac_player_stats` row `update_player_stats` maintains - the same table
+/// `set_flagged`/`set_trusted`/`issue_warning` upsert into, but this is
+/// the first *read* of it. `first_seen`/`last_seen` are formatted as
+/// `MM-DD HH:MI` text at the query layer (matching `recent_sessions`'s
+/// own `to_char` convention) rather than returned as raw timestamps,
+/// since no caller needs to do further date arithmetic with them.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AntiCheatPlayerStatsRow {
+    pub total_sessions: i32,
+    pub flagged_sessions: i32,
+    pub suspicious_sessions: i32,
+    pub total_heartbeat_violations: i32,
+    pub total_state_violations: i32,
+    pub total_challenge_failures: i32,
+    pub total_anomalies: i32,
+    pub max_session_bot_score: f32,
+    pub avg_session_bot_score: f32,
+    pub risk_level: String,
+    pub is_flagged: bool,
+    pub is_trusted: bool,
+    pub warnings_issued: i32,
+    pub first_seen: String,
+    pub last_seen: Option<String>,
+}
+
 #[async_trait]
 pub trait AntiCheatRepository: Send + Sync {
     async fn create_session(&self, request: AntiCheatSessionCreate) -> anyhow::Result<i64>;
@@ -302,6 +330,16 @@ pub trait AntiCheatRepository: Send + Sync {
         challenge_failures: i32,
         anomalies: i32,
     ) -> anyhow::Result<()>;
+    /// `#achistory <player>`'s backing query (`db_ac_get_player_stats`,
+    /// `database_anticheat.c:829-880`): the subscriber's lifetime
+    /// `ac_player_stats` row, or `None` when no row exists yet (C's own
+    /// `mysql_fetch_row` returning null - a subscriber who has never
+    /// triggered `update_player_stats`/`set_flagged`/`set_trusted`/
+    /// `issue_warning`).
+    async fn find_player_stats(
+        &self,
+        subscriber_id: i64,
+    ) -> anyhow::Result<Option<AntiCheatPlayerStatsRow>>;
 }
 
 #[derive(Debug, Clone)]
@@ -863,6 +901,77 @@ impl AntiCheatRepository for PgAntiCheatRepository {
         .execute(&self.pool)
         .await?;
         Ok(())
+    }
+
+    async fn find_player_stats(
+        &self,
+        subscriber_id: i64,
+    ) -> anyhow::Result<Option<AntiCheatPlayerStatsRow>> {
+        let row = sqlx::query_as::<
+            _,
+            (
+                i32,
+                i32,
+                i32,
+                i32,
+                i32,
+                i32,
+                i32,
+                f32,
+                f32,
+                String,
+                bool,
+                bool,
+                i32,
+                String,
+                Option<String>,
+            ),
+        >(
+            "select total_sessions, flagged_sessions, suspicious_sessions, \
+             total_heartbeat_violations, total_state_violations, total_challenge_failures, \
+             total_anomalies, max_session_bot_score, avg_session_bot_score, risk_level, \
+             is_flagged, is_trusted, warnings_issued, to_char(first_seen, 'MM-DD HH24:MI'), \
+             to_char(last_seen, 'MM-DD HH24:MI') \
+             from ac_player_stats where subscriber_id = $1",
+        )
+        .bind(subscriber_id)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(row.map(
+            |(
+                total_sessions,
+                flagged_sessions,
+                suspicious_sessions,
+                total_heartbeat_violations,
+                total_state_violations,
+                total_challenge_failures,
+                total_anomalies,
+                max_session_bot_score,
+                avg_session_bot_score,
+                risk_level,
+                is_flagged,
+                is_trusted,
+                warnings_issued,
+                first_seen,
+                last_seen,
+            )| AntiCheatPlayerStatsRow {
+                total_sessions,
+                flagged_sessions,
+                suspicious_sessions,
+                total_heartbeat_violations,
+                total_state_violations,
+                total_challenge_failures,
+                total_anomalies,
+                max_session_bot_score,
+                avg_session_bot_score,
+                risk_level,
+                is_flagged,
+                is_trusted,
+                warnings_issued,
+                first_seen,
+                last_seen,
+            },
+        ))
     }
 }
 
@@ -1783,6 +1892,102 @@ mod tests {
             assert_eq!(
                 row.3, "critical",
                 "risk_level stays critical once max_session_bot_score hit 1.0"
+            );
+
+            sqlx::query("delete from ac_player_stats where subscriber_id = $1")
+                .bind(account_id)
+                .execute(&pool)
+                .await
+                .expect("cleanup ac_player_stats row");
+            sqlx::query("delete from accounts where id = $1")
+                .bind(account_id)
+                .execute(&pool)
+                .await
+                .expect("cleanup fixture account");
+        }
+
+        /// `#achistory`'s backing read (`find_player_stats`): `None` when
+        /// no `ac_player_stats` row exists yet (matching C's own null-
+        /// `mysql_fetch_row` branch), then a full round trip of every
+        /// column - including `first_seen` staying fixed across a second
+        /// `update_player_stats` call on the same subscriber, matching
+        /// C's set-once `db_ac_ensure_player_stats` semantics for the
+        /// equivalent field (this migration's own doc comment explicitly
+        /// requires `first_seen` to never be touched by the upsert's `do
+        /// update` clause).
+        #[tokio::test]
+        async fn find_player_stats_reports_none_then_round_trips_every_column() {
+            let Some(pool) = connect().await else {
+                return;
+            };
+            let repo = PgAntiCheatRepository::new(pool.clone());
+
+            sqlx::query("delete from accounts where username = 'ac_history_fixture_acct'")
+                .execute(&pool)
+                .await
+                .expect("pre-clean fixture account");
+            let (account_id,): (i64,) = sqlx::query_as(
+                "insert into accounts(username, password_hash) values ($1, 'secret') returning id",
+            )
+            .bind("ac_history_fixture_acct")
+            .fetch_one(&pool)
+            .await
+            .expect("insert fixture account");
+
+            assert!(
+                repo.find_player_stats(account_id)
+                    .await
+                    .expect("find_player_stats before any row exists")
+                    .is_none(),
+                "no ac_player_stats row must report None, not an error"
+            );
+
+            repo.update_player_stats(account_id, 0.9, 3, 1, 2, 3, 0)
+                .await
+                .expect("update_player_stats first call");
+            repo.set_trusted(account_id, true)
+                .await
+                .expect("set_trusted");
+            repo.issue_warning(account_id).await.expect("issue_warning");
+
+            let first_read = repo
+                .find_player_stats(account_id)
+                .await
+                .expect("find_player_stats after first call")
+                .expect("row must exist now");
+            assert_eq!(first_read.total_sessions, 1);
+            assert_eq!(first_read.flagged_sessions, 1);
+            assert_eq!(first_read.suspicious_sessions, 0);
+            assert_eq!(first_read.total_heartbeat_violations, 1);
+            assert_eq!(first_read.total_state_violations, 2);
+            assert_eq!(first_read.total_challenge_failures, 3);
+            assert_eq!(first_read.total_anomalies, 0);
+            assert!((first_read.max_session_bot_score - 0.9).abs() < 0.001);
+            assert!((first_read.avg_session_bot_score - 0.9).abs() < 0.001);
+            assert_eq!(first_read.risk_level, "high");
+            assert!(
+                !first_read.is_flagged,
+                "set_trusted must not touch is_flagged"
+            );
+            assert!(first_read.is_trusted);
+            assert_eq!(first_read.warnings_issued, 1);
+            assert!(!first_read.first_seen.is_empty());
+            assert!(first_read.last_seen.is_some());
+
+            // A second rollup call must accumulate the counters but must
+            // NOT move first_seen.
+            repo.update_player_stats(account_id, 0.1, 0, 0, 0, 0, 0)
+                .await
+                .expect("update_player_stats second call");
+            let second_read = repo
+                .find_player_stats(account_id)
+                .await
+                .expect("find_player_stats after second call")
+                .expect("row must still exist");
+            assert_eq!(second_read.total_sessions, 2);
+            assert_eq!(
+                second_read.first_seen, first_read.first_seen,
+                "first_seen must never move once set"
             );
 
             sqlx::query("delete from ac_player_stats where subscriber_id = $1")

@@ -6754,6 +6754,15 @@ async fn main() -> anyhow::Result<()> {
                         "applied #acviolations lookups"
                     );
                 }
+                let ac_history_events_applied =
+                    apply_ac_history_events(&mut world, &anticheat_repository).await;
+                if ac_history_events_applied != 0 {
+                    info!(
+                        ac_history_events_applied,
+                        tick = world.tick.0,
+                        "applied #achistory lookups"
+                    );
+                }
                 let ac_siglist_events_applied =
                     apply_ac_siglist_events(&mut world, &anticheat_repository).await;
                 if ac_siglist_events_applied != 0 {

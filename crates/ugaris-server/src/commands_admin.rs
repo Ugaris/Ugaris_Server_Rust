@@ -5507,9 +5507,9 @@ pub(crate) fn apply_admin_character_command(
     // these six of the ~20-member family are ported so far (see
     // `PORTING_TODO.md`'s remaining-text-commands task's REMAINING note);
     // `acreset`/`acflag`/`acwatch`/`acunflag`/`actrust`/`acuntrust`/
-    // `acwarn`/`acsessions`/`acviolations` are also ported, further
-    // below; `achistory`/`acsharedip`/`acsharedhw`/`achighrisk`/
-    // `aclookup` remain unported. `#accleanup`/`#acsiglist`/`#acsigadd`/
+    // `acwarn`/`acsessions`/`acviolations`/`achistory` are also ported,
+    // further below; `acsharedip`/`acsharedhw`/`achighrisk`/`aclookup`
+    // remain unported. `#accleanup`/`#acsiglist`/`#acsigadd`/
     // `#acsigdel` (below, further down) need no name resolution at all,
     // so they aren't part of this shared `lower ==` arm.
     if lower == "achelp" {
@@ -6172,6 +6172,58 @@ pub(crate) fn apply_admin_character_command(
             });
         };
         world.queue_ac_violations_lookup(character_id, target_name, session_id);
+        return Some(KeyringCommandResult::default());
+    }
+
+    // C `#achistory <player>` (`command.c:10232-10239` dispatch,
+    // `CF_GOD|CF_STAFF`-gated, exact-word; `ac_cmd_history`, `anticheat.c:
+    // 924-972`). Identical single-name-target resolution shape to
+    // `#acsessions`/`#acviolations` above - see `apply_ac_history_events`
+    // for the subscriber-id resolution and the lifetime `ac_player_stats`
+    // rollup read itself.
+    if lower == "achistory" {
+        let Some(caller) = world.characters.get(&character_id) else {
+            return Some(KeyringCommandResult::default());
+        };
+        if !caller
+            .flags
+            .intersects(CharacterFlags::STAFF | CharacterFlags::GOD)
+        {
+            return None;
+        }
+        let name = rest.trim_start();
+        if name.is_empty() {
+            return Some(KeyringCommandResult {
+                messages: vec!["Usage: #achistory <player>".to_string()],
+                ..Default::default()
+            });
+        }
+        let mut candidates: Vec<&Character> = world
+            .characters
+            .values()
+            .filter(|character| {
+                character.flags.contains(CharacterFlags::PLAYER)
+                    && character.name.eq_ignore_ascii_case(name)
+            })
+            .collect();
+        candidates.sort_by_key(|character| character.id.0);
+        let Some(target_id) = candidates.first().map(|character| character.id) else {
+            return Some(KeyringCommandResult {
+                messages: vec![format!("Player '{name}' not found online.")],
+                ..Default::default()
+            });
+        };
+        let target_name = world.characters[&target_id].name.clone();
+        let Some(session_id) = runtime
+            .player_for_character(target_id)
+            .and_then(|player| player.anticheat_session_id)
+        else {
+            return Some(KeyringCommandResult {
+                messages: vec![format!("Player '{target_name}' has no connection data.")],
+                ..Default::default()
+            });
+        };
+        world.queue_ac_history_lookup(character_id, target_name, session_id);
         return Some(KeyringCommandResult::default());
     }
 

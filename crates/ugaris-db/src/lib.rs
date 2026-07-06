@@ -13,8 +13,8 @@ use sqlx::{postgres::PgPoolOptions, PgPool};
 
 pub use achievement::{AchievementRepository, PgAchievementRepository};
 pub use anticheat::{
-    AntiCheatCounters, AntiCheatEvent, AntiCheatFingerprint, AntiCheatRepository,
-    AntiCheatSessionCreate, AntiCheatSessionHistoryRow, AntiCheatSessionInfo,
+    AntiCheatCounters, AntiCheatEvent, AntiCheatFingerprint, AntiCheatPlayerStatsRow,
+    AntiCheatRepository, AntiCheatSessionCreate, AntiCheatSessionHistoryRow, AntiCheatSessionInfo,
     AntiCheatSignatureRow, AntiCheatViolationRow, PgAntiCheatRepository,
 };
 pub use area::{AreaRepository, PgAreaRepository};
