@@ -459,3 +459,36 @@ fn drain_pending_level_achievements_is_empty_when_nothing_leveled() {
 
     assert!(world.drain_pending_level_achievements().is_empty());
 }
+
+// C `give_exp`'s trailing `if (addedExp > 0) macro_track_exp_gain(cn)`
+// (`tool.c:1427-1429`).
+#[test]
+fn give_exp_queues_macro_exp_gain_event_only_on_a_positive_grant() {
+    let mut world = World::default();
+    let mut player = character(1);
+    player.exp = 10;
+    assert!(world.spawn_character(player, 10, 10));
+
+    world.give_exp(CharacterId(1), 5, 1);
+    assert_eq!(world.drain_exp_gain_events(), vec![CharacterId(1)]);
+
+    // A zero-or-negative net grant does not queue a macro-tracking event.
+    world.give_exp(CharacterId(1), 0, 1);
+    assert!(world.drain_exp_gain_events().is_empty());
+}
+
+#[test]
+fn give_exp_does_not_queue_macro_event_when_noexp_or_area_21_short_circuits() {
+    let mut world = World::default();
+    let mut player = character(1);
+    player.flags.insert(CharacterFlags::NOEXP);
+    assert!(world.spawn_character(player, 10, 10));
+
+    world.give_exp(CharacterId(1), 100, 1);
+    assert!(world.drain_exp_gain_events().is_empty());
+
+    let mut world2 = World::default();
+    assert!(world2.spawn_character(character(2), 10, 10));
+    world2.give_exp(CharacterId(2), 100, 21);
+    assert!(world2.drain_exp_gain_events().is_empty());
+}

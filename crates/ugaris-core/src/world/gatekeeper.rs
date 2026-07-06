@@ -591,14 +591,30 @@ impl World {
     }
 
     /// C `give_money_silent(cn, val, reason)` (`src/system/tool.c:
-    /// 1441-1449`), minus the `dlog`/Macro-Daemon activity tracking, which
-    /// have no Rust equivalent yet (same omission as every other
-    /// `give_money_silent` call site in this codebase).
+    /// 1441-1449`), minus the `dlog` debug-log call (no Rust `dlog` sink
+    /// exists). The trailing `if (val != 0) macro_track_gold_change(cn)`
+    /// is queued via `pending_gold_change_events` (`World` has no access
+    /// to the session-owned `PlayerRuntime` that owns `MacroPpd`) for
+    /// `ugaris-server`'s `apply_macro_activity_events` to drain and stamp - same
+    /// omission as every other `give_money_silent` call site in this
+    /// codebase that duplicates this logic inline instead of calling
+    /// this function.
     pub fn gate_give_money_silent(&mut self, player_id: CharacterId, amount: u32) {
-        if let Some(player) = self.characters.get_mut(&player_id) {
-            player.gold = player.gold.saturating_add(amount);
-            player.flags.insert(CharacterFlags::ITEMS);
+        let Some(player) = self.characters.get_mut(&player_id) else {
+            return;
+        };
+        player.gold = player.gold.saturating_add(amount);
+        player.flags.insert(CharacterFlags::ITEMS);
+        if amount != 0 {
+            self.pending_gold_change_events.push(player_id);
         }
+    }
+
+    /// Drains the queue [`Self::gate_give_money_silent`] fills for every
+    /// character whose gold just changed by a nonzero amount - see
+    /// `pending_gold_change_events`'s doc comment (`world/mod.rs`).
+    pub fn drain_gold_change_events(&mut self) -> Vec<CharacterId> {
+        self.pending_gold_change_events.drain(..).collect()
     }
 
     /// The player-side tail of `enter_room`'s success path

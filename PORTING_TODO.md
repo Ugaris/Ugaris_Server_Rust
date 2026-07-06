@@ -11525,6 +11525,46 @@ Unlocks every quest NPC. Do these before any P4 area work.
   `crates/ugaris-core/src/macro_daemon.rs`'s module doc comment for the
   full breakdown.
 
+  REMAINING: (iteration 240) closed sub-item (5) - wired
+  `macro_track_exp_gain`/`macro_track_combat`/`macro_track_gold_change`
+  (`src/system/tool.c:385-426`, `death.c:1112-1117`) at their real
+  call sites. New `World` queues `pending_exp_gain_events`/
+  `pending_combat_events`/`pending_gold_change_events` (`world/mod.rs`,
+  mirroring `pending_lostcon_hurt_events`'s same `World`-can't-reach-
+  `PlayerRuntime` gap) are filled by `World::give_exp` (`world/exp.rs`,
+  gated on C's `addedExp > 0`), `World::apply_legacy_hurt` (`world/
+  hurt.rs`, gated on C's `dam > 0`, pushing both defender and, if
+  present, attacker), and `World::gate_give_money_silent` (`world/
+  gatekeeper.rs`, gated on C's `val != 0`) respectively, each with a
+  matching `drain_*_events` method. A new `ugaris-server`-side bridge,
+  `apply_macro_activity_events` (new `crates/ugaris-server/src/
+  macro_daemon.rs`, mirroring `apply_bank_events`'s `World`/
+  `PlayerRuntime` split - deliberately not named `apply_macro_events`,
+  keeping that name free for sub-item (2)'s future NPC-driver bridge),
+  drains all three queues every tick and stamps `MacroPpd::
+  last_exp_gain`/`last_combat`/`last_gold_change` on the matching
+  online player, wired into the tick loop in `main.rs` right after the
+  existing per-tick lostcon-hurt-reaction block. C's other gold-
+  granting entry point, `give_money` (`ugaris-server/src/
+  achievement.rs`), already runs server-side with direct
+  `PlayerRuntime` access, so it stamps `last_gold_change` inline
+  instead of going through the queue. `macro_is_player_active` (from
+  iteration 239) now sees real, live-updated values for any online
+  player once this task's future live-driver wiring slice (sub-items
+  1-4, 6) reads them. 9 new tests (2 in `world/tests/exp.rs`, 3 in
+  `world/tests/hurt.rs`, 2 in `world/tests/gatekeeper.rs`, covering the
+  positive/zero-or-negative gating and unknown-character no-op cases
+  for all three queues). `cargo fmt --all`, `cargo test --workspace`
+  (2246 ugaris-core [+29, includes doc-test/other reshuffling since
+  iteration 239's count] + 78 db + 3 net + 45 protocol + 1073 server,
+  all green, zero failures), `cargo build -p ugaris-server`/
+  `--workspace` clean with zero warnings, 10s boot-smoke confirmed
+  "entering Rust game loop" with no panic and hundreds of NPC ticks
+  per game tick. Still needed: sub-items (1)-(4) and (6) from the
+  iteration-239 note (the NPC-side state machine/message loop/
+  cross-server hand-off/reward item grants/pentagram+xmas cosmetics) -
+  none of those are part of this slice.
+
 - [x] **`.pre` zone preprocessor parity** - `src/system/create.c` expands
   `.pre` template includes; the Rust `ZoneLoader` skips them. Check which
   areas' data actually use `.pre` and port expansion so those areas load

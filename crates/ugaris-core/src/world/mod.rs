@@ -379,6 +379,33 @@ pub struct World {
     /// inline between the sound-effect check and the death-threshold
     /// check of the exact same `hurt()` call C calls it from.
     pending_lostcon_hurt_events: Vec<CharacterId>,
+    /// `CharacterId`s that just gained a positive amount of experience via
+    /// [`World::give_exp`] (C `give_exp`'s trailing `if (addedExp > 0)
+    /// macro_track_exp_gain(cn)`, `src/system/tool.c:1427-1429`). `World`
+    /// has no access to the session-owned `PlayerRuntime` that owns
+    /// `MacroPpd::last_exp_gain`, so `ugaris-server`'s
+    /// `apply_macro_activity_events`
+    /// (`crates/ugaris-server/src/macro_daemon.rs`) drains this and stamps
+    /// the matching field, mirroring `pending_lostcon_hurt_events`'s same
+    /// architectural gap.
+    pending_exp_gain_events: Vec<CharacterId>,
+    /// `CharacterId`s that took nonzero combat damage via
+    /// [`World::apply_legacy_hurt`] (C `hurt`'s leading `if (dam > 0) {
+    /// macro_track_combat(cn); if (cc > 0) macro_track_combat(cc); }`,
+    /// `src/system/death.c:1112-1117`) - both the defender and, if
+    /// present, the attacker. Drained the same way as
+    /// [`Self::pending_exp_gain_events`].
+    pending_combat_events: Vec<CharacterId>,
+    /// `CharacterId`s whose gold changed by a nonzero amount via
+    /// [`World::gate_give_money_silent`] (C `give_money_silent`'s trailing
+    /// `if (val != 0) macro_track_gold_change(cn)`, `src/system/tool.c:
+    /// 1441-1449`). Drained the same way as
+    /// [`Self::pending_exp_gain_events`]. C's other gold-granting entry
+    /// point, `give_money`, already runs server-side with direct
+    /// `PlayerRuntime` access (`ugaris-server/src/achievement.rs::
+    /// give_money`) and stamps `MacroPpd::last_gold_change` inline there
+    /// instead of queuing through here.
+    pending_gold_change_events: Vec<CharacterId>,
     pending_bank_events: Vec<BankEvent>,
     pending_trader_events: Vec<TraderEvent>,
     pending_clanmaster_events: Vec<ClanmasterEvent>,

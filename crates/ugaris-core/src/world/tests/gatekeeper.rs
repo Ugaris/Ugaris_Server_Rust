@@ -464,6 +464,30 @@ fn gate_take_money_and_give_money_silent_match_c() {
     assert_eq!(world.characters[&CharacterId(2)].gold, 10000);
 }
 
+// C `give_money_silent`'s trailing `if (val != 0) macro_track_gold_change
+// (cn)` (`tool.c:1441-1449`).
+#[test]
+fn gate_give_money_silent_queues_a_macro_gold_change_event_for_a_nonzero_amount() {
+    let mut world = World::default();
+    assert!(world.spawn_character(character(1), 10, 10));
+
+    world.gate_give_money_silent(CharacterId(1), 500);
+    assert_eq!(world.drain_gold_change_events(), vec![CharacterId(1)]);
+
+    // A zero-amount call does not queue a macro-tracking event.
+    world.gate_give_money_silent(CharacterId(1), 0);
+    assert!(world.drain_gold_change_events().is_empty());
+}
+
+#[test]
+fn gate_give_money_silent_does_not_queue_for_an_unknown_character() {
+    let mut world = World::default();
+
+    world.gate_give_money_silent(CharacterId(99), 500);
+
+    assert!(world.drain_gold_change_events().is_empty());
+}
+
 /// The player-side tail of `enter_room`'s success path (`gatekeeper.c:
 /// 277-303`): teleport, spell-slot stripping, notices, and HP/mana/
 /// endurance/`regen_ticker` reset.

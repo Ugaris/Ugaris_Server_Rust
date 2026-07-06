@@ -765,3 +765,46 @@ fn apply_legacy_hurt_does_not_queue_a_lostcon_event_when_damage_is_fully_blocked
 
     assert!(world.drain_lostcon_hurt_events().is_empty());
 }
+
+// `pending_combat_events`/`drain_combat_events` (C `death.c:1112-1117`'s
+// `if (dam > 0) { macro_track_combat(cn); if (cc > 0)
+// macro_track_combat(cc); }`).
+
+#[test]
+fn apply_legacy_hurt_queues_combat_events_for_both_defender_and_attacker() {
+    let mut world = World::default();
+    let target = character(1);
+    let attacker = character(2);
+    assert!(world.spawn_character(target, 10, 10));
+    assert!(world.spawn_character(attacker, 11, 11));
+
+    world.apply_legacy_hurt(CharacterId(1), Some(CharacterId(2)), POWERSCALE, 1, 0, 0);
+
+    let mut events = world.drain_combat_events();
+    events.sort_by_key(|id| id.0);
+    assert_eq!(events, vec![CharacterId(1), CharacterId(2)]);
+}
+
+#[test]
+fn apply_legacy_hurt_queues_only_the_defender_when_there_is_no_attacker() {
+    let mut world = World::default();
+    let target = character(1);
+    assert!(world.spawn_character(target, 10, 10));
+
+    world.apply_legacy_hurt(CharacterId(1), None, POWERSCALE, 1, 0, 0);
+
+    assert_eq!(world.drain_combat_events(), vec![CharacterId(1)]);
+}
+
+#[test]
+fn apply_legacy_hurt_does_not_queue_a_combat_event_for_zero_damage() {
+    let mut world = World::default();
+    let target = character(1);
+    let attacker = character(2);
+    assert!(world.spawn_character(target, 10, 10));
+    assert!(world.spawn_character(attacker, 11, 11));
+
+    world.apply_legacy_hurt(CharacterId(1), Some(CharacterId(2)), 0, 1, 0, 0);
+
+    assert!(world.drain_combat_events().is_empty());
+}

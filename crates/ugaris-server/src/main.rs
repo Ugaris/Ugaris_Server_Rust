@@ -30,6 +30,7 @@ mod keyring;
 mod login;
 mod loot;
 mod lostcon;
+mod macro_daemon;
 mod map_sync;
 mod merchants;
 mod military;
@@ -68,6 +69,7 @@ pub(crate) use keyring::*;
 pub(crate) use login::*;
 pub(crate) use loot::*;
 pub(crate) use lostcon::*;
+pub(crate) use macro_daemon::*;
 pub(crate) use map_sync::*;
 pub(crate) use merchants::*;
 pub(crate) use military::*;
@@ -6730,6 +6732,24 @@ async fn main() -> anyhow::Result<()> {
                         lostcon_self_defense_reactions,
                         tick = world.tick.0,
                         "lostcon character(s) used a potion/recall in reaction to taking damage"
+                    );
+                }
+
+                // C `macro_track_exp_gain`/`macro_track_combat`/
+                // `macro_track_gold_change` (`src/system/tool.c:385-426`,
+                // `death.c:1112-1117`): stamp the Macro Daemon's
+                // `MacroPpd::last_exp_gain`/`last_combat`/
+                // `last_gold_change` activity fields for whatever exp/
+                // combat/gold events this tick's `give_exp`/
+                // `apply_legacy_hurt`/`gate_give_money_silent` calls
+                // queued, wherever in this tick they happened.
+                let macro_events_applied =
+                    apply_macro_activity_events(&mut runtime, &mut world, current_unix_time());
+                if macro_events_applied != 0 {
+                    info!(
+                        macro_events_applied,
+                        tick = world.tick.0,
+                        "applied Macro Daemon activity-tracking events"
                     );
                 }
 

@@ -686,9 +686,13 @@ pub(crate) async fn award_skill_achievement(
 /// `achievement_add_gold_earned` wealth ladder (`CoinCollector`/
 /// `WealthyAdventurer`/`RichNoble`/`Millionaire`) with the silver amount
 /// converted to whole gold units (`amount / 100`, integer division,
-/// exactly like C's `(unsigned int)(val / 100)` cast). `dlog`/Macro-Daemon
-/// activity tracking have no Rust equivalent yet (same omission as
-/// `World::gate_give_money_silent`). Also records the DB first-unlock/
+/// exactly like C's `(unsigned int)(val / 100)` cast). C's trailing `if
+/// (val != 0) macro_track_gold_change(cn)` is applied here too (stamping
+/// `MacroPpd::last_gold_change` directly, since this function already
+/// has both `World` and `ServerRuntime` in scope - unlike
+/// `World::gate_give_money_silent`, which has to queue it for
+/// `ugaris-server`'s `apply_macro_activity_events` instead). `dlog` has no Rust
+/// equivalent yet. Also records the DB first-unlock/
 /// grats-announce tail for anything newly unlocked (see `award_play_time_
 /// minute`'s doc comment).
 pub(crate) async fn give_money(
@@ -727,6 +731,7 @@ pub(crate) async fn give_money(
     let Some(player) = runtime.player_for_character_mut(character_id) else {
         return;
     };
+    player.macro_ppd.last_gold_change = now;
     let unlocked = ugaris_core::achievement::add_gold_earned(
         &mut player.achievement_data,
         &mut player.achievement_stats,

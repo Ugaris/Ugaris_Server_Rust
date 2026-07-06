@@ -108,10 +108,10 @@ impl World {
     /// now a thin wrapper) and from `ugaris-core` item drivers, which only
     /// have `&mut World` (not `ServerRuntime`) available.
     ///
-    /// Documented gap: C's trailing `macro_track_exp_gain(cn)` anti-macro
-    /// activity tracker has no Rust equivalent anywhere in the tree (no
-    /// macro-daemon system is ported), so it is intentionally skipped, not
-    /// silently dropped.
+    /// C's trailing `if (addedExp > 0) macro_track_exp_gain(cn)` is
+    /// queued via `pending_exp_gain_events` (`World` has no access to the
+    /// session-owned `PlayerRuntime` that owns `MacroPpd`) for
+    /// `ugaris-server`'s `apply_macro_activity_events` to drain and stamp.
     pub fn give_exp(&mut self, character_id: CharacterId, base_exp: i64, area_id: u32) {
         let Some(character) = self.characters.get(&character_id) else {
             return;
@@ -157,6 +157,17 @@ impl World {
         if !no_level {
             self.check_levelup(character_id);
         }
+
+        if added_exp > 0 {
+            self.pending_exp_gain_events.push(character_id);
+        }
+    }
+
+    /// Drains the queue [`Self::give_exp`] fills for every character that
+    /// just gained a positive amount of experience - see
+    /// `pending_exp_gain_events`'s doc comment (`world/mod.rs`).
+    pub fn drain_exp_gain_events(&mut self) -> Vec<CharacterId> {
+        self.pending_exp_gain_events.drain(..).collect()
     }
 
     /// C `check_levelup(cn)` (`src/system/tool.c:1318-1356`): loop while

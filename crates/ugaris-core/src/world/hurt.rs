@@ -33,6 +33,15 @@ impl World {
         shield_percent: i32,
     ) -> Option<LegacyHurtOutcome> {
         let cause_id = cause_id.filter(|id| id.0 != 0 && self.characters.contains_key(id));
+        // C `death.c:1112-1117`: `if (dam > 0) { macro_track_combat(cn);
+        // if (cc > 0) macro_track_combat(cc); }` - checked against the
+        // raw incoming damage, ahead of any armor/shield reduction.
+        if damage > 0 {
+            self.pending_combat_events.push(target_id);
+            if let Some(cause_id) = cause_id {
+                self.pending_combat_events.push(cause_id);
+            }
+        }
         let mut outcome = LegacyHurtOutcome::default();
         let show_attack_debug = self.show_attack_debug;
         let cause_position = cause_id.and_then(|id| {
@@ -274,6 +283,14 @@ impl World {
     /// (`world/lostcon.rs`).
     pub fn drain_lostcon_hurt_events(&mut self) -> Vec<CharacterId> {
         self.pending_lostcon_hurt_events.drain(..).collect()
+    }
+
+    /// Drains the queue [`Self::apply_legacy_hurt`] fills for every
+    /// character that just took nonzero combat damage (defender and, if
+    /// present, attacker) - see `pending_combat_events`'s doc comment
+    /// (`world/mod.rs`).
+    pub fn drain_combat_events(&mut self) -> Vec<CharacterId> {
+        self.pending_combat_events.drain(..).collect()
     }
 
     pub fn apply_simple_baddy_death_driver(
