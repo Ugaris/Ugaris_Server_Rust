@@ -10586,6 +10586,55 @@ Unlocks every quest NPC. Do these before any P4 area work.
   `/showvalues`/`/allow`) still need their own `server_chat`-equivalent
   design once (1) fully lands. The actual DB-backed save+redirect path
   itself still has no live-Postgres test (same gap as before).
+  REMAINING (iteration 224): wired the next remaining call site -
+  **`/jail`/`/unjail`** (`world/jail.rs`, C `jail_player`/`unjail_player`,
+  `src/system/tool.c:4392-4425`'s tail). Unlike `/office`/`/goto` (which
+  defer via a `KeyringCommandResult` field back to the synchronous
+  command-processing block in `main.rs`), `World::apply_jail_action`
+  already runs inside the *async* DB-lookup resolution path
+  (`resolve_jail_lookup`, called from `world_events.rs::
+  apply_jail_events` after the target-name DB round trip) with no
+  `ServerRuntime`/DB-repository access of its own, so instead of sending
+  the "down" message eagerly on `self.area_id != rest_area` it now pushes
+  a new `JailCrossAreaTransfer { caller_id, target_id, target_area,
+  target_x, target_y }` onto a new `World::
+  pending_jail_cross_area_transfers` queue (drained via the new
+  `World::drain_pending_jail_cross_area_transfers`, same pattern as every
+  other `pending_*` queue in this module). A new `ugaris-server`
+  function, `world_events.rs::apply_jail_cross_area_transfers`, drains
+  that queue once per tick (called from `main.rs` right after the
+  existing `apply_jail_events` call) and, for each entry, calls the
+  shared `attempt_cross_area_transfer` helper with `target_mirror =
+  u32::from(config.mirror_id)` - matching C's `change_area` reading
+  `ch[cn].mirror` (the *target character's own current* mirror, which
+  under the single-process-per-area-mirror stance is always this
+  process's `mirror_id`, exactly like the `ClanSpawnExit`/`MineGateway`
+  arms since neither jail nor aston locations carry a mirror field of
+  their own) - falling back to "Nothing happens - target area server is
+  down." only if the shared helper itself fails, mirroring every other
+  call site's `if transferred {...} else {...}` shape. Updated the one
+  existing unit test that previously asserted the eager "down" message
+  for a cross-area `/jail` to instead assert the transfer is queued with
+  the exact `(caller_id, target_id, target_area, target_x, target_y)`
+  tuple and no "down" message; added two new tests for
+  `apply_jail_cross_area_transfers` itself (no-op on an empty queue;
+  missing-repository-pair falls back to the shared down message,
+  mirroring `attempt_cross_area_transfer`'s own repository-pair test in
+  `tests/cross_area.rs`). `cargo fmt --all`, `cargo test --workspace`
+  (2108 ugaris-core + 73 db + 3 net + 45 protocol + 1058 server, all
+  green, zero failures), `cargo build -p ugaris-server` clean with zero
+  warnings, 10s boot-smoke confirmed "entering Rust game loop" with no
+  panic. Still missing, in the same priority order as before: (1) the
+  dungeon-master eviction rescue (`world/dungeon_master.rs` - same
+  no-DB-handle constraint `/jail` had, and currently doesn't even show a
+  "down" message since there's no direct command caller to notify - see
+  that file's own doc comment; now the last remaining
+  `area_id != config.area_id` call site); (2) a periodic `mark_alive`
+  heartbeat (still startup-only); (3) the three blocked commands
+  (`/exterminate`/`/values`+`/showvalues`/`/allow`) still need their own
+  `server_chat`-equivalent design once (1) fully lands. The actual
+  DB-backed save+redirect path itself still has no live-Postgres test
+  (same gap as before).
 
 - [ ] **Player-side fight-driver auto-combat (lostcon self-defense +
   no*/auto* toggle family)** - `fight_driver_attack_enemy`/

@@ -27,12 +27,14 @@
 //! `GameSettings`-backed jail/aston location (already wired by
 //! `/setjaillocation`/`/setastonlocation`), message both parties, then
 //! either `teleport_char_driver` locally (when this area server's
-//! `area_id` already equals the jail/aston area) or attempt the unported
-//! cross-area `change_area` handoff - substituted here with the same
-//! "Nothing happens - target area server is down." message used by every
-//! other cross-area teleport in this codebase (see the `Cross-area
-//! transfer` PORTING_TODO task), sent to the caller since they're the one
-//! who needs to know why the target didn't visibly move.
+//! `area_id` already equals the jail/aston area) or queue a
+//! [`JailCrossAreaTransfer`] for `ugaris-server`'s `world_events.rs::
+//! apply_jail_cross_area_transfers` to hand off to the shared
+//! `attempt_cross_area_transfer` helper (`World` has no DB handle or
+//! `ServerRuntime` of its own, same reason the lookup itself is deferred)
+//! - matching C's `change_area(cn, resta, restx, resty)` call exactly;
+//! the caller is only told "Nothing happens - target area server is
+//! down." if that hand-off itself fails.
 use super::lastseen::is_valid_lookup_name;
 use super::*;
 
@@ -47,6 +49,20 @@ pub struct JailLookup {
     pub caller_id: CharacterId,
     pub target_name: String,
     pub action: JailAction,
+}
+
+/// A `/jail`/`/unjail` mutation whose destination area differs from this
+/// area server's own `area_id` - queued for `ugaris-server`'s
+/// `world_events.rs::apply_jail_cross_area_transfers` since `World` has
+/// no DB handle or `ServerRuntime` to perform the `change_area` hand-off
+/// itself. See the module doc comment.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct JailCrossAreaTransfer {
+    pub caller_id: CharacterId,
+    pub target_id: CharacterId,
+    pub target_area: u16,
+    pub target_x: u16,
+    pub target_y: u16,
 }
 
 impl World {
@@ -77,6 +93,12 @@ impl World {
 
     pub fn drain_pending_jail_lookups(&mut self) -> Vec<JailLookup> {
         self.pending_jail_lookups.drain(..).collect()
+    }
+
+    /// Drains every cross-area `/jail`/`/unjail` hand-off queued this
+    /// tick - see [`JailCrossAreaTransfer`].
+    pub fn drain_pending_jail_cross_area_transfers(&mut self) -> Vec<JailCrossAreaTransfer> {
+        self.pending_jail_cross_area_transfers.drain(..).collect()
     }
 
     /// Called once the DB has confirmed `target_name` is a real account
@@ -146,10 +168,14 @@ impl World {
         if self.area_id == rest_area {
             self.teleport_char_driver(target_id, rest_x, rest_y);
         } else {
-            self.queue_system_text(
-                caller_id,
-                "Nothing happens - target area server is down.".to_string(),
-            );
+            self.pending_jail_cross_area_transfers
+                .push(JailCrossAreaTransfer {
+                    caller_id,
+                    target_id,
+                    target_area: rest_area,
+                    target_x: rest_x,
+                    target_y: rest_y,
+                });
         }
     }
 }

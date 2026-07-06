@@ -115,7 +115,7 @@ fn unjail_sets_aston_respawn_without_respawn_flag() {
 }
 
 #[test]
-fn cross_area_target_gets_the_shared_server_down_message() {
+fn cross_area_target_is_queued_for_the_shared_transfer_helper() {
     let mut world = World::default();
     world.area_id = 1; // current server is NOT the jail area
     world.settings.jail_x = 186;
@@ -142,7 +142,22 @@ fn cross_area_target_gets_the_shared_server_down_message() {
     assert_eq!(target.x, 50);
     assert_eq!(target.y, 50);
 
+    // The usual "You have jailed .../You have been jailed by ..." pair
+    // is still sent unconditionally (matching C), but no "server is
+    // down" message: the cross-area hand-off is deferred to
+    // `ugaris-server`'s `apply_jail_cross_area_transfers`, which only
+    // sends that message if the shared `attempt_cross_area_transfer`
+    // helper itself fails.
     let texts = world.drain_pending_system_texts();
-    assert!(texts.iter().any(|text| text.character_id == CharacterId(1)
-        && text.message == "Nothing happens - target area server is down."));
+    assert_eq!(texts.len(), 2);
+    assert!(!texts
+        .iter()
+        .any(|text| text.message == "Nothing happens - target area server is down."));
+    let transfers = world.drain_pending_jail_cross_area_transfers();
+    assert_eq!(transfers.len(), 1);
+    assert_eq!(transfers[0].caller_id, CharacterId(1));
+    assert_eq!(transfers[0].target_id, CharacterId(2));
+    assert_eq!(transfers[0].target_area, 3);
+    assert_eq!(transfers[0].target_x, 186);
+    assert_eq!(transfers[0].target_y, 234);
 }

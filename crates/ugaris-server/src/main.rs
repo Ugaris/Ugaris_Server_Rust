@@ -7010,6 +7010,26 @@ async fn main() -> anyhow::Result<()> {
                         "applied /jail lookups"
                     );
                 }
+                // `/jail`/`/unjail`'s cross-area hand-off (C
+                // `change_area`, `tool.c:4392-4425`'s tail), queued by
+                // `World::apply_jail_action` above when the destination
+                // area differs from this area server's own `area_id`.
+                let jail_cross_area_transfers_applied = apply_jail_cross_area_transfers(
+                    &mut world,
+                    &mut runtime,
+                    &character_repository,
+                    &area_repository,
+                    config.area_id,
+                    config.mirror_id,
+                )
+                .await;
+                if jail_cross_area_transfers_applied != 0 {
+                    info!(
+                        jail_cross_area_transfers_applied,
+                        tick = world.tick.0,
+                        "applied /jail cross-area transfers"
+                    );
+                }
                 // `/rmdeath <name>`'s async DB round-trip (C
                 // `lookup_name`, `system/lookup.c:42-98` + `system/
                 // database/database_lookup.c:57-83`), queued by

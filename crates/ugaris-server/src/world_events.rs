@@ -3221,6 +3221,58 @@ pub(crate) async fn apply_jail_events(
     applied
 }
 
+/// `/jail`/`/unjail`'s cross-area hand-off (C `change_area(cn, resta,
+/// restx, resty)`, `src/system/tool.c:4392-4425`'s tail): resolves every
+/// `World::drain_pending_jail_cross_area_transfers` entry (queued by
+/// `World::apply_jail_action` when the jail/aston destination area
+/// differs from this area server's own `area_id` - see `world/jail.rs`'s
+/// module doc comment) via the shared `attempt_cross_area_transfer`
+/// helper, same as the `TransportTravel`/`ClanSpawnExit`/`MineGateway`/
+/// `/office`+`/goto` call sites. The destination mirror always equals
+/// this process's own `mirror_id`: neither jail nor aston locations carry
+/// a mirror field of their own (matching C's `change_area` reading
+/// `ch[cn].mirror`, i.e. the target character's *own current* mirror,
+/// which under this codebase's single-process-per-area-mirror stance is
+/// always this process's `mirror_id`).
+pub(crate) async fn apply_jail_cross_area_transfers(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    character_repository: &Option<ugaris_db::PgCharacterRepository>,
+    area_repository: &Option<ugaris_db::PgAreaRepository>,
+    area_id: u16,
+    mirror_id: u16,
+) -> usize {
+    let transfers = world.drain_pending_jail_cross_area_transfers();
+    if transfers.is_empty() {
+        return 0;
+    }
+    let mut applied = 0;
+    for transfer in transfers {
+        let transferred = attempt_cross_area_transfer(
+            world,
+            runtime,
+            character_repository,
+            area_repository,
+            area_id,
+            mirror_id,
+            transfer.target_id,
+            transfer.target_area,
+            u32::from(mirror_id),
+            transfer.target_x,
+            transfer.target_y,
+        )
+        .await;
+        if !transferred {
+            world.queue_system_text(
+                transfer.caller_id,
+                "Nothing happens - target area server is down.".to_string(),
+            );
+        }
+        applied += 1;
+    }
+    applied
+}
+
 /// `/rmdeath`'s async DB round trip (C `lookup_name`, `system/lookup.c:
 /// 42-98` + `system/database/database_lookup.c:57-83`): resolves every
 /// `World::drain_pending_rmdeath_lookups` entry (queued by a
@@ -5223,6 +5275,74 @@ mod jail_tests {
         assert_eq!(applied, 0);
         assert!(world.drain_pending_system_texts().is_empty());
         assert!(world.drain_pending_jail_lookups().is_empty());
+    }
+}
+
+#[cfg(test)]
+mod jail_cross_area_transfer_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn no_transfers_queued_is_a_cheap_no_op() {
+        let mut world = World::default();
+        let mut runtime = ServerRuntime::default();
+        let applied =
+            apply_jail_cross_area_transfers(&mut world, &mut runtime, &None, &None, 1, 0).await;
+        assert_eq!(applied, 0);
+        assert!(world.drain_pending_system_texts().is_empty());
+    }
+
+    #[tokio::test]
+    async fn missing_repository_pair_falls_back_to_the_shared_down_message() {
+        // Mirrors `attempt_cross_area_transfer`'s own
+        // `cross_area_transfer_stays_put_without_a_registered_repository_pair`
+        // coverage (`tests/cross_area.rs`): without a live
+        // `AreaRepository`/`CharacterRepository` pair, the shared helper
+        // can't resolve the target, so the caller gets the legacy
+        // "Nothing happens - target area server is down." text - the
+        // exact fallback `World::apply_jail_action` used to send
+        // eagerly before this hand-off was deferred.
+        let mut world = World::default();
+        let mut runtime = ServerRuntime::default();
+        world.area_id = 1; // current server is NOT the jail area
+        world.settings.jail_x = 186;
+        world.settings.jail_y = 234;
+        world.settings.jail_area = 3;
+        let login = LoginBlock {
+            name: "Godmode".to_string(),
+            password: String::new(),
+            vendor: 0,
+            client_version: Some(3),
+            his_ip: 0,
+            our_ip: 0,
+            unique: 0,
+        };
+        world.add_character(login_character(CharacterId(1), &login, 1, 10, 10));
+        let mut target_login = login.clone();
+        target_login.name = "Baddie".to_string();
+        world.add_character(login_character(CharacterId(2), &target_login, 1, 50, 50));
+        world.resolve_jail_lookup(
+            CharacterId(1),
+            "Baddie",
+            ugaris_core::world::JailAction::Jail,
+        );
+        // The synchronous jail/unjail messages (`You have jailed
+        // .../You have been jailed by ...`) are not this hand-off's
+        // concern - drain them so only the transfer's own feedback
+        // remains below.
+        world.drain_pending_system_texts();
+
+        let applied =
+            apply_jail_cross_area_transfers(&mut world, &mut runtime, &None, &None, 1, 0).await;
+        assert_eq!(applied, 1);
+        let texts = world.drain_pending_system_texts();
+        assert_eq!(texts.len(), 1);
+        assert_eq!(texts[0].character_id, CharacterId(1));
+        assert_eq!(
+            texts[0].message,
+            "Nothing happens - target area server is down."
+        );
+        assert!(world.drain_pending_jail_cross_area_transfers().is_empty());
     }
 }
 
