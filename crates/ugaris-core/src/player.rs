@@ -646,6 +646,12 @@ pub struct PlayerRuntime {
     pub last_command_tick: u64,
     pub character_id: Option<CharacterId>,
     pub character_number: u32,
+    /// Row id of this connection's `anticheat_sessions` DB record (C
+    /// `player[nr]->ac.session_id`, `anticheat.h`), set once
+    /// `ac_player_login`'s Rust equivalent creates the session and cleared
+    /// on reconnect/disconnect. `None` when running without a database or
+    /// before the session row has been created.
+    pub anticheat_session_id: Option<i64>,
     pub command: Vec<u8>,
     pub action: QueuedAction,
     pub queue: VecDeque<QueuedAction>,
@@ -966,6 +972,7 @@ impl PlayerRuntime {
             last_command_tick: current_tick,
             character_id: None,
             character_number: 0,
+            anticheat_session_id: None,
             command: Vec::new(),
             action: QueuedAction::default(),
             queue: VecDeque::with_capacity(COMMAND_QUEUE_SIZE),
@@ -5707,6 +5714,11 @@ impl PlayerRuntime {
         self.client_version = 0;
         self.view_distance = DIST_OLD;
         self.last_command_tick = current_tick;
+        // A reconnect is a brand-new physical connection (C `ac_player_
+        // connect`/`ac_player_login` re-runs from scratch on every login),
+        // so any anti-cheat session tied to the previous connection must
+        // not be carried over; the new login path creates a fresh one.
+        self.anticheat_session_id = None;
         self.command.clear();
         self.action = QueuedAction::default();
         self.queue.clear();

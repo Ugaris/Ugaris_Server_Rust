@@ -26,6 +26,17 @@ pub enum LoginOutcome {
         character_number: u32,
         mirror: i32,
         unique: u32,
+        /// `login_sessions.id` of the row just inserted for this login, for
+        /// linking an anti-cheat session (`AntiCheatSessionCreate::
+        /// login_session_id`) back to it (C's `ac_player_login` links
+        /// against the same login-tracking record via the character/socket
+        /// it holds, not a shared row id, but this codebase's `login_
+        /// sessions` table gives a natural foreign key instead).
+        login_session_id: i64,
+        /// The account (subscriber) id, needed by the anti-cheat session
+        /// bridge (C `get_subscriberId_from_character`) without a second
+        /// query.
+        account_id: i64,
     },
     NewArea {
         character_id: CharacterId,
@@ -606,9 +617,9 @@ async fn begin_login_tx(
     .execute(&mut **tx)
     .await?;
 
-    sqlx::query(
+    let (login_session_id,) = sqlx::query_as::<_, (i64,)>(
         "insert into login_sessions(character_id, account_id, character_name, ip_address, area_id, mirror_id, client_vendor, unique_id) \
-         values ($1, $2, $3, $4, $5, $6, $7, $8)",
+         values ($1, $2, $3, $4, $5, $6, $7, $8) returning id",
     )
     .bind(id)
     .bind(account_id)
@@ -618,7 +629,7 @@ async fn begin_login_tx(
     .bind(request.mirror_id)
     .bind(request.vendor as i32)
     .bind(request.unique as i32)
-    .execute(&mut **tx)
+    .fetch_one(&mut **tx)
     .await?;
 
     Ok(LoginOutcome::Ready {
@@ -626,6 +637,8 @@ async fn begin_login_tx(
         character_number: 0,
         mirror,
         unique: request.unique,
+        login_session_id,
+        account_id,
     })
 }
 
@@ -1320,16 +1333,21 @@ mod tests {
             let outcome = begin_login_tx(&mut tx, req.clone())
                 .await
                 .expect("begin_login_tx");
+            let got_login_session_id;
             match outcome {
                 LoginOutcome::Ready {
                     character_id: got_id,
                     mirror,
                     unique,
+                    login_session_id,
+                    account_id: got_account_id,
                     ..
                 } => {
                     assert_eq!(got_id, CharacterId(character_id as u32));
                     assert_eq!(mirror, 1);
                     assert_eq!(unique, req.unique);
+                    assert_eq!(got_account_id, account_id);
+                    got_login_session_id = login_session_id;
                 }
                 other => panic!("expected Ready, got {other:?}"),
             }
@@ -1349,6 +1367,16 @@ mod tests {
                     .await
                     .expect("count login_sessions");
             assert_eq!(session_count, 1);
+
+            // The returned `login_session_id` must be the real primary key
+            // of the row just inserted, not a placeholder.
+            let (row_id,): (i64,) =
+                sqlx::query_as("select id from login_sessions where character_id = $1")
+                    .bind(character_id)
+                    .fetch_one(&mut *tx)
+                    .await
+                    .expect("fetch login_sessions row");
+            assert_eq!(got_login_session_id, row_id);
         }
     }
 

@@ -213,6 +213,8 @@ fn login_reject_message_matches_legacy_find_login_switch() {
             character_number: 1,
             mirror: 1,
             unique: 0,
+            login_session_id: 1,
+            account_id: 1,
         }),
         None
     );

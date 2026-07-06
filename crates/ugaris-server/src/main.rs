@@ -185,10 +185,10 @@ use ugaris_core::{
 };
 
 use ugaris_db::{
-    AuctionRepository, CharacterRepository, CharacterSaveMode, CharacterSaveRequest,
-    CharacterSnapshot, ClanRegistryRepository, LoginOutcome, LoginRequest, MerchantRepository,
-    MerchantStoreSnapshot, MerchantWareSnapshot, MilitaryAdvisorStorageRepository,
-    MilitaryMasterStorageRepository,
+    AntiCheatRepository, AuctionRepository, CharacterRepository, CharacterSaveMode,
+    CharacterSaveRequest, CharacterSnapshot, ClanRegistryRepository, LoginOutcome, LoginRequest,
+    MerchantRepository, MerchantStoreSnapshot, MerchantWareSnapshot,
+    MilitaryAdvisorStorageRepository, MilitaryMasterStorageRepository,
 };
 
 use ugaris_net::{NetServer, SessionCommand, SessionEvent};
@@ -706,6 +706,7 @@ async fn main() -> anyhow::Result<()> {
         clan_log_repository,
         military_master_storage_repository,
         military_advisor_storage_repository,
+        anticheat_repository,
     ) = if let Some(database_url) = args.database_url.as_deref() {
         let db = ugaris_db::Database::connect(database_url, 8).await?;
         db.ping().await?;
@@ -727,10 +728,11 @@ async fn main() -> anyhow::Result<()> {
             Some(db.clan_log()),
             Some(db.military_master_storage()),
             Some(db.military_advisor_storage()),
+            Some(db.anticheat()),
         )
     } else {
         warn!("DATABASE_URL not set; starting without persistence");
-        (None, None, None, None, None, None, None, None)
+        (None, None, None, None, None, None, None, None, None)
     };
 
     let (events_tx, mut events_rx) = mpsc::channel(1024);
@@ -7180,12 +7182,47 @@ async fn main() -> anyhow::Result<()> {
                                 no_login: runtime.nologin,
                             };
                             match repository.begin_login(request).await {
-                                Ok(LoginOutcome::Ready { character_id: db_character_id, character_number, mirror, .. }) => {
+                                Ok(LoginOutcome::Ready { character_id: db_character_id, character_number, mirror, login_session_id, account_id, .. }) => {
                                     character_id = db_character_id;
                                     if let Some(player) = runtime.players.get_mut(&id.0) {
                                         player.character_id = Some(db_character_id);
                                         player.character_number = if character_number == 0 { db_character_id.0 } else { character_number };
                                         player.set_current_mirror(mirror.max(0) as u32);
+                                    }
+                                    // C `ac_player_login`
+                                    // (`src/module/anticheat/anticheat.c:
+                                    // 173-220`): create the anti-cheat
+                                    // session as soon as the character
+                                    // identity is known. Only the session-
+                                    // lifecycle half is ported here
+                                    // (creation on login, `end_session` on
+                                    // disconnect below) - the detection
+                                    // engine (heartbeat/state/challenge/
+                                    // anomaly subsystems) that would
+                                    // populate `bot_score`/violation
+                                    // counters is not ported, so every
+                                    // session is created and closed with
+                                    // every counter at its SQL default (0).
+                                    if let Some(repository) = &anticheat_repository {
+                                        match repository
+                                            .create_session(ugaris_db::AntiCheatSessionCreate {
+                                                login_session_id: Some(login_session_id),
+                                                account_id: Some(account_id),
+                                                character_id: Some(db_character_id),
+                                                ip_address: login.his_ip as i32,
+                                                area_id: i32::from(config.area_id),
+                                            })
+                                            .await
+                                        {
+                                            Ok(session_id) => {
+                                                if let Some(player) = runtime.players.get_mut(&id.0) {
+                                                    player.anticheat_session_id = Some(session_id);
+                                                }
+                                            }
+                                            Err(err) => {
+                                                warn!(%id, character_id = db_character_id.0, error = %err, "failed to create anti-cheat session");
+                                            }
+                                        }
                                     }
                                     // C `tick_login()`
                                     // (`database_character.c:1164`): a
@@ -7381,6 +7418,7 @@ async fn main() -> anyhow::Result<()> {
                             .and_then(|player| player.character_id)
                             .and_then(|character_id| runtime.account_depots.get(&character_id).cloned());
                         if let Some(player) = runtime.disconnect(id.0) {
+                            let anticheat_session_id = player.anticheat_session_id;
                             if let Some(character_id) = player.character_id {
                                 // C `kick_player`: the character is not
                                 // despawned on disconnect. It is detached
@@ -7426,6 +7464,27 @@ async fn main() -> anyhow::Result<()> {
                                     world.remove_character(character_id);
                                 } else {
                                     info!(%id, character_id = character_id.0, "character entered lostcon linger on disconnect");
+                                }
+                            }
+                            // C `ac_player_disconnect`
+                            // (`src/module/anticheat/anticheat.c:87-172`):
+                            // ends the anti-cheat session tied to the
+                            // physical connection unconditionally on
+                            // disconnect, independent of whether the
+                            // character itself lingers under `CDR_LOSTCON`
+                            // (a still-online character that reconnects on
+                            // a new socket gets a brand-new anti-cheat
+                            // session at the login site instead, matching
+                            // `PlayerRuntime::reclaim_for_session` clearing
+                            // the old id). Only the lifecycle half is
+                            // ported - no bot-score/violation summary
+                            // exists yet (no detection engine ported), so
+                            // the final `bot_score` is always 0.0.
+                            if let (Some(repository), Some(session_id)) =
+                                (&anticheat_repository, anticheat_session_id)
+                            {
+                                if let Err(err) = repository.end_session(session_id, 0.0).await {
+                                    warn!(%id, session_id, error = %err, "failed to end anti-cheat session");
                                 }
                             }
                         }

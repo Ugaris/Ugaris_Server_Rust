@@ -289,4 +289,265 @@ mod tests {
         assert_eq!(legacy_risk_name(3), "critical");
         assert_eq!(legacy_risk_name(99), "low");
     }
+
+    /// Live-DB round trip tests for the session/event lifecycle wired up
+    /// in `ugaris-server` (session creation on login, `end_session` on
+    /// disconnect - see `main.rs`'s `SessionEvent::Login`/`Disconnected`
+    /// handlers). Skips (rather than fails) when `DATABASE_URL` is unset
+    /// or unreachable, matching `character.rs`'s `live_login` convention.
+    /// No foreign keys are exercised here (all optional columns left
+    /// `NULL`) since `anticheat_sessions` only needs to stand on its own
+    /// to prove the repository methods round-trip correctly; each test
+    /// deletes its own row(s) afterward so repeated runs don't accumulate
+    /// data, matching `merchant.rs`'s `live` convention (this repository
+    /// has no locked-transaction-rollback fixture like `character.rs`'s
+    /// `live_login`, since every method commits directly via `&self.pool`
+    /// with no transaction parameter to hook a rollback onto).
+    mod live {
+        use super::*;
+        use sqlx::PgPool;
+
+        async fn connect() -> Option<PgPool> {
+            let url = std::env::var("DATABASE_URL").ok()?;
+            match PgPool::connect(&url).await {
+                Ok(pool) => Some(pool),
+                Err(err) => {
+                    eprintln!("skipping live DB test: could not connect to DATABASE_URL: {err}");
+                    None
+                }
+            }
+        }
+
+        async fn cleanup_session(pool: &PgPool, session_id: i64) {
+            sqlx::query("delete from anticheat_sessions where id = $1")
+                .bind(session_id)
+                .execute(pool)
+                .await
+                .expect("cleanup live anticheat_sessions row");
+        }
+
+        /// `anticheat_sessions.character_id` is a real foreign key into
+        /// `characters`, so `set_character` needs a genuine row to point
+        /// at rather than an arbitrary id. Returns `(account_id,
+        /// character_id)`; callers must delete both (character first) once
+        /// done.
+        async fn insert_fixture_account_and_character(pool: &PgPool) -> (i64, i64) {
+            let (account_id,): (i64,) = sqlx::query_as(
+                "insert into accounts(username, password_hash) values ($1, 'secret') returning id",
+            )
+            .bind("ac_live_fixture_acct")
+            .fetch_one(pool)
+            .await
+            .expect("insert fixture account");
+            let (character_id,): (i64,) = sqlx::query_as(
+                "insert into characters(account_id, name) values ($1, $2) returning id",
+            )
+            .bind(account_id)
+            .bind("AcLiveFixtureChar")
+            .fetch_one(pool)
+            .await
+            .expect("insert fixture character");
+            (account_id, character_id)
+        }
+
+        #[tokio::test]
+        async fn create_update_and_end_session_round_trip() {
+            let Some(pool) = connect().await else {
+                return;
+            };
+            let repo = PgAntiCheatRepository::new(pool.clone());
+
+            // Fixtures use unique names, so stray rows from a previously
+            // aborted run (rather than this test's own cleanup at the end)
+            // would collide; clear them defensively first.
+            sqlx::query("delete from characters where name = 'AcLiveFixtureChar'")
+                .execute(&pool)
+                .await
+                .expect("pre-clean fixture character");
+            sqlx::query("delete from accounts where username = 'ac_live_fixture_acct'")
+                .execute(&pool)
+                .await
+                .expect("pre-clean fixture account");
+            let (account_id, character_id) = insert_fixture_account_and_character(&pool).await;
+
+            let session_id = repo
+                .create_session(AntiCheatSessionCreate {
+                    login_session_id: None,
+                    account_id: Some(account_id),
+                    character_id: None,
+                    ip_address: 0x0a00_0001,
+                    area_id: 3,
+                })
+                .await
+                .expect("create_session");
+            assert!(session_id > 0, "expected a positive session id");
+
+            let (status, bot_score, ended): (i32, f32, bool) = sqlx::query_as(
+                "select status, bot_score, ended_at is not null from anticheat_sessions where id = $1",
+            )
+            .bind(session_id)
+            .fetch_one(&pool)
+            .await
+            .expect("fetch fresh session row");
+            assert_eq!(status, 0, "AC_STATUS_UNVERIFIED is the SQL default");
+            assert_eq!(bot_score, 0.0);
+            assert!(!ended, "a freshly created session must not be ended yet");
+
+            let character_id = CharacterId(character_id as u32);
+            assert!(repo
+                .set_character(session_id, character_id)
+                .await
+                .expect("set_character"));
+
+            assert!(repo
+                .set_fingerprint(
+                    session_id,
+                    AntiCheatFingerprint {
+                        mod_major: 1,
+                        mod_minor: 2,
+                        mod_patch: 3,
+                        os_type: 4,
+                        screen_w: 1920,
+                        screen_h: 1080,
+                        hardware_hash: 0xdead_beef,
+                        code_hash: 0xcafe_babe,
+                    },
+                )
+                .await
+                .expect("set_fingerprint"));
+
+            assert!(repo.set_status(session_id, 2).await.expect("set_status"));
+
+            assert!(repo
+                .update_bot_score(session_id, 0.5, true)
+                .await
+                .expect("update_bot_score"));
+
+            assert!(repo
+                .increment_counters(
+                    session_id,
+                    AntiCheatCounters {
+                        heartbeat_delta: 1,
+                        state_delta: 2,
+                        challenge_delta: 3,
+                        anomaly_delta: 4,
+                        timeout_delta: 5,
+                    },
+                )
+                .await
+                .expect("increment_counters"));
+
+            let (
+                character_id_col,
+                mod_major,
+                screen_w,
+                hardware_hash,
+                status,
+                bot_score,
+                max_bot_score,
+                hb_violations,
+                state_violations,
+                challenge_failures,
+                anomaly_count,
+                timeout_count,
+            ): (i64, i32, i32, i64, i32, f32, f32, i32, i32, i32, i32, i32) = sqlx::query_as(
+                "select character_id, mod_major, screen_w, hardware_hash, status, bot_score, \
+                 max_bot_score, heartbeat_violations, state_violations, challenge_failures, \
+                 anomaly_count, timeout_count from anticheat_sessions where id = $1",
+            )
+            .bind(session_id)
+            .fetch_one(&pool)
+            .await
+            .expect("fetch updated session row");
+            assert_eq!(character_id_col, i64::from(character_id.0));
+            assert_eq!(mod_major, 1);
+            assert_eq!(screen_w, 1920);
+            assert_eq!(hardware_hash, 0xdead_beef_i64);
+            assert_eq!(status, 2);
+            assert_eq!(bot_score, 0.5);
+            assert_eq!(max_bot_score, 0.5);
+            assert_eq!(hb_violations, 1);
+            assert_eq!(state_violations, 2);
+            assert_eq!(challenge_failures, 3);
+            assert_eq!(anomaly_count, 4);
+            assert_eq!(timeout_count, 5);
+
+            let mut data = BTreeMap::new();
+            data.insert("delta_x".to_string(), "500".to_string());
+            let event_id = repo
+                .log_event(AntiCheatEvent {
+                    session_id,
+                    event_type: "speedhack".to_string(),
+                    severity: 2,
+                    details: Some("teleported too far".to_string()),
+                    data,
+                })
+                .await
+                .expect("log_event");
+            assert!(event_id > 0);
+
+            let (event_session_id, event_type, severity): (i64, String, i32) = sqlx::query_as(
+                "select session_id, event_type, severity from anticheat_events where id = $1",
+            )
+            .bind(event_id)
+            .fetch_one(&pool)
+            .await
+            .expect("fetch logged event");
+            assert_eq!(event_session_id, session_id);
+            assert_eq!(event_type, "speedhack");
+            assert_eq!(severity, 2);
+
+            assert!(repo
+                .end_session(session_id, 0.75)
+                .await
+                .expect("end_session"));
+
+            let (final_bot_score, ended): (f32, bool) = sqlx::query_as(
+                "select bot_score, ended_at is not null from anticheat_sessions where id = $1",
+            )
+            .bind(session_id)
+            .fetch_one(&pool)
+            .await
+            .expect("fetch ended session row");
+            assert_eq!(final_bot_score, 0.75);
+            assert!(ended, "end_session must set ended_at");
+
+            sqlx::query("delete from anticheat_events where session_id = $1")
+                .bind(session_id)
+                .execute(&pool)
+                .await
+                .expect("cleanup live anticheat_events rows");
+            cleanup_session(&pool, session_id).await;
+            sqlx::query("delete from characters where id = $1")
+                .bind(character_id.0 as i64)
+                .execute(&pool)
+                .await
+                .expect("cleanup fixture character");
+            sqlx::query("delete from accounts where id = $1")
+                .bind(account_id)
+                .execute(&pool)
+                .await
+                .expect("cleanup fixture account");
+        }
+
+        #[tokio::test]
+        async fn updates_on_an_unknown_session_id_report_not_found() {
+            let Some(pool) = connect().await else {
+                return;
+            };
+            let repo = PgAntiCheatRepository::new(pool);
+
+            // A session id that was never created (or already deleted)
+            // must report `Ok(false)` ("no row matched"), not an error and
+            // not a silent `Ok(true)`.
+            assert!(!repo
+                .set_status(i64::MAX - 1, 1)
+                .await
+                .expect("set_status on unknown id"));
+            assert!(!repo
+                .end_session(i64::MAX - 1, 0.0)
+                .await
+                .expect("end_session on unknown id"));
+        }
+    }
 }

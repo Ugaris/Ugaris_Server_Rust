@@ -8824,13 +8824,92 @@ Unlocks every quest NPC. Do these before any P4 area work.
   (g) `respawn` (low-value, no clean architectural analogue). No
   remaining item in this list is a quick win without first tackling one
   of those six infra/architecture gaps - the next iteration picking this
-  task back up should pick ONE of (a)-(g) as its own slice (most
-  promising: the anticheat sync-command/async-repository bridge design,
-  since `PgAntiCheatRepository` already exists fully unused and would
-  unblock the largest single family) rather than re-scanning `command.c`
-  for more `cmdcmp` names, since this iteration's fresh full pass found
-  only one genuinely new gap (`#ls`/`#cat`) in ~55 previously-flagged
-  entries.
+  task back up should pick ONE of (a)-(g) as its own slice rather than
+  re-scanning `command.c` for more `cmdcmp` names, since this iteration's
+  fresh full pass found only one genuinely new gap (`#ls`/`#cat`) in ~55
+  previously-flagged entries. UPDATE (iteration 196): gap (a)'s session-
+  lifecycle half (session creation on login, `end_session` on
+  disconnect) is now done - see that iteration's own Progress Log entry
+  right below for exactly what's ported vs. still open - so `Pg
+  AntiCheatRepository` is no longer "fully unused"; the detection engine
+  and the 22 `ac_cmd_*` commands are still unported and remain the
+  natural next slice for gap (a).
+
+  Progress Log (iteration 196): picked gap (a) - the anticheat sync-
+  command/async-repository bridge - but scoped it to just the session-
+  *lifecycle* half (C `ac_player_login`/`ac_player_disconnect`,
+  `src/module/anticheat/anticheat.c:73-220`), not any of the 22
+  `ac_cmd_*` admin display commands themselves, since those would only
+  ever show empty/zero data without real sessions existing first (this
+  codebase's `PgAntiCheatRepository`/`anticheat_sessions` table existed
+  fully unused - no login/logout code ever created a row). Wired
+  `AntiCheatRepository::create_session` at the `SessionEvent::Login`
+  success site (`main.rs`, inside the `Ok(LoginOutcome::Ready { .. })`
+  arm, right after character identity is known) and `end_session` at
+  `SessionEvent::Disconnected` (unconditionally, independent of whether
+  the character lingers under `CDR_LOSTCON` - matches C's
+  `ac_player_disconnect` being keyed to the physical connection `nr`,
+  not character presence; a lostcon-reclaim reconnect gets a *new*
+  anti-cheat session at the login site rather than reusing the old one,
+  matching a fresh physical connection). Added `PlayerRuntime::
+  anticheat_session_id: Option<i64>` (`ugaris-core/src/player.rs`),
+  cleared on `reclaim_for_session` for the same reason. Threaded the
+  account id and a real `login_sessions.id` (previously discarded -
+  the insert didn't even use `RETURNING id`) through a new `LoginOutcome
+  ::Ready { login_session_id, account_id, .. }` pair so the anti-cheat
+  session can link back to both without an extra query, atomic with the
+  existing `begin_login_tx` transaction. Explicitly NOT ported this
+  iteration (still open, matching the note's own framing): the
+  detection engine (heartbeat/state/challenge/anomaly/fingerprint
+  subsystems, `anticheat_state.c`/`anticheat_heartbeat.c`/etc., ~1450
+  lines) that would populate `bot_score`/violation counters - every
+  session is created and closed with every counter at its SQL default
+  (0) - and all 22 `ac_cmd_*` admin commands (`acstats`, `acstatus`,
+  `aclist`, etc.), which now have real (if currently always-empty-of-
+  violations) session rows to query but still need their own command-
+  dispatch + `World`-side async-lookup-queue wiring (the `world/
+  lastseen.rs` pattern is the template) as a future slice. `set_
+  character`/`set_fingerprint`/`update_bot_score`/`increment_counters`/
+  `set_status`/`log_event`/`cleanup_old_records` are all exercised by a
+  new live-DB test but still have no caller anywhere in `ugaris-server`
+  outside this test - they await the detection engine. 3 new tests: 1
+  in `ugaris-db/src/character.rs`'s existing `live_login::accepts_
+  matching_area_and_records_login_session` (extended to assert the
+  returned `login_session_id` is the real `login_sessions.id` primary
+  key, not a placeholder) and 2 new live tests in `ugaris-db/src/
+  anticheat.rs` (`create_update_and_end_session_round_trip`, a full
+  create/set_character/set_fingerprint/set_status/update_bot_score/
+  increment_counters/log_event/end_session chain verified against real
+  rows with a real fixture account+character for the `character_id`
+  foreign key, since the column is a genuine FK unlike the other
+  optional columns; `updates_on_an_unknown_session_id_report_not_found`,
+  confirming every mutator returns `Ok(false)` rather than erroring or
+  silently succeeding for a nonexistent id) - both follow `merchant.rs`'s
+  manual-cleanup `live` convention (no transaction-rollback fixture is
+  possible here since every `AntiCheatRepository` method commits
+  directly via `&self.pool` with no transaction parameter to hook a
+  rollback onto, unlike `character.rs`'s `live_login` module). `cargo
+  fmt --all`, `cargo test --workspace` (2047 ugaris-core + 57 db [+2] +
+  3 net + 44 protocol + 844 server, all green, zero failures) - verified
+  by spinning up a throwaway `postgres:16-alpine` container, applying
+  all 11 `migrations/*.sql` files by hand, running `DATABASE_URL=...
+  cargo test -p ugaris-db` (57/57 passed, including both new live
+  tests), then destroying the container; without `DATABASE_URL` set
+  (this repo's default state) the same tests compile and skip cleanly.
+  `cargo build -p ugaris-server` / `cargo build --workspace` clean with
+  zero warnings, 10s boot-smoke confirmed "entering Rust game loop" with
+  no panic and the expected "DATABASE_URL not set; starting without
+  persistence" warning beforehand. Task stays `[~]`: this is one slice
+  of gap (a), not the whole `ac*`/`macro*` family, and gaps (b)-(g) are
+  all still open exactly as this note already described. REMAINING:
+  next slice for gap (a) should be either the detection engine itself
+  (large - probably its own multi-iteration effort, likely warranting a
+  dedicated top-level task rather than staying folded into this one) or
+  a first `ac_cmd_*` admin command or two (e.g. `acstatus <name>`,
+  `aclist`) using the `World::queue_*_lookup` + `apply_*_events` async-
+  bridge pattern `/lastseen` established - those would at least surface
+  the now-real (if all-zero) session/violation-count columns this
+  iteration wired up.
 
 - [ ] **Cross-area transfer** - the big multi-server feature. Every
   cross-area teleport currently returns "target server down". Decide the
