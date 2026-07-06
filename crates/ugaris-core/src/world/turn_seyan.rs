@@ -26,11 +26,9 @@
 //!   is modeled on `Character` yet, so this is a no-op, same precedent as
 //!   `world/gatekeeper.rs`'s `gate_finish_enter_room` and `world/death.rs`.
 //! - `DRD_DEPOT_PPD`'s "strip `IF_QUEST` flags from the 80 depot item
-//!   slots" (`tool.c:4380-4388`) is not ported: no per-character legacy
-//!   depot exists in Rust (`ugaris-server::depot`'s `AccountDepotState` is
-//!   a distinct, newer, account-wide system, not C's `struct depot_ppd`).
-//!   Since nothing can put quest items into a system that doesn't exist
-//!   yet, this gap has no observable effect until that depot is ported.
+//!   slots" (`tool.c:4380-4388`, actually a full slot wipe) is now ported
+//!   at `PlayerRuntime::clear_turn_seyan_ppd`, alongside its other
+//!   `del_data` calls, now that `depot` has a typed Rust representation.
 
 use super::*;
 use crate::legacy::{INVENTORY_LAST_WORN, INVENTORY_START_WORN};

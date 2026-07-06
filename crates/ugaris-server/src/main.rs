@@ -1416,6 +1416,18 @@ async fn main() -> anyhow::Result<()> {
                                 }
                                 continue;
                             }
+                            if command.eq_ignore_ascii_case("depotsort") {
+                                // C `cmdcmp(ptr, "depotsort", 6)` ->
+                                // `depot_sort(cn)` (`command.c:9350-9357`):
+                                // unlike `/accountdepotsort`, this never
+                                // checks whether the depot is currently
+                                // open and never sends a confirmation
+                                // message - it unconditionally sorts the
+                                // character's own `DRD_DEPOT_PPD` block.
+                                personal_depot_sort_command(&mut runtime, character_id);
+                                command_container_refresh.push(character_id);
+                                continue;
+                            }
                             let character_flags = world
                                 .characters
                                 .get(&character_id)
@@ -2248,14 +2260,32 @@ async fn main() -> anyhow::Result<()> {
                                 .characters
                                 .get(&character_id)
                                 .and_then(|character| character.current_container);
-                            let result = if current_container.is_some_and(|container_id| {
+                            let is_account_depot = current_container.is_some_and(|container_id| {
                                 world
                                     .items
                                     .get(&container_id)
                                     .is_some_and(|item| item.driver == IDR_ACCOUNT_DEPOT)
-                            }) {
+                            });
+                            let is_personal_depot = !is_account_depot
+                                && current_container.is_some_and(|container_id| {
+                                    world
+                                        .items
+                                        .get(&container_id)
+                                        .is_some_and(|item| item.flags.contains(ItemFlags::DEPOT))
+                                });
+                            let result = if is_account_depot {
                                 let depot = runtime.ensure_account_depot(character_id);
                                 apply_account_depot_command(&mut world, depot, character_id, &action)
+                            } else if is_personal_depot {
+                                match runtime.player_for_character_mut(character_id) {
+                                    Some(player) => apply_personal_depot_command(
+                                        &mut world,
+                                        &mut player.depot,
+                                        character_id,
+                                        &action,
+                                    ),
+                                    None => AccountDepotCommandResult::Ignored,
+                                }
                             } else {
                                 apply_item_container_command(&mut world, character_id, &action)
                             };
@@ -2643,6 +2673,9 @@ async fn main() -> anyhow::Result<()> {
                             current_container_payload(
                                 &world,
                                 runtime.account_depots.get(&character_id),
+                                runtime
+                                    .player_for_character(character_id)
+                                    .map(|player| player.depot.as_slice()),
                                 character_id,
                             )
                         };
@@ -2832,6 +2865,7 @@ async fn main() -> anyhow::Result<()> {
                                     if let Some(completion) = completed_actions.get_mut(completion_index) {
                                         completion.legacy_return_code = 1;
                                     }
+                                    container_refresh.push(use_character_id);
                                     opened += 1;
                                 }
                                 Ok(ugaris_core::item_driver::UseItemOutcome::OpenAccountDepot { .. }) => {
@@ -6223,10 +6257,16 @@ async fn main() -> anyhow::Result<()> {
                         container_refresh.sort_unstable_by_key(|id| id.0);
                         container_refresh.dedup();
                         for character_id in container_refresh {
-                            let Some(depot) = runtime.account_depots.get(&character_id) else {
+                            let Some(payload) = current_container_payload(
+                                &world,
+                                runtime.account_depots.get(&character_id),
+                                runtime
+                                    .player_for_character(character_id)
+                                    .map(|player| player.depot.as_slice()),
+                                character_id,
+                            ) else {
                                 continue;
                             };
-                            let payload = account_depot_payload(depot);
                             for (session_id, _) in runtime.sessions_for_character(character_id) {
                                 if runtime.send_to_session(session_id, payload.clone()) {
                                     container_sessions += 1;

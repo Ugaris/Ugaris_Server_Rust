@@ -9453,6 +9453,123 @@ Unlocks every quest NPC. Do these before any P4 area work.
   ultimately need (a real, shared, worthwhile piece of infra at this
   point given how many commands across both gaps depend on it).
 
+  Progress Log (iteration 206): closed gap (f) - ported `/depotsort`
+  (`cmd_depotsort`? no such name in C - `cmdcmp(ptr, "depotsort", 6)` at
+  `command.c:9350-9357` calls `depot_sort` directly, no permission gate)
+  and, since a sort command is meaningless without the storage it sorts,
+  the entire previously-unported personal legacy storage depot itself:
+  `src/system/depot.c`'s `swap_depot`/`player_depot`/`depot_cmp`/
+  `depot_sort` (all 159 lines) plus its `struct depot_ppd { struct item
+  itm[MAXDEPOT]; }` (`depot.h:19-23`, `MAXDEPOT` 80, `DRD_DEPOT_PPD`) - a
+  distinct, older, per-character system from `ugaris-server::depot`'s
+  account-wide `AccountDepotState` (opened via `IF_DEPOT` on the access
+  item rather than `IDR_ACCOUNT_DEPOT`). Read `depot.c`, `depot.h`,
+  `act.c:1700-1780`'s `check_container_item` (confirmed the existing
+  Rust `containers.rs::check_current_container` already special-cased
+  `ItemFlags::DEPOT` correctly), and `player.c:1090-1160`/`3282-3313`'s
+  `cl_container`/`cl_container_fast`/`cl_look_container`/`player_act`
+  dispatch in full before writing anything, since the "fast" click
+  semantics turned out to differ subtly from both generic containers and
+  the account depot (see below). Added `PlayerRuntime::depot:
+  Vec<Option<Item>>` (`ugaris-core/src/player.rs`, default 80 `None`s,
+  `MAXDEPOT` now a public core constant) as a genuinely typed PPD field
+  (matching the `keyring`/`quest_log` precedent for structurally-rich
+  PPDs, not the flatter `Vec<u8>`-plus-offset-accessors pattern most
+  other PPDs use) with its own `encode_legacy_depot_item`/
+  `decode_legacy_depot_item` (an independent copy of the C `struct item`
+  byte layout `ugaris-server::depot`'s `legacy_account_depot_codec`
+  already encodes for `AccountDepotState` - duplicated across the crate
+  boundary rather than reused, since `ugaris-server` depends on
+  `ugaris-core` and not the reverse) and `encode_legacy_depot_ppd`/
+  `decode_legacy_depot_ppd`, always persisting all 80 fixed-size slots
+  (unlike `AccountDepotState`'s own subscriber-blob codec, which compacts
+  empty slots out of a variable-length block) so a slot's index survives
+  save/load exactly. Wired `DRD_DEPOT_PPD` into
+  `decode_legacy_ppd_blob`/`encode_legacy_ppd_blob` following the
+  established `had_x`-flag rewrite-or-append pattern. Also closed a
+  second, smaller documented gap while in the area: `turn_seyan`
+  (`tool.c:4379-4388`) sweeps `IF_QUEST`-flagged items out of the 80
+  depot slots on every gate-fight class-8 gate loss - previously a no-op
+  since the depot didn't exist yet - now ported at
+  `PlayerRuntime::clear_turn_seyan_ppd` (a real gap, not a stripped-flag
+  gap: C zeroes the whole slot, `ppd->itm[n].flags = 0`, not just one
+  flag off a kept item). Server-side gameplay logic
+  (`crates/ugaris-server/src/depot.rs`, extending the existing
+  account-depot-only file): `apply_personal_depot_command` (`CL_
+  CONTAINER`/`CL_CONTAINER_FAST`/`CL_LOOK_CONTAINER` dispatch, gated on
+  the open container item's `ItemFlags::DEPOT` rather than a driver id),
+  `personal_depot_swap_slot` (`swap_depot` - only blocks `IF_NODEPOT`,
+  deliberately NOT `IF_QUEST` like the account depot's own swap does;
+  this asymmetry is exactly why `turn_seyan`'s sweep above has to exist,
+  and a blocked store is a silent no-op with no `log_char`, unlike
+  account depot's "You cannot store this item in the depot." message),
+  `store_cursor_item_into_inventory` (C `store_citem`, the same first-
+  free-slot scan `apply_item_container_swap` already uses for generic
+  containers), `personal_depot_payload` ("Your Depot", `MAXDEPOT` slots,
+  `player.c:3282-3313`), `personal_depot_sort`/`personal_depot_sort_
+  command` (`depot_cmp`, sprite-desc/value-desc/name-asc/empties-last -
+  identical ordering to `account_depot_sort`). Read `player_depot`'s
+  `flag`/`fast` branching very literally rather than reusing generic
+  containers' or account depot's own fast-store shape, since neither
+  matches: C's `if (fast && ch[cn].citem) { scan for first empty slot,
+  ignoring the clicked one entirely; swap_depot(that slot) } else {
+  swap_depot(clicked slot); if (fast) store_citem(cn); }` - so a fast
+  *store* click searches for space server-side (like `account_depot_
+  store_cursor`), but a fast *withdraw* click still swaps the exact
+  clicked slot and then unconditionally also runs `store_citem`
+  afterward (even if the swap itself was blocked), which neither sibling
+  system does. Wired dispatch in `main.rs`'s existing account-depot-vs-
+  generic-container `if`/`else` container-command branch (now a 3-way
+  branch keyed on `IDR_ACCOUNT_DEPOT` / `ItemFlags::DEPOT` / neither),
+  `containers.rs::current_container_payload` (added the same
+  `ItemFlags::DEPOT` branch, now taking an extra `personal_depot: Option
+  <&[Option<Item>]>` parameter), and `/depotsort` itself as a new
+  dispatch arm right after the pre-existing `/accountdepotsort` in
+  `main.rs` (the `/depotsort` help line in `commands_player.rs` already
+  existed unwired, like several other gaps this file's REMAINING note
+  has found before). While updating the two container-refresh call
+  sites for the new payload signature, noticed and fixed a small
+  pre-existing bug for free: the item-*use* (double-click open) path's
+  own separate `container_refresh` list (`main.rs`'s `item_use_requests`
+  block, distinct from the `cl_container`-family's `command_container_
+  refresh`) only ever pushed on `OpenAccountDepot`, never on
+  `OpenContainer`/`OpenDepot`, so opening a generic container or this
+  new personal depot by double-clicking never sent an initial view
+  (a real gap that pre-dates this task and would have equally affected
+  plain containers) - now pushes for all three `Open*` outcomes and its
+  flush loop calls the same unified `current_container_payload` instead
+  of a hardcoded `account_depot_payload` call. 3 new `ugaris-core` tests
+  (`player.rs`: depot-blob populated/empty-slot round trip through
+  `encode_legacy_depot_ppd`/`decode_legacy_depot_ppd`, the outer
+  `ppd_blob` had/append wiring, and the `turn_seyan` quest-purge
+  keeping non-quest items) and 12 new `ugaris-server` tests
+  (`tests/depot.rs`: store/withdraw swap, the silent `IF_NODEPOT` block
+  vs. the loud account-depot one, quest items allowed in this depot,
+  fast-store-finds-first-empty-slot-ignoring-clicked-slot, fast-store
+  no-op when full, fast-withdraw's extra `store_citem` landing in
+  inventory, look (populated vs. empty slot), the legacy container
+  payload header/slot bytes, `/depotsort`'s always-sorts-regardless-of-
+  open-state behavior, the sprite/value/name/empties-last ordering, and
+  a `PlayerRuntime`-level codec round trip). `cargo fmt --all`, `cargo
+  test --workspace` (2073 ugaris-core [+3] + 58 db + 3 net + 44 protocol
+  + 932 server [+12], all green, zero failures), `cargo build -p
+  ugaris-server` / `cargo build --workspace` clean with zero warnings,
+  10s boot-smoke confirmed "entering Rust game loop" with no panic. This
+  closes gap (f) entirely. REMAINING: gap (a) (`ac*` subscriber_id/
+  aggregate-query/multi-account/signature-management sub-gaps), gap (b)
+  (`punish`/`shutup`/`unpunish`/`exterminate`), and gap (c) (`look`/
+  `klog`/`values`/`showvalues`) are still open; next iteration should
+  pick one of those, or make the shared `lookup_name`+DB-task-queue
+  infra decision that unblocks most of (b) and (c) at once. `#ls`/
+  `#cat`-style debug commands over the depot (`depot.c` itself has none)
+  and the `/depotsort` sibling `destroy_item_byID`/`buggy_items`
+  (`questlog.c:1663`/`tool.c:3887`, admin sanity/quest-purge sweeps that
+  also touch `DRD_DEPOT_PPD` in C) are NOT ported - neither function has
+  any Rust port at all yet (not even their non-depot inventory halves),
+  so wiring depot-awareness into them was out of scope for this slice;
+  a future port of either should extend `PlayerRuntime::depot` rather
+  than reinventing it.
+
 - [ ] **Cross-area transfer** - the big multi-server feature. Every
   cross-area teleport currently returns "target server down". Decide the
   single-process stance first (likely: run multiple areas in one process

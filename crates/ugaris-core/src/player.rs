@@ -4,8 +4,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     achievement::{AccountAchievements, AchievementStats},
-    entity::{Character, CharacterFlags, CharacterValue, Item},
-    ids::CharacterId,
+    entity::{Character, CharacterFlags, CharacterValue, Item, ItemFlags, MAX_MODIFIERS},
+    ids::{CharacterId, ItemId},
     legacy::DIST_OLD,
     quest::{QuestLog, MAX_QUESTS},
     tell::TellData,
@@ -274,10 +274,9 @@ pub const DRD_FARMY_PPD: u32 = make_drd(DEV_ID_DB, 77 | PERSISTENT_PLAYER_DATA);
 pub const DRD_TEUFELRAT_PPD: u32 = make_drd(DEV_ID_DB, 157 | PERSISTENT_PLAYER_DATA);
 /// The following ids (`src/system/drdata.h`) back systems that are not
 /// modeled on `PlayerRuntime` at all yet (army rank, military points,
-/// arena, sidestory, strategy game, quest log, and the per-character
-/// legacy depot). They exist here solely so `turn_seyan`
-/// (`src/system/tool.c:4278-4389`, ported at `World::apply_turn_seyan`)
-/// can `del_data` them exactly like C does, via
+/// arena, sidestory, strategy game, and quest log). They exist here
+/// solely so `turn_seyan` (`src/system/tool.c:4278-4389`, ported at
+/// `World::apply_turn_seyan`) can `del_data` them exactly like C does, via
 /// `PlayerRuntime::clear_turn_seyan_ppd`'s raw-block strip - see
 /// `strip_ppd_blocks`. No decode/encode logic backs these ids since
 /// nothing else in this codebase reads or writes them yet. `DRD_AREA1_PPD`
@@ -289,10 +288,24 @@ pub const DRD_TEUFELRAT_PPD: u32 = make_drd(DEV_ID_DB, 157 | PERSISTENT_PLAYER_D
 /// `encode_legacy_firstkill_ppd`/`decode_legacy_firstkill_ppd` below);
 /// `DRD_TUNNEL_PPD` moved out the same way once `tunnel_ppd` got a real
 /// codec (see `encode_legacy_tunnel_ppd`/`decode_legacy_tunnel_ppd`
-/// below, backing the `/tunnel`/`/tunnels` commands).
+/// below, backing the `/tunnel`/`/tunnels` commands); `DRD_DEPOT_PPD`
+/// moved out the same way once `depot` got a real codec (see
+/// `encode_legacy_depot_ppd`/`decode_legacy_depot_ppd` below, backing the
+/// `/depotsort` command and the `IF_DEPOT` container-open path,
+/// `ugaris-server::depot`).
 pub const DRD_FIRSTKILL_PPD: u32 = make_drd(DEV_ID_DB, 18 | PERSISTENT_PLAYER_DATA);
 pub const DRD_RANK_PPD: u32 = make_drd(DEV_ID_DB, 41 | PERSISTENT_PLAYER_DATA);
+/// C `#define DRD_DEPOT_PPD MAKE_DRD(DEV_ID_DB, 67 | PERSISTENT_PLAYER_DATA)`
+/// (`src/system/drdata.h:129`): `struct depot_ppd { struct item
+/// itm[MAXDEPOT]; }` (`src/system/depot.h:19-23`), the character's own
+/// 80-slot legacy storage depot (opened via any item with the `IF_DEPOT`
+/// flag) - a distinct, older, per-character system from
+/// `ugaris-server::depot`'s account-wide `AccountDepotState`
+/// (`DRD_ACCOUNT_WIDE_DEPOT`). See
+/// `encode_legacy_depot_ppd`/`decode_legacy_depot_ppd`.
 pub const DRD_DEPOT_PPD: u32 = make_drd(DEV_ID_DB, 67 | PERSISTENT_PLAYER_DATA);
+/// C `#define MAXDEPOT 80` (`src/system/depot.h:19`).
+pub const MAXDEPOT: usize = 80;
 pub const DRD_MILITARY_PPD: u32 = make_drd(DEV_ID_DB, 72 | PERSISTENT_PLAYER_DATA);
 pub const DRD_ARENA_PPD: u32 = make_drd(DEV_ID_DB, 83 | PERSISTENT_PLAYER_DATA);
 pub const DRD_STRATEGY_PPD: u32 = make_drd(DEV_ID_DB, 121 | PERSISTENT_PLAYER_DATA);
@@ -508,6 +521,32 @@ const PK_PPD_LAST_DEATH_OFFSET: usize = 12;
 const PK_PPD_HATE_OFFSET: usize = 16;
 const RUNE_PPD_SPECIAL_EXEC_OFFSET: usize = RUNE_USED_WORDS * 4;
 const SWEAR_PPD_BANNED_TILL_OFFSET: usize = LEGACY_SWEAR_PPD_SIZE - 4;
+
+// `struct item` byte layout (`src/system/server.h`) as persisted inside a
+// `depot_ppd` slot - see `PlayerRuntime::encode_legacy_depot_item`. Same
+// physical layout `ugaris-server::depot`'s `legacy_account_depot_codec`
+// module independently encodes for `AccountDepotState`.
+const DEPOT_PPD_ITEM_SIZE: usize = 232;
+const DEPOT_PPD_ITEM_PERSISTED_PREFIX: usize = 224;
+const DEPOT_PPD_ITEM_FLAGS_OFFSET: usize = 0;
+const DEPOT_PPD_ITEM_NAME_OFFSET: usize = 8;
+const DEPOT_PPD_ITEM_NAME_LEN: usize = 40;
+const DEPOT_PPD_ITEM_DESCRIPTION_OFFSET: usize = 48;
+const DEPOT_PPD_ITEM_DESCRIPTION_LEN: usize = 80;
+const DEPOT_PPD_ITEM_VALUE_OFFSET: usize = 128;
+const DEPOT_PPD_ITEM_MIN_LEVEL_OFFSET: usize = 132;
+const DEPOT_PPD_ITEM_MAX_LEVEL_OFFSET: usize = 133;
+const DEPOT_PPD_ITEM_NEEDS_CLASS_OFFSET: usize = 134;
+const DEPOT_PPD_ITEM_OWNER_OFFSET: usize = 136;
+const DEPOT_PPD_ITEM_MOD_INDEX_OFFSET: usize = 140;
+const DEPOT_PPD_ITEM_MOD_VALUE_OFFSET: usize = 150;
+const DEPOT_PPD_ITEM_CONTENT_OFFSET: usize = 168;
+const DEPOT_PPD_ITEM_DRIVER_OFFSET: usize = 170;
+const DEPOT_PPD_ITEM_DRDATA_OFFSET: usize = 172;
+const DEPOT_PPD_ITEM_DRDATA_LEN: usize = 40;
+const DEPOT_PPD_ITEM_TEMPLATE_ID_OFFSET: usize = 212;
+const DEPOT_PPD_ITEM_SERIAL_OFFSET: usize = 216;
+const DEPOT_PPD_ITEM_SPRITE_OFFSET: usize = 220;
 
 pub const DEFERRED_ACHIEVEMENTS: u32 = 1 << 0;
 pub const DEFERRED_MOTD: u32 = 1 << 1;
@@ -965,6 +1004,18 @@ pub struct PlayerRuntime {
     /// fields rather than duplicating them.
     #[serde(default)]
     pub pentagram_debug: PentagramDebugData,
+    /// C `struct depot_ppd { struct item itm[MAXDEPOT]; }`
+    /// (`src/system/depot.h:19-23`, `DRD_DEPOT_PPD`): the character's own
+    /// 80-slot legacy storage depot, opened via any item with the
+    /// `IF_DEPOT` flag (`src/system/depot.c`'s `swap_depot`/
+    /// `player_depot`/`depot_sort`). A distinct, older, per-character
+    /// system from `ugaris-server::depot`'s account-wide
+    /// `AccountDepotState`. See
+    /// `encode_legacy_depot_ppd`/`decode_legacy_depot_ppd` for the byte
+    /// layout (identical per-item layout to `AccountDepotState`'s own
+    /// codec, since both persist the same C `struct item`).
+    #[serde(default = "PlayerRuntime::default_depot")]
+    pub depot: Vec<Option<Item>>,
 }
 
 /// See [`PlayerRuntime::pentagram_debug`]'s doc comment.
@@ -1117,7 +1168,12 @@ impl PlayerRuntime {
             saltmine_ladder_last_seconds: [0; SALTMINE_LADDER_COUNT],
             saltmine_pending_salt: 0,
             pentagram_debug: PentagramDebugData::default(),
+            depot: Self::default_depot(),
         }
+    }
+
+    fn default_depot() -> Vec<Option<Item>> {
+        vec![None; MAXDEPOT]
     }
 
     pub fn saltmine_ladder_ready(&self, ladder_index: u8, realtime_seconds: u64) -> bool {
@@ -4645,12 +4701,20 @@ impl PlayerRuntime {
     /// graduated from that stripped-raw list to a real
     /// `self.military_ppd.clear()` once `military_ppd` gained a typed
     /// Rust representation, matching how `first_kill_ppd`/`arena_ppd`
-    /// made the same transition earlier. `DRD_DEPOT_PPD`'s
-    /// "clear `IF_QUEST` flags from the 80 depot item slots" is a
-    /// documented gap - see `World::apply_turn_seyan`'s doc comment; no
-    /// per-character legacy depot exists in Rust yet (`AccountDepotState`,
-    /// `ugaris-server::depot`, is a distinct, newer system).
+    /// made the same transition earlier. `DRD_DEPOT_PPD`'s "clear
+    /// `IF_QUEST` flags from the 80 depot item slots" (`tool.c:4379-4387`
+    /// - actually a full slot wipe, `ppd->itm[n].flags = 0`, not just
+    /// stripping one flag off a kept item) is ported below now that
+    /// `depot` has a typed Rust representation.
     pub fn clear_turn_seyan_ppd(&mut self) {
+        for slot in self.depot.iter_mut() {
+            if slot
+                .as_ref()
+                .is_some_and(|item| item.flags.contains(ItemFlags::QUEST))
+            {
+                *slot = None;
+            }
+        }
         self.chest_last_access_seconds.clear();
         self.area3_ppd.clear();
         self.area1_ppd.clear();
@@ -4731,6 +4795,133 @@ impl PlayerRuntime {
         }
         self.swear_ppd = bytes[..LEGACY_SWEAR_PPD_SIZE].to_vec();
         self.shutup_until_seconds = read_i32(bytes, SWEAR_PPD_BANNED_TILL_OFFSET).max(0) as u64;
+        true
+    }
+
+    /// Encodes one `struct item` (`src/system/server.h`) exactly like
+    /// `ugaris-server::depot`'s `legacy_account_depot_codec` - both persist
+    /// the same C struct, just for a different `DRD_*` id. Kept as an
+    /// independent copy (crate-boundary duplication, not code reuse) since
+    /// `ugaris-server` depends on `ugaris-core`, not the other way around.
+    fn encode_legacy_depot_item(item: &Item) -> [u8; DEPOT_PPD_ITEM_SIZE] {
+        let mut bytes = [0u8; DEPOT_PPD_ITEM_SIZE];
+        write_u64(&mut bytes, DEPOT_PPD_ITEM_FLAGS_OFFSET, item.flags.bits());
+        write_c_string(
+            &mut bytes,
+            DEPOT_PPD_ITEM_NAME_OFFSET,
+            DEPOT_PPD_ITEM_NAME_LEN,
+            &item.name,
+        );
+        write_c_string(
+            &mut bytes,
+            DEPOT_PPD_ITEM_DESCRIPTION_OFFSET,
+            DEPOT_PPD_ITEM_DESCRIPTION_LEN,
+            &item.description,
+        );
+        write_u32(&mut bytes, DEPOT_PPD_ITEM_VALUE_OFFSET, item.value);
+        bytes[DEPOT_PPD_ITEM_MIN_LEVEL_OFFSET] = item.min_level;
+        bytes[DEPOT_PPD_ITEM_MAX_LEVEL_OFFSET] = item.max_level;
+        bytes[DEPOT_PPD_ITEM_NEEDS_CLASS_OFFSET] = item.needs_class;
+        write_i32(&mut bytes, DEPOT_PPD_ITEM_OWNER_OFFSET, item.owner_id);
+        for index in 0..MAX_MODIFIERS {
+            let offset = DEPOT_PPD_ITEM_MOD_INDEX_OFFSET + index * 2;
+            bytes[offset..offset + 2].copy_from_slice(&item.modifier_index[index].to_le_bytes());
+            let offset = DEPOT_PPD_ITEM_MOD_VALUE_OFFSET + index * 2;
+            bytes[offset..offset + 2].copy_from_slice(&item.modifier_value[index].to_le_bytes());
+        }
+        write_u16(&mut bytes, DEPOT_PPD_ITEM_CONTENT_OFFSET, item.content_id);
+        write_u16(&mut bytes, DEPOT_PPD_ITEM_DRIVER_OFFSET, item.driver);
+        let drdata_len = item.driver_data.len().min(DEPOT_PPD_ITEM_DRDATA_LEN);
+        bytes[DEPOT_PPD_ITEM_DRDATA_OFFSET..DEPOT_PPD_ITEM_DRDATA_OFFSET + drdata_len]
+            .copy_from_slice(&item.driver_data[..drdata_len]);
+        write_u32(
+            &mut bytes,
+            DEPOT_PPD_ITEM_TEMPLATE_ID_OFFSET,
+            item.template_id,
+        );
+        write_u32(&mut bytes, DEPOT_PPD_ITEM_SERIAL_OFFSET, item.serial);
+        write_i32(&mut bytes, DEPOT_PPD_ITEM_SPRITE_OFFSET, item.sprite);
+        bytes
+    }
+
+    /// Decodes one `struct item` slot; returns `None` for an empty slot
+    /// (`flags == 0`, matching C's `if (ppd->itm[nr].flags)` emptiness
+    /// check throughout `depot.c`) rather than `Some` with zeroed fields.
+    fn decode_legacy_depot_item(bytes: &[u8], slot: usize) -> Option<Item> {
+        if bytes.len() < DEPOT_PPD_ITEM_PERSISTED_PREFIX {
+            return None;
+        }
+        let flags = read_u64(bytes, DEPOT_PPD_ITEM_FLAGS_OFFSET);
+        if flags == 0 {
+            return None;
+        }
+        let read_i16 = |offset: usize| i16::from_le_bytes([bytes[offset], bytes[offset + 1]]);
+        let mut modifier_index = [0i16; MAX_MODIFIERS];
+        let mut modifier_value = [0i16; MAX_MODIFIERS];
+        for index in 0..MAX_MODIFIERS {
+            modifier_index[index] = read_i16(DEPOT_PPD_ITEM_MOD_INDEX_OFFSET + index * 2);
+            modifier_value[index] = read_i16(DEPOT_PPD_ITEM_MOD_VALUE_OFFSET + index * 2);
+        }
+        Some(Item {
+            id: ItemId((slot + 1) as u32),
+            name: read_c_string(bytes, DEPOT_PPD_ITEM_NAME_OFFSET, DEPOT_PPD_ITEM_NAME_LEN),
+            description: read_c_string(
+                bytes,
+                DEPOT_PPD_ITEM_DESCRIPTION_OFFSET,
+                DEPOT_PPD_ITEM_DESCRIPTION_LEN,
+            ),
+            flags: ItemFlags::from_bits_retain(flags),
+            sprite: read_i32(bytes, DEPOT_PPD_ITEM_SPRITE_OFFSET),
+            value: read_u32(bytes, DEPOT_PPD_ITEM_VALUE_OFFSET),
+            min_level: bytes[DEPOT_PPD_ITEM_MIN_LEVEL_OFFSET],
+            max_level: bytes[DEPOT_PPD_ITEM_MAX_LEVEL_OFFSET],
+            needs_class: bytes[DEPOT_PPD_ITEM_NEEDS_CLASS_OFFSET],
+            template_id: read_u32(bytes, DEPOT_PPD_ITEM_TEMPLATE_ID_OFFSET),
+            owner_id: read_i32(bytes, DEPOT_PPD_ITEM_OWNER_OFFSET),
+            modifier_index,
+            modifier_value,
+            x: 0,
+            y: 0,
+            carried_by: None,
+            contained_in: None,
+            content_id: read_u16(bytes, DEPOT_PPD_ITEM_CONTENT_OFFSET),
+            driver: read_u16(bytes, DEPOT_PPD_ITEM_DRIVER_OFFSET),
+            driver_data: bytes[DEPOT_PPD_ITEM_DRDATA_OFFSET
+                ..DEPOT_PPD_ITEM_DRDATA_OFFSET + DEPOT_PPD_ITEM_DRDATA_LEN]
+                .to_vec(),
+            serial: read_u32(bytes, DEPOT_PPD_ITEM_SERIAL_OFFSET),
+        })
+    }
+
+    /// C `struct depot_ppd { struct item itm[MAXDEPOT]; }`: always encodes
+    /// all `MAXDEPOT` fixed-size item records (unlike
+    /// `ugaris-server::depot`'s `AccountDepotState`, which compacts empty
+    /// slots out of its own variable-length subscriber-blob block), so a
+    /// slot's index is preserved exactly across save/load.
+    pub fn encode_legacy_depot_ppd(&self) -> Vec<u8> {
+        let mut bytes = Vec::with_capacity(MAXDEPOT * DEPOT_PPD_ITEM_SIZE);
+        for slot in 0..MAXDEPOT {
+            match self.depot.get(slot).and_then(Option::as_ref) {
+                Some(item) => bytes.extend_from_slice(&Self::encode_legacy_depot_item(item)),
+                None => bytes.extend(std::iter::repeat_n(0u8, DEPOT_PPD_ITEM_SIZE)),
+            }
+        }
+        bytes
+    }
+
+    pub fn decode_legacy_depot_ppd(&mut self, bytes: &[u8]) -> bool {
+        if bytes.len() < MAXDEPOT * DEPOT_PPD_ITEM_SIZE {
+            return false;
+        }
+        let mut depot = Self::default_depot();
+        for (slot, chunk) in bytes
+            .chunks_exact(DEPOT_PPD_ITEM_SIZE)
+            .take(MAXDEPOT)
+            .enumerate()
+        {
+            depot[slot] = Self::decode_legacy_depot_item(chunk, slot);
+        }
+        self.depot = depot;
         true
     }
 
@@ -4925,6 +5116,11 @@ impl PlayerRuntime {
                         return false;
                     }
                 }
+                DRD_DEPOT_PPD => {
+                    if !self.decode_legacy_depot_ppd(block.data) {
+                        return false;
+                    }
+                }
                 _ => {}
             }
         }
@@ -4970,6 +5166,7 @@ impl PlayerRuntime {
         let mut had_alias = false;
         let mut had_ignore = false;
         let mut had_swear = false;
+        let mut had_depot = false;
         let mut existing_was_valid = true;
 
         for block in LegacyPpdBlocks::parse(existing) {
@@ -5189,6 +5386,9 @@ impl PlayerRuntime {
                 if !self.swear_ppd.is_empty() || self.shutup_until_seconds != 0 {
                     write_ppd_block(&mut encoded, DRD_SWEAR_PPD, &self.encode_legacy_swear_ppd());
                 }
+            } else if block.id == DRD_DEPOT_PPD {
+                had_depot = true;
+                write_ppd_block(&mut encoded, DRD_DEPOT_PPD, &self.encode_legacy_depot_ppd());
             } else {
                 write_ppd_block(&mut encoded, block.id, block.data);
             }
@@ -5501,6 +5701,12 @@ impl PlayerRuntime {
             && self.shutup_until_seconds != 0
         {
             write_ppd_block(&mut encoded, DRD_SWEAR_PPD, &self.encode_legacy_swear_ppd());
+        }
+        if !had_depot
+            && (existing_was_valid || existing.is_empty())
+            && self.depot.iter().any(Option::is_some)
+        {
+            write_ppd_block(&mut encoded, DRD_DEPOT_PPD, &self.encode_legacy_depot_ppd());
         }
 
         encoded
@@ -6562,8 +6768,11 @@ mod tests {
             .map(|block| block.unwrap())
             .collect();
         // `DRD_RANK_PPD` is one of `turn_seyan`'s del_data targets and
-        // is gone; `DRD_DEPOT_PPD` (the documented gap) and any other
-        // still-unrelated id round-trip untouched.
+        // is gone; `DRD_DEPOT_PPD` (mutated via the typed `self.depot`
+        // field on decode/encode, not this raw-bytes `ppd_blob` strip
+        // path - `self.depot` was never populated here since
+        // `decode_legacy_ppd_blob` was never called) and any other
+        // still-unrelated id round-trip untouched in the raw blob.
         assert!(!blocks.iter().any(|block| block.id == DRD_RANK_PPD));
         assert!(blocks.iter().any(|block| block.id == DRD_DEPOT_PPD));
         assert!(blocks
@@ -6716,6 +6925,125 @@ mod tests {
         assert!(!encoded
             .windows(4)
             .any(|window| window == DRD_SWEAR_PPD.to_le_bytes()));
+    }
+
+    fn sample_depot_item(id: u32, template_id: u32, flags: ItemFlags) -> Item {
+        Item {
+            id: ItemId(id),
+            name: "Test Item".into(),
+            description: "A test item".into(),
+            flags,
+            sprite: 4242,
+            value: 100,
+            min_level: 5,
+            max_level: 50,
+            needs_class: 3,
+            template_id,
+            owner_id: 12,
+            modifier_index: [1, 2, 3, 4, 5],
+            modifier_value: [10, 20, 30, 40, 50],
+            x: 0,
+            y: 0,
+            carried_by: None,
+            contained_in: None,
+            content_id: 0,
+            driver: 9,
+            driver_data: (0..40).collect(),
+            serial: 555,
+        }
+    }
+
+    #[test]
+    fn depot_ppd_blob_round_trips_populated_and_empty_slots() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.depot[0] = Some(sample_depot_item(1, 0x1111, ItemFlags::USED));
+        player.depot[42] = Some(sample_depot_item(2, 0x2222, ItemFlags::USED));
+
+        let encoded = player.encode_legacy_depot_ppd();
+        assert_eq!(encoded.len(), MAXDEPOT * DEPOT_PPD_ITEM_SIZE);
+
+        let mut decoded = PlayerRuntime::connected(2, 0);
+        assert!(decoded.decode_legacy_depot_ppd(&encoded));
+        assert_eq!(decoded.depot.len(), MAXDEPOT);
+
+        let slot0 = decoded.depot[0].as_ref().expect("slot 0 populated");
+        assert_eq!(slot0.template_id, 0x1111);
+        assert_eq!(slot0.value, 100);
+        assert_eq!(slot0.modifier_index, [1, 2, 3, 4, 5]);
+        assert_eq!(slot0.modifier_value, [10, 20, 30, 40, 50]);
+        assert_eq!(slot0.driver, 9);
+        assert_eq!(slot0.driver_data, (0..40).collect::<Vec<u8>>());
+
+        let slot42 = decoded.depot[42].as_ref().expect("slot 42 populated");
+        assert_eq!(slot42.template_id, 0x2222);
+
+        // Every other slot round-trips as empty (flags == 0).
+        for (index, slot) in decoded.depot.iter().enumerate() {
+            if index != 0 && index != 42 {
+                assert!(slot.is_none(), "slot {index} should be empty");
+            }
+        }
+    }
+
+    #[test]
+    fn depot_ppd_outer_blob_wires_through_typed_decode_and_encode() {
+        let mut source = PlayerRuntime::connected(1, 0);
+        source.depot[3] = Some(sample_depot_item(9, 0x3333, ItemFlags::USED));
+        let mut existing = Vec::new();
+        write_ppd_block(
+            &mut existing,
+            DRD_DEPOT_PPD,
+            &source.encode_legacy_depot_ppd(),
+        );
+        write_ppd_block(&mut existing, 0x5566_7788, &[3]);
+
+        let mut player = PlayerRuntime::connected(2, 0);
+        assert!(player.decode_legacy_ppd_blob(&existing));
+        assert_eq!(
+            player.depot[3]
+                .as_ref()
+                .expect("slot 3 populated")
+                .template_id,
+            0x3333
+        );
+
+        // Round trip through encode_legacy_ppd_blob: block is rewritten
+        // (still present) since `had_depot` was true, and the unrelated
+        // block after it is preserved untouched.
+        let encoded = player.encode_legacy_ppd_blob(&existing);
+        assert_eq!(read_u32(&encoded, 0), DRD_DEPOT_PPD);
+        assert_eq!(
+            read_u32(&encoded, 8 + MAXDEPOT * DEPOT_PPD_ITEM_SIZE),
+            0x5566_7788
+        );
+
+        // A character who never had the block and never touched the
+        // depot doesn't grow one out of nothing.
+        let fresh = PlayerRuntime::connected(3, 0);
+        let encoded = fresh.encode_legacy_ppd_blob(&[]);
+        assert!(!encoded
+            .windows(4)
+            .any(|window| window == DRD_DEPOT_PPD.to_le_bytes()));
+    }
+
+    #[test]
+    fn clear_turn_seyan_ppd_removes_quest_items_from_depot_but_keeps_others() {
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.depot[0] = Some(sample_depot_item(
+            1,
+            0x1111,
+            ItemFlags::USED | ItemFlags::QUEST,
+        ));
+        player.depot[1] = Some(sample_depot_item(2, 0x2222, ItemFlags::USED));
+
+        player.clear_turn_seyan_ppd();
+
+        assert!(player.depot[0].is_none(), "quest item slot must be wiped");
+        assert!(
+            player.depot[1].is_some(),
+            "non-quest item slot must be untouched"
+        );
+        assert_eq!(player.depot[1].as_ref().unwrap().template_id, 0x2222);
     }
 
     #[test]

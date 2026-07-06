@@ -47,12 +47,15 @@ pub(crate) fn generic_container_payload(world: &World, container_id: ItemId) -> 
 pub(crate) fn current_container_payload(
     world: &World,
     depot: Option<&AccountDepotState>,
+    personal_depot: Option<&[Option<Item>]>,
     character_id: CharacterId,
 ) -> Option<bytes::BytesMut> {
     let container_id = world.characters.get(&character_id)?.current_container?;
     let container = world.items.get(&container_id)?;
     if container.driver == IDR_ACCOUNT_DEPOT {
         depot.map(account_depot_payload)
+    } else if container.flags.contains(ItemFlags::DEPOT) {
+        personal_depot.map(personal_depot_payload)
     } else if container.content_id != 0 {
         Some(generic_container_payload(world, container_id))
     } else {

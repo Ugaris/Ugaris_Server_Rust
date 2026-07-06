@@ -445,3 +445,229 @@ pub(crate) fn account_depot_sort_if_open(
     account_depot_sort(depot);
     true
 }
+
+// C `struct depot_ppd { struct item itm[MAXDEPOT]; }`
+// (`src/system/depot.h:19-23`, `DRD_DEPOT_PPD`): the character's own
+// 80-slot legacy storage depot, opened via any item with the `IF_DEPOT`
+// flag (`src/system/act.c:1755`/`player.c:3282`'s `it[in].flags &
+// IF_DEPOT` checks). Unlike `AccountDepotState` above (a distinct, newer,
+// account-wide system stored outside `PlayerRuntime` in a subscriber
+// blob), the backing `Vec<Option<Item>>` lives directly on
+// `PlayerRuntime::depot` (`ugaris-core`, a real per-character PPD) since
+// this system has no account-wide scope to justify a separate
+// `ServerRuntime`-owned map.
+
+/// C `player_depot(int cn, int nr, int flag, int fast)` (`depot.c:89-120`)
+/// dispatch entry, called for `CL_CONTAINER`/`CL_CONTAINER_FAST`/
+/// `CL_LOOK_CONTAINER` whenever the open container item has the
+/// `IF_DEPOT` flag (`player.c:1090/1121/1154/3282-3283`).
+pub(crate) fn apply_personal_depot_command(
+    world: &mut World,
+    depot: &mut Vec<Option<Item>>,
+    character_id: CharacterId,
+    action: &ClientAction,
+) -> AccountDepotCommandResult {
+    if !check_current_container(world, character_id) {
+        return AccountDepotCommandResult::Ignored;
+    }
+    let Some(character) = world.characters.get(&character_id) else {
+        return AccountDepotCommandResult::Ignored;
+    };
+    let Some(container_id) = character.current_container else {
+        return AccountDepotCommandResult::Ignored;
+    };
+    if world
+        .items
+        .get(&container_id)
+        .is_none_or(|item| !item.flags.contains(ItemFlags::DEPOT))
+    {
+        return AccountDepotCommandResult::Ignored;
+    }
+
+    match *action {
+        ClientAction::Container { slot, fast } => {
+            let slot = usize::from(slot);
+            if slot >= depot.len() {
+                return AccountDepotCommandResult::Ignored;
+            }
+            let citem_present = world
+                .characters
+                .get(&character_id)
+                .is_some_and(|character| character.cursor_item.is_some());
+            // C: `if (fast && ch[cn].citem) { for (nr=0; nr<MAXDEPOT;
+            // nr++) if (!ppd->itm[nr].flags) break; if (nr==MAXDEPOT)
+            // return; swap_depot(cn, nr); }` - the client-supplied slot is
+            // ignored entirely; the first empty depot slot is used
+            // instead, and a full depot is a silent no-op.
+            if fast && citem_present {
+                let Some(empty_slot) = depot.iter().position(Option::is_none) else {
+                    return AccountDepotCommandResult::Ignored;
+                };
+                personal_depot_swap_slot(world, depot, character_id, empty_slot)
+            } else {
+                // C: `else { swap_depot(cn, nr); if (fast)
+                // store_citem(cn); }` - `store_citem` runs unconditionally
+                // whenever `fast` is set, even if the swap itself was
+                // blocked (e.g. `IF_NODEPOT`).
+                let result = personal_depot_swap_slot(world, depot, character_id, slot);
+                if fast {
+                    store_cursor_item_into_inventory(world, character_id);
+                }
+                result
+            }
+        }
+        ClientAction::LookContainer { slot } => {
+            let Some(character) = world.characters.get(&character_id) else {
+                return AccountDepotCommandResult::Ignored;
+            };
+            depot
+                .get(usize::from(slot))
+                .and_then(Option::as_ref)
+                .map(|item| legacy_item_look_text(item, character))
+                .filter(|text| !text.is_empty())
+                .map(AccountDepotCommandResult::Look)
+                .unwrap_or(AccountDepotCommandResult::Ignored)
+        }
+        _ => AccountDepotCommandResult::Ignored,
+    }
+}
+
+/// C `swap_depot(int cn, int nr)` (`depot.c:30-85`): swaps the held
+/// cursor item with depot slot `nr`. Unlike `account_depot_swap_slot`,
+/// only `IF_NODEPOT` blocks the store (`depot.c:51-54`) - `IF_QUEST`
+/// items are NOT blocked here (a real, intentional divergence from the
+/// account-wide depot; this is exactly why `turn_seyan`'s
+/// `PlayerRuntime::clear_turn_seyan_ppd` has to sweep quest items back
+/// out of this depot, `tool.c:4379-4388`) - and a blocked store is a
+/// silent no-op (C never `log_char`s here, unlike account depot's own
+/// "You cannot store this item in the depot." message).
+pub(crate) fn personal_depot_swap_slot(
+    world: &mut World,
+    depot: &mut [Option<Item>],
+    character_id: CharacterId,
+    slot: usize,
+) -> AccountDepotCommandResult {
+    if slot >= depot.len() {
+        return AccountDepotCommandResult::Ignored;
+    }
+    let cursor_id = world
+        .characters
+        .get(&character_id)
+        .and_then(|character| character.cursor_item);
+    if cursor_id.is_some_and(|item_id| {
+        world
+            .items
+            .get(&item_id)
+            .is_some_and(|item| item.flags.contains(ItemFlags::NODEPOT))
+    }) {
+        return AccountDepotCommandResult::Ignored;
+    }
+
+    let withdrawn = depot[slot].take();
+    let stored = cursor_id.and_then(|item_id| world.items.remove(&item_id));
+
+    if let Some(character) = world.characters.get_mut(&character_id) {
+        character.cursor_item = None;
+    } else {
+        return AccountDepotCommandResult::Ignored;
+    }
+    if let Some(mut item) = stored {
+        item.carried_by = None;
+        item.contained_in = None;
+        item.x = 0;
+        item.y = 0;
+        depot[slot] = Some(item);
+    }
+    if let Some(mut item) = withdrawn {
+        item.id = next_runtime_item_id(world);
+        item.carried_by = Some(character_id);
+        item.contained_in = None;
+        item.x = 0;
+        item.y = 0;
+        if let Some(character) = world.characters.get_mut(&character_id) {
+            character.cursor_item = Some(item.id);
+        }
+        world.items.insert(item.id, item);
+    }
+    if let Some(character) = world.characters.get_mut(&character_id) {
+        character.flags.insert(CharacterFlags::ITEMS);
+    }
+    AccountDepotCommandResult::Changed
+}
+
+/// C `store_citem(int cn)`: auto-places the character's held cursor item
+/// into the first free ordinary inventory slot, matching the same
+/// `INVENTORY_START_INVENTORY..`-onward scan `apply_item_container_swap`
+/// already uses for generic containers' own fast-withdraw path. A no-op
+/// (not an error) when the cursor is empty or every inventory slot is
+/// full, matching C silently leaving the item on the cursor.
+pub(crate) fn store_cursor_item_into_inventory(world: &mut World, character_id: CharacterId) {
+    let Some(character) = world.characters.get_mut(&character_id) else {
+        return;
+    };
+    let Some(item_id) = character.cursor_item else {
+        return;
+    };
+    if let Some(slot) = character
+        .inventory
+        .iter_mut()
+        .skip(INVENTORY_START_INVENTORY)
+        .find(|slot| slot.is_none())
+    {
+        *slot = Some(item_id);
+        character.cursor_item = None;
+        character.flags.insert(CharacterFlags::ITEMS);
+    }
+}
+
+/// C `player_act`'s depot-view branch (`player.c:3282-3313`): container
+/// name "Your Depot", `MAXDEPOT` (80) slots.
+pub(crate) fn personal_depot_payload(depot: &[Option<Item>]) -> bytes::BytesMut {
+    let mut builder = PacketBuilder::new();
+    builder
+        .container_type(1)
+        .container_name("Your Depot")
+        .container_count(depot.len().min(u8::MAX as usize) as u8);
+    for (slot, item) in depot.iter().enumerate().take(u8::MAX as usize + 1) {
+        builder.container_item(
+            slot as u8,
+            item.as_ref()
+                .map(|item| item.sprite.max(0) as u32)
+                .unwrap_or(0),
+        );
+    }
+    builder.into_payload()
+}
+
+/// C `depot_cmp`/`depot_sort` (`depot.c:122-159`): sort by sprite
+/// descending, then value descending, then name (first 35 bytes)
+/// ascending, empty slots sorted last - identical ordering to
+/// `account_depot_sort`'s `AccountDepotState::slots`, just over a plain
+/// `Vec<Option<Item>>` instead.
+pub(crate) fn personal_depot_sort(depot: &mut [Option<Item>]) {
+    depot.sort_by(|left, right| match (left, right) {
+        (None, None) => std::cmp::Ordering::Equal,
+        (None, Some(_)) => std::cmp::Ordering::Greater,
+        (Some(_), None) => std::cmp::Ordering::Less,
+        (Some(left), Some(right)) => right
+            .sprite
+            .cmp(&left.sprite)
+            .then_with(|| right.value.cmp(&left.value))
+            .then_with(|| {
+                left.name[..left.name.len().min(35)].cmp(&right.name[..right.name.len().min(35)])
+            }),
+    });
+}
+
+/// C `/depotsort` (`command.c:9350-9357`, dispatching to `depot_sort`,
+/// no permission gate, no `IF_DEPOT` open-container requirement in C
+/// either - `depot_sort` just calls `set_data(cn, DRD_DEPOT_PPD, ...)`
+/// directly, so it works even when the depot isn't currently open).
+/// Unlike `account_depot_sort_if_open`, this always sorts (there's no
+/// "open" precondition to check in C), so it never fails.
+pub(crate) fn personal_depot_sort_command(runtime: &mut ServerRuntime, character_id: CharacterId) {
+    let Some(player) = runtime.player_for_character_mut(character_id) else {
+        return;
+    };
+    personal_depot_sort(&mut player.depot);
+}
