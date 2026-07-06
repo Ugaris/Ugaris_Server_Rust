@@ -7603,6 +7603,19 @@ async fn main() -> anyhow::Result<()> {
                         "applied yoakin dialogue events"
                     );
                 }
+                // C `terion_driver`: area 1's ambient lore/storyteller NPC
+                // (`src/area/1/gwendylon.c`).
+                let terion_facts = terion_player_facts(&runtime);
+                let terion_events =
+                    world.process_terion_actions(&terion_facts, config.area_id);
+                let terion_events_applied = apply_terion_events(&mut runtime, terion_events);
+                if terion_events_applied != 0 {
+                    info!(
+                        terion_events_applied,
+                        tick = world.tick.0,
+                        "applied terion dialogue events"
+                    );
+                }
                 // C `gate_welcome_driver`: the Ishtar labyrinth gatekeeper
                 // greeter NPC (`src/system/gatekeeper.c`).
                 let gate_welcome_facts = gate_welcome_player_facts(&runtime);

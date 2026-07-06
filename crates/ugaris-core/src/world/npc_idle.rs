@@ -481,7 +481,8 @@ impl World {
                 | CharacterDriverState::Dungeonfighter(_)
                 | CharacterDriverState::Macro(_)
                 | CharacterDriverState::Camhermit(_)
-                | CharacterDriverState::Yoakin(_) => None,
+                | CharacterDriverState::Yoakin(_)
+                | CharacterDriverState::Terion(_) => None,
             });
         let Some(target_id) = target_id else {
             return false;

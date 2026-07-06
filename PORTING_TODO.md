@@ -11765,18 +11765,19 @@ Ordered by player progression; the C file is the oracle.
   port together). This is the highest-value area work: new players see it
   first. Slice by NPC.
   REMAINING: `camhermit_driver` (`CDR_CAMHERMIT`, the forest hermit's
-  bear-kill/tooth-necklace quest chain, `:707-996`) and `yoakin_driver`
+  bear-kill/tooth-necklace quest chain, `:707-996`), `yoakin_driver`
   (`CDR_YOAKIN`, the hunter's bear-hunt quest chain plus the shrike-
-  talisman/leftover-give branches it also handles, `:996-1217`) are
-  ported so far - see the Progress Log entries below and
-  `crates/ugaris-core/src/world/camhermit.rs`/`world/yoakin.rs`'s own
-  module doc comments for their documented gaps (camhermit's
-  `monster_dead` bear-kill counter is still unported, so its
+  talisman/leftover-give branches it also handles, `:996-1217`), and
+  `terion_driver` (`CDR_TERION`, the village's ambient lore/storyteller
+  NPC, `:1228-1472`) are ported so far - see the Progress Log entries
+  below and `crates/ugaris-core/src/world/camhermit.rs`/`world/yoakin.rs`/
+  `world/terion.rs`'s own module doc comments for their documented gaps
+  (camhermit's `monster_dead` bear-kill counter is still unported, so its
   `CAMHERMIT_STATE_QUEST1DO` branch can never actually complete on a live
   server yet; yoakin's `destroy_item_byID` sweep does not reach the
-  account depot). Every other NPC in this file is still unported:
-  `gwendylon_driver` (the main quest-giver, `:234-680`), `terion_driver`
-  (`:1228-1484`), `greeter_driver`
+  account depot; terion is pure ambient dialogue with no gaps of its own).
+  Every other NPC in this file is still unported:
+  `gwendylon_driver` (the main quest-giver, `:234-680`), `greeter_driver`
   (`:1485-1808`), `jessica_driver` (`:1809-2073`), `jiu_driver` (`:2074-
   2255`), `forest_ranger_driver` (`:2284-2473`), `brithildie_driver`
   (`:2474-2826`), `james_driver` (`:2901-3179`), `nook_driver` (`:3180-
@@ -12414,6 +12415,32 @@ Add one line per completed task: date, task, ledger section touched.
   `destroy_item_byID` sweep does not reach the account depot, since that
   storage lives outside `World`). `cargo fmt --all`, `cargo test
   --workspace` (2283 core + 1084 server, all green), `cargo build -p
+  ugaris-server` all clean with zero warnings; boot-smoked (10s run,
+  "entering Rust game loop" `area_id=1`, tick loop advancing, no
+  panics).
+- 2026-07-06: Area 1 - `gwendylon.c` (P4, continuing, still `[~]`) -
+  ported the third area-1 NPC slice: `terion_driver` (`CDR_TERION = 11`,
+  the village's ambient lore/storyteller NPC, `:1228-1472`) end to end -
+  the `NT_NPC`/`NTID_DIDSAY` cross-NPC talk-throttle pre-pass unique to
+  this driver (bumps `last_talk` whenever another nearby NPC just
+  finished a line, without consuming the message), the 14-state ambient
+  dialogue chain gated on `gwendy_state`/`reskin_state` (including two
+  silent state jumps that change state without counting as "didsay"),
+  `NT_TEXT` small-talk via the same shared `GWENDYLON_QA` table
+  `world::camhermit`/`world::yoakin` already wired up (with its own
+  4-bucket "repeat"/"restart" state-reset ranges, and no `current_victim`
+  gate before the qa match - a genuine asymmetry vs. yoakin's own C
+  source, preserved rather than "fixed"), and the generic `NT_GIVE`
+  give-back fallback. New `crates/ugaris-core/src/world/terion.rs` (+13
+  tests), `CDR_TERION`/`TerionDriverData`/`CharacterDriverState::Terion`
+  in `character_driver.rs` (plus the three exhaustive-match call sites
+  that needed the new variant), `CDR_TERION` default driver-state wiring
+  in `zone.rs`. Extended `crates/ugaris-server/src/area1.rs` (facts
+  snapshot + event application) and wired into `main.rs`'s tick loop
+  right after yoakin's. Terion is pure ambient dialogue - no quest log,
+  no item reward, no gold - so `world::terion`'s module doc comment
+  records no outstanding gaps of its own. `cargo fmt --all`, `cargo test
+  --workspace` (2296 core + 1084 server, all green), `cargo build -p
   ugaris-server` all clean with zero warnings; boot-smoked (10s run,
   "entering Rust game loop" `area_id=1`, tick loop advancing, no
   panics).

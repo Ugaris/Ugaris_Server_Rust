@@ -71,6 +71,7 @@ mod speed;
 mod spells;
 mod steal;
 mod teleport;
+mod terion;
 mod text;
 mod trader;
 mod traps_hazards;
@@ -142,6 +143,7 @@ pub(crate) use spells::*;
 pub use steal::*;
 #[allow(unused_imports)]
 pub(crate) use teleport::*;
+pub use terion::*;
 pub use text::*;
 pub use trader::*;
 #[allow(unused_imports)]

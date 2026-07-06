@@ -60,6 +60,7 @@ mod speed;
 mod spells;
 mod steal;
 mod teleport;
+mod terion;
 mod text;
 mod trader;
 mod turn_seyan;
