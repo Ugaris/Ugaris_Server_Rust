@@ -8556,6 +8556,273 @@ fn acflag_queues_a_lookup_using_the_targets_anticheat_session_id() {
 }
 
 #[test]
+fn acunflag_is_god_only_unlike_acflags_god_or_staff_gate() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (_god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+    let mut staff = login_character(CharacterId(20), &login_block("Staffer"), 1, 12, 10);
+    staff.flags.insert(CharacterFlags::STAFF);
+    world.add_character(staff);
+
+    assert!(apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        target_id,
+        "#acunflag Target",
+        1
+    )
+    .is_none());
+    assert!(apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        CharacterId(20),
+        "#acunflag Target",
+        1
+    )
+    .is_none());
+}
+
+#[test]
+fn acunflag_without_a_name_shows_usage() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+
+    let result = apply_admin_character_command(&mut world, &mut runtime, god_id, "#acunflag", 1)
+        .expect("god acunflag should be recognized");
+    assert_eq!(result.messages, vec!["Usage: #acunflag <player>"]);
+}
+
+#[test]
+fn acunflag_reports_not_found_online_for_an_unknown_name() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+
+    let result =
+        apply_admin_character_command(&mut world, &mut runtime, god_id, "#acunflag Nobody", 1)
+            .expect("god acunflag should be recognized");
+    assert_eq!(result.messages, vec!["Player 'Nobody' not found online."]);
+}
+
+#[test]
+fn acunflag_reports_no_connection_data_when_target_has_no_anticheat_session() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+
+    let result =
+        apply_admin_character_command(&mut world, &mut runtime, god_id, "#acunflag Target", 1)
+            .expect("god acunflag should be recognized");
+    assert_eq!(
+        result.messages,
+        vec!["Player 'Target' has no connection data."]
+    );
+    assert!(world.drain_pending_ac_unflag_lookups().is_empty());
+}
+
+#[test]
+fn acunflag_queues_a_lookup_using_the_targets_anticheat_session_id() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+    for player in runtime.players.values_mut() {
+        if player.character_id == Some(target_id) {
+            player.anticheat_session_id = Some(4321);
+        }
+    }
+
+    let result =
+        apply_admin_character_command(&mut world, &mut runtime, god_id, "#acunflag target", 1)
+            .expect("god acunflag should be recognized");
+    assert_eq!(result.messages, Vec::<String>::new());
+
+    let queued = world.drain_pending_ac_unflag_lookups();
+    assert_eq!(queued.len(), 1);
+    assert_eq!(queued[0].caller_id, god_id);
+    assert_eq!(queued[0].target_name, "Target");
+    assert_eq!(queued[0].session_id, 4321);
+}
+
+#[test]
+fn actrust_is_god_only() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (_god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+    let mut staff = login_character(CharacterId(20), &login_block("Staffer"), 1, 12, 10);
+    staff.flags.insert(CharacterFlags::STAFF);
+    world.add_character(staff);
+
+    assert!(apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        target_id,
+        "#actrust Target",
+        1
+    )
+    .is_none());
+    assert!(apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        CharacterId(20),
+        "#actrust Target",
+        1
+    )
+    .is_none());
+}
+
+#[test]
+fn actrust_without_a_name_shows_usage() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+
+    let result = apply_admin_character_command(&mut world, &mut runtime, god_id, "#actrust", 1)
+        .expect("god actrust should be recognized");
+    assert_eq!(result.messages, vec!["Usage: #actrust <player>"]);
+}
+
+#[test]
+fn actrust_reports_not_found_online_for_an_unknown_name() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+
+    let result =
+        apply_admin_character_command(&mut world, &mut runtime, god_id, "#actrust Nobody", 1)
+            .expect("god actrust should be recognized");
+    assert_eq!(result.messages, vec!["Player 'Nobody' not found online."]);
+}
+
+#[test]
+fn actrust_reports_no_connection_data_when_target_has_no_anticheat_session() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+
+    let result =
+        apply_admin_character_command(&mut world, &mut runtime, god_id, "#actrust Target", 1)
+            .expect("god actrust should be recognized");
+    assert_eq!(
+        result.messages,
+        vec!["Player 'Target' has no connection data."]
+    );
+    assert!(world.drain_pending_ac_trust_lookups().is_empty());
+}
+
+#[test]
+fn actrust_queues_a_lookup_using_the_targets_anticheat_session_id() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+    for player in runtime.players.values_mut() {
+        if player.character_id == Some(target_id) {
+            player.anticheat_session_id = Some(4321);
+        }
+    }
+
+    let result =
+        apply_admin_character_command(&mut world, &mut runtime, god_id, "#actrust target", 1)
+            .expect("god actrust should be recognized");
+    assert_eq!(result.messages, Vec::<String>::new());
+
+    let queued = world.drain_pending_ac_trust_lookups();
+    assert_eq!(queued.len(), 1);
+    assert_eq!(queued[0].caller_id, god_id);
+    assert_eq!(queued[0].target_name, "Target");
+    assert_eq!(queued[0].session_id, 4321);
+}
+
+#[test]
+fn acuntrust_is_god_only() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (_god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+    let mut staff = login_character(CharacterId(20), &login_block("Staffer"), 1, 12, 10);
+    staff.flags.insert(CharacterFlags::STAFF);
+    world.add_character(staff);
+
+    assert!(apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        target_id,
+        "#acuntrust Target",
+        1
+    )
+    .is_none());
+    assert!(apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        CharacterId(20),
+        "#acuntrust Target",
+        1
+    )
+    .is_none());
+}
+
+#[test]
+fn acuntrust_without_a_name_shows_usage() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+
+    let result = apply_admin_character_command(&mut world, &mut runtime, god_id, "#acuntrust", 1)
+        .expect("god acuntrust should be recognized");
+    assert_eq!(result.messages, vec!["Usage: #acuntrust <player>"]);
+}
+
+#[test]
+fn acuntrust_reports_not_found_online_for_an_unknown_name() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+
+    let result =
+        apply_admin_character_command(&mut world, &mut runtime, god_id, "#acuntrust Nobody", 1)
+            .expect("god acuntrust should be recognized");
+    assert_eq!(result.messages, vec!["Player 'Nobody' not found online."]);
+}
+
+#[test]
+fn acuntrust_reports_no_connection_data_when_target_has_no_anticheat_session() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+
+    let result =
+        apply_admin_character_command(&mut world, &mut runtime, god_id, "#acuntrust Target", 1)
+            .expect("god acuntrust should be recognized");
+    assert_eq!(
+        result.messages,
+        vec!["Player 'Target' has no connection data."]
+    );
+    assert!(world.drain_pending_ac_untrust_lookups().is_empty());
+}
+
+#[test]
+fn acuntrust_queues_a_lookup_using_the_targets_anticheat_session_id() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+    for player in runtime.players.values_mut() {
+        if player.character_id == Some(target_id) {
+            player.anticheat_session_id = Some(4321);
+        }
+    }
+
+    let result =
+        apply_admin_character_command(&mut world, &mut runtime, god_id, "#acuntrust target", 1)
+            .expect("god acuntrust should be recognized");
+    assert_eq!(result.messages, Vec::<String>::new());
+
+    let queued = world.drain_pending_ac_untrust_lookups();
+    assert_eq!(queued.len(), 1);
+    assert_eq!(queued[0].caller_id, god_id);
+    assert_eq!(queued[0].target_name, "Target");
+    assert_eq!(queued[0].session_id, 4321);
+}
+
+#[test]
 fn acwatch_is_god_or_staff_only() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();

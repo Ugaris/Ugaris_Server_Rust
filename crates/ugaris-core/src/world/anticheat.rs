@@ -124,6 +124,50 @@ pub struct AcFlagLookup {
     pub session_id: i64,
 }
 
+/// `#acunflag <player>` (`ac_cmd_unflag`, `anticheat.c:790-823`),
+/// `CF_GOD`-only (unlike `#acflag`'s `CF_GOD|CF_STAFF`). Same
+/// single-name-target shape as `AcFlagLookup`, but - unlike every other
+/// member of this family - C's own handler gates on the target's
+/// *current* status (`!= AC_STATUS_FLAGGED` -> "is not flagged", a
+/// synchronous in-memory read in C) before mutating anything, so that
+/// check has to happen inside `apply_ac_unflag_events` after the async
+/// `find_session` round trip rather than in `commands_admin.rs`
+/// alongside the online-name-scan (which only knows the session id
+/// exists, not its status - see the module doc comment).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AcUnflagLookup {
+    pub caller_id: CharacterId,
+    pub target_name: String,
+    pub session_id: i64,
+}
+
+/// `#actrust <player>` (`ac_cmd_trust`, `anticheat.c:827-849`),
+/// `CF_GOD`-only. Same single-name-target shape as `AcFlagLookup`, no
+/// status gate (C's own handler has none - it unconditionally trusts
+/// once a connection is found). The DB half
+/// (`AntiCheatRepository::set_trusted`) needs the target's subscriber id
+/// (`account_id`), resolved from `session_id` via `AntiCheatRepository::
+/// account_id_for_session` inside `apply_ac_trust_events` rather than
+/// threaded through `PlayerRuntime` - see that repository method's doc
+/// comment for why.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AcTrustLookup {
+    pub caller_id: CharacterId,
+    pub target_name: String,
+    pub session_id: i64,
+}
+
+/// `#acuntrust <player>` (`ac_cmd_untrust`, `anticheat.c:860-882`),
+/// `CF_GOD`-only. Identical shape to `AcTrustLookup` (the "untrust" half
+/// of the same `is_trusted` flag, `AntiCheatRepository::set_trusted`
+/// called with `false` instead of `true`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AcUntrustLookup {
+    pub caller_id: CharacterId,
+    pub target_name: String,
+    pub session_id: i64,
+}
+
 impl World {
     pub fn queue_ac_status_lookup(
         &mut self,
@@ -214,6 +258,57 @@ impl World {
 
     pub fn drain_pending_ac_flag_lookups(&mut self) -> Vec<AcFlagLookup> {
         self.pending_ac_flag_lookups.drain(..).collect()
+    }
+
+    pub fn queue_ac_unflag_lookup(
+        &mut self,
+        caller_id: CharacterId,
+        target_name: String,
+        session_id: i64,
+    ) {
+        self.pending_ac_unflag_lookups.push(AcUnflagLookup {
+            caller_id,
+            target_name,
+            session_id,
+        });
+    }
+
+    pub fn drain_pending_ac_unflag_lookups(&mut self) -> Vec<AcUnflagLookup> {
+        self.pending_ac_unflag_lookups.drain(..).collect()
+    }
+
+    pub fn queue_ac_trust_lookup(
+        &mut self,
+        caller_id: CharacterId,
+        target_name: String,
+        session_id: i64,
+    ) {
+        self.pending_ac_trust_lookups.push(AcTrustLookup {
+            caller_id,
+            target_name,
+            session_id,
+        });
+    }
+
+    pub fn drain_pending_ac_trust_lookups(&mut self) -> Vec<AcTrustLookup> {
+        self.pending_ac_trust_lookups.drain(..).collect()
+    }
+
+    pub fn queue_ac_untrust_lookup(
+        &mut self,
+        caller_id: CharacterId,
+        target_name: String,
+        session_id: i64,
+    ) {
+        self.pending_ac_untrust_lookups.push(AcUntrustLookup {
+            caller_id,
+            target_name,
+            session_id,
+        });
+    }
+
+    pub fn drain_pending_ac_untrust_lookups(&mut self) -> Vec<AcUntrustLookup> {
+        self.pending_ac_untrust_lookups.drain(..).collect()
     }
 }
 

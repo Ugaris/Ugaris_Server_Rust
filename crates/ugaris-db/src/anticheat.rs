@@ -118,6 +118,31 @@ pub trait AntiCheatRepository: Send + Sync {
         &self,
         session_ids: &[i64],
     ) -> anyhow::Result<Vec<(i64, AntiCheatSessionInfo)>>;
+    /// `#acunflag`/`#actrust`/`#acuntrust`'s subscriber-id resolution: C's
+    /// `get_subscriberId_from_character` reads `chars.sID` (the owning
+    /// account, exactly this codebase's `characters.account_id`); since
+    /// this codebase never threads `account_id` through `World`/
+    /// `PlayerRuntime` after login (see `ugaris-core`'s `world/
+    /// anticheat.rs` module doc comment addendum), the same value is
+    /// instead read back out of `anticheat_sessions.account_id`, already
+    /// stored there by `create_session` at login. `None` when the row is
+    /// gone or was created with no account (matching C's `target_
+    /// subscriber <= 0` "not a real account" branch).
+    async fn account_id_for_session(&self, session_id: i64) -> anyhow::Result<Option<i64>>;
+    /// `#acunflag`'s/`#acflag`-sibling's persistent half
+    /// (`db_ac_flag_player`, `database_anticheat.c:553-570`): upserts
+    /// `ac_player_stats.is_flagged` for the subscriber, creating the row
+    /// on first touch exactly like C's own `db_ac_ensure_player_stats`
+    /// pre-step. `db_ac_log_admin_action`'s audit-trail row is skipped
+    /// (no `ac_admin_actions` table exists in this codebase - the same
+    /// skip-untracked-audit-log convention `/kick`'s dropped `dlog` call
+    /// already established).
+    async fn set_flagged(&self, subscriber_id: i64, is_flagged: bool) -> anyhow::Result<()>;
+    /// `#actrust`/`#acuntrust`'s persistent half (`db_ac_trust_player`,
+    /// `database_anticheat.c:572-589`): upserts `ac_player_stats.
+    /// is_trusted` for the subscriber, same ensure-then-update shape and
+    /// same skipped `db_ac_log_admin_action` audit row as `set_flagged`.
+    async fn set_trusted(&self, subscriber_id: i64, is_trusted: bool) -> anyhow::Result<()>;
 }
 
 #[derive(Debug, Clone)]
@@ -419,6 +444,42 @@ impl AntiCheatRepository for PgAntiCheatRepository {
                 },
             )
             .collect())
+    }
+
+    async fn account_id_for_session(&self, session_id: i64) -> anyhow::Result<Option<i64>> {
+        let row = sqlx::query_as::<_, (Option<i64>,)>(
+            "select account_id from anticheat_sessions where id = $1",
+        )
+        .bind(session_id)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(row.and_then(|(account_id,)| account_id))
+    }
+
+    async fn set_flagged(&self, subscriber_id: i64, is_flagged: bool) -> anyhow::Result<()> {
+        sqlx::query(
+            "insert into ac_player_stats (subscriber_id, is_flagged, updated_at) \
+             values ($1, $2, now()) \
+             on conflict (subscriber_id) do update set is_flagged = $2, updated_at = now()",
+        )
+        .bind(subscriber_id)
+        .bind(is_flagged)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    async fn set_trusted(&self, subscriber_id: i64, is_trusted: bool) -> anyhow::Result<()> {
+        sqlx::query(
+            "insert into ac_player_stats (subscriber_id, is_trusted, updated_at) \
+             values ($1, $2, now()) \
+             on conflict (subscriber_id) do update set is_trusted = $2, updated_at = now()",
+        )
+        .bind(subscriber_id)
+        .bind(is_trusted)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
     }
 }
 
@@ -775,6 +836,113 @@ mod tests {
                 .await
                 .expect("find_sessions on unknown ids")
                 .is_empty());
+            assert!(repo
+                .account_id_for_session(i64::MAX - 1)
+                .await
+                .expect("account_id_for_session on unknown id")
+                .is_none());
+        }
+
+        /// `#acunflag`/`#actrust`/`#acuntrust`'s backing methods
+        /// (`account_id_for_session`, `set_flagged`, `set_trusted`):
+        /// a session created with a real `account_id` resolves back to
+        /// it, and the `ac_player_stats` upsert (`db_ac_flag_player`/
+        /// `db_ac_trust_player`'s ensure-then-update shape) round-trips
+        /// both the initial insert and a later flip, exactly like
+        /// `#acunflag` flipping a player from flagged to verified and
+        /// back would in practice.
+        #[tokio::test]
+        async fn subscriber_flag_and_trust_round_trip() {
+            let Some(pool) = connect().await else {
+                return;
+            };
+            let repo = PgAntiCheatRepository::new(pool.clone());
+
+            sqlx::query("delete from characters where name = 'AcSubscriberFixtureChar'")
+                .execute(&pool)
+                .await
+                .expect("pre-clean fixture character");
+            sqlx::query("delete from accounts where username = 'ac_subscriber_fixture_acct'")
+                .execute(&pool)
+                .await
+                .expect("pre-clean fixture account");
+            let (account_id,): (i64,) = sqlx::query_as(
+                "insert into accounts(username, password_hash) values ($1, 'secret') returning id",
+            )
+            .bind("ac_subscriber_fixture_acct")
+            .fetch_one(&pool)
+            .await
+            .expect("insert fixture account");
+
+            let session_id = repo
+                .create_session(AntiCheatSessionCreate {
+                    login_session_id: None,
+                    account_id: Some(account_id),
+                    character_id: None,
+                    ip_address: 0x0a00_0002,
+                    area_id: 1,
+                })
+                .await
+                .expect("create_session");
+
+            assert_eq!(
+                repo.account_id_for_session(session_id)
+                    .await
+                    .expect("account_id_for_session"),
+                Some(account_id)
+            );
+
+            // First touch: no `ac_player_stats` row exists yet - both
+            // `set_flagged`/`set_trusted` must create it (C's
+            // `db_ac_ensure_player_stats` pre-step), not error.
+            repo.set_flagged(account_id, true)
+                .await
+                .expect("set_flagged insert");
+            repo.set_trusted(account_id, true)
+                .await
+                .expect("set_trusted insert");
+
+            let (is_flagged, is_trusted): (bool, bool) = sqlx::query_as(
+                "select is_flagged, is_trusted from ac_player_stats where subscriber_id = $1",
+            )
+            .bind(account_id)
+            .fetch_one(&pool)
+            .await
+            .expect("fetch ac_player_stats row");
+            assert!(is_flagged);
+            assert!(is_trusted);
+
+            // Second touch: the row already exists - both calls must
+            // update in place (`on conflict ... do update`), not error on
+            // a duplicate key.
+            repo.set_flagged(account_id, false)
+                .await
+                .expect("set_flagged update");
+            repo.set_trusted(account_id, false)
+                .await
+                .expect("set_trusted update");
+
+            let (is_flagged, is_trusted): (bool, bool) = sqlx::query_as(
+                "select is_flagged, is_trusted from ac_player_stats where subscriber_id = $1",
+            )
+            .bind(account_id)
+            .fetch_one(&pool)
+            .await
+            .expect("re-fetch ac_player_stats row");
+            assert!(!is_flagged);
+            assert!(!is_trusted);
+
+            sqlx::query("delete from ac_player_stats where subscriber_id = $1")
+                .bind(account_id)
+                .execute(&pool)
+                .await
+                .expect("cleanup ac_player_stats row");
+            cleanup_session(&pool, session_id).await;
+            sqlx::query("delete from accounts where id = $1")
+                .bind(account_id)
+                .execute(&pool)
+                .await
+                .expect("cleanup fixture account");
         }
     }
 }

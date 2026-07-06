@@ -5763,6 +5763,153 @@ pub(crate) fn apply_admin_character_command(
         return Some(KeyringCommandResult::default());
     }
 
+    // C `#acunflag <player>` (`command.c:10196-10203` dispatch, `CF_GOD`-
+    // only, unlike `#acflag`'s `CF_GOD|CF_STAFF` - exact-word; `ac_cmd_
+    // unflag`, `anticheat.c:790-823`). Same single-name-target resolution
+    // as `#acflag`/`#acreset` above; the "is not flagged" status gate
+    // itself can't happen here (this codebase only knows the session id
+    // exists synchronously, not its current status) - see
+    // `apply_ac_unflag_events` for that check and the confirmation
+    // message.
+    if lower == "acunflag" {
+        let Some(caller) = world.characters.get(&character_id) else {
+            return Some(KeyringCommandResult::default());
+        };
+        if !caller.flags.contains(CharacterFlags::GOD) {
+            return None;
+        }
+        let name = rest.trim_start();
+        if name.is_empty() {
+            return Some(KeyringCommandResult {
+                messages: vec!["Usage: #acunflag <player>".to_string()],
+                ..Default::default()
+            });
+        }
+        let mut candidates: Vec<&Character> = world
+            .characters
+            .values()
+            .filter(|character| {
+                character.flags.contains(CharacterFlags::PLAYER)
+                    && character.name.eq_ignore_ascii_case(name)
+            })
+            .collect();
+        candidates.sort_by_key(|character| character.id.0);
+        let Some(target_id) = candidates.first().map(|character| character.id) else {
+            return Some(KeyringCommandResult {
+                messages: vec![format!("Player '{name}' not found online.")],
+                ..Default::default()
+            });
+        };
+        let target_name = world.characters[&target_id].name.clone();
+        let Some(session_id) = runtime
+            .player_for_character(target_id)
+            .and_then(|player| player.anticheat_session_id)
+        else {
+            return Some(KeyringCommandResult {
+                messages: vec![format!("Player '{target_name}' has no connection data.")],
+                ..Default::default()
+            });
+        };
+        world.queue_ac_unflag_lookup(character_id, target_name, session_id);
+        return Some(KeyringCommandResult::default());
+    }
+
+    // C `#actrust <player>` (`command.c:10205-10213` dispatch, `CF_GOD`-
+    // only, exact-word; `ac_cmd_trust`, `anticheat.c:827-849`). Same
+    // single-name-target resolution as `#acflag`/`#acunflag` above; no
+    // status gate (C's own handler has none) - see `apply_ac_trust_events`
+    // for the `ac_player_stats.is_trusted` mutation and confirmation
+    // message.
+    if lower == "actrust" {
+        let Some(caller) = world.characters.get(&character_id) else {
+            return Some(KeyringCommandResult::default());
+        };
+        if !caller.flags.contains(CharacterFlags::GOD) {
+            return None;
+        }
+        let name = rest.trim_start();
+        if name.is_empty() {
+            return Some(KeyringCommandResult {
+                messages: vec!["Usage: #actrust <player>".to_string()],
+                ..Default::default()
+            });
+        }
+        let mut candidates: Vec<&Character> = world
+            .characters
+            .values()
+            .filter(|character| {
+                character.flags.contains(CharacterFlags::PLAYER)
+                    && character.name.eq_ignore_ascii_case(name)
+            })
+            .collect();
+        candidates.sort_by_key(|character| character.id.0);
+        let Some(target_id) = candidates.first().map(|character| character.id) else {
+            return Some(KeyringCommandResult {
+                messages: vec![format!("Player '{name}' not found online.")],
+                ..Default::default()
+            });
+        };
+        let target_name = world.characters[&target_id].name.clone();
+        let Some(session_id) = runtime
+            .player_for_character(target_id)
+            .and_then(|player| player.anticheat_session_id)
+        else {
+            return Some(KeyringCommandResult {
+                messages: vec![format!("Player '{target_name}' has no connection data.")],
+                ..Default::default()
+            });
+        };
+        world.queue_ac_trust_lookup(character_id, target_name, session_id);
+        return Some(KeyringCommandResult::default());
+    }
+
+    // C `#acuntrust <player>` (`command.c:10214-10222` dispatch, `CF_GOD`-
+    // only, exact-word; `ac_cmd_untrust`, `anticheat.c:860-882`). Same
+    // single-name-target resolution as `#actrust` above; the "untrust"
+    // mirror of `apply_ac_trust_events`.
+    if lower == "acuntrust" {
+        let Some(caller) = world.characters.get(&character_id) else {
+            return Some(KeyringCommandResult::default());
+        };
+        if !caller.flags.contains(CharacterFlags::GOD) {
+            return None;
+        }
+        let name = rest.trim_start();
+        if name.is_empty() {
+            return Some(KeyringCommandResult {
+                messages: vec!["Usage: #acuntrust <player>".to_string()],
+                ..Default::default()
+            });
+        }
+        let mut candidates: Vec<&Character> = world
+            .characters
+            .values()
+            .filter(|character| {
+                character.flags.contains(CharacterFlags::PLAYER)
+                    && character.name.eq_ignore_ascii_case(name)
+            })
+            .collect();
+        candidates.sort_by_key(|character| character.id.0);
+        let Some(target_id) = candidates.first().map(|character| character.id) else {
+            return Some(KeyringCommandResult {
+                messages: vec![format!("Player '{name}' not found online.")],
+                ..Default::default()
+            });
+        };
+        let target_name = world.characters[&target_id].name.clone();
+        let Some(session_id) = runtime
+            .player_for_character(target_id)
+            .and_then(|player| player.anticheat_session_id)
+        else {
+            return Some(KeyringCommandResult {
+                messages: vec![format!("Player '{target_name}' has no connection data.")],
+                ..Default::default()
+            });
+        };
+        world.queue_ac_untrust_lookup(character_id, target_name, session_id);
+        return Some(KeyringCommandResult::default());
+    }
+
     // C `#acwatch <player>` (`command.c:10223-10231` dispatch, `CF_GOD|
     // CF_STAFF`-gated, exact-word; `ac_cmd_watch`, `anticheat.c:894-921`).
     // Purely in-memory in C (toggles `player[nr]->ac.watch_mode`) and

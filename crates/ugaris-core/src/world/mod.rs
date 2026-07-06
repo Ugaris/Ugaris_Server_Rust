@@ -391,6 +391,19 @@ pub struct World {
     /// resolved synchronously by the caller) - see `world/anticheat.rs`'s
     /// module doc comment.
     pending_ac_flag_lookups: Vec<AcFlagLookup>,
+    /// `#acunflag <name>` async DB round trips (session id already
+    /// resolved synchronously by the caller; the "is not flagged" status
+    /// gate itself happens later, after the round trip) - see
+    /// `world/anticheat.rs`'s module doc comment.
+    pending_ac_unflag_lookups: Vec<AcUnflagLookup>,
+    /// `#actrust <name>` async DB round trips (session id already
+    /// resolved synchronously by the caller) - see `world/anticheat.rs`'s
+    /// module doc comment.
+    pending_ac_trust_lookups: Vec<AcTrustLookup>,
+    /// `#acuntrust <name>` async DB round trips (session id already
+    /// resolved synchronously by the caller) - see `world/anticheat.rs`'s
+    /// module doc comment.
+    pending_ac_untrust_lookups: Vec<AcUntrustLookup>,
     /// `#querystats`/`/querystats` async DB round trips - see
     /// `world/querystats.rs`'s module doc comment.
     pending_querystats_lookups: Vec<QueryStatsLookup>,

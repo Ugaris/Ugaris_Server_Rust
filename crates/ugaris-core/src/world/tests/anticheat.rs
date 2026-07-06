@@ -110,3 +110,55 @@ fn queue_and_drain_ac_reset_lookup_round_trips() {
     assert_eq!(queued[0].session_id, 77);
     assert!(world.drain_pending_ac_reset_lookups().is_empty());
 }
+
+#[test]
+fn queue_and_drain_ac_flag_lookup_round_trips() {
+    let mut world = World::default();
+    world.queue_ac_flag_lookup(CharacterId(5), "Baddie".to_string(), 88);
+
+    let queued = world.drain_pending_ac_flag_lookups();
+    assert_eq!(queued.len(), 1);
+    assert_eq!(queued[0].caller_id, CharacterId(5));
+    assert_eq!(queued[0].target_name, "Baddie");
+    assert_eq!(queued[0].session_id, 88);
+    assert!(world.drain_pending_ac_flag_lookups().is_empty());
+}
+
+#[test]
+fn queue_and_drain_ac_unflag_lookup_round_trips() {
+    let mut world = World::default();
+    world.queue_ac_unflag_lookup(CharacterId(6), "Baddie".to_string(), 99);
+
+    let queued = world.drain_pending_ac_unflag_lookups();
+    assert_eq!(queued.len(), 1);
+    assert_eq!(queued[0].caller_id, CharacterId(6));
+    assert_eq!(queued[0].target_name, "Baddie");
+    assert_eq!(queued[0].session_id, 99);
+    assert!(world.drain_pending_ac_unflag_lookups().is_empty());
+}
+
+#[test]
+fn queue_and_drain_ac_trust_lookup_round_trips() {
+    let mut world = World::default();
+    world.queue_ac_trust_lookup(CharacterId(8), "Goodie".to_string(), 101);
+
+    let queued = world.drain_pending_ac_trust_lookups();
+    assert_eq!(queued.len(), 1);
+    assert_eq!(queued[0].caller_id, CharacterId(8));
+    assert_eq!(queued[0].target_name, "Goodie");
+    assert_eq!(queued[0].session_id, 101);
+    assert!(world.drain_pending_ac_trust_lookups().is_empty());
+}
+
+#[test]
+fn queue_and_drain_ac_untrust_lookup_round_trips() {
+    let mut world = World::default();
+    world.queue_ac_untrust_lookup(CharacterId(10), "Goodie".to_string(), 102);
+
+    let queued = world.drain_pending_ac_untrust_lookups();
+    assert_eq!(queued.len(), 1);
+    assert_eq!(queued[0].caller_id, CharacterId(10));
+    assert_eq!(queued[0].target_name, "Goodie");
+    assert_eq!(queued[0].session_id, 102);
+    assert!(world.drain_pending_ac_untrust_lookups().is_empty());
+}

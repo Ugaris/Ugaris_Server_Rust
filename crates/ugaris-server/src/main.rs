@@ -180,7 +180,8 @@ use ugaris_core::{
         GateWelcomeOutcomeEvent, GateWelcomePlayerFacts, LegacyHurtEvent, LookMapRequest,
         LootKiller, LootRegistry, MerchantTradeResult, PendingDeathLootRoll, PunishmentNote,
         RaiseSkillOutcome, StealOutcome, StoreWare, TraderEvent, WorldActionCompletion,
-        AC_STATUS_FLAGGED, AC_STATUS_SUSPICIOUS, MERCHANT_STORE_SIZE, PUNISHMENT_NOTE_KIND,
+        AC_STATUS_FLAGGED, AC_STATUS_SUSPICIOUS, AC_STATUS_VERIFIED, MERCHANT_STORE_SIZE,
+        PUNISHMENT_NOTE_KIND,
     },
     zone::ZoneLoader,
     ServerConfig, TickRate, World,
@@ -6697,6 +6698,33 @@ async fn main() -> anyhow::Result<()> {
                         ac_flag_events_applied,
                         tick = world.tick.0,
                         "applied #acflag lookups"
+                    );
+                }
+                let ac_unflag_events_applied =
+                    apply_ac_unflag_events(&mut world, &anticheat_repository).await;
+                if ac_unflag_events_applied != 0 {
+                    info!(
+                        ac_unflag_events_applied,
+                        tick = world.tick.0,
+                        "applied #acunflag lookups"
+                    );
+                }
+                let ac_trust_events_applied =
+                    apply_ac_trust_events(&mut world, &anticheat_repository).await;
+                if ac_trust_events_applied != 0 {
+                    info!(
+                        ac_trust_events_applied,
+                        tick = world.tick.0,
+                        "applied #actrust lookups"
+                    );
+                }
+                let ac_untrust_events_applied =
+                    apply_ac_untrust_events(&mut world, &anticheat_repository).await;
+                if ac_untrust_events_applied != 0 {
+                    info!(
+                        ac_untrust_events_applied,
+                        tick = world.tick.0,
+                        "applied #acuntrust lookups"
                     );
                 }
                 // `#querystats`/`/querystats`'s round trip against the

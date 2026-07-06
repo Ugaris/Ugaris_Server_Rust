@@ -9735,6 +9735,92 @@ Unlocks every quest NPC. Do these before any P4 area work.
   (iteration 191's recipe, last done fresh at iteration 195) to confirm
   no other gap has quietly become unblocked.
 
+  Progress Log (iteration 209): picked gap (a) - and found the
+  `subscriber_id` schema gap iterations 197/199/200 kept deferring was
+  smaller than assumed: C's `get_subscriberId_from_character` just reads
+  `chars.sID`, the owning account - exactly this codebase's pre-existing
+  `characters.account_id` column, so no new "subscriber id" concept was
+  needed at all, only the small `ac_player_stats` table C's
+  `db_ac_flag_player`/`db_ac_trust_player` actually mutate (a genuine new
+  table, deliberately scoped to just the two columns this slice touches -
+  `is_flagged`/`is_trusted` - rather than porting the whole session-
+  rollup engine those C functions' siblings need, matching how
+  `anticheat_sessions` itself was scoped down in iteration 196; see the
+  new migration's doc comment). Ported `#acunflag <player>` (`ac_cmd_
+  unflag`, `anticheat.c:790-823`, `CF_GOD`-only, unlike `#acflag`'s
+  `CF_GOD|CF_STAFF`), `#actrust <player>` (`ac_cmd_trust`, `anticheat.c:
+  827-849`, `CF_GOD`-only) and `#acuntrust <player>` (`ac_cmd_untrust`,
+  `anticheat.c:860-882`, `CF_GOD`-only) in full. New migration
+  `migrations/0014_ac_player_stats.sql` (`ac_player_stats`, PK
+  `subscriber_id references accounts(id)`). New `ugaris-db`
+  `AntiCheatRepository` methods: `account_id_for_session` (reads
+  `anticheat_sessions.account_id`, already stored there by `create_
+  session` since iteration 196 - since this codebase never threads
+  `account_id` through `World`/`PlayerRuntime` past login, the session
+  row itself stands in for C's synchronous `get_subscriberId_from_
+  character` cache) and `set_flagged`/`set_trusted` (single upsert
+  queries folding C's `db_ac_ensure_player_stats`-then-`UPDATE` two-step
+  into one `INSERT ... ON CONFLICT DO UPDATE`). New `ugaris-core`
+  `world/anticheat.rs` types `AcUnflagLookup`/`AcTrustLookup`/
+  `AcUntrustLookup` (same single-name-target shape as `AcFlagLookup`).
+  `#acunflag` is the one member of this whole family whose C handler
+  gates on the target's *current* status (`!= AC_STATUS_FLAGGED` ->
+  "is not flagged") before mutating anything - since this codebase has no
+  synchronous in-memory status to read (only a session id), that gate had
+  to move into the async `apply_ac_unflag_events` itself (an async
+  `find_session` read before the `set_status`/`set_flagged` writes), a
+  genuine deviation from every sibling event's pure silent-skip-on-
+  missing-row convention: a *found* session that just isn't flagged still
+  gets a real "is not flagged" reply, not silence, matching C's own
+  user-facing branch. `#actrust`/`#acuntrust` have no such gate in C, so
+  they stay closer to the established shape. `db_ac_log_admin_action`'s
+  audit-trail row (a further new `ac_admin_actions` table) is skipped
+  entirely for all three commands, matching the established skip-
+  untracked-audit-log convention (`/kick`'s dropped `dlog` call is the
+  precedent cited in the new repository methods' doc comments) - a
+  design decision worth flagging explicitly since a future `#achistory`/
+  admin-audit-trail command would need to either accept this gap or add
+  that table then. Wired all three into `apply_admin_character_command`
+  (`commands_admin.rs`, right after `#acflag`) and their event functions
+  into `main.rs`'s tick loop (right after `apply_ac_flag_events`). 5 new
+  `ugaris-core` tests (`world/tests/anticheat.rs`: queue/drain round
+  trips for all three new lookup types, plus a previously-missing
+  `AcFlagLookup` round-trip test filling a small pre-existing test gap
+  noticed along the way), 1 new `ugaris-db` live test
+  (`subscriber_flag_and_trust_round_trip`: `account_id_for_session`
+  resolving a real session's account id, then both `set_flagged`/
+  `set_trusted` round-tripping an initial insert and a later flip through
+  the `ON CONFLICT` upsert) plus 1 new assertion extended into the
+  existing `updates_on_an_unknown_session_id_report_not_found` test
+  (`account_id_for_session` on an unknown id returns `None`, not an
+  error), 6 new `ugaris-server` tests in `world_events.rs`
+  (`ac_unflag_tests`/`ac_trust_tests`/`ac_untrust_tests`: the standard
+  no-lookups/missing-repository no-op pair per command) and 15 in
+  `tests/commands_admin.rs` (permission-gate, usage, not-found-online,
+  no-connection-data, and successful-queue paths for all three
+  commands - `#acunflag`'s `CF_GOD`-only gate confirmed distinct from
+  `#acflag`'s `CF_GOD|CF_STAFF` gate, matching `#acreset`'s own asymmetry
+  with its `CF_GOD|CF_STAFF` siblings). `cargo fmt --all`, `cargo test
+  --workspace` (2098 ugaris-core [+4] + 68 db [+1] + 3 net + 44 protocol
+  + 979 server [+21], all green, zero failures), `cargo build -p
+  ugaris-server` / `cargo build --workspace` clean with zero warnings,
+  10s boot-smoke confirmed "entering Rust game loop" with no panic.
+  REMAINING: gap (a) still has `achistory`/`acsessions`/`acviolations`
+  (new aggregate queries over the still-unported session-rollup half of
+  `ac_player_stats`), `acsharedip`/`acsharedhw`/`achighrisk`/`aclookup`
+  (multi-account detection, a real new query surface), `acsiglist`/
+  `acsigadd`/`acsigdel` (a whole unported bad-signature table), and
+  `acwarn` (needs the notes/karmalog subsystem, gap (c) - now actually
+  unblocked by iteration 208's `notes` table work, since `db_ac_issue_
+  warning` only touches `ac_player_stats.warnings_issued`/`last_warning_
+  at`, not the `notes` table at all - re-read `ac_cmd_warn`,
+  `anticheat.c:1291-1314`, before assuming this is still blocked). Gaps
+  (b)/(d)/(e)/(f)/(g) from iteration 195's list are untouched by this
+  slice. Next iteration picking this up should either extend
+  `ac_player_stats` with `warnings_issued`/`last_warning_at` and port
+  `#acwarn` (now a clear quick win per the note above), or pick a
+  different top-level gap entirely.
+
 - [ ] **Cross-area transfer** - the big multi-server feature. Every
   cross-area teleport currently returns "target server down". Decide the
   single-process stance first (likely: run multiple areas in one process
