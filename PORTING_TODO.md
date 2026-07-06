@@ -11199,6 +11199,70 @@ Unlocks every quest NPC. Do these before any P4 area work.
   iteration), then finally the normal-player-tick `autobless`/`autopulse`
   consumers in `player_driver.c:1067-1070`.
 
+  REMAINING: (iteration 235) did the step flagged above as next: wired
+  `lostcon_driver`'s message loop +
+  `fight_driver_attack_visible`/`fight_driver_follow_invisible` cascade
+  (`lostcon.c:117-203`) for every lingering `CDR_LOSTCON` character. First
+  had to relax the `CharacterDriverState::SimpleBaddy`-only gates left on
+  `Character::fight_driver`'s low-level accessors from the iteration-234
+  storage migration - C's `DRD_FIGHTDRIVER` slot is driver-independent
+  (`add_simple_baddy_enemy_unchecked`/`remove_simple_baddy_enemy`
+  (`character_driver.rs`), `refresh_simple_baddy_enemy_tracking`/
+  `simple_baddy_recorded_enemy_ids`/`apply_simple_baddy_enemy_tracking`
+  (`npc_messages.rs`) no longer require `SimpleBaddy` `driver_state`, only
+  `fight_driver` data to exist). New `world/lostcon.rs::process_lostcon_
+  messages` ports the message loop itself (only `NT_GOTHIT` does anything
+  - `fight_driver_note_hit` plus, when `msg->dat1` names an attacker,
+  `fight_driver_add_enemy(cn, co, 1, 1)`; `NT_CHAR`'s aggro-on-sight and
+  `NT_TEXT` are both no-ops in real C, commented out/comment-only, and
+  deliberately not ported). The attack cascade itself is a new
+  `npc_fight.rs::fight_driver_attack_visible_and_follow` private helper
+  extracted from `process_simple_baddy_attack_action_with_random`'s old
+  body (now also threading `FightDriverSuppressions` through
+  `setup_weighted_fight_task` instead of always-default, and gating the
+  invisible-follow half on `!suppressions.nomove`, matching C's `if
+  (!ppd->nomove && fight_driver_follow_invisible(cn))`) - the NPC-side
+  caller is unchanged (still always all-`false` suppressions) and a new
+  `pub fn process_lostcon_attack_action_with_random(character_id, area_id,
+  suppressions, random)` is the player-side sibling, called from
+  `PlayerRuntime::fight_driver_suppressions()` (`player.rs`, maps the 9
+  positional `no*` toggles `fight_driver_attack_visible` actually passes -
+  `nolife`/`nomana`/`nocombo` are consumed by `lostcon_driver`'s own
+  potion block, not this call, and have no `FightDriverSuppressions`
+  field). `FightDriverSuppressions` and `npc_fight`'s `pub fn`s are now
+  crate-boundary-public (`world/mod.rs`'s `npc_fight` re-export changed
+  from `pub(crate)` to `pub`) so `ugaris-server` can construct/pass them.
+  Wired into `main.rs`'s tick loop right after the existing simple-baddy
+  attack-actions call: iterates `runtime.lostcon_players` (every
+  currently-lingering character, stashed on disconnect), calls
+  `process_lostcon_messages` then `process_lostcon_attack_action_with_
+  random` with that character's own stashed-`PlayerRuntime` suppressions.
+  19 new tests (2 relaxed-gate coverage + 4 `process_lostcon_messages` +
+  4 `process_lostcon_attack_action_with_random` behavior tests + 1
+  `fight_driver_suppressions` toggle-mapping test, plus renamed/repurposed
+  one iteration-234-era test whose assertion value didn't change). `cargo
+  fmt --all`, `cargo test --workspace` (2175 ugaris-core [+10] + 78 db + 3
+  net + 45 protocol + 1073 server, all green, zero failures), `cargo build
+  -p ugaris-server`/`--workspace` clean with zero warnings, 10s boot-smoke
+  confirmed "entering Rust game loop" with no panic. Still not done (no
+  live players connected during this session, so the wiring itself is
+  currently a no-op in production until a session actually lingers): the
+  low-hp-heal/low-mana-potion/low-shield-magicshield pre-cascade and
+  post-cascade bless/heal/magicshield fallback from `lostcon_driver`
+  itself (`lostcon.c:164-166` and `:204-220`, still entirely unported -
+  `do_idle` is also not called yet, so a lingering character with nothing
+  to attack takes no action of any kind this tick instead of idling), and
+  the normal-player-tick `autobless`/`autopulse` consumers in
+  `player_driver.c:1067-1070`. Next iteration: port `lostcon_driver`'s
+  remaining non-fight-driver body (map rest-area/arena early-exit
+  branches at `lostcon.c:87-99`, the karma early-exit at `:101-104`, the
+  heal/potion/magicshield pre-cascade, the `do_idle` tail, and the
+  post-cascade bless/heal/magicshield fallback) into a single `World`
+  method the `ugaris-server` tick loop calls once per lingering character
+  per tick (mirroring how `process_lostcon_attack_action_with_random` is
+  now called), then finally the normal-player-tick `autobless`/
+  `autopulse` consumers.
+
 - [ ] **Macro-detection engine (`macro_driver`, `src/module/base.c:802-
   1243`, ~800 lines)** - anti-macro/anti-bot detection: activity
   tracking, math/type-word/reverse/multiple-choice challenge generation

@@ -170,14 +170,12 @@ impl World {
         &self,
         character_id: CharacterId,
     ) -> Vec<CharacterId> {
+        // C `DRD_FIGHTDRIVER` is a driver-independent slot (see
+        // `FightDriverData`'s doc comment) - no `driver_state` gate here,
+        // so a `CDR_LOSTCON`/player caller's own recorded enemies are seen
+        // too.
         self.characters
             .get(&character_id)
-            .filter(|character| {
-                matches!(
-                    character.driver_state.as_ref(),
-                    Some(CharacterDriverState::SimpleBaddy(_))
-                )
-            })
             .and_then(|character| character.fight_driver.as_ref())
             .map(|data| data.enemies.iter().map(|enemy| enemy.target_id).collect())
             .unwrap_or_default()
@@ -191,12 +189,6 @@ impl World {
         let Some((visible, last_x, last_y)) = tracking else {
             return;
         };
-        if !matches!(
-            character.driver_state.as_ref(),
-            Some(CharacterDriverState::SimpleBaddy(_))
-        ) {
-            return;
-        }
         let Some(data) = character.fight_driver.as_mut() else {
             return;
         };
@@ -215,12 +207,9 @@ impl World {
         &mut self,
         attacker: &Character,
     ) -> Vec<SimpleBaddyEnemy> {
-        if !matches!(
-            attacker.driver_state.as_ref(),
-            Some(CharacterDriverState::SimpleBaddy(_))
-        ) {
-            return Vec::new();
-        }
+        // C `fight_driver_update` (`drvlib.c:2170`) reads/writes the
+        // driver-independent `DRD_FIGHTDRIVER` slot for any `cn` - no
+        // `driver_state` gate, matching `CDR_LOSTCON`/player callers too.
         let enemies = match attacker.fight_driver.as_ref() {
             Some(data) => data.enemies.clone(),
             None => return Vec::new(),

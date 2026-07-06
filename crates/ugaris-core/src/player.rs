@@ -1792,6 +1792,28 @@ impl PlayerRuntime {
         self.autoturn_enabled
     }
 
+    /// C `fight_driver_attack_visible`'s own `ppd->nobless`/.../`ppd->
+    /// nopulse` positional argument list (`src/system/drvlib.c:2260-2263`,
+    /// only reachable for `ch[cn].flags & CF_PLAYER`) plus the `nomove`
+    /// argument threaded in separately by both of its callers
+    /// (`lostcon_driver`'s own `ppd->nomove` and the not-yet-wired normal
+    /// player tick). `FightDriverSuppressions::nofreeze`/`nopulse` map to
+    /// C's `ppd->nofreeze`/`ppd->nopulse` the same way.
+    pub fn fight_driver_suppressions(&self) -> crate::world::FightDriverSuppressions {
+        crate::world::FightDriverSuppressions {
+            nomove: self.no_move,
+            nobless: self.no_bless,
+            noheal: self.no_heal,
+            noflash: self.no_flash,
+            nofireball: self.no_fireball,
+            noball: self.no_ball,
+            noshield: self.no_shield,
+            nowarcry: self.no_warcry,
+            nofreeze: self.no_freeze,
+            nopulse: self.no_pulse,
+        }
+    }
+
     /// True if any of the 16 lag-control/automation toggles (everything
     /// but `autoturn`/`maxlag`/`hints`, which each have their own
     /// pre-existing "is this default" gate) is non-default, matching the
@@ -8365,6 +8387,50 @@ mod tests {
         assert!(decoded.no_pulse);
         assert!(decoded.no_recall);
         assert!(!decoded.decode_legacy_lostcon_ppd(&encoded[..LEGACY_LOSTCON_PPD_SIZE - 1]));
+    }
+
+    #[test]
+    fn fight_driver_suppressions_maps_every_no_toggle_and_leaves_nomana_nolife_nocombo_unused() {
+        // C `fight_driver_attack_visible`'s player-side branch passes
+        // exactly 8 of `ppd`'s toggles (`nobless`/`noheal`/`noflash`/
+        // `nofireball`/`noball`/`noshield`/`nowarcry`/`nofreeze`/`nopulse`)
+        // plus `nomove` from its own caller - `nolife`/`nomana`/`nocombo`
+        // are consumed elsewhere (`lostcon_driver`'s own potion-drinking
+        // block, not `fight_driver_attack_enemy`) and have no
+        // `FightDriverSuppressions` field at all.
+        let mut player = PlayerRuntime::connected(1, 0);
+        player.no_move = true;
+        player.no_bless = true;
+        player.no_heal = true;
+        player.no_flash = true;
+        player.no_fireball = true;
+        player.no_ball = true;
+        player.no_shield = true;
+        player.no_warcry = true;
+        player.no_freeze = true;
+        player.no_pulse = true;
+        // Deliberately not mapped:
+        player.no_life = true;
+        player.no_mana = true;
+        player.no_combo = true;
+
+        let suppressions = player.fight_driver_suppressions();
+        assert!(suppressions.nomove);
+        assert!(suppressions.nobless);
+        assert!(suppressions.noheal);
+        assert!(suppressions.noflash);
+        assert!(suppressions.nofireball);
+        assert!(suppressions.noball);
+        assert!(suppressions.noshield);
+        assert!(suppressions.nowarcry);
+        assert!(suppressions.nofreeze);
+        assert!(suppressions.nopulse);
+
+        let default_player = PlayerRuntime::connected(2, 0);
+        assert_eq!(
+            default_player.fight_driver_suppressions(),
+            crate::world::FightDriverSuppressions::default()
+        );
     }
 
     #[test]

@@ -116,7 +116,7 @@ pub use loot::*;
 pub use lq::*;
 pub use merchant::*;
 pub use military::*;
-pub(crate) use npc_fight::*;
+pub use npc_fight::*;
 #[allow(unused_imports)]
 pub(crate) use npc_idle::*;
 #[allow(unused_imports)]

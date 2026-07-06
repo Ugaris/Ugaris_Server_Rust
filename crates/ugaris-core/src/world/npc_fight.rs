@@ -73,21 +73,21 @@ pub(crate) fn fight_driver_attackback_may_run(tasks: &[FightDriverTask], index: 
 /// attacker has no `lostcon_ppd`), which `Default`/`From<bool>` (mapping a
 /// bare `nomove` bool, matching every existing call site before this type
 /// existed) both reproduce. The player-side caller (`ppd->nobless`, etc.)
-/// is not wired yet - see `PORTING_TODO.md`'s "Player-side fight-driver
-/// auto-combat" task - this type only generalizes the task-scoring engine
-/// so that wiring has somewhere to plug in.
+/// is `process_lostcon_attack_action_with_random`'s `suppressions`
+/// argument, built by `ugaris-server` from the lingering `PlayerRuntime`'s
+/// `no*` toggles - public so that crate can construct one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub(crate) struct FightDriverSuppressions {
-    pub(crate) nomove: bool,
-    pub(crate) nobless: bool,
-    pub(crate) noheal: bool,
-    pub(crate) noflash: bool,
-    pub(crate) nofireball: bool,
-    pub(crate) noball: bool,
-    pub(crate) noshield: bool,
-    pub(crate) nowarcry: bool,
-    pub(crate) nofreeze: bool,
-    pub(crate) nopulse: bool,
+pub struct FightDriverSuppressions {
+    pub nomove: bool,
+    pub nobless: bool,
+    pub noheal: bool,
+    pub noflash: bool,
+    pub nofireball: bool,
+    pub noball: bool,
+    pub noshield: bool,
+    pub nowarcry: bool,
+    pub nofreeze: bool,
+    pub nopulse: bool,
 }
 
 impl From<bool> for FightDriverSuppressions {
@@ -136,7 +136,68 @@ impl World {
             return false;
         }
 
-        let enemies = self.refresh_simple_baddy_enemy_tracking(&attacker);
+        self.fight_driver_attack_visible_and_follow(
+            character_id,
+            &attacker,
+            area_id,
+            FightDriverSuppressions::default(),
+            &mut random,
+        )
+    }
+
+    /// C `fight_driver_attack_visible`+`fight_driver_follow_invisible`
+    /// (`src/system/drvlib.c:2222-2320`), player-side wiring: the
+    /// `CDR_LOSTCON` self-defense driver (`lostcon_driver`'s own
+    /// `fight_driver_update(cn); if (fight_driver_attack_visible(cn,
+    /// ppd->nomove)) return; if (!ppd->nomove &&
+    /// fight_driver_follow_invisible(cn)) return;` cascade,
+    /// `lostcon.c:200-203`) calls this with the lingering `PlayerRuntime`'s
+    /// `no*` toggles converted to `suppressions`. Returns `true` if an
+    /// action was queued (caller should not also run its idle fallback).
+    pub fn process_lostcon_attack_action_with_random(
+        &mut self,
+        character_id: CharacterId,
+        area_id: u16,
+        suppressions: FightDriverSuppressions,
+        mut random: impl FnMut(u32) -> u32,
+    ) -> bool {
+        let Some(attacker) = self.characters.get(&character_id).cloned() else {
+            return false;
+        };
+        if attacker.driver != CDR_LOSTCON
+            || attacker.action != 0
+            || attacker.flags.contains(CharacterFlags::DEAD)
+        {
+            return false;
+        }
+
+        self.fight_driver_attack_visible_and_follow(
+            character_id,
+            &attacker,
+            area_id,
+            suppressions,
+            &mut random,
+        )
+    }
+
+    /// Shared body of `fight_driver_attack_visible`+
+    /// `fight_driver_follow_invisible` (`src/system/drvlib.c:2222-2320`):
+    /// score/attempt every visible enemy in score order (highest `(999 -
+    /// dist) * 10 [+5 if facing]` first), falling back to pathfinding
+    /// toward the last known position of one invisible enemy when nothing
+    /// visible could be attacked and `!suppressions.nomove` (C's `if
+    /// (!ppd->nomove && fight_driver_follow_invisible(cn))` gate - the
+    /// always-all-`false`-suppressions NPC caller never sets `nomove`, so
+    /// this preserves its behavior unchanged).
+    fn fight_driver_attack_visible_and_follow(
+        &mut self,
+        character_id: CharacterId,
+        attacker: &Character,
+        area_id: u16,
+        suppressions: FightDriverSuppressions,
+        random: &mut impl FnMut(u32) -> u32,
+    ) -> bool {
+        let enemies = self.refresh_simple_baddy_enemy_tracking(attacker);
         if enemies.is_empty() {
             return false;
         }
@@ -146,8 +207,8 @@ impl World {
             .copied()
             .collect();
         visible_enemies.sort_by(|left, right| {
-            self.simple_baddy_visible_enemy_score(&attacker, right)
-                .cmp(&self.simple_baddy_visible_enemy_score(&attacker, left))
+            self.simple_baddy_visible_enemy_score(attacker, right)
+                .cmp(&self.simple_baddy_visible_enemy_score(attacker, left))
         });
 
         for enemy in visible_enemies {
@@ -157,18 +218,18 @@ impl World {
             let Some(target) = self.characters.get(&enemy.target_id).cloned() else {
                 continue;
             };
-            if !can_attack_in_area(&attacker, &target, &self.map, area_id) {
+            if !can_attack_in_area(attacker, &target, &self.map, area_id) {
                 continue;
             }
-            if self.setup_simple_baddy_weighted_fight_task(
-                character_id,
-                &target,
-                area_id,
-                &mut random,
-            ) {
+            if self.setup_weighted_fight_task(character_id, &target, area_id, suppressions, random)
+            {
                 self.queue_simple_baddy_attack_sound(character_id, previous_lastfight);
                 return true;
             }
+        }
+
+        if suppressions.nomove {
+            return false;
         }
 
         for enemy in enemies.into_iter().filter(|enemy| !enemy.visible) {
@@ -1402,22 +1463,6 @@ impl World {
             data.lastfight = self.tick.0 as i32;
         }
         true
-    }
-
-    pub(crate) fn setup_simple_baddy_weighted_fight_task(
-        &mut self,
-        character_id: CharacterId,
-        target: &Character,
-        area_id: u16,
-        random: &mut impl FnMut(u32) -> u32,
-    ) -> bool {
-        self.setup_weighted_fight_task(
-            character_id,
-            target,
-            area_id,
-            FightDriverSuppressions::default(),
-            random,
-        )
     }
 
     /// C `fight_driver_attack_enemy`: score every applicable task, apply

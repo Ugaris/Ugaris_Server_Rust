@@ -6652,6 +6652,39 @@ async fn main() -> anyhow::Result<()> {
                     info!(simple_baddy_attacks, tick = world.tick.0, "queued simple-baddy attack actions");
                 }
 
+                // C `lostcon_driver`'s message loop + `fight_driver_update(cn);
+                // if (fight_driver_attack_visible(cn, ppd->nomove)) return; if
+                // (!ppd->nomove && fight_driver_follow_invisible(cn)) return;`
+                // self-defense cascade (`src/module/lostcon.c:117-203`), for
+                // every character currently lingering under `CDR_LOSTCON`. The
+                // rest of `lostcon_driver` (low-hp-heal/low-mana-potion/
+                // low-shield-magicshield pre-cascade and the bless/heal/
+                // magicshield post-cascade fallback before `do_idle`) is not
+                // wired yet - see `PORTING_TODO.md`'s "Player-side fight-driver
+                // auto-combat" task.
+                let lostcon_character_ids: Vec<CharacterId> =
+                    runtime.lostcon_players.keys().copied().collect();
+                let mut lostcon_attacks = 0;
+                for character_id in lostcon_character_ids {
+                    world.process_lostcon_messages(character_id);
+                    let suppressions = runtime
+                        .lostcon_players
+                        .get(&character_id)
+                        .map(|player| player.fight_driver_suppressions())
+                        .unwrap_or_default();
+                    if world.process_lostcon_attack_action_with_random(
+                        character_id,
+                        config.area_id,
+                        suppressions,
+                        |limit| runtime_random_below(limit as i32).max(0) as u32,
+                    ) {
+                        lostcon_attacks += 1;
+                    }
+                }
+                if lostcon_attacks != 0 {
+                    info!(lostcon_attacks, tick = world.tick.0, "queued lostcon self-defense actions");
+                }
+
                 let simple_baddy_noncombat = world
                     .process_simple_baddy_noncombat_actions_with_completions(
                         config.area_id,

@@ -2448,3 +2448,136 @@ fn sound_area_specials_match_legacy_distance_and_pan() {
     assert_eq!(specials[0].special.opt1, -250);
     assert_eq!(specials[0].special.opt2, 300);
 }
+
+// `process_lostcon_attack_action_with_random` (C `lostcon_driver`'s
+// `fight_driver_update(cn); if (fight_driver_attack_visible(cn,
+// ppd->nomove)) return; if (!ppd->nomove &&
+// fight_driver_follow_invisible(cn)) return;` cascade, `lostcon.c:200-203`)
+// reuses `fight_driver_attack_visible_and_follow`'s generalized engine
+// (see `PORTING_TODO.md`'s "Player-side fight-driver auto-combat" task).
+
+#[test]
+fn lostcon_attack_action_ignores_a_normal_playing_character() {
+    let mut world = World::default();
+    let npc = character(1);
+    world.spawn_character(npc, 10, 10);
+
+    assert!(!world.process_lostcon_attack_action_with_random(
+        CharacterId(1),
+        1,
+        FightDriverSuppressions::default(),
+        |_| 0,
+    ));
+}
+
+#[test]
+fn lostcon_attack_action_fights_back_a_visible_enemy() {
+    let mut world = World::default();
+    let mut lingering = character(1);
+    lingering.driver = CDR_LOSTCON;
+    lingering.driver_state = Some(CharacterDriverState::Lostcon(LostconDriverData {
+        deadline: 1_000,
+    }));
+    lingering.fight_driver = Some(FightDriverData {
+        enemies: vec![SimpleBaddyEnemy {
+            target_id: CharacterId(2),
+            priority: 1,
+            last_seen_tick: 1,
+            visible: true,
+            last_x: 11,
+            last_y: 10,
+        }],
+        ..FightDriverData::default()
+    });
+    let target = character(2);
+    world.spawn_character(lingering, 10, 10);
+    world.spawn_character(target, 11, 10);
+
+    assert!(world.process_lostcon_attack_action_with_random(
+        CharacterId(1),
+        1,
+        FightDriverSuppressions::default(),
+        |_| 0,
+    ));
+
+    let lingering = world.characters.get(&CharacterId(1)).unwrap();
+    assert_eq!(lingering.action, action::ATTACK1);
+}
+
+#[test]
+fn lostcon_attack_action_nomove_suppresses_attack_task_and_invisible_follow() {
+    // C: `!ppd->nomove` gates both the `Attack` task inside
+    // `fight_driver_attack_enemy` (`drvlib.c:1682`'s own `if (!nomove ||
+    // dist(cn,co)==2)` guard) and the whole `fight_driver_follow_invisible`
+    // call. A lone adjacent enemy with nothing else to do means "nomove"
+    // leaves the lingering character with no action to take at all.
+    let mut world = World::default();
+    let mut lingering = character(1);
+    lingering.driver = CDR_LOSTCON;
+    lingering.driver_state = Some(CharacterDriverState::Lostcon(LostconDriverData {
+        deadline: 1_000,
+    }));
+    lingering.fight_driver = Some(FightDriverData {
+        enemies: vec![SimpleBaddyEnemy {
+            target_id: CharacterId(2),
+            priority: 1,
+            last_seen_tick: 1,
+            visible: false,
+            last_x: 15,
+            last_y: 10,
+        }],
+        ..FightDriverData::default()
+    });
+    let mut target = character(2);
+    target.flags.insert(CharacterFlags::INVISIBLE);
+    world.spawn_character(lingering, 10, 10);
+    world.spawn_character(target, 15, 10);
+
+    assert!(!world.process_lostcon_attack_action_with_random(
+        CharacterId(1),
+        1,
+        FightDriverSuppressions {
+            nomove: true,
+            ..FightDriverSuppressions::default()
+        },
+        |_| 0,
+    ));
+
+    let lingering = world.characters.get(&CharacterId(1)).unwrap();
+    assert_eq!(lingering.action, action::IDLE);
+}
+
+#[test]
+fn lostcon_attack_action_follows_an_invisible_enemy_toward_its_last_position() {
+    let mut world = World::default();
+    let mut lingering = character(1);
+    lingering.driver = CDR_LOSTCON;
+    lingering.driver_state = Some(CharacterDriverState::Lostcon(LostconDriverData {
+        deadline: 1_000,
+    }));
+    lingering.fight_driver = Some(FightDriverData {
+        enemies: vec![SimpleBaddyEnemy {
+            target_id: CharacterId(2),
+            priority: 1,
+            last_seen_tick: 1,
+            visible: false,
+            last_x: 15,
+            last_y: 10,
+        }],
+        ..FightDriverData::default()
+    });
+    let mut target = character(2);
+    target.flags.insert(CharacterFlags::INVISIBLE);
+    world.spawn_character(lingering, 10, 10);
+    world.spawn_character(target, 15, 10);
+
+    assert!(world.process_lostcon_attack_action_with_random(
+        CharacterId(1),
+        1,
+        FightDriverSuppressions::default(),
+        |_| 0,
+    ));
+
+    let lingering = world.characters.get(&CharacterId(1)).unwrap();
+    assert_eq!(lingering.action, action::WALK);
+}

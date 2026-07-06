@@ -2752,12 +2752,12 @@ pub fn add_simple_baddy_enemy_unchecked(
     priority: i32,
     current_tick: i32,
 ) -> bool {
-    if !matches!(
-        character.driver_state.as_ref(),
-        Some(CharacterDriverState::SimpleBaddy(_))
-    ) {
-        return false;
-    }
+    // C `fight_driver_add_enemy` (`drvlib.c:2056`) reads/writes the
+    // `DRD_FIGHTDRIVER` slot independently of whatever driver `cn` is
+    // currently running - it is shared by the `CDR_SIMPLEBADDY`/
+    // `CDR_DUNGEONFIGHTER` NPC driver, the `CDR_LOSTCON` self-defense
+    // driver, and (via the player-side `no*` toggles) a normal playing
+    // character. No `driver_state` gate here, matching that.
     let data = character
         .fight_driver
         .get_or_insert_with(FightDriverData::default);
@@ -2790,12 +2790,9 @@ pub fn add_simple_baddy_enemy_unchecked(
 }
 
 pub fn remove_simple_baddy_enemy(character: &mut Character, target_id: CharacterId) -> bool {
-    if !matches!(
-        character.driver_state.as_ref(),
-        Some(CharacterDriverState::SimpleBaddy(_))
-    ) {
-        return false;
-    }
+    // C `fight_driver_remove_enemy` (`drvlib.c:2144`): same
+    // driver-independent `DRD_FIGHTDRIVER` slot as `add_simple_baddy_enemy_
+    // unchecked` above - no `driver_state` gate.
     let Some(data) = character.fight_driver.as_mut() else {
         return false;
     };
@@ -4665,13 +4662,42 @@ mod tests {
     }
 
     #[test]
-    fn remove_simple_baddy_enemy_ignores_non_simple_baddy_state() {
+    fn remove_simple_baddy_enemy_ignores_missing_fight_driver_data() {
+        // No `driver_state` gate anymore (matches C's driver-independent
+        // `DRD_FIGHTDRIVER` slot) - this now only exercises the "no
+        // `fight_driver` data at all yet" early return.
         let mut character = test_character();
 
         assert!(!remove_simple_baddy_enemy(
             &mut character,
             crate::ids::CharacterId(2),
         ));
+    }
+
+    #[test]
+    fn add_and_remove_simple_baddy_enemy_work_without_simple_baddy_driver_state() {
+        // C `fight_driver_add_enemy`/`fight_driver_remove_enemy` operate on
+        // any character's independent `DRD_FIGHTDRIVER` slot - a
+        // `CDR_LOSTCON` lingering character (or, eventually, a normal
+        // playing character) has no `SimpleBaddyDriverData` at all.
+        let mut character = test_character();
+        character.driver_state = Some(CharacterDriverState::Lostcon(LostconDriverData {
+            deadline: 0,
+        }));
+
+        assert!(add_simple_baddy_enemy_unchecked(
+            &mut character,
+            crate::ids::CharacterId(2),
+            1,
+            10,
+        ));
+        assert_eq!(character.fight_driver.as_ref().unwrap().enemies.len(), 1);
+
+        assert!(remove_simple_baddy_enemy(
+            &mut character,
+            crate::ids::CharacterId(2),
+        ));
+        assert!(character.fight_driver.unwrap().enemies.is_empty());
     }
 
     #[test]

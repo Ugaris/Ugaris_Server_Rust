@@ -97,3 +97,100 @@ fn expired_lostcon_characters_ignores_reclaimed_characters() {
 
     assert!(world.expired_lostcon_characters(200).is_empty());
 }
+
+// `process_lostcon_messages` (C `lostcon_driver`'s per-message loop,
+// `src/module/lostcon.c:117-141`).
+
+#[test]
+fn process_lostcon_messages_notes_hit_and_adds_the_attacker_as_an_enemy() {
+    let mut world = World::default();
+    world.tick = Tick(42);
+    let mut lingering = player_character(1);
+    lingering.driver = CDR_LOSTCON;
+    lingering.driver_state = Some(CharacterDriverState::Lostcon(LostconDriverData {
+        deadline: 1_000,
+    }));
+    lingering.push_driver_message(NT_GOTHIT, 2, 0, 0);
+    assert!(world.spawn_character(lingering, 10, 10));
+    assert!(world.spawn_character(character(2), 11, 11));
+
+    world.process_lostcon_messages(CharacterId(1));
+
+    let character = world.characters.get(&CharacterId(1)).unwrap();
+    assert!(character.driver_messages.is_empty());
+    let data = character
+        .fight_driver
+        .as_ref()
+        .expect("fight driver state missing");
+    assert_eq!(data.last_hit, 42);
+    assert_eq!(data.enemies.len(), 1);
+    assert_eq!(data.enemies[0].target_id, CharacterId(2));
+    assert_eq!(data.enemies[0].priority, 1);
+    assert!(data.enemies[0].visible);
+    assert_eq!(data.enemies[0].last_x, 11);
+    assert_eq!(data.enemies[0].last_y, 11);
+}
+
+#[test]
+fn process_lostcon_messages_notes_hit_without_an_attacker_id() {
+    // C: `fight_driver_note_hit(cn)` always runs on `NT_GOTHIT`; the
+    // `fight_driver_add_enemy` call is skipped when `msg->dat1` (`co`) is
+    // `0`.
+    let mut world = World::default();
+    world.tick = Tick(7);
+    let mut lingering = player_character(1);
+    lingering.driver = CDR_LOSTCON;
+    lingering.driver_state = Some(CharacterDriverState::Lostcon(LostconDriverData {
+        deadline: 1_000,
+    }));
+    lingering.push_driver_message(NT_GOTHIT, 0, 0, 0);
+    assert!(world.spawn_character(lingering, 10, 10));
+
+    world.process_lostcon_messages(CharacterId(1));
+
+    let character = world.characters.get(&CharacterId(1)).unwrap();
+    let data = character
+        .fight_driver
+        .as_ref()
+        .expect("fight driver state missing");
+    assert_eq!(data.last_hit, 7);
+    assert!(data.enemies.is_empty());
+}
+
+#[test]
+fn process_lostcon_messages_ignores_sighting_and_text_messages() {
+    // C's own message loop leaves `NT_CHAR`'s aggro-on-sight commented out
+    // and `NT_TEXT` is a no-op comment - neither message type should touch
+    // `fight_driver` at all.
+    let mut world = World::default();
+    let mut lingering = player_character(1);
+    lingering.driver = CDR_LOSTCON;
+    lingering.driver_state = Some(CharacterDriverState::Lostcon(LostconDriverData {
+        deadline: 1_000,
+    }));
+    lingering.push_driver_message(NT_CHAR, 2, 0, 0);
+    lingering.push_driver_message(NT_TEXT, 1, 0, 1);
+    assert!(world.spawn_character(lingering, 10, 10));
+    assert!(world.spawn_character(character(2), 11, 11));
+
+    world.process_lostcon_messages(CharacterId(1));
+
+    let character = world.characters.get(&CharacterId(1)).unwrap();
+    assert!(character.driver_messages.is_empty());
+    assert!(character.fight_driver.is_none());
+}
+
+#[test]
+fn process_lostcon_messages_is_a_no_op_for_a_normal_playing_character() {
+    let mut world = World::default();
+    let mut player = player_character(1);
+    player.push_driver_message(NT_GOTHIT, 2, 0, 0);
+    assert!(world.spawn_character(player, 10, 10));
+    assert!(world.spawn_character(character(2), 11, 11));
+
+    world.process_lostcon_messages(CharacterId(1));
+
+    let character = world.characters.get(&CharacterId(1)).unwrap();
+    assert_eq!(character.driver_messages.len(), 1);
+    assert!(character.fight_driver.is_none());
+}

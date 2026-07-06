@@ -76,4 +76,65 @@ impl World {
             })
             .collect()
     }
+
+    /// C `lostcon_driver`'s per-message loop (`src/module/lostcon.c:117-
+    /// 141`): drains the lingering character's driver-message queue.
+    /// `NT_GOTHIT` is the only message type that does anything -
+    /// `fight_driver_note_hit(cn)` plus (when `msg->dat1` names an
+    /// attacker) `fight_driver_add_enemy(cn, co, 1, 1)` (hurtme=1,
+    /// visible=1, unconditionally - no `can_attack` gate at this call
+    /// site, matching C exactly). `NT_CHAR`'s would-be aggro-on-sight is
+    /// commented out in C itself (`// if (co && can_attack(cn,co))
+    /// fight_driver_add_enemy(cn,co,1,1);`) and `NT_TEXT` is a no-op
+    /// comment - neither is ported, matching C's real (non-commented)
+    /// behavior. No-op if `character_id` is not currently `CDR_LOSTCON`.
+    pub fn process_lostcon_messages(&mut self, character_id: CharacterId) {
+        let Some(character) = self.characters.get_mut(&character_id) else {
+            return;
+        };
+        if character.driver != CDR_LOSTCON {
+            return;
+        }
+        let messages = std::mem::take(&mut character.driver_messages);
+        if messages.is_empty() {
+            return;
+        }
+        let current_tick = self.tick.0 as i32;
+
+        for message in messages {
+            if message.message_type != NT_GOTHIT {
+                continue;
+            }
+            let Some(character) = self.characters.get_mut(&character_id) else {
+                return;
+            };
+            character
+                .fight_driver
+                .get_or_insert_with(FightDriverData::default)
+                .last_hit = current_tick;
+
+            if message.dat1 <= 0 {
+                continue;
+            }
+            let target_id = CharacterId(message.dat1 as u32);
+            let Some(target) = self.characters.get(&target_id).cloned() else {
+                continue;
+            };
+            let Some(character) = self.characters.get_mut(&character_id) else {
+                return;
+            };
+            add_simple_baddy_enemy_unchecked(character, target_id, 1, current_tick);
+            if let Some(data) = character.fight_driver.as_mut() {
+                if let Some(enemy) = data
+                    .enemies
+                    .iter_mut()
+                    .find(|enemy| enemy.target_id == target_id)
+                {
+                    enemy.visible = true;
+                    enemy.last_x = target.x;
+                    enemy.last_y = target.y;
+                }
+            }
+        }
+    }
 }
