@@ -71,6 +71,7 @@ mod text;
 mod trader;
 mod traps_hazards;
 mod turn_seyan;
+mod values;
 mod weather;
 
 pub use actions::*;
@@ -136,6 +137,7 @@ pub use text::*;
 pub use trader::*;
 #[allow(unused_imports)]
 pub(crate) use traps_hazards::*;
+pub use values::*;
 
 #[cfg(test)]
 mod tests;
@@ -484,6 +486,9 @@ pub struct World {
     /// `/exterminate <name>` async DB round trips - see
     /// `world/exterminate.rs`'s module doc comment.
     pending_exterminate_requests: Vec<ExterminateRequest>,
+    /// `/showvalues <name>` async DB round trips - see
+    /// `world/values.rs`'s module doc comment.
+    pending_showvalues_requests: Vec<ShowValuesRequest>,
 }
 
 impl Default for Tick {

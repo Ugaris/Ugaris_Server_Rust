@@ -10793,6 +10793,79 @@ Unlocks every quest NPC. Do these before any P4 area work.
   rows) rather than inventing a real message-bus design nobody has
   asked for yet; (3) the DB-backed save+redirect path (the original,
   unrelated cross-area-transfer gap) still has no live-Postgres test.
+  REMAINING (iteration 228): closed the `/showvalues` half of gap (2)
+  using exactly the pragmatic single-process slice the prior note
+  described. `world/values.rs` (new, `ugaris-core`) ports `/showvalues
+  <name>`'s inline handler (`command.c:8401-8409` -> `show_values`,
+  `command.c:521-537`) - full-word *abbreviation* (`cmdcmp`'s `minlen`
+  is 4, only "show", matching the already-ported `/showattack` idiom,
+  `commands_admin.rs`'s `lower.len() >= 4 && "showvalues".starts_with(
+  &lower)`), no permission gate, `is_valid_lookup_name`-gated (C
+  `lookup_name`'s own isalpha/length-2..=38 gate) with C's exact "No
+  player by that name." text (distinct from `/look`'s "No character by
+  the name %s." - confirmed by re-reading both C functions letter for
+  letter) - queues a `ShowValuesRequest` resolved in `ugaris-server`'s
+  new `world_events.rs::apply_showvalues_events` via `find_login_target`
+  (C's synchronous `lookup_name`). Also ported `show_values_bg` in full
+  (`tool.c:2940-3096`): the caller/target role swap (C's `show_values`
+  swaps `cnID`/`coID` across the `channel 1037` `chat.c` handoff, so
+  `/showvalues bob` sends the *caller's own* values to `bob`, not the
+  other way around - confirmed by tracing both functions' buffer
+  argument order), the Seyan'Du/Warrior/Mage class-specific ability-line
+  tables (letter-for-letter `skill[].name` lookups via a new local
+  `skill_display_name` table - deliberately *not* reusing the shared
+  `CHARACTER_VALUE_NAMES` array, which diverges from the C `skill[]`
+  table at `V_WARCRY` - "War Cry" vs C's actual "Warcry" - an existing,
+  unrelated minor discrepancy left untouched since fixing it risks
+  regressing whatever else already depends on that shared table's
+  current wording), the literal `\010`/`\020` backspace/DLE column
+  separators reproduced verbatim as `\u{8}`/`\u{10}`, and the closing
+  Armor/Weapon/Speed and Offence/Defence summary lines (`get_fight_skill`/
+  `get_attack_skill`/`get_parry_skill` reused via the existing
+  `simple_baddy_fight_skill`/`attack_skill`/`parry_skill` primitives the
+  NPC fight driver already ports, with live combat `rage` - a separate
+  `ch[].rage` field this codebase has no `Character` equivalent of yet -
+  passed as `0` like every other non-NPC caller of these primitives).
+  The caller always gets the "Sent." confirmation once the name resolves
+  (C logs this unconditionally regardless of where the target is
+  currently loaded); the actual stat block is only delivered if the
+  target happens to be loaded in *this* process's `World` (documented
+  single-process caveat, matching every other cross-area-chat gap
+  already tracked in this file). Deliberately left for a future slice:
+  `/values` (`look_values`/`look_values_bg`) itself, which additionally
+  needs paying-player/PK/hardcore/playtime/bank-gold/mirror-area lines
+  this codebase has no `Character`/`World` equivalent of yet (bank gold
+  lives on session-scoped `PlayerRuntime`, not persisted `Character`;
+  `paid_until` is a DB-only `accounts` column never threaded through to
+  `World`), so it is a strictly larger port than `/showvalues`; `/allow`
+  (`allow_body`/`allow_body_db`) remains completely unstarted and turns
+  out to need real new infrastructure, not just this pragmatic
+  resolve-then-check-local-load slice - re-reading `container.h` found
+  this codebase has **no** per-corpse `owner`/`killer`/`access` ACL
+  concept at all yet (C's `struct container`, `container.h:22-33`; the
+  Rust body-container equivalent is just a plain `Item` with
+  `contained_in`, `crates/ugaris-core/src/world/death.rs`, `owner_id`
+  never even set on body creation), so porting `/allow` for real would
+  first require designing and wiring that whole grave-loot-ownership
+  model, a substantially bigger and more invasive task than either
+  `/showvalues` or `/values` - flag as its own future task rather than
+  folding it back into this "Cross-area transfer" umbrella indefinitely
+  if picked up. New focused tests: `world/values.rs`'s
+  `queue_showvalues_command` (empty/invalid-shape immediate "No player
+  by that name.", valid-shape queuing with whitespace trimmed) and
+  `show_values_lines` (Warrior/Mage/Seyan'Du header text and exact line
+  counts, the Warrior branch's final two-column pair line, the `Arch-`
+  prefix, and the closing Armor/Offence lines) in
+  `crates/ugaris-core/src/world/tests/values.rs`; `ugaris-server`'s
+  `world_events.rs::showvalues_tests` (empty-queue and
+  missing-repository no-op paths, matching every sibling command's
+  offline-test convention - a real resolve-and-deliver round trip needs
+  a live Postgres pool, same gap as every other DB-backed command here).
+  `cargo fmt --all`, `cargo test --workspace` (2121 ugaris-core [+9] + 77
+  db + 3 net + 45 protocol + 1069 server [+2], all green, zero
+  failures), `cargo build -p ugaris-server`/`--workspace` clean with
+  zero warnings, 10s boot-smoke confirmed "entering Rust game loop" with
+  no panic.
 
 - [ ] **Player-side fight-driver auto-combat (lostcon self-defense +
   no*/auto* toggle family)** - `fight_driver_attack_enemy`/

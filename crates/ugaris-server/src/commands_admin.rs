@@ -4911,6 +4911,24 @@ pub(crate) fn apply_admin_character_command(
         return Some(KeyringCommandResult::default());
     }
 
+    // C `/showvalues <name>` (`command.c:8401-8409` -> `show_values`,
+    // `command.c:521-537`), no permission gate - unlike `/values`/`/look`/
+    // `/klog`, any player can use this. Full-word *abbreviation*
+    // (`cmdcmp(ptr, "showvalues", 4)`'s `minlen` is 4, only the length of
+    // "show" - same idiom as the already-ported `/showattack` above,
+    // `starts_with` rather than an exact `lower ==` match) - trims
+    // leading whitespace, then passes the *entire* untokenized remainder
+    // to `World::queue_showvalues_command` (see `world/values.rs`'s
+    // module doc comment for the full behavior, including the caller/
+    // target role swap between `show_values` and `show_values_bg`).
+    // Always returns a `default()` result immediately; every reply line
+    // arrives later via `World::queue_system_text` (same fire-and-forget
+    // async pattern as `/look`/`/klog` above).
+    if lower.len() >= 4 && "showvalues".starts_with(&lower) {
+        world.queue_showvalues_command(character_id, rest.trim_start());
+        return Some(KeyringCommandResult::default());
+    }
+
     // C `/showflags` (`command.c:8798-8805`, `cmd_show_flags`,
     // `command.c:4839-5061`), `CF_GOD`-gated, full-word only (`cmdcmp`'s
     // `minlen` is 9, the full length of "showflags", so no abbreviation

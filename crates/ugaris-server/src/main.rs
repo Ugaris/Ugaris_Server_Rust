@@ -177,8 +177,8 @@ use ugaris_core::{
         ac_status_string, apply_punishment, apply_unpunishment, army_rank_for_points,
         army_rank_name, decode_punishment_note, encode_punishment_note, exp2level,
         legacy_save_number, level2exp, level2maxitem, level_value, merchant_buy_price,
-        merchant_sales_price, AcOnlineTarget, ArenaMasterEvent, BankEvent, ClanclerkEvent,
-        ClanmasterEvent, ClubmasterEvent, DungeonRaidBuildRequest, FirstKillCheck,
+        merchant_sales_price, show_values_lines, AcOnlineTarget, ArenaMasterEvent, BankEvent,
+        ClanclerkEvent, ClanmasterEvent, ClubmasterEvent, DungeonRaidBuildRequest, FirstKillCheck,
         GateWelcomeOutcomeEvent, GateWelcomePlayerFacts, LegacyHurtEvent, LookMapRequest,
         LootKiller, LootRegistry, MerchantTradeResult, PendingDeathLootRoll, PunishmentNote,
         RaiseSkillOutcome, StealOutcome, StoreWare, TraderEvent, WorldActionCompletion,
@@ -7219,6 +7219,18 @@ async fn main() -> anyhow::Result<()> {
                         klog_events_applied,
                         tick = world.tick.0,
                         "applied /klog events"
+                    );
+                }
+                // `/showvalues <name>`'s async DB round trip (C
+                // `show_values`/`show_values_bg`), queued by `World::
+                // queue_showvalues_command` above.
+                let showvalues_events_applied =
+                    apply_showvalues_events(&mut world, &character_repository).await;
+                if showvalues_events_applied != 0 {
+                    info!(
+                        showvalues_events_applied,
+                        tick = world.tick.0,
+                        "applied /showvalues events"
                     );
                 }
                 // C `military_master_driver`: the mission-giving Military

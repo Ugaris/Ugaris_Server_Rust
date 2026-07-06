@@ -4082,6 +4082,64 @@ fn format_klog_line(
     )
 }
 
+/// `/showvalues <name>`'s async DB round trip (C `command.c:8401-8409` ->
+/// `show_values`, `command.c:521-537` + its `server_chat` body
+/// `show_values_bg`, `src/system/tool.c:2940-3096`): resolves every
+/// `World::drain_pending_showvalues_requests` entry (queued by `World::
+/// queue_showvalues_command`) by name via `find_login_target` (C's
+/// synchronous `lookup_name`).
+///
+/// - no matching character -> "No player by that name." (C's `ID == -1`
+///   branch; C's `ID == 0` "lookup in progress" case has no analogue
+///   here, same as every sibling name-lookup command in this codebase).
+/// - a match -> the caller always gets the "Sent." confirmation (C logs
+///   this unconditionally once `lookup_name` succeeds, regardless of
+///   which area server - if any - currently has the target loaded), then
+///   the caller's own `show_values_lines` stat block is delivered to the
+///   target *only if the target happens to be loaded in this process's
+///   `World`* - C's real delivery goes through `tell_chat`'s own
+///   cross-area chat relay, which this codebase does not have yet (see
+///   the "Cross-area transfer" `PORTING_TODO.md` entry's gap (2) and
+///   `world/values.rs`'s module doc comment for the full single-process
+///   caveat).
+///
+/// No-ops entirely (silent, but still drains the queue) when
+/// `character_repository` is unconfigured.
+pub(crate) async fn apply_showvalues_events(
+    world: &mut World,
+    character_repository: &Option<ugaris_db::PgCharacterRepository>,
+) -> usize {
+    let requests = world.drain_pending_showvalues_requests();
+    if requests.is_empty() {
+        return 0;
+    }
+    let Some(character_repository) = character_repository else {
+        return 0;
+    };
+    let mut applied = 0;
+    for request in requests {
+        let Ok(Some(summary)) = character_repository
+            .find_login_target(&request.target_name)
+            .await
+        else {
+            world.queue_system_text(request.caller_id, "No player by that name.".to_string());
+            continue;
+        };
+        let Some(caller) = world.characters.get(&request.caller_id) else {
+            continue;
+        };
+        let lines = show_values_lines(caller, &world.items);
+        world.queue_system_text(request.caller_id, "Sent.".to_string());
+        if world.characters.contains_key(&summary.id) {
+            for line in lines {
+                world.queue_system_text(summary.id, line);
+            }
+        }
+        applied += 1;
+    }
+    applied
+}
+
 /// `/rename <from> <to>`'s async DB round trip (C `do_rename`/
 /// `db_rename`, `src/system/database/database_admin.c:291-355`):
 /// resolves every `World::drain_pending_rename_lookups` entry (queued by
@@ -5820,5 +5878,30 @@ mod klog_tests {
         assert_eq!(applied, 0);
         assert!(world.drain_pending_system_texts().is_empty());
         assert!(world.drain_pending_klog_requests().is_empty());
+    }
+}
+
+#[cfg(test)]
+mod showvalues_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn no_showvalues_requests_queued_is_a_cheap_no_op() {
+        let mut world = World::default();
+        let applied = apply_showvalues_events(&mut world, &None).await;
+        assert_eq!(applied, 0);
+        assert!(world.drain_pending_system_texts().is_empty());
+    }
+
+    #[tokio::test]
+    async fn missing_repository_drains_the_showvalues_queue_without_a_reply() {
+        let mut world = World::default();
+        world.queue_showvalues_command(CharacterId(1), "Someone");
+        assert!(world.drain_pending_system_texts().is_empty());
+
+        let applied = apply_showvalues_events(&mut world, &None).await;
+        assert_eq!(applied, 0);
+        assert!(world.drain_pending_system_texts().is_empty());
+        assert!(world.drain_pending_showvalues_requests().is_empty());
     }
 }

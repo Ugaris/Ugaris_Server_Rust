@@ -256,7 +256,8 @@ next:**
    is a smaller/rarer risk than in C and left as a future hardening step
    if it ever proves necessary in practice.
 3. ~~The three blocked text commands.~~ **`/exterminate` done (iteration
-   227); `/values`/`/showvalues`/`/allow` still open.** Re-reading
+   227); `/showvalues` done (iteration 228); `/values`/`/allow` still
+   open.** Re-reading
    `cmd_exterminate`'s full C call chain
    (`database_admin.c:29-95,503-507`) found it is a **direct DB
    mutation** (lock the target's account, ban its IP history), not a
@@ -278,13 +279,32 @@ next:**
    `death.c:1013-1063`) are genuinely different from `/exterminate` -
    they really do need to reach a character's live in-memory state
    (values, corpse containers) or, wherever it currently is, which
-   could be a different area-server process - and remain open; see the
-   "Cross-area transfer" `PORTING_TODO.md` entry's iteration 227
-   Progress Log for the recommended pragmatic single-process-only slice
-   (resolve the name via a direct `characters` table query, act only if
-   the resolved character happens to be loaded in *this* process's
-   `World`, leave cross-process reach as an explicit gap like every
-   other cross-area chat-routing gap already documented in this file).
+   could be a different area-server process. `/showvalues` is now done
+   (iteration 228, `crates/ugaris-core/src/world/values.rs` +
+   `ugaris-server`'s `world_events.rs::apply_showvalues_events`), using
+   the recommended pragmatic single-process-only slice: resolve the name
+   via `find_login_target`, always send the caller the "Sent."
+   confirmation once it resolves (matching C's unconditional log
+   regardless of where the target actually is), but only deliver the
+   caller's own class-specific stat block if the target happens to be
+   loaded in *this* process's `World` - cross-process reach is an
+   explicit documented gap, same as every other cross-area chat-routing
+   gap already in this file. `/values` (the staff-only, fuller
+   `look_values_bg` dump) remains open - it is a strictly bigger port
+   than `/showvalues` since it also needs paying-player/PK/hardcore/
+   playtime/bank-gold/mirror-area lines this codebase has no
+   `Character`/`World` equivalent of yet (bank gold is session-scoped on
+   `PlayerRuntime`, not persisted `Character`; `paid_until` is a DB-only
+   `accounts` column never threaded through to `World`). `/allow`
+   remains open and turns out to need real new infrastructure first: C's
+   `struct container` (`container.h:22-33`) has a per-body
+   `owner`/`killer`/`access` loot-ACL this codebase has **no** equivalent
+   of at all - the Rust body-container is just a plain `Item` with
+   `contained_in` (`world/death.rs`) and `owner_id` is never even set on
+   body creation - so `/allow` needs that whole grave-loot-ownership
+   model designed and wired before the command itself can mean anything;
+   flag it as its own future task once picked up rather than treating it
+   as a same-sized slice of this one.
 
 ### Current Runnable State
 
