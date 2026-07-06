@@ -154,9 +154,9 @@ use ugaris_core::{
         CaligarSkellyDeathResult, CommandAlias, DemonShrineResult, IgnoreToggleResult,
         KeyringAddResult, PentagramDebugData, PlayerActionCode, PlayerConnectionState,
         PlayerRuntime, QueuedAction, XmasTreeResult, ARENA_PPD_NEWCOMER_SCORE,
-        DEFERRED_ACHIEVEMENTS, DEFERRED_AUCTION, LEGACY_SWEAR_PPD_SIZE, MAX_TUNNEL_LEVEL,
-        MAX_TUNNEL_USES, MILITARY_PPD_MAXADVISOR, MIN_TUNNEL_LEVEL, SWEAR_SENTENCE_COUNT,
-        SWEAR_SENTENCE_LEN,
+        DEFERRED_ACHIEVEMENTS, DEFERRED_AUCTION, LEGACY_SWEAR_PPD_SIZE, MACRO_HISTORY_SIZE,
+        MAX_TUNNEL_LEVEL, MAX_TUNNEL_USES, MILITARY_PPD_MAXADVISOR, MIN_TUNNEL_LEVEL,
+        SWEAR_SENTENCE_COUNT, SWEAR_SENTENCE_LEN,
     },
     quest::{QuestLog, QuestReopenResult, QF_OPEN},
     spell::{

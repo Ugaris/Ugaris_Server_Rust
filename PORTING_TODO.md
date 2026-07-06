@@ -10355,6 +10355,91 @@ Unlocks every quest NPC. Do these before any P4 area work.
   `cargo build --workspace` clean with zero warnings, 10s boot-smoke
   confirmed "entering Rust game loop" with no panic.
 
+  Progress Log (iteration 217): did the recommended fresh full pass -
+  extracted every `cmdcmp(ptr, "...")` literal from `command.c` (308
+  entries) and diffed against every string literal in
+  `commands_admin.rs`/`commands_player.rs`/`weather.rs`/`clan_command.rs`/
+  the rest of `crates/ugaris-server/src/`. Found the list had drifted:
+  only 15 names were genuinely missing (`#alias`/`#clearaliases` turned
+  out to be a false positive - already ported under their unprefixed
+  `"alias"`/`"clearaliases"` match text, see `commands_player.rs`'s
+  `apply_alias_command`). Of the real 13: `exterminate` remains blocked
+  on the same DB task-queue + `server_chat` infra as the `punish`/
+  `shutup`/`rename` family; `values`/`showvalues` (`look_values`/
+  `show_values`, `command.c:501-539`) are blocked the same way (both
+  call `lookup_name` then `server_chat`); `respawn`
+  (`command.c:9665-9668`) is a `CF_GOD` diagnostic that forces
+  `respawn_check()` - a whole separate NPC-respawn sanity-checker
+  subsystem (`src/system/respawn.c`, hooked into `create.c`/`death.c`)
+  whose only output is an internal `xlog` line, invisible to every
+  player including the caller; left unported (low value, and would need
+  new hooks in three unrelated lifecycle call sites) - flag it if a
+  future iteration wants a genuinely tiny slice. The remaining 9 were
+  the un-itemized "macro daemon" admin/debug command family
+  (`macrostats`, `macrohistory`, `summonmacro`, `macroimmune`,
+  `macrolist`, `macrosuspicion`, `macrokarma`, `macrofailures`,
+  `macroreset`, `command.c:660-1123` - `macrohelp`, the family's tenth
+  member, was already ported, see `commands_player.rs::macro_help_lines`
+  and `apply_help_command`'s `"macrohelp"` arm). Ported all 9 following
+  the exact precedent `pentagram_debug`/`/pentinfo` set: added
+  `PlayerRuntime::macro_ppd` (`MacroPpd`/`MacroHistoryEntry`,
+  `crates/ugaris-core/src/player.rs`), a field-for-field mirror of C's
+  persistent `struct macro_ppd` (`DRD_MACRO_PPD`, `command.c:585-626`,
+  including the `saved_pent_*`/`original_*`/`needs_challenge` fields no
+  admin command reads today), so a future port of the real detection
+  engine (`macro_driver`, `src/module/base.c:802-1243` - activity
+  tracking, math/type-word/reverse/multiple-choice challenge generation
+  and checking, reward/failure handling, cross-server "challenge room"
+  teleport; NOT ported, no task exists for it yet, add one before
+  relying on any of this having gameplay effect) can reuse the same
+  storage instead of duplicating it. All 9 dispatch arms added to
+  `apply_admin_character_command` (`commands_admin.rs`), reusing
+  `parse_pent_name_and_int` for the `<player> <int>` members and a new
+  `find_online_macro_player` helper (C `macro_find_player`,
+  `command.c:650-658` - `CF_PLAYER`-only online scan, distinct from the
+  file's other by-name lookups' no-flag-filter `find_online_
+  character_by_name`) plus `macro_activity_ago`/`macro_challenge_type_
+  name` formatting helpers. `macrostats`/`macrohistory`/`macrolist` are
+  `CF_GOD|CF_STAFF`-gated; the six mutating commands are `CF_GOD`-only;
+  every `cmdcmp` minlen equals the full word length (no abbreviations).
+  Skipped `/macrostats`'s C sibling "Anticheat Bot Score" line
+  (`ac_anomaly_get_bot_score`) since wiring it in would mean turning this
+  command into an async `#acsessions`-style DB-lookup round trip for one
+  optional line - flagged in the code as a follow-up that should reuse
+  `AntiCheatRepository`'s existing session/bot-score plumbing rather than
+  adding new infra. Skipped the C `xlog` staff-action lines' exact
+  content (approximated with `debug!(target: "client_log", ...)` per
+  this file's established convention; `/macrofailures` has no `xlog`
+  call in C at all, matched exactly). 14 new tests in
+  `tests/commands_admin.rs`: permission gating (`CF_GOD`-only vs
+  `CF_STAFF|CF_GOD`, verified STAFF alone is accepted for the three
+  read-only commands), usage/not-found messages for every command,
+  `/macrostats`'s full conditional-line matrix (immune/force-summon/
+  challenge-room), `/macrohistory`'s circular-buffer reverse-
+  chronological ordering and PASS-with-response-time vs FAIL formatting,
+  `/macrosuspicion`/`/macrokarma`'s 0-100 clamps, `/macrofailures`'s
+  floor-at-0 with no ceiling, `/macroreset`'s exact field-list scope
+  (asserted fields it does *not* touch, e.g. `last_exp_gain`,
+  `in_challenge_room`, survive untouched), and `/macrolist`'s exact
+  column formatting + status-priority ordering (challenge room > immune
+  > pending > suspicion >= 50 > OK) across four players sorted by
+  character ID. REMAINING: `exterminate`, `values`/`showvalues`
+  (task-queue/`server_chat`-blocked), `respawn` (diagnostic, low value),
+  `/allow` (blocked on `server_chat`), the `CDR_LOSTCON` autopilot
+  behavior (no dedicated task), and the real `macro_driver` detection
+  engine itself (`src/module/base.c`, ~800 lines - a substantial new
+  subsystem that deserves its own `PORTING_TODO.md` task rather than
+  being folded into this one) are the only items left in this task; the
+  ~90 `CF_GOD`-gated `ac*` anticheat-detection-engine commands mentioned
+  in earlier notes turned out to not exist as a large uncounted pool -
+  this iteration's full `cmdcmp` extraction found the entire `ac*`/
+  `macro*` surface accounted for above and in the already-closed gap (a).
+  `cargo fmt --all`, `cargo test --workspace` (2108 ugaris-core + 73 db +
+  3 net + 44 protocol + 1050 server [+14], all green, zero failures),
+  `cargo build -p ugaris-server` / `cargo build --workspace` clean with
+  zero warnings, 10s boot-smoke confirmed "entering Rust game loop" with
+  no panic.
+
 - [ ] **Cross-area transfer** - the big multi-server feature. Every
   cross-area teleport currently returns "target server down". Decide the
   single-process stance first (likely: run multiple areas in one process

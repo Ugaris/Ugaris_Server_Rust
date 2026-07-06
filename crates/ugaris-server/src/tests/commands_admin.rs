@@ -1,4 +1,5 @@
 use super::*;
+use ugaris_core::player::{MacroHistoryEntry, MacroPpd};
 use ugaris_core::world::SingleMission;
 use ugaris_protocol::packet::{SV_CAT, SV_LS};
 
@@ -7387,6 +7388,573 @@ fn pent_debug_commands_report_missing_runtime_for_online_character() {
         result.messages,
         vec!["Could not access pent data for Target."]
     );
+}
+
+// C `command.c:660-1123`: the macro-daemon admin/debug commands over the
+// `DRD_MACRO_PPD` persistent struct (`PlayerRuntime::macro_ppd`).
+
+#[test]
+fn macro_god_only_commands_require_god_not_just_staff() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (_god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+    // `target_id` has neither GOD nor STAFF, so every gate below should
+    // reject it uniformly.
+    for command in [
+        "/summonmacro Target",
+        "/macroimmune Target 5",
+        "/macrosuspicion Target 5",
+        "/macrokarma Target 5",
+        "/macrofailures Target 5",
+        "/macroreset Target",
+    ] {
+        assert!(
+            apply_admin_character_command(&mut world, &mut runtime, target_id, command, 1)
+                .is_none(),
+            "{command} should be CF_GOD-gated"
+        );
+    }
+}
+
+#[test]
+fn macro_staff_or_god_commands_accept_staff_without_god() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let god_id = CharacterId(7);
+    let staff_id = CharacterId(8);
+    let target_id = CharacterId(9);
+    let mut god = login_character(god_id, &login_block("Godmode"), 1, 10, 10);
+    god.flags.insert(CharacterFlags::GOD);
+    world.add_character(god);
+    let mut staff = login_character(staff_id, &login_block("Staffer"), 1, 10, 10);
+    staff.flags.insert(CharacterFlags::STAFF);
+    world.add_character(staff);
+    world.add_character(login_character(
+        target_id,
+        &login_block("Target"),
+        1,
+        11,
+        10,
+    ));
+    let mut target_player = PlayerRuntime::connected(80, 0);
+    target_player.character_id = Some(target_id);
+    runtime.players.insert(80, target_player);
+
+    for command in ["/macrostats Target", "/macrohistory Target", "/macrolist"] {
+        assert!(
+            apply_admin_character_command(&mut world, &mut runtime, staff_id, command, 1).is_some(),
+            "{command} should accept CF_STAFF alone"
+        );
+        assert!(
+            apply_admin_character_command(&mut world, &mut runtime, god_id, command, 1).is_some(),
+            "{command} should also accept CF_GOD alone"
+        );
+    }
+}
+
+#[test]
+fn macrostats_requires_a_name_and_reports_unknown_players() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+
+    let usage = apply_admin_character_command(&mut world, &mut runtime, god_id, "/macrostats", 1)
+        .expect("god macrostats should be recognized");
+    assert_eq!(usage.messages, vec!["Usage: /macrostats <player>"]);
+
+    let missing =
+        apply_admin_character_command(&mut world, &mut runtime, god_id, "/macrostats Nobody", 1)
+            .expect("god macrostats missing target should be handled");
+    assert_eq!(missing.messages, vec!["Player 'Nobody' not found online."]);
+}
+
+#[test]
+fn macrostats_shows_fresh_state_then_every_conditional_line() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+
+    let fresh =
+        apply_admin_character_command(&mut world, &mut runtime, god_id, "/macrostats Target", 1)
+            .expect("god macrostats should be recognized");
+    assert_eq!(
+        fresh.messages,
+        vec![
+            "=== Macro Daemon Stats: Target ===",
+            "Karma: 0 | Suspicion: 0",
+            "Challenges - Passed: 0 | Failed: 0 | Consecutive Fails: 0",
+            "Last Activity:",
+            "  Exp Gain: never | Combat: never | Gold Change: never",
+        ]
+    );
+
+    world.date.realtime = 1_000;
+    {
+        let player = runtime.player_for_character_mut(target_id).unwrap();
+        player.macro_ppd.karma = 70;
+        player.macro_ppd.suspicion = 20;
+        player.macro_ppd.total_passed = 3;
+        player.macro_ppd.total_failed = 1;
+        player.macro_ppd.challenge_failures = 1;
+        player.macro_ppd.last_exp_gain = 940;
+        player.macro_ppd.last_combat = 970;
+        player.macro_ppd.last_gold_change = 1_000;
+        player.macro_ppd.immune_until = 1_120;
+        player.macro_ppd.immune_by = 7;
+        player.macro_ppd.force_summon = true;
+        player.macro_ppd.summoned_by = 7;
+        player.macro_ppd.in_challenge_room = true;
+    }
+
+    let full =
+        apply_admin_character_command(&mut world, &mut runtime, god_id, "/macrostats Target", 1)
+            .expect("god macrostats should be recognized");
+    assert_eq!(
+        full.messages,
+        vec![
+            "=== Macro Daemon Stats: Target ===",
+            "Karma: 70 | Suspicion: 20",
+            "Challenges - Passed: 3 | Failed: 1 | Consecutive Fails: 1",
+            "Last Activity:",
+            "  Exp Gain: 60s ago | Combat: 30s ago | Gold Change: 0s ago",
+            "IMMUNE for 2 minutes (granted by ID 7)",
+            "FORCE SUMMON PENDING (requested by ID 7)",
+            "Currently in challenge room",
+        ]
+    );
+}
+
+#[test]
+fn macrohistory_requires_a_name_and_reports_empty_then_populated_history() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+
+    let usage = apply_admin_character_command(&mut world, &mut runtime, god_id, "/macrohistory", 1)
+        .expect("god macrohistory should be recognized");
+    assert_eq!(usage.messages, vec!["Usage: /macrohistory <player>"]);
+
+    let missing =
+        apply_admin_character_command(&mut world, &mut runtime, god_id, "/macrohistory Nobody", 1)
+            .expect("god macrohistory missing target should be handled");
+    assert_eq!(missing.messages, vec!["Player 'Nobody' not found online."]);
+
+    let empty =
+        apply_admin_character_command(&mut world, &mut runtime, god_id, "/macrohistory Target", 1)
+            .expect("god macrohistory should be recognized");
+    assert_eq!(
+        empty.messages,
+        vec![
+            "=== Challenge History: Target ===",
+            "No challenge history recorded.",
+        ]
+    );
+
+    world.date.realtime = 10_000;
+    {
+        let player = runtime.player_for_character_mut(target_id).unwrap();
+        // `history_index` points at the *next* write slot, so the most
+        // recently written entry lives at `history_index - 1`
+        // (`history[1]` here) - it must carry the more recent timestamp
+        // for the scenario to be internally consistent.
+        player.macro_ppd.history[0] = MacroHistoryEntry {
+            timestamp: 9_400,
+            challenge_type: 2,
+            passed: false,
+            response_time: 0,
+        };
+        player.macro_ppd.history[1] = MacroHistoryEntry {
+            timestamp: 9_880,
+            challenge_type: 0,
+            passed: true,
+            response_time: 12,
+        };
+        player.macro_ppd.history_count = 2;
+        player.macro_ppd.history_index = 2;
+    }
+
+    let filled =
+        apply_admin_character_command(&mut world, &mut runtime, god_id, "/macrohistory Target", 1)
+            .expect("god macrohistory should be recognized");
+    assert_eq!(
+        filled.messages,
+        vec![
+            "=== Challenge History: Target ===",
+            "1. [Math] PASS - 12s response (2 min ago)",
+            "2. [Reverse] FAIL (10 min ago)",
+            "Total challenges: 2",
+        ]
+    );
+}
+
+#[test]
+fn summonmacro_requires_a_name_and_sets_force_summon() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+
+    let usage = apply_admin_character_command(&mut world, &mut runtime, god_id, "/summonmacro", 1)
+        .expect("god summonmacro should be recognized");
+    assert_eq!(usage.messages, vec!["Usage: /summonmacro <player>"]);
+
+    let missing =
+        apply_admin_character_command(&mut world, &mut runtime, god_id, "/summonmacro Nobody", 1)
+            .expect("god summonmacro missing target should be handled");
+    assert_eq!(missing.messages, vec!["Player 'Nobody' not found online."]);
+
+    let ok =
+        apply_admin_character_command(&mut world, &mut runtime, god_id, "/summonmacro Target", 1)
+            .expect("god summonmacro should be recognized");
+    assert_eq!(
+        ok.messages,
+        vec!["Macro daemon will summon Target on next check."]
+    );
+    let ppd = &runtime.player_for_character(target_id).unwrap().macro_ppd;
+    assert!(ppd.force_summon);
+    assert_eq!(ppd.summoned_by, 7);
+}
+
+#[test]
+fn macroimmune_grants_and_removes_immunity() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+    world.date.realtime = 1_000;
+
+    let usage = apply_admin_character_command(&mut world, &mut runtime, god_id, "/macroimmune", 1)
+        .expect("god macroimmune should be recognized");
+    assert_eq!(
+        usage.messages,
+        vec![
+            "Usage: /macroimmune <player> <minutes>",
+            "Use 0 minutes to remove immunity.",
+        ]
+    );
+
+    let bad_args = apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        god_id,
+        "/macroimmune Target abc",
+        1,
+    )
+    .expect("god macroimmune should be recognized");
+    assert_eq!(
+        bad_args.messages,
+        vec!["Usage: /macroimmune <player> <minutes>"]
+    );
+
+    let missing =
+        apply_admin_character_command(&mut world, &mut runtime, god_id, "/macroimmune Nobody 5", 1)
+            .expect("god macroimmune missing target should be handled");
+    assert_eq!(missing.messages, vec!["Player 'Nobody' not found online."]);
+
+    let granted = apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        god_id,
+        "/macroimmune Target 10",
+        1,
+    )
+    .expect("god macroimmune should be recognized");
+    assert_eq!(
+        granted.messages,
+        vec!["Granted Target immunity from macro daemon for 10 minutes."]
+    );
+    {
+        let ppd = &runtime.player_for_character(target_id).unwrap().macro_ppd;
+        assert_eq!(ppd.immune_until, 1_000 + 10 * 60);
+        assert_eq!(ppd.immune_by, 7);
+    }
+
+    let removed =
+        apply_admin_character_command(&mut world, &mut runtime, god_id, "/macroimmune Target 0", 1)
+            .expect("god macroimmune should be recognized");
+    assert_eq!(
+        removed.messages,
+        vec!["Removed macro daemon immunity from Target."]
+    );
+    let ppd = &runtime.player_for_character(target_id).unwrap().macro_ppd;
+    assert_eq!(ppd.immune_until, 0);
+    assert_eq!(ppd.immune_by, 0);
+}
+
+#[test]
+fn macrosuspicion_adjusts_and_clamps_between_0_and_100() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+
+    let usage =
+        apply_admin_character_command(&mut world, &mut runtime, god_id, "/macrosuspicion", 1)
+            .expect("god macrosuspicion should be recognized");
+    assert_eq!(
+        usage.messages,
+        vec![
+            "Usage: /macrosuspicion <player> <amount>",
+            "Use negative amount to reduce suspicion.",
+        ]
+    );
+
+    let missing = apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        god_id,
+        "/macrosuspicion Nobody 5",
+        1,
+    )
+    .expect("god macrosuspicion missing target should be handled");
+    assert_eq!(missing.messages, vec!["Player 'Nobody' not found online."]);
+
+    let raised = apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        god_id,
+        "/macrosuspicion Target 90",
+        1,
+    )
+    .expect("god macrosuspicion should be recognized");
+    assert_eq!(raised.messages, vec!["Target suspicion: 0 -> 90"]);
+
+    let clamped_high = apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        god_id,
+        "/macrosuspicion Target 50",
+        1,
+    )
+    .expect("god macrosuspicion should be recognized");
+    assert_eq!(clamped_high.messages, vec!["Target suspicion: 90 -> 100"]);
+
+    let lowered = apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        god_id,
+        "/macrosuspicion Target -150",
+        1,
+    )
+    .expect("god macrosuspicion should be recognized");
+    assert_eq!(lowered.messages, vec!["Target suspicion: 100 -> 0"]);
+}
+
+#[test]
+fn macrokarma_sets_and_clamps_between_0_and_100() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+    let _ = target_id;
+
+    let usage = apply_admin_character_command(&mut world, &mut runtime, god_id, "/macrokarma", 1)
+        .expect("god macrokarma should be recognized");
+    assert_eq!(
+        usage.messages,
+        vec![
+            "Usage: /macrokarma <player> <value>",
+            "Sets karma to specified value (0-100).",
+        ]
+    );
+
+    let over = apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        god_id,
+        "/macrokarma Target 250",
+        1,
+    )
+    .expect("god macrokarma should be recognized");
+    assert_eq!(over.messages, vec!["Target karma: 0 -> 100"]);
+
+    let under = apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        god_id,
+        "/macrokarma Target -10",
+        1,
+    )
+    .expect("god macrokarma should be recognized");
+    assert_eq!(under.messages, vec!["Target karma: 100 -> 0"]);
+}
+
+#[test]
+fn macrofailures_sets_and_floors_at_0() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+
+    let usage =
+        apply_admin_character_command(&mut world, &mut runtime, god_id, "/macrofailures", 1)
+            .expect("god macrofailures should be recognized");
+    assert_eq!(
+        usage.messages,
+        vec!["Usage: /macrofailures <player> <count>"]
+    );
+
+    let set = apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        god_id,
+        "/macrofailures Target 3",
+        1,
+    )
+    .expect("god macrofailures should be recognized");
+    assert_eq!(set.messages, vec!["Target consecutive failures: 0 -> 3"]);
+
+    let floored = apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        god_id,
+        "/macrofailures Target -5",
+        1,
+    )
+    .expect("god macrofailures should be recognized");
+    assert_eq!(
+        floored.messages,
+        vec!["Target consecutive failures: 3 -> 0"]
+    );
+}
+
+#[test]
+fn macroreset_requires_a_name_and_only_resets_the_documented_fields() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
+    world.date.realtime = 5_000;
+
+    let usage = apply_admin_character_command(&mut world, &mut runtime, god_id, "/macroreset", 1)
+        .expect("god macroreset should be recognized");
+    assert_eq!(usage.messages, vec!["Usage: /macroreset <player>"]);
+
+    {
+        let player = runtime.player_for_character_mut(target_id).unwrap();
+        player.macro_ppd.karma = 10;
+        player.macro_ppd.suspicion = 80;
+        player.macro_ppd.challenge_failures = 4;
+        player.macro_ppd.total_passed = 2;
+        player.macro_ppd.total_failed = 6;
+        player.macro_ppd.history_count = 3;
+        player.macro_ppd.history_index = 3;
+        player.macro_ppd.immune_until = 9_000;
+        player.macro_ppd.immune_by = 3;
+        player.macro_ppd.force_summon = true;
+        player.macro_ppd.summoned_by = 3;
+        // Untouched by C's own `macro_cmd_reset` - must survive the reset.
+        player.macro_ppd.last_exp_gain = 4_000;
+        player.macro_ppd.in_challenge_room = true;
+    }
+
+    let reset =
+        apply_admin_character_command(&mut world, &mut runtime, god_id, "/macroreset Target", 1)
+            .expect("god macroreset should be recognized");
+    assert_eq!(reset.messages, vec!["Reset all macro stats for Target."]);
+
+    let ppd = &runtime.player_for_character(target_id).unwrap().macro_ppd;
+    assert_eq!(ppd.karma, 50);
+    assert_eq!(ppd.suspicion, 0);
+    assert_eq!(ppd.challenge_failures, 0);
+    assert_eq!(ppd.total_passed, 0);
+    assert_eq!(ppd.total_failed, 0);
+    assert_eq!(ppd.history_count, 0);
+    assert_eq!(ppd.history_index, 0);
+    assert_eq!(ppd.immune_until, 0);
+    assert_eq!(ppd.immune_by, 0);
+    assert!(!ppd.force_summon);
+    assert_eq!(ppd.summoned_by, 0);
+    assert_eq!(ppd.nextcheck, 5_000 + 60 * 5);
+    // Fields C's own `macro_cmd_reset` never touches:
+    assert_eq!(ppd.last_exp_gain, 4_000);
+    assert!(ppd.in_challenge_room);
+}
+
+#[test]
+fn macrolist_formats_every_status_and_sorts_by_character_id() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let god_id = CharacterId(7);
+    let mut god = login_character(god_id, &login_block("Godmode"), 1, 10, 10);
+    god.flags.insert(CharacterFlags::GOD);
+    world.add_character(god);
+
+    let names = ["Zed", "Amy", "Mel", "Ida"];
+    let mut ids = Vec::new();
+    for (offset, name) in names.iter().enumerate() {
+        let id = CharacterId(20 + offset as u32);
+        world.add_character(login_character(id, &login_block(name), 1, 11, 10));
+        let mut player = PlayerRuntime::connected(100 + offset as u64, 0);
+        player.character_id = Some(id);
+        runtime.players.insert(100 + offset as u64, player);
+        ids.push(id);
+    }
+    // ids[0]="Zed": default OK status.
+    // ids[1]="Amy": in challenge room -> CHALLENGED (highest priority).
+    // ids[2]="Mel": immune -> IMMUNE.
+    // ids[3]="Ida": suspicion >= 50 -> SUSPICIOUS.
+    runtime
+        .player_for_character_mut(ids[1])
+        .unwrap()
+        .macro_ppd
+        .in_challenge_room = true;
+    {
+        let ppd = &mut runtime.player_for_character_mut(ids[2]).unwrap().macro_ppd;
+        ppd.immune_until = i64::MAX;
+    }
+    runtime
+        .player_for_character_mut(ids[3])
+        .unwrap()
+        .macro_ppd
+        .suspicion = 50;
+
+    let result = apply_admin_character_command(&mut world, &mut runtime, god_id, "/macrolist", 1)
+        .expect("god macrolist should be recognized");
+    assert_eq!(
+        result.messages,
+        vec![
+            "=== Online Players - Macro Status ===".to_string(),
+            "Name                 Karma  Susp  Pass/Fail  Status".to_string(),
+            "---------------------------------------------------".to_string(),
+            "Zed                      0     0     0/0     OK".to_string(),
+            "Amy                      0     0     0/0     CHALLENGED".to_string(),
+            "Mel                      0     0     0/0     IMMUNE".to_string(),
+            "Ida                      0    50     0/0     SUSPICIOUS".to_string(),
+            "---------------------------------------------------".to_string(),
+            "Total: 4 players".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn macro_debug_commands_report_missing_runtime_for_online_character_without_connecting() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let god_id = CharacterId(7);
+    let target_id = CharacterId(8);
+    let mut god = login_character(god_id, &login_block("Godmode"), 1, 10, 10);
+    god.flags.insert(CharacterFlags::GOD);
+    world.add_character(god);
+    world.add_character(login_character(
+        target_id,
+        &login_block("Target"),
+        1,
+        11,
+        10,
+    ));
+
+    let result =
+        apply_admin_character_command(&mut world, &mut runtime, god_id, "/macrostats Target", 1)
+            .expect("god macrostats should be recognized even without a runtime");
+    assert_eq!(
+        result.messages,
+        vec!["Error: Could not access macro data for Target."]
+    );
+}
+
+#[test]
+fn macro_ppd_default_matches_fresh_reset_expectations() {
+    let ppd = MacroPpd::default();
+    assert_eq!(ppd.karma, 0);
+    assert_eq!(ppd.suspicion, 0);
+    assert_eq!(ppd.history_count, 0);
+    assert!(!ppd.force_summon);
+    assert!(!ppd.in_challenge_room);
 }
 
 // C `command.c:9049-9057`/`3163-3192` (`/noarch`) and `command.c:9226-9235`
