@@ -101,6 +101,9 @@ pub(crate) fn apply_pk_hate_from_hurt_events(
         apply_gate_fight_death_from_hurt_event(runtime, world, event, loader);
         apply_gate_welcome_death_from_hurt_event(world, event);
         apply_dungeonmaster_death_from_hurt_event(world, event);
+        apply_area1_monster_death_from_hurt_event(runtime, world, event);
+        apply_bredel_death_from_hurt_event(runtime, world, event);
+        apply_riverbeast_death_from_hurt_event(runtime, world, event);
 
         let eligible = match (
             world.characters.get(&event.target_id),
@@ -253,6 +256,129 @@ pub(crate) fn apply_swamp_monster_death_from_hurt_event(
 
     let upgraded_weapon = world.apply_swamp_monster_death_driver(event.target_id, event.cause_id);
     progressed_clara || upgraded_weapon
+}
+
+/// C `ch_died_driver`/`CDR_CAMERON_FORESTMONSTER` dispatch
+/// (`gwendylon.c:6212-6214`) -> `monster_dead` (`:5201-5231`). Splits like
+/// `apply_swamp_monster_death_from_hurt_event`: the `camhermit_kills`
+/// counter here (needs `PlayerRuntime`), the weapon-glow item mutation in
+/// [`World::apply_area1_monster_death_driver`].
+pub(crate) fn apply_area1_monster_death_from_hurt_event(
+    runtime: &mut ServerRuntime,
+    world: &mut World,
+    event: LegacyHurtEvent,
+) -> bool {
+    if !event.outcome.killed {
+        return false;
+    }
+    let is_forest_monster_kill = world
+        .characters
+        .get(&event.target_id)
+        .zip(world.characters.get(&event.cause_id))
+        .is_some_and(|(target, killer)| {
+            target.driver == CDR_CAMERON_FORESTMONSTER
+                && killer.flags.contains(CharacterFlags::PLAYER)
+        });
+    if !is_forest_monster_kill {
+        return false;
+    }
+
+    let mut progressed_camhermit = false;
+    if let Some(player) = runtime.player_for_character_mut(event.cause_id) {
+        // C `CAMHERMIT_STATE_QUEST1DO` (`npc_states.h:16`, value `5`).
+        if player.area1_camhermit_state() == 5 {
+            let kills = player.area1_camhermit_kills() + 1;
+            player.set_area1_camhermit_kills(kills);
+            // C `CAMHERMIT_QUEST1_KILLSNEEDED 10` (`gwendylon.c:677`).
+            if kills == 10 {
+                world.queue_system_text(
+                    event.cause_id,
+                    "Thou hast killed 10 big bears as requested by the sweet Hermit. go back to him and claim thy reward.",
+                );
+            }
+            progressed_camhermit = true;
+        }
+    }
+
+    let upgraded_weapon = world.apply_area1_monster_death_driver(event.target_id, event.cause_id);
+    progressed_camhermit || upgraded_weapon
+}
+
+/// C `ch_died_driver`/`CDR_BREDEL` dispatch (`gwendylon.c:6221-6223`) ->
+/// `bredel_dead` (`:2825-2842`): killing the robber-operations boss
+/// advances `CDR_JESSICA`'s quest chain from `JESSICA_STATE_QUEST2_DO`
+/// (`10`) to `JESSICA_STATE_QUEST2_FINISH` (`11`), see `world::jessica`'s
+/// module doc comment for the previously-documented gap this closes.
+pub(crate) fn apply_bredel_death_from_hurt_event(
+    runtime: &mut ServerRuntime,
+    world: &mut World,
+    event: LegacyHurtEvent,
+) -> bool {
+    if !event.outcome.killed {
+        return false;
+    }
+    let is_bredel_kill = world
+        .characters
+        .get(&event.target_id)
+        .zip(world.characters.get(&event.cause_id))
+        .is_some_and(|(target, killer)| {
+            target.driver == CDR_BREDEL && killer.flags.contains(CharacterFlags::PLAYER)
+        });
+    if !is_bredel_kill {
+        return false;
+    }
+
+    let Some(player) = runtime.player_for_character_mut(event.cause_id) else {
+        return false;
+    };
+    // C `JESSICA_STATE_QUEST2_DO 10` (`npc_states.h:94`).
+    if player.area1_jessica_state() != 10 {
+        return false;
+    }
+    // C `JESSICA_STATE_QUEST2_FINISH 11` (`npc_states.h:95`).
+    player.set_area1_jessica_state(11);
+    world.queue_system_text(
+        event.cause_id,
+        "The local robber leader has been killed by thine hands. Congratulations!",
+    );
+    true
+}
+
+/// C `ch_died_driver`/`CDR_RIVERBEAST` dispatch (`gwendylon.c:6209-6211`)
+/// -> `riverbeast_dead` (`:2255-2272`): killing the riverbeast advances
+/// `CDR_JIU`'s quest chain from `JIU_STATE_WAIT_FOR_KILL` (`2`) to
+/// `JIU_STATE_BEAST_KILLED` (`3`), see `world::jiu`'s module doc comment
+/// for the previously-documented gap this closes.
+pub(crate) fn apply_riverbeast_death_from_hurt_event(
+    runtime: &mut ServerRuntime,
+    world: &mut World,
+    event: LegacyHurtEvent,
+) -> bool {
+    if !event.outcome.killed {
+        return false;
+    }
+    let is_riverbeast_kill = world
+        .characters
+        .get(&event.target_id)
+        .zip(world.characters.get(&event.cause_id))
+        .is_some_and(|(target, killer)| {
+            target.driver == CDR_RIVERBEAST && killer.flags.contains(CharacterFlags::PLAYER)
+        });
+    if !is_riverbeast_kill {
+        return false;
+    }
+
+    let Some(player) = runtime.player_for_character_mut(event.cause_id) else {
+        return false;
+    };
+    // C `JIU_STATE_WAIT_FOR_KILL 2` (`npc_states.h:78`).
+    if player.area1_jiu_state() != 2 {
+        return false;
+    }
+    // C `JIU_STATE_BEAST_KILLED 3` (`npc_states.h:79`).
+    player.set_area1_jiu_state(3);
+    world.queue_system_text(event.cause_id, "Well done. Jiu will be proud of thee!");
+    true
 }
 
 pub(crate) fn apply_teufel_rat_death_from_hurt_event(

@@ -486,6 +486,61 @@ fn swamp_monster_death_driver_rejects_repeated_or_non_midnight_circles() {
 }
 
 #[test]
+fn area1_monster_death_driver_upgrades_noon_stone_circle_weapon() {
+    let mut world = World::default();
+    world.date.hour = 12;
+    let mut dead = character(1);
+    dead.driver = CDR_CAMERON_FORESTMONSTER;
+    let mut killer = character(2);
+    killer.flags.insert(CharacterFlags::PLAYER);
+    killer.inventory[worn_slot::RIGHT_HAND] = Some(ItemId(7));
+    let mut weapon = item(7, ItemFlags::empty());
+    weapon.name = "Sword".into();
+    weapon.driver_data.resize(38, 0);
+    assert!(world.spawn_character(dead, 10, 10));
+    assert!(world.spawn_character(killer, 15, 55));
+    world.add_item(weapon);
+
+    assert!(world.apply_area1_monster_death_driver(CharacterId(1), CharacterId(2)));
+
+    let weapon = world.items.get(&ItemId(7)).unwrap();
+    assert_eq!(weapon.template_id, IID_HARDKILL);
+    assert_eq!(weapon.driver_data[36], 16);
+    assert_eq!(weapon.driver_data[37], 5);
+    assert!(weapon.flags.contains(ItemFlags::QUEST));
+    assert_eq!(
+        world.drain_pending_system_texts(),
+        vec![WorldSystemText {
+            character_id: CharacterId(2),
+            message: "Your Sword starts to glow.".into(),
+        }]
+    );
+}
+
+#[test]
+fn area1_monster_death_driver_rejects_repeated_or_non_noon_kills() {
+    let mut world = World::default();
+    world.date.hour = 13;
+    let mut dead = character(1);
+    dead.driver = CDR_CAMERON_FORESTMONSTER;
+    let mut killer = character(2);
+    killer.flags.insert(CharacterFlags::PLAYER);
+    killer.inventory[worn_slot::RIGHT_HAND] = Some(ItemId(7));
+    let mut weapon = item(7, ItemFlags::empty());
+    weapon.driver_data.resize(38, 0);
+    assert!(world.spawn_character(dead, 10, 10));
+    assert!(world.spawn_character(killer, 15, 55));
+    world.add_item(weapon);
+
+    assert!(!world.apply_area1_monster_death_driver(CharacterId(1), CharacterId(2)));
+    world.date.hour = 12;
+    world.items.get_mut(&ItemId(7)).unwrap().driver_data[36] = 16;
+
+    assert!(!world.apply_area1_monster_death_driver(CharacterId(1), CharacterId(2)));
+    assert!(world.drain_pending_system_texts().is_empty());
+}
+
+#[test]
 fn world_spiketrap_damage_uses_legacy_hurt_reduction() {
     let mut world = World::default();
     let mut character = character(1);

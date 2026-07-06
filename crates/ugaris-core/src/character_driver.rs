@@ -64,6 +64,30 @@ pub const CDR_JESSICA: u16 = 125;
 /// riverbeast quest-giving pilgrim NPC
 /// (`src/area/1/gwendylon.c::jiu_driver`).
 pub const CDR_JIU: u16 = 127;
+/// C `#define CDR_RIVERBEAST 128` (`src/system/drvlib.h`, "Cameron:
+/// Riverbeast (Jiu Quest)"): the killable beast whose death
+/// (`src/area/1/gwendylon.c::riverbeast_dead`, `:2255-2272`) advances
+/// `CDR_JIU`'s quest chain from `JIU_STATE_WAIT_FOR_KILL` to
+/// `JIU_STATE_BEAST_KILLED`. See
+/// `crate::world::jiu`/`ugaris-server::world_events::
+/// apply_riverbeast_death_from_hurt_event`.
+pub const CDR_RIVERBEAST: u16 = 128;
+/// C `#define CDR_CAMERON_FORESTMONSTER 129` (`src/system/drvlib.h`,
+/// "Cameron: Mobs for stone circle"): area 1's forest bear monster, whose
+/// death (`src/area/1/gwendylon.c::monster_dead`, `:5201-5231`) increments
+/// `CDR_CAMHERMIT`'s `camhermit_kills` counter and separately re-glows a
+/// worn weapon at noon in the stone-circle area. See
+/// `ugaris-server::world_events::apply_area1_monster_death_from_hurt_event`
+/// and `World::apply_area1_monster_death_driver`.
+pub const CDR_CAMERON_FORESTMONSTER: u16 = 129;
+/// C `#define CDR_BREDEL 154` (`src/system/drvlib.h`, "Cameron: Bredel
+/// driver"): the robber-operations boss whose death
+/// (`src/area/1/gwendylon.c::bredel_dead`, `:2825-2842`) advances
+/// `CDR_JESSICA`'s quest chain from `JESSICA_STATE_QUEST2_DO` to
+/// `JESSICA_STATE_QUEST2_FINISH`. See
+/// `crate::world::jessica`/`ugaris-server::world_events::
+/// apply_bredel_death_from_hurt_event`.
+pub const CDR_BREDEL: u16 = 154;
 /// C `#define CDR_GATE_WELCOME 39` (`src/system/drvlib.h`): the stationary
 /// gatekeeper-welcome NPC (`gate_welcome` template,
 /// `src/system/gatekeeper.c::gate_welcome_driver`).

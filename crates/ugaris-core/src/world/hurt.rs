@@ -400,4 +400,65 @@ impl World {
         });
         true
     }
+
+    /// C `monster_dead` (`src/area/1/gwendylon.c:5201-5231`), the stone-
+    /// circle-area weapon-glow half only (the `CDR_CAMHERMIT` kill-counter
+    /// half needs `PlayerRuntime` and lives in
+    /// `ugaris-server::world_events::apply_area1_monster_death_from_hurt_event`
+    /// instead). Field-for-field identical to
+    /// [`Self::apply_swamp_monster_death_driver`] but with area 1's own
+    /// bounding box, noon trigger hour, and `+= 5` charge amount rather
+    /// than area 15's `+= 12`.
+    pub fn apply_area1_monster_death_driver(
+        &mut self,
+        dead_id: CharacterId,
+        killer_id: CharacterId,
+    ) -> bool {
+        let Some(dead) = self.characters.get(&dead_id) else {
+            return false;
+        };
+        if dead.driver != CDR_CAMERON_FORESTMONSTER {
+            return false;
+        }
+        let Some(killer) = self.characters.get(&killer_id) else {
+            return false;
+        };
+        if !killer.flags.contains(CharacterFlags::PLAYER) {
+            return false;
+        }
+
+        // C `if (ch[co].x >= 10 && ch[co].y >= 51 && ch[co].x <= 20 &&
+        // ch[co].y <= 60) bit = 16;` (`:5220-5222`).
+        let bit: u8 = if (10..=20).contains(&killer.x) && (51..=60).contains(&killer.y) {
+            16
+        } else {
+            0
+        };
+        // C `if (hour == 12 && bit && ...)` (`:5224`).
+        if self.date.hour != 12 || bit == 0 {
+            return false;
+        }
+
+        let Some(item_id) = killer.inventory[worn_slot::RIGHT_HAND] else {
+            return false;
+        };
+        let Some(item) = self.items.get_mut(&item_id) else {
+            return false;
+        };
+        if item.driver != 0 || item.driver_data.get(36).copied().unwrap_or_default() & bit != 0 {
+            return false;
+        }
+        if item.driver_data.len() <= 37 {
+            item.driver_data.resize(38, 0);
+        }
+        item.template_id = IID_HARDKILL;
+        item.driver_data[37] = item.driver_data[37].saturating_add(5);
+        item.driver_data[36] |= bit;
+        item.flags.insert(ItemFlags::QUEST);
+        self.pending_system_texts.push(WorldSystemText {
+            character_id: killer_id,
+            message: format!("Your {} starts to glow.", item.name),
+        });
+        true
+    }
 }

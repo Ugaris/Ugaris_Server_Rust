@@ -11780,30 +11780,42 @@ Ordered by player progression; the C file is the oracle.
   entries below and `crates/ugaris-core/src/world/camhermit.rs`/
   `world/yoakin.rs`/`world/terion.rs`/`world/gwendylon.rs`/
   `world/greeter.rs`/`world/jessica.rs`/`world/jiu.rs`'s own module doc
-  comments for their documented gaps (camhermit's `monster_dead` bear-
-  kill counter is still unported, so its `CAMHERMIT_STATE_QUEST1DO`
-  branch can never actually complete on a live server yet; yoakin's and
-  gwendylon's `destroy_item_byID` sweeps do not reach the account depot;
-  jessica's `JESSICA_STATE_QUEST2_DO` -> `QUEST2_FINISH` transition needs
-  the still-unported `bredel_dead` death hook, so her kill-quest chain
-  also cannot yet complete on a live server; jiu's `JIU_STATE_WAIT_FOR_
-  KILL` -> `_BEAST_KILLED` transition likewise needs the still-unported
-  `riverbeast_dead` death hook, so her quest also cannot yet complete on
-  a live server; terion and greeter are pure ambient/tutorial dialogue
-  with no gaps of their own beyond the documented `COL_LIGHT_BLUE`/
-  `COL_RESET` marker drop). Every other NPC in this file is still
+  comments for their documented gaps. The shared area-1 `monster_dead`/
+  `bredel_dead`/`riverbeast_dead` death-hook trio (`:2255-2272`, `:2825-
+  2842`, `:5201-5231`) that camhermit/jessica/jiu's own doc comments
+  called out as their remaining blocker is now ported: `CDR_RIVERBEAST`/
+  `CDR_BREDEL`/`CDR_CAMERON_FORESTMONSTER` driver IDs
+  (`crates/ugaris-core/src/character_driver.rs`),
+  `World::apply_area1_monster_death_driver` (the weapon-glow half,
+  `crates/ugaris-core/src/world/hurt.rs`), and three new
+  `apply_*_death_from_hurt_event` hooks wired into
+  `apply_pk_hate_from_hurt_events`'s per-hurt-event dispatch
+  (`crates/ugaris-server/src/world_events.rs`) that read/write
+  `PlayerRuntime`'s `area1_camhermit_kills`/`area1_jessica_state`/
+  `area1_jiu_state` and queue the exact C `log_char` reward/reminder
+  text. `camhermit_state == CAMHERMIT_STATE_QUEST1DO` can now reach 10
+  kills and see the reward line; `jessica_state == JESSICA_STATE_QUEST2_
+  DO` can now advance to `QUEST2_FINISH` on a `CDR_BREDEL` kill; `jiu_
+  state == JIU_STATE_WAIT_FOR_KILL` can now advance to `_BEAST_KILLED`
+  on a `CDR_RIVERBEAST` kill - so all three quest chains can finally
+  complete end-to-end on a live server. yoakin's and gwendylon's
+  `destroy_item_byID` sweeps still do not reach the account depot
+  (unrelated, separate gap). Every other NPC in this file is still
   unported: `forest_ranger_driver` (`:2284-2473`), `brithildie_driver`
-  (`:2474-2826`), `james_driver` (`:2901-3179`), `nook_driver` (`:3180-
-  3457`), `lydia_driver` (`:3458-3703`), `balltrap_skelly_driver` (`:3712-
-  3774`, a fight-driver archer that needs the generic multi-enemy
-  `DRD_FIGHTDRIVER` system this codebase currently only exposes via the
-  `CDR_SIMPLEBADDY`-specific implementation - see `world/npc_fight.rs`),
-  `robber_driver` (`:3775-3960`), `sanoa_driver` (`:3961-4104`),
-  `reskin_driver` (`:4105-4424`), `asturin_driver` (`:4425-`), `guiwynn_
-  driver`/`logain_driver` and the rest through `ch_driver`'s dispatch
-  table (`:6076-6155`), plus `monster_dead`/the shared area-1 death-hook
-  tail (`:5200-`, including `bredel_dead` for jessica's boss kill and
-  `riverbeast_dead` for jiu's beast kill).
+  (`:2474-2826`, including its own `bigbadspider_dead` death hook,
+  `:2848-2867`, still unported since `brithildie_state` has no
+  `PlayerRuntime` wiring yet), `james_driver` (`:2901-3179`), `nook_
+  driver` (`:3180-3457`), `lydia_driver` (`:3458-3703`),
+  `balltrap_skelly_driver` (`:3712-3774`, a fight-driver archer that
+  needs the generic multi-enemy `DRD_FIGHTDRIVER` system this codebase
+  currently only exposes via the `CDR_SIMPLEBADDY`-specific
+  implementation - see `world/npc_fight.rs`), `robber_driver`
+  (`:3775-3960`), `sanoa_driver` (`:3961-4104`), `reskin_driver`
+  (`:4105-4424`), `asturin_driver` (`:4425-`), `guiwynn_driver`/
+  `logain_driver` and the rest through `ch_driver`'s dispatch table
+  (`:6076-6155`), plus `balltrap_skelly_dead`'s no-op and the remaining
+  `gwendylon_dead`/`asturin_dead` shared death-hook branches
+  (`:6180-6222`).
 - [ ] **Area 2 - `src/area/2/area2.c`** - remaining character drivers
   (zombie lord, priests). Item drivers done.
 - [ ] **Area 3 - `src/area/3/area3.c`** - palace story NPCs, lamp ghost
@@ -12604,3 +12616,42 @@ Add one line per completed task: date, task, ledger section touched.
   zero failures, zero warnings), `cargo build -p ugaris-server`/
   `--workspace` all clean; boot-smoked (10s run, "entering Rust game
   loop" `area_id=1`, tick loop advancing, no panics).
+- 2026-07-07: Area 1 (`gwendylon.c`) (P4, continued) - closed the
+  `monster_dead`/`bredel_dead`/`riverbeast_dead` death-hook gap that
+  camhermit/jessica/jiu's own module doc comments had all independently
+  flagged as their remaining blocker. Added `CDR_RIVERBEAST` (128),
+  `CDR_CAMERON_FORESTMONSTER` (129), `CDR_BREDEL` (154) driver-ID
+  constants (`crates/ugaris-core/src/character_driver.rs`, values from
+  `src/system/drvlib.h:177,178,205`). Ported area 1's `monster_dead`
+  (`gwendylon.c:5201-5231`) split in two, mirroring the existing
+  `apply_swamp_monster_death_driver`/`apply_swamp_monster_death_from_
+  hurt_event` shape: `World::apply_area1_monster_death_driver`
+  (`crates/ugaris-core/src/world/hurt.rs`, the noon/stone-circle weapon-
+  glow half, `+= 5` charge vs area 15's `+= 12`) plus
+  `apply_area1_monster_death_from_hurt_event` (`crates/ugaris-server/src/
+  world_events.rs`, the `camhermit_kills` counter half, needs
+  `PlayerRuntime`). Ported `bredel_dead` (`:2825-2842`) and
+  `riverbeast_dead` (`:2255-2272`) directly as
+  `apply_bredel_death_from_hurt_event`/`apply_riverbeast_death_from_hurt_
+  event` (`world_events.rs`), each checking the killer's `CF_PLAYER`
+  flag and current `jessica_state`/`jiu_state` before advancing it and
+  queuing the exact `log_char` text. All three wired into the existing
+  `apply_pk_hate_from_hurt_events` per-`LegacyHurtEvent` dispatch loop
+  alongside the swamp-monster/teufel-rat/caligar-skelly hooks it already
+  runs. Added 2 `World`-level tests (`world/tests/hurt.rs`: noon-trigger
+  weapon glow + rejection of repeat/off-hour kills) and 4
+  `ServerRuntime`-level tests (`crates/ugaris-server/src/tests/world_
+  events.rs`: riverbeast advances `jiu_state` 2->3 with the reward line,
+  a non-`WAIT_FOR_KILL` player is ignored, bredel advances `jessica_
+  state` 10->11 with its reward line, and a forest-monster kill counts
+  `camhermit_kills` up to 10 and emits the "killed 10 big bears" line).
+  Now all three previously-blocked quest chains
+  (camhermit/jessica/jiu) can complete end-to-end on a live server.
+  `cargo fmt --all`, `cargo test --workspace` (2350 core + 1088 server,
+  all green, zero failures, zero warnings), `cargo build -p ugaris-
+  server` clean; boot-smoked (10s run, "entering Rust game loop"
+  `area_id=1`, tick loop advancing, no panics). REMAINING for Area 1:
+  every other NPC/death-hook branch listed in the task's own REMAINING
+  note above (forest_ranger/brithildie/bigbadspider_dead/james/nook/
+  lydia/balltrap_skelly/robber/sanoa/reskin/asturin/guiwynn/logain, plus
+  the shared `gwendylon_dead`/`asturin_dead` tail).

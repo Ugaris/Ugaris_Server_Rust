@@ -512,6 +512,176 @@ fn lethal_caligar_skelly_hurt_reports_completed_and_repeated_locks() {
 }
 
 #[test]
+fn lethal_riverbeast_hurt_advances_jiu_state_to_beast_killed() {
+    let mut world = World::default();
+    let mut riverbeast = login_character(CharacterId(1), &login_block("Riverbeast"), 1, 10, 10);
+    riverbeast.flags.remove(CharacterFlags::PLAYER);
+    riverbeast.driver = CDR_RIVERBEAST;
+    riverbeast.hp = POWERSCALE;
+    let killer = login_character(CharacterId(2), &login_block("Killer"), 1, 11, 10);
+    world.add_character(riverbeast);
+    world.add_character(killer);
+
+    let mut runtime = ServerRuntime::default();
+    let mut player = PlayerRuntime::connected(1, 0);
+    player.character_id = Some(CharacterId(2));
+    // C `JIU_STATE_WAIT_FOR_KILL 2` (`npc_states.h:78`).
+    player.set_area1_jiu_state(2);
+    runtime.players.insert(1, player);
+
+    world.apply_legacy_hurt(
+        CharacterId(1),
+        Some(CharacterId(2)),
+        POWERSCALE * 2,
+        1,
+        0,
+        0,
+    );
+    apply_pk_hate_from_hurt_events(&mut runtime, &mut world, 0, &ZoneLoader::new());
+
+    // C `JIU_STATE_BEAST_KILLED 3` (`npc_states.h:79`).
+    assert_eq!(
+        runtime
+            .player_for_character(CharacterId(2))
+            .unwrap()
+            .area1_jiu_state(),
+        3
+    );
+    let texts = world.drain_pending_system_texts();
+    assert!(texts.iter().any(|text| {
+        text.character_id == CharacterId(2)
+            && text.message == "Well done. Jiu will be proud of thee!"
+    }));
+}
+
+#[test]
+fn lethal_riverbeast_hurt_ignores_players_not_awaiting_the_kill() {
+    let mut world = World::default();
+    let mut riverbeast = login_character(CharacterId(1), &login_block("Riverbeast"), 1, 10, 10);
+    riverbeast.flags.remove(CharacterFlags::PLAYER);
+    riverbeast.driver = CDR_RIVERBEAST;
+    riverbeast.hp = POWERSCALE;
+    let killer = login_character(CharacterId(2), &login_block("Killer"), 1, 11, 10);
+    world.add_character(riverbeast);
+    world.add_character(killer);
+
+    let mut runtime = ServerRuntime::default();
+    let mut player = PlayerRuntime::connected(1, 0);
+    player.character_id = Some(CharacterId(2));
+    // C `JIU_STATE_ENTRY 0` (`npc_states.h:76`) - hasn't taken the quest.
+    player.set_area1_jiu_state(0);
+    runtime.players.insert(1, player);
+
+    world.apply_legacy_hurt(
+        CharacterId(1),
+        Some(CharacterId(2)),
+        POWERSCALE * 2,
+        1,
+        0,
+        0,
+    );
+    apply_pk_hate_from_hurt_events(&mut runtime, &mut world, 0, &ZoneLoader::new());
+
+    assert_eq!(
+        runtime
+            .player_for_character(CharacterId(2))
+            .unwrap()
+            .area1_jiu_state(),
+        0
+    );
+    assert!(world.drain_pending_system_texts().is_empty());
+}
+
+#[test]
+fn lethal_bredel_hurt_advances_jessica_state_to_quest2_finish() {
+    let mut world = World::default();
+    let mut bredel = login_character(CharacterId(1), &login_block("Bredel"), 1, 10, 10);
+    bredel.flags.remove(CharacterFlags::PLAYER);
+    bredel.driver = CDR_BREDEL;
+    bredel.hp = POWERSCALE;
+    let killer = login_character(CharacterId(2), &login_block("Killer"), 1, 11, 10);
+    world.add_character(bredel);
+    world.add_character(killer);
+
+    let mut runtime = ServerRuntime::default();
+    let mut player = PlayerRuntime::connected(1, 0);
+    player.character_id = Some(CharacterId(2));
+    // C `JESSICA_STATE_QUEST2_DO 10` (`npc_states.h:94`).
+    player.set_area1_jessica_state(10);
+    runtime.players.insert(1, player);
+
+    world.apply_legacy_hurt(
+        CharacterId(1),
+        Some(CharacterId(2)),
+        POWERSCALE * 2,
+        1,
+        0,
+        0,
+    );
+    apply_pk_hate_from_hurt_events(&mut runtime, &mut world, 0, &ZoneLoader::new());
+
+    // C `JESSICA_STATE_QUEST2_FINISH 11` (`npc_states.h:95`).
+    assert_eq!(
+        runtime
+            .player_for_character(CharacterId(2))
+            .unwrap()
+            .area1_jessica_state(),
+        11
+    );
+    let texts = world.drain_pending_system_texts();
+    assert!(texts.iter().any(|text| {
+        text.character_id == CharacterId(2)
+            && text.message
+                == "The local robber leader has been killed by thine hands. Congratulations!"
+    }));
+}
+
+#[test]
+fn lethal_forest_monster_hurt_counts_camhermit_kills_and_reports_at_ten() {
+    let mut world = World::default();
+    let killer = login_character(CharacterId(99), &login_block("Killer"), 1, 20, 60);
+    world.add_character(killer);
+
+    let mut runtime = ServerRuntime::default();
+    let mut player = PlayerRuntime::connected(1, 0);
+    player.character_id = Some(CharacterId(99));
+    // C `CAMHERMIT_STATE_QUEST1DO 5` (`npc_states.h:16`).
+    player.set_area1_camhermit_state(5);
+    player.set_area1_camhermit_kills(9);
+    runtime.players.insert(1, player);
+
+    let mut bear = login_character(CharacterId(1), &login_block("Bear"), 1, 10, 10);
+    bear.flags.remove(CharacterFlags::PLAYER);
+    bear.driver = CDR_CAMERON_FORESTMONSTER;
+    bear.hp = POWERSCALE;
+    world.add_character(bear);
+
+    world.apply_legacy_hurt(
+        CharacterId(1),
+        Some(CharacterId(99)),
+        POWERSCALE * 2,
+        1,
+        0,
+        0,
+    );
+    apply_pk_hate_from_hurt_events(&mut runtime, &mut world, 0, &ZoneLoader::new());
+
+    assert_eq!(
+        runtime
+            .player_for_character(CharacterId(99))
+            .unwrap()
+            .area1_camhermit_kills(),
+        10
+    );
+    let texts = world.drain_pending_system_texts();
+    assert!(texts.iter().any(|text| {
+        text.character_id == CharacterId(99)
+            && text.message
+                == "Thou hast killed 10 big bears as requested by the sweet Hermit. go back to him and claim thy reward."
+    }));
+}
+
+#[test]
 fn hurt_events_start_legacy_player_fightback_for_nearby_attacker() {
     let mut world = World::default();
     let target = login_character(CharacterId(1), &login_block("Target"), 1, 10, 10);
