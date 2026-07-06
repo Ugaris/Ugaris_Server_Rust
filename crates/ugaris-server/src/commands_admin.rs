@@ -4957,6 +4957,73 @@ pub(crate) fn apply_admin_character_command(
         return Some(KeyringCommandResult::default());
     }
 
+    // C `#ls <name> <dir>` / `#cat <name> <file>` (`command.c:9237-9253`
+    // dispatch, `CF_GOD`-gated, `cmdcmp(ptr, "#ls", 3)`/`cmdcmp(ptr,
+    // "#cat", 4)` - both exact-word only, no abbreviation) plus
+    // `cmd_ls`/`cmd_cat` (`command.c:2794-2845`): a debug feature that
+    // asks the TARGET character's own game client to list a directory
+    // (`#ls`) or dump a file's contents (`#cat`) from the *client's*
+    // local disk, not the server's - `plr_ls`/`plr_cat`
+    // (`src/system/player.c:3750-3789`) just forward a raw `SV_LS`/
+    // `SV_CAT` request packet to the target's connection; any actual
+    // listing/content comes back later as a separate client-originated
+    // packet this codebase does not yet parse (out of scope here, same
+    // as the C dispatcher itself which never processes a reply). The
+    // target name is matched by C's `getfirst_char`/`getnext_char` loop
+    // with no `CF_PLAYER` filter (`find_online_character_by_name`
+    // already replicates this - NPCs are valid targets too, they just
+    // never have a live connection to actually receive anything), parsed
+    // via `isalpha`-only `take_legacy_alpha_name` exactly like
+    // `/fixit`/`/questfix` above. Unlike those two, the not-found message
+    // here is `"Sorry, no one by the name {name} around."` (matches this
+    // pair's own `log_char`, not `/clearppd`'s distinct "Player '...' not
+    // found." text). The remainder after the name and its trailing
+    // whitespace is the `dir`/`file` argument verbatim (may itself
+    // contain spaces, never re-tokenized in C). C unconditionally logs
+    // `"ls {dir} scheduled on {target}."` / `"cat {file} scheduled on
+    // {target}."` to the caller once a target is found, even when
+    // `plr_ls`/`plr_cat` internally no-ops (target has no live client
+    // connection, i.e. `ch[co].player == 0` - modeled here as
+    // `sessions_for_character` returning empty - or `dir`/`file` exceeds
+    // the 200-byte cutoff `remote_fs_request` enforces) - reproduced by
+    // sending the packet only when a session exists and the byte-count
+    // check passes, but always returning the confirmation message
+    // regardless.
+    if lower == "ls" || lower == "cat" {
+        let Some(caller) = world.characters.get(&character_id) else {
+            return Some(KeyringCommandResult::default());
+        };
+        if !caller.flags.contains(CharacterFlags::GOD) {
+            return None;
+        }
+        let (name, after_name) = take_legacy_alpha_name(rest.trim_start());
+        let Some(target_id) = find_online_character_by_name(world, name) else {
+            return Some(KeyringCommandResult {
+                messages: vec![format!("Sorry, no one by the name {name} around.")],
+                ..Default::default()
+            });
+        };
+        let target_name = world.characters[&target_id].name.clone();
+        let dir = after_name.trim_start();
+        let mut builder = PacketBuilder::new();
+        let sent = if lower == "ls" {
+            builder.ls_request(dir)
+        } else {
+            builder.cat_request(dir)
+        };
+        if sent {
+            let payload = builder.into_payload();
+            for (session_id, _) in runtime.sessions_for_character(target_id) {
+                runtime.send_to_session(session_id, payload.clone());
+            }
+        }
+        let verb_word = if lower == "ls" { "ls" } else { "cat" };
+        return Some(KeyringCommandResult {
+            messages: vec![format!("{verb_word} {dir} scheduled on {target_name}.")],
+            ..Default::default()
+        });
+    }
+
     // C `/clearppd <ppdname> [player]` (`command.c:10144-10146` dispatch,
     // `CF_GOD | CF_STAFF`-gated, `cmdcmp(ptr, "clearppd", 8)` - exact word
     // only; `cmd_clearppd`, `command.c:4214-4288`). A raw, PPD-name-

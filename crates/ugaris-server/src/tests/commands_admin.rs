@@ -1,5 +1,6 @@
 use super::*;
 use ugaris_core::world::SingleMission;
+use ugaris_protocol::packet::{SV_CAT, SV_LS};
 
 #[test]
 fn random_shrine_edge_blocks_without_marking_for_no_saves_or_noexp() {
@@ -7469,4 +7470,185 @@ fn clearppd_only_matches_online_player_flagged_characters() {
     )
     .expect("god clearppd should be recognized");
     assert_eq!(result.messages, vec!["Player 'Target' not found."]);
+}
+
+// C `#ls <name> <dir>` / `#cat <name> <file>` (`command.c:2794-2845`,
+// `9237-9253`): a debug feature forwarding a raw `SV_LS`/`SV_CAT` request
+// packet to the TARGET character's own connection.
+
+/// Real session registration (`runtime.connect`, not the lighter
+/// `insert_runtime_for`/`setup_god_and_online_target` helpers above) so
+/// `send_to_session` actually queues onto `runtime.tick_out`, matching the
+/// `achievement.rs` test precedent for asserting exact packet bytes reach
+/// a target different from the caller.
+fn connected_god_and_target(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+) -> (CharacterId, CharacterId) {
+    let god_id = CharacterId(7);
+    let target_id = CharacterId(8);
+    let mut god = login_character(god_id, &login_block("Godmode"), 1, 10, 10);
+    god.flags.insert(CharacterFlags::GOD);
+    world.add_character(god);
+    world.add_character(login_character(
+        target_id,
+        &login_block("Target"),
+        1,
+        11,
+        10,
+    ));
+    let (commands, _rx) = mpsc::channel(16);
+    runtime.connect(1, commands, 0);
+    runtime.players.get_mut(&1).unwrap().character_id = Some(god_id);
+    let (commands, _rx2) = mpsc::channel(16);
+    runtime.connect(2, commands, 0);
+    runtime.players.get_mut(&2).unwrap().character_id = Some(target_id);
+    (god_id, target_id)
+}
+
+#[test]
+fn ls_and_cat_are_god_only() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (_god_id, target_id) = connected_god_and_target(&mut world, &mut runtime);
+
+    assert!(apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        target_id,
+        "#ls Target foo",
+        1
+    )
+    .is_none());
+    assert!(apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        target_id,
+        "#cat Target foo",
+        1
+    )
+    .is_none());
+}
+
+#[test]
+fn ls_reports_no_one_by_that_name_when_target_is_offline() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, _target_id) = connected_god_and_target(&mut world, &mut runtime);
+
+    let result =
+        apply_admin_character_command(&mut world, &mut runtime, god_id, "#ls Nobody foo", 1)
+            .expect("god ls should be recognized");
+    assert_eq!(
+        result.messages,
+        vec!["Sorry, no one by the name Nobody around."]
+    );
+    assert!(runtime.tick_out.get(&2).is_none());
+}
+
+#[test]
+fn ls_sends_raw_sv_ls_packet_to_the_target_session_and_confirms_to_the_caller() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, _target_id) = connected_god_and_target(&mut world, &mut runtime);
+
+    let result =
+        apply_admin_character_command(&mut world, &mut runtime, god_id, "#ls Target /home/user", 1)
+            .expect("god ls should be recognized");
+    assert_eq!(result.messages, vec!["ls /home/user scheduled on Target."]);
+
+    let payloads = runtime
+        .tick_out
+        .get(&2)
+        .expect("target session got a packet");
+    assert_eq!(payloads.len(), 1);
+    let payload = &payloads[0];
+    assert_eq!(payload[0], SV_LS);
+    assert_eq!(payload[1], b"/home/user".len() as u8);
+    assert_eq!(&payload[2..], b"/home/user");
+}
+
+#[test]
+fn cat_sends_raw_sv_cat_packet_to_the_target_session_and_confirms_to_the_caller() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, _target_id) = connected_god_and_target(&mut world, &mut runtime);
+
+    let result = apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        god_id,
+        "#cat Target /etc/passwd",
+        1,
+    )
+    .expect("god cat should be recognized");
+    assert_eq!(
+        result.messages,
+        vec!["cat /etc/passwd scheduled on Target."]
+    );
+
+    let payloads = runtime
+        .tick_out
+        .get(&2)
+        .expect("target session got a packet");
+    assert_eq!(payloads.len(), 1);
+    let payload = &payloads[0];
+    assert_eq!(payload[0], SV_CAT);
+    assert_eq!(payload[1], b"/etc/passwd".len() as u8);
+    assert_eq!(&payload[2..], b"/etc/passwd");
+}
+
+#[test]
+fn ls_confirms_to_caller_even_when_target_has_no_live_session() {
+    // Matches C's unconditional `log_char(cn, ..., "ls %s scheduled on
+    // %s.", ...)` after `plr_ls` - the confirmation is sent regardless of
+    // whether the target actually has a connection to receive the packet
+    // (`ch[co].player == 0` in C, no session in `runtime.sessions` here).
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let god_id = CharacterId(7);
+    let target_id = CharacterId(8);
+    let mut god = login_character(god_id, &login_block("Godmode"), 1, 10, 10);
+    god.flags.insert(CharacterFlags::GOD);
+    world.add_character(god);
+    world.add_character(login_character(
+        target_id,
+        &login_block("Target"),
+        1,
+        11,
+        10,
+    ));
+    let (commands, _rx) = mpsc::channel(16);
+    runtime.connect(1, commands, 0);
+    runtime.players.get_mut(&1).unwrap().character_id = Some(god_id);
+    // Target has a `Character` (so name lookup succeeds, e.g. a loaded
+    // NPC sharing the search loop's no-`CF_PLAYER`-filter behavior) but
+    // no connected session at all.
+
+    let result =
+        apply_admin_character_command(&mut world, &mut runtime, god_id, "#ls Target foo", 1)
+            .expect("god ls should be recognized");
+    assert_eq!(result.messages, vec!["ls foo scheduled on Target."]);
+}
+
+#[test]
+fn ls_produces_no_packet_when_dir_exceeds_two_hundred_bytes_but_still_confirms() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let (god_id, _target_id) = connected_god_and_target(&mut world, &mut runtime);
+    let long_dir = "a".repeat(201);
+
+    let result = apply_admin_character_command(
+        &mut world,
+        &mut runtime,
+        god_id,
+        &format!("#ls Target {long_dir}"),
+        1,
+    )
+    .expect("god ls should be recognized");
+    assert_eq!(
+        result.messages,
+        vec![format!("ls {long_dir} scheduled on Target.")]
+    );
+    assert!(runtime.tick_out.get(&2).is_none());
 }

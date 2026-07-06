@@ -8726,6 +8726,112 @@ Unlocks every quest NPC. Do these before any P4 area work.
   blocked on the unported `server_chat`/DB-task-queue/notes infra like
   `punish`/`rename`).
 
+  Progress Log (iteration 195): read and closed out every previously-
+  unread entry from iteration 194's list. Verdicts: `setnpcbodytimearea32`
+  was already done (miscategorized as unread - it's the last member of
+  the `TickTuningSpec` table in `apply_admin_character_command`,
+  `commands_admin.rs`, right next to `setnpcbodytime`); `col`/`color`
+  were already done too (`col1`/`col2`/`col3`/`color` all exist in
+  `commands_player.rs:441-458` - "col" alone isn't a real `cmdcmp` entry,
+  only `col1`/`col2`/`col3`/`color` are). `values`/`showvalues`
+  (`look_values`/`show_values`, `command.c:501-534`) are genuinely
+  blocked: both resolve their target via `lookup_name` (the unported
+  async offline-name-lookup cache) and then broadcast via `server_chat`
+  (packets 1027/1037) to sync a values-display request across every area
+  server - the same cross-area relay infra `/allow` is already blocked
+  on. `look`/`klog` (`command.c:8990-9024`) are also blocked: `look` needs
+  `lookup_name` + `read_notes` and `klog` needs `karmalog` -> `db_
+  karmalog`, both living in the unported `database_notes.c`/`database_
+  lookup.c` notes subsystem (a third, previously-unnamed blocking
+  dependency alongside the DB-task-queue and anticheat-bridge ones,
+  worth naming explicitly since `punish`'s note only mentioned the
+  task-queue). `summonmacro` (`command.c:10351-10357`) is just another
+  `macro_cmd_*` entry in the already-identified unported `macro*` family
+  (`macro_ppd`), not a new gap. `respawn` remains the C-internal
+  `respawn_check()` (`src/system/respawn.c:104-125`) template-NPC-
+  respawn-tracker consistency logger confirmed low-value: it validates
+  `register_respawn_char`/`_death`/`_respawn` bookkeeping that has no
+  analogue in this codebase's different NPC-respawn architecture
+  (`ugaris-server::spawns::respawn_npc_character`), and only ever
+  produces a console `xlog` line, no player-facing or persisted effect -
+  not worth inventing a parallel tracking system for. `exterminate`
+  confirmed blocked on `exterminate()` (DB task queue) + `server_chat`,
+  same as `punish`/`rename`. A genuinely new, previously-missed gap
+  turned up by re-running the "every unique `cmdcmp` name" cross-
+  reference from scratch (iteration 191's recommended pass, not repeated
+  since then): `#ls <name> <dir>` / `#cat <name> <file>`
+  (`command.c:9237-9253` dispatch, `CF_GOD`-gated, exact-word only, `len
+  > 3`/`> 4` minlen) plus `cmd_ls`/`cmd_cat` (`command.c:2794-2845`) and
+  `plr_ls`/`plr_cat` (`src/system/player.c:3750-3789`) - a debug feature
+  asking the TARGET character's own game client to list a directory or
+  dump a file from the client's local disk, by forwarding a raw
+  `SV_LS`/`SV_CAT` (opcodes 41/42) request packet to the target's
+  connection. Unlike `values`/`look`/`klog`/`exterminate`, this one has
+  NO cross-area or DB dependency at all - it only needed the already-
+  ported `find_online_character_by_name` (confirmed, by re-reading
+  C's `getfirst_char`/`getnext_char` loop, to have no `CF_PLAYER` filter
+  - NPCs are valid targets, matching the existing helper exactly) plus a
+  new pair of protocol-layer packet builders. Ported: `PacketBuilder::
+  ls_request`/`cat_request` (`crates/ugaris-protocol/src/packet.rs`, plus
+  a shared private `remote_fs_request(opcode, arg)` free function) build
+  `[opcode, len_u8, arg_bytes...]` with NO trailing null on the wire
+  (verified byte-for-byte against C: `strcpy` writes a null into its
+  local `buf`, but `psend(nr, buf, len + 2)` only ever transmits `len +
+  2` bytes, so the null never reaches the client) and return `None`/
+  `false` (no packet at all, not a truncated one) when the argument
+  exceeds 200 bytes, matching C's `if (len > 200) return;` early exit -
+  a deliberately different failure mode from the pre-existing `exit()`
+  builder, which clamps and always sends. Wired dispatch into
+  `apply_admin_character_command` (`commands_admin.rs`), right after
+  `/questfix`, sending straight to `runtime.sessions_for_character(target_id)`
+  from inside the handler (the same `target != caller` inline-send
+  pattern `/fixit`/`/questfix` already established, no new
+  `KeyringCommandResult` field needed). Reproduced C's unconditional
+  confirmation message (`"ls {dir} scheduled on {target}."` / `"cat
+  {file} scheduled on {target}."`) sent to the caller even when the
+  packet send silently no-ops (target has no live session, or the
+  argument is oversized) - only the target-not-found path
+  ("Sorry, no one by the name {name} around.") skips it. Added a new
+  `#ls`/`#cat` help-text pair to `commands_player.rs` (unlike most other
+  gaps found in past iterations, this command had NO pre-existing stray
+  help line at all - a genuinely new entry, not a trap). 4 new tests in
+  `crates/ugaris-protocol/src/packet.rs` (opcode/length/no-null-byte
+  layout for both `ls_request` and `cat_request`, the 200-byte boundary
+  still sending, 201 bytes producing an empty payload) and 6 in
+  `crates/ugaris-server/src/tests/commands_admin.rs` (GOD-only gate,
+  not-found message, real end-to-end packet-bytes-reach-the-target-
+  session round trip for both `#ls` and `#cat` using a new `connected_
+  god_and_target` helper modeled on `achievement.rs`'s `connected_god`/
+  `add_connected_target` real-session pattern rather than the lighter
+  `setup_god_and_online_target`, since asserting `runtime.tick_out`
+  bytes requires an actual registered session - `send_to_session`
+  silently no-ops otherwise - the confirmation-still-sent-with-no-live-
+  session case, and the 201-byte-argument no-packet-but-still-confirmed
+  case). `cargo fmt --all`, `cargo test --workspace` (2047 ugaris-core +
+  55 db + 3 net + 44 protocol [+4] + 844 server [+6], all green, zero
+  failures), `cargo build -p ugaris-server` / `cargo build --workspace`
+  clean with zero warnings, 10s boot-smoke confirmed "entering Rust game
+  loop" with no panic. REMAINING: every entry from the fresh full
+  cross-reference pass is now accounted for and falls into one of: (a)
+  the `ac*`/`macro*` families (anticheat-bridge design needed first,
+  iteration 191), (b) `punish`/`rename`/`lockname`/`unlockname`/
+  `unpunish`/`exterminate` (DB task-queue), (c) `look`/`klog`/`values`/
+  `showvalues` (the notes subsystem `database_notes.c`/`database_
+  lookup.c`'s `karmalog`/`read_notes`, or cross-area `server_chat`, or
+  both), (d) `memstats`/`poolstats`/`querystats`/`profinfo` (need a new
+  stats-counter subsystem), (e) `showppd` (needs many more named PPD
+  field accessors), (f) `depotsort` (unported depot storage system), or
+  (g) `respawn` (low-value, no clean architectural analogue). No
+  remaining item in this list is a quick win without first tackling one
+  of those six infra/architecture gaps - the next iteration picking this
+  task back up should pick ONE of (a)-(g) as its own slice (most
+  promising: the anticheat sync-command/async-repository bridge design,
+  since `PgAntiCheatRepository` already exists fully unused and would
+  unblock the largest single family) rather than re-scanning `command.c`
+  for more `cmdcmp` names, since this iteration's fresh full pass found
+  only one genuinely new gap (`#ls`/`#cat`) in ~55 previously-flagged
+  entries.
+
 - [ ] **Cross-area transfer** - the big multi-server feature. Every
   cross-area teleport currently returns "target server down". Decide the
   single-process stance first (likely: run multiple areas in one process

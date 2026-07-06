@@ -416,6 +416,35 @@ impl PacketBuilder {
     pub fn system_text_bytes(&mut self, message: &[u8]) -> &mut Self {
         self.raw(&system_text_bytes(message))
     }
+
+    /// C `plr_ls` (`src/system/player.c:3750-3768`): asks the target
+    /// client to list a directory of its own local filesystem, used by
+    /// the `CF_GOD`-only `#ls` admin command. Silently produces no packet
+    /// when `dir` exceeds 200 bytes, matching C's early return (`if (len
+    /// > 200) return;`) rather than clamping/truncating like `exit()`.
+    pub fn ls_request(&mut self, dir: &str) -> bool {
+        match remote_fs_request(SV_LS, dir) {
+            Some(packet) => {
+                self.raw(&packet);
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// C `plr_cat` (`src/system/player.c:3771-3789`): asks the target
+    /// client to send back the contents of a local file, used by the
+    /// `CF_GOD`-only `#cat` admin command. Same 200-byte cutoff as
+    /// `ls_request`.
+    pub fn cat_request(&mut self, path: &str) -> bool {
+        match remote_fs_request(SV_CAT, path) {
+            Some(packet) => {
+                self.raw(&packet);
+                true
+            }
+            None => false,
+        }
+    }
 }
 
 pub fn realtime(seconds: u32) -> [u8; 5] {
@@ -961,6 +990,26 @@ pub fn system_text_bytes(bytes: &[u8]) -> BytesMut {
     out
 }
 
+/// Shared layout for `plr_ls`/`plr_cat` (`src/system/player.c:3750-3789`):
+/// `[opcode, len_u8, arg_bytes...]` with NO trailing null terminator sent
+/// over the wire (C's `strcpy` writes one into its local `buf`, but
+/// `psend(nr, buf, len + 2)` only transmits `len + 2` bytes - 1 opcode + 1
+/// length byte + `len` argument bytes - so the null is never on the
+/// wire). Returns `None` when `arg` exceeds 200 bytes, matching C's `if
+/// (len > 200) return;` early exit (no packet is sent at all in that
+/// case, unlike `exit()`'s clamp-and-send).
+fn remote_fs_request(opcode: u8, arg: &str) -> Option<BytesMut> {
+    let bytes = arg.as_bytes();
+    if bytes.len() > 200 {
+        return None;
+    }
+    let mut out = BytesMut::with_capacity(bytes.len() + 2);
+    out.put_u8(opcode);
+    out.put_u8(bytes.len() as u8);
+    out.extend_from_slice(bytes);
+    Some(out)
+}
+
 pub fn special(special_type: u32, opt1: u32, opt2: u32) -> [u8; 13] {
     let mut out = [0; 13];
     out[0] = SV_SPECIAL;
@@ -1013,6 +1062,48 @@ mod tests {
     fn system_text_bytes_preserves_legacy_color_marker() {
         let packet = system_text_bytes(&[0xb0, b'c', b'3', b'H', b'i']);
         assert_eq!(&packet[..], &[SV_TEXT, 5, 0, 0xb0, b'c', b'3', b'H', b'i']);
+    }
+
+    #[test]
+    fn ls_request_builds_opcode_len_and_bytes_with_no_trailing_null() {
+        let mut builder = PacketBuilder::new();
+        assert!(builder.ls_request("/home/user"));
+        let payload = builder.into_payload();
+        assert_eq!(payload[0], SV_LS);
+        assert_eq!(payload[1], 10);
+        assert_eq!(&payload[2..], b"/home/user");
+        // No trailing null byte on the wire (C's `strcpy` writes one into
+        // its local `buf`, but `psend` only transmits `len + 2` bytes).
+        assert_eq!(payload.len(), 12);
+    }
+
+    #[test]
+    fn cat_request_uses_the_distinct_sv_cat_opcode() {
+        let mut builder = PacketBuilder::new();
+        assert!(builder.cat_request("file.txt"));
+        let payload = builder.into_payload();
+        assert_eq!(payload[0], SV_CAT);
+        assert_eq!(payload[1], 8);
+        assert_eq!(&payload[2..], b"file.txt");
+    }
+
+    #[test]
+    fn ls_request_at_exactly_two_hundred_bytes_still_sends() {
+        let dir = "a".repeat(200);
+        let mut builder = PacketBuilder::new();
+        assert!(builder.ls_request(&dir));
+        let payload = builder.into_payload();
+        assert_eq!(payload.len(), 202);
+    }
+
+    #[test]
+    fn ls_request_over_two_hundred_bytes_sends_nothing_matching_c_early_return() {
+        let dir = "a".repeat(201);
+        let mut builder = PacketBuilder::new();
+        assert!(!builder.ls_request(&dir));
+        // C's `plr_ls` returns before touching `buf` at all when `len >
+        // 200` - no packet, not a truncated one.
+        assert!(builder.into_payload().is_empty());
     }
 
     #[test]

