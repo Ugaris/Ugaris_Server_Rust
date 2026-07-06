@@ -548,3 +548,15 @@ pub const IID_GENERIC_SPECIAL: u32 = make_item_id(DEV_ID_DB, 0x00002C);
 /// `CAMHERMIT_STATE_QUEST2*` chain). `pub` (not `pub(crate)`) since
 /// `world::camhermit` needs it outside the `item_driver` module.
 pub const IID_AREA1_SMALL_BEAR_TEETH: u32 = make_item_id(DEV_ID_RH, 0x000001);
+
+/// C `IID_AREA1_BIGBEAR_TOOTH` (`src/common/item_id.h:60`): the area-1
+/// `yoakin_driver` big-mother-bear-tooth quest proof item. `pub` (not
+/// `pub(crate)`) since `world::yoakin` needs it outside the `item_driver`
+/// module.
+pub const IID_AREA1_BIGBEAR_TOOTH: u32 = make_item_id(DEV_ID_DB, 0x000001);
+
+/// C `IID_SHRIKE_TALISMAN` (`src/common/item_id.h:205`): the area-38
+/// Shrike quest reward item `yoakin_driver` also accepts to close out its
+/// own `shrike_state` side-quest branch. `pub` (not `pub(crate)`) since
+/// `world::yoakin` needs it outside the `item_driver` module.
+pub const IID_SHRIKE_TALISMAN: u32 = make_item_id(DEV_ID_DB, 0x000092);

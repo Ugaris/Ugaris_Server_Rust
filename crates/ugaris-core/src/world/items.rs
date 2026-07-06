@@ -129,6 +129,45 @@ impl World {
         true
     }
 
+    /// C `destroy_item_byID(cn, ID)` (`src/system/questlog.c:1664-1696`):
+    /// destroys *every* item matching `template_id` in `character_id`'s
+    /// equipment slots (`0..12`), main inventory (`30..`), and cursor -
+    /// deliberately skipping the spell slots (`12..30`), exactly like C's
+    /// `if (n >= 12 && n < 30) continue`. Unlike C, this does not sweep
+    /// the account depot (`DRD_DEPOT_PPD`) - that storage lives in
+    /// `ugaris-server`'s `PlayerRuntime`/DB layer, not `World` (see
+    /// `world::yoakin`'s module doc comment for why this gap is
+    /// acceptable for its one caller today).
+    pub(crate) fn destroy_items_by_template_id(
+        &mut self,
+        character_id: CharacterId,
+        template_id: u32,
+    ) {
+        let Some(character) = self.characters.get(&character_id) else {
+            return;
+        };
+        let mut matching: Vec<ItemId> = character
+            .inventory
+            .iter()
+            .enumerate()
+            .filter(|(slot, _)| !(SPELL_SLOT_START..SPELL_SLOT_END).contains(slot))
+            .filter_map(|(_, item_id)| *item_id)
+            .collect();
+        if let Some(cursor_item) = character.cursor_item {
+            matching.push(cursor_item);
+        }
+
+        for item_id in matching {
+            if self
+                .items
+                .get(&item_id)
+                .is_some_and(|item| item.template_id == template_id)
+            {
+                self.destroy_item(item_id);
+            }
+        }
+    }
+
     pub(crate) fn transfer_cursor_item(
         &mut self,
         giver_id: CharacterId,

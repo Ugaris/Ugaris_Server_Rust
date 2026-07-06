@@ -578,7 +578,8 @@ impl World {
             | CharacterDriverState::Dungeonmaster(_)
             | CharacterDriverState::Dungeonfighter(_)
             | CharacterDriverState::Macro(_)
-            | CharacterDriverState::Camhermit(_) => None,
+            | CharacterDriverState::Camhermit(_)
+            | CharacterDriverState::Yoakin(_) => None,
         }
     }
 

@@ -7581,6 +7581,28 @@ async fn main() -> anyhow::Result<()> {
                         "applied camp hermit dialogue events"
                     );
                 }
+                // C `yoakin_driver`: area 1's hunter/bear-hunt quest NPC
+                // (`src/area/1/gwendylon.c`).
+                let yoakin_facts = yoakin_player_facts(&world, &runtime);
+                let yoakin_events = world.process_yoakin_actions(
+                    &yoakin_facts,
+                    current_unix_time() as i32,
+                    config.area_id,
+                );
+                let yoakin_events_applied = apply_yoakin_events(
+                    &mut world,
+                    &mut runtime,
+                    &achievement_repository,
+                    yoakin_events,
+                )
+                .await;
+                if yoakin_events_applied != 0 {
+                    info!(
+                        yoakin_events_applied,
+                        tick = world.tick.0,
+                        "applied yoakin dialogue events"
+                    );
+                }
                 // C `gate_welcome_driver`: the Ishtar labyrinth gatekeeper
                 // greeter NPC (`src/system/gatekeeper.c`).
                 let gate_welcome_facts = gate_welcome_player_facts(&runtime);

@@ -66,6 +66,7 @@ mod turn_seyan;
 mod values;
 mod weather;
 mod world_misc;
+mod yoakin;
 
 use crate::{
     character_driver::{

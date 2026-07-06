@@ -77,6 +77,7 @@ mod traps_hazards;
 mod turn_seyan;
 mod values;
 mod weather;
+mod yoakin;
 
 pub use actions::*;
 pub use admin_flag::*;
@@ -146,6 +147,7 @@ pub use trader::*;
 #[allow(unused_imports)]
 pub(crate) use traps_hazards::*;
 pub use values::*;
+pub use yoakin::*;
 
 #[cfg(test)]
 mod tests;

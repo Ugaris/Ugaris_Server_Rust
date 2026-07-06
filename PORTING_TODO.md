@@ -11764,15 +11764,19 @@ Ordered by player progression; the C file is the oracle.
   quests, `tutorial_ppd` hints (player_driver.c has the tutorial hook -
   port together). This is the highest-value area work: new players see it
   first. Slice by NPC.
-  REMAINING: only `camhermit_driver` (`CDR_CAMHERMIT`, the forest hermit's
-  bear-kill/tooth-necklace quest chain, `:707-996`) is ported so far - see
-  the Progress Log entry below and `crates/ugaris-core/src/world/
-  camhermit.rs`'s module doc comment for its own documented gaps
-  (`monster_dead`'s bear-kill counter still unported, so the
+  REMAINING: `camhermit_driver` (`CDR_CAMHERMIT`, the forest hermit's
+  bear-kill/tooth-necklace quest chain, `:707-996`) and `yoakin_driver`
+  (`CDR_YOAKIN`, the hunter's bear-hunt quest chain plus the shrike-
+  talisman/leftover-give branches it also handles, `:996-1217`) are
+  ported so far - see the Progress Log entries below and
+  `crates/ugaris-core/src/world/camhermit.rs`/`world/yoakin.rs`'s own
+  module doc comments for their documented gaps (camhermit's
+  `monster_dead` bear-kill counter is still unported, so its
   `CAMHERMIT_STATE_QUEST1DO` branch can never actually complete on a live
-  server yet). Every other NPC in this file is still unported:
-  `gwendylon_driver` (the main quest-giver, `:234-680`), `yoakin_driver`
-  (`:996-1227`), `terion_driver` (`:1228-1484`), `greeter_driver`
+  server yet; yoakin's `destroy_item_byID` sweep does not reach the
+  account depot). Every other NPC in this file is still unported:
+  `gwendylon_driver` (the main quest-giver, `:234-680`), `terion_driver`
+  (`:1228-1484`), `greeter_driver`
   (`:1485-1808`), `jessica_driver` (`:1809-2073`), `jiu_driver` (`:2074-
   2255`), `forest_ranger_driver` (`:2284-2473`), `brithildie_driver`
   (`:2474-2826`), `james_driver` (`:2901-3179`), `nook_driver` (`:3180-
@@ -12385,3 +12389,31 @@ Add one line per completed task: date, task, ledger section touched.
   `cargo fmt --all`, `cargo test --workspace` (2270 core + 1084 server,
   all green), `cargo build -p ugaris-server` all clean with zero
   warnings; boot-smoked (12s run, tick loop advancing, no panics).
+- 2026-07-06: Area 1 - `gwendylon.c` (P4, continuing, still `[~]`) -
+  ported the second area-1 NPC slice: `yoakin_driver` (`CDR_YOAKIN = 9`,
+  the hunter's bear-hunt quest at the knight castle, plus the shrike-
+  talisman exp reward and generic leftover-give branches it also
+  handles) end to end - `NT_CHAR` state machine (states 0-5, including
+  the 120s intro-chain reset and the `logain_state`-gated state 2 -> 3
+  transition), `NT_TEXT` small-talk via the same shared `GWENDYLON_QA`
+  table `world::camhermit` already wired up, `NT_GIVE` (bear-tooth
+  quest turn-in with first-completion-only gold reward, shrike-talisman
+  exp reward, generic give-back fallback). New `crates/ugaris-core/src/
+  world/yoakin.rs` (+13 tests), `World::destroy_items_by_template_id`
+  (generic `destroy_item_byID` port, equipment+inventory+cursor scope)
+  in `world/items.rs`, `IID_AREA1_BIGBEAR_TOOTH`/`IID_SHRIKE_TALISMAN` in
+  `item_driver::ids`, `QLOG_YOAKIN` in `quest.rs`, `CDR_YOAKIN`/
+  `YoakinDriverData`/`CharacterDriverState::Yoakin` in
+  `character_driver.rs` (plus the three exhaustive-match call sites that
+  needed the new variant), `CDR_YOAKIN` default driver-state wiring in
+  `zone.rs`. Extended `crates/ugaris-server/src/area1.rs` (facts
+  snapshot + event application) and wired into `main.rs`'s tick loop
+  right after camhermit's. See `world::yoakin`'s module doc comment for
+  the two documented gaps (color-marker styling dropped from the state-4
+  reminder line, same as camhermit; the bear-tooth turn-in's
+  `destroy_item_byID` sweep does not reach the account depot, since that
+  storage lives outside `World`). `cargo fmt --all`, `cargo test
+  --workspace` (2283 core + 1084 server, all green), `cargo build -p
+  ugaris-server` all clean with zero warnings; boot-smoked (10s run,
+  "entering Rust game loop" `area_id=1`, tick loop advancing, no
+  panics).

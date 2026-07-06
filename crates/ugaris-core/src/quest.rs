@@ -11,6 +11,11 @@ pub const QLOG_GWENDY_FIRST_SKULL: usize = 1;
 pub const QLOG_GWENDY_SECOND_SKULL: usize = 2;
 pub const QLOG_GWENDY_THIRD_SKULL: usize = 3;
 pub const QLOG_GWENDY_FOUL_MAGICIAN: usize = 4;
+/// C `questlog_open(co, 5)`/`questlog_done(co, 5)` (`src/area/1/
+/// gwendylon.c:1063,1154`, `yoakin_driver`'s big-mother-bear-tooth quest).
+/// No `#define QLOG_*` name exists for index 5 in `questlog.h` - C itself
+/// only ever spells it out as the bare literal `5`.
+pub const QLOG_YOAKIN: usize = 5;
 pub const QLOG_NOOK: usize = 6;
 pub const QLOG_JESSICA_ROBBER_NOTE: usize = 79;
 pub const QLOG_JIU: usize = 80;
@@ -823,9 +828,11 @@ pub const QUEST_TABLE: [QuestMeta; 85] = [
 /// the quest-adjacent home for quest reward constants until the P4 area
 /// driver tasks that actually consume them land (`EXP_AREA15_HARDKILL`
 /// and `EXP_AREA3_SHRINE` are the only two used in the C source today -
-/// every other `EXP_AREA*` define is dead code in C too, and the
-/// `MONEY_AREA*` ones feed `create_money_item` calls in area drivers that
-/// aren't ported yet either).
+/// every other `EXP_AREA*` define is dead code in C too, and every
+/// `MONEY_AREA*` one feeds a `create_money_item` call in an area driver;
+/// `MONEY_AREA1_BEARTOOTH` is the first to actually land, in
+/// `world::yoakin`'s bear-tooth reward - the rest still await their own
+/// area driver ports).
 pub mod quest_exp {
     pub const EXP_AREA1_SKULL1: i64 = 75;
     pub const EXP_AREA1_SKULL2: i64 = 150;

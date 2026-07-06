@@ -41,6 +41,10 @@ pub const CDR_LAB2UNDEAD: u16 = 198;
 /// C `#define CDR_CAMHERMIT 14` (`src/system/drvlib.h`): the forest
 /// hermit NPC in area 1 (`src/area/1/gwendylon.c::camhermit_driver`).
 pub const CDR_CAMHERMIT: u16 = 14;
+/// C `#define CDR_YOAKIN 9` (`src/system/drvlib.h`): the area-1 hunter
+/// quest giver at the knight castle (`src/area/1/gwendylon.c::
+/// yoakin_driver`).
+pub const CDR_YOAKIN: u16 = 9;
 /// C `#define CDR_GATE_WELCOME 39` (`src/system/drvlib.h`): the stationary
 /// gatekeeper-welcome NPC (`gate_welcome` template,
 /// `src/system/gatekeeper.c::gate_welcome_driver`).
@@ -184,6 +188,7 @@ pub enum CharacterDriverState {
     Dungeonfighter(DungeonfighterDriverData),
     Macro(MacroDriverData),
     Camhermit(CamhermitDriverData),
+    Yoakin(YoakinDriverData),
 }
 
 /// C `struct lostcon_driver_data` (`src/module/lostcon.c`): the linger-timer
@@ -467,6 +472,20 @@ pub struct GateWelcomeDriverData {
 /// `world::camhermit`'s module doc comment for the split).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct CamhermitDriverData {
+    #[serde(default)]
+    pub last_talk: u64,
+    pub current_victim: Option<CharacterId>,
+}
+
+/// C `struct yoakin_driver_data` (`src/area/1/gwendylon.c:990-994`): the
+/// hunter NPC's own driver memory (`CDR_YOAKIN`, distinct from the
+/// per-player `yoakin_state`/`yoakin_seen_timer` fields in
+/// `crate::player::PlayerRuntime`'s `area1_ppd` - see `world::yoakin`'s
+/// module doc comment for the split). The C struct's third field,
+/// `nighttime`, is never read or written anywhere in `yoakin_driver`'s
+/// body - dead even in C - so it is not ported.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct YoakinDriverData {
     #[serde(default)]
     pub last_talk: u64,
     pub current_victim: Option<CharacterId>,
@@ -2689,7 +2708,8 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::Dungeonmaster(_)
             | CharacterDriverState::Dungeonfighter(_)
             | CharacterDriverState::Macro(_)
-            | CharacterDriverState::Camhermit(_),
+            | CharacterDriverState::Camhermit(_)
+            | CharacterDriverState::Yoakin(_),
         ) => SimpleBaddyDriverData::default(),
         None => SimpleBaddyDriverData::default(),
     };
