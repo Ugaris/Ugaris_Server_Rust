@@ -7785,15 +7785,51 @@ async fn main() -> anyhow::Result<()> {
                             // a new socket gets a brand-new anti-cheat
                             // session at the login site instead, matching
                             // `PlayerRuntime::reclaim_for_session` clearing
-                            // the old id). Only the lifecycle half is
-                            // ported - no bot-score/violation summary
-                            // exists yet (no detection engine ported), so
-                            // the final `bot_score` is always 0.0.
+                            // the old id). Only the session lifecycle +
+                            // lifetime-rollup halves are ported - no bot-
+                            // score/violation summary exists yet (no
+                            // detection engine ported), so the final
+                            // `bot_score` is always 0.0 and the rollup
+                            // below always accumulates zero-valued
+                            // counters, exactly like the session row it
+                            // reads from.
                             if let (Some(repository), Some(session_id)) =
                                 (&anticheat_repository, anticheat_session_id)
                             {
+                                // C reads `player[nr]->ac`'s fields before
+                                // `db_ac_session_end`/`db_ac_update_player_
+                                // stats` touch anything; this port takes
+                                // the same pre-mutation snapshot via
+                                // `find_session` (the row `#acstatus`
+                                // already reads) before ending the session.
+                                let session_info =
+                                    repository.find_session(session_id).await.unwrap_or(None);
                                 if let Err(err) = repository.end_session(session_id, 0.0).await {
                                     warn!(%id, session_id, error = %err, "failed to end anti-cheat session");
+                                }
+                                if let Some(info) = session_info {
+                                    match repository.account_id_for_session(session_id).await {
+                                        Ok(Some(subscriber_id)) => {
+                                            if let Err(err) = repository
+                                                .update_player_stats(
+                                                    subscriber_id,
+                                                    info.bot_score,
+                                                    info.status,
+                                                    info.heartbeat_violations,
+                                                    info.state_violations,
+                                                    info.challenge_failures,
+                                                    0,
+                                                )
+                                                .await
+                                            {
+                                                warn!(%id, session_id, error = %err, "failed to update anti-cheat player stats");
+                                            }
+                                        }
+                                        Ok(None) => {}
+                                        Err(err) => {
+                                            warn!(%id, session_id, error = %err, "failed to resolve anti-cheat subscriber id");
+                                        }
+                                    }
                                 }
                             }
                         }

@@ -10137,13 +10137,96 @@ Unlocks every quest NPC. Do these before any P4 area work.
   alpine` container, applying all 16 `migrations/*.sql` files by hand,
   and running `cargo test -p ugaris-db anticheat` against it directly
   (9/9 passed, including the new live test) before destroying the
-  container. This closes the `acsiglist`/`acsigadd`/`acsigdel` gaps
-  entirely. REMAINING: gap (a) now has only `achistory` (needs the
-  session-end rollup mechanism first) and `acsharedip`/`acsharedhw`/
-  `achighrisk`/`aclookup` (cross-account joins on `ip_address`/
-  `hardware_hash`/`bot_score` aggregates - each needs its own query
-  design, not a shared slice) left; gaps (b)/(d)/(e)/(f)/(g) remain
-  untouched, same as noted above.
+   container. This closes the `acsiglist`/`acsigadd`/`acsigdel` gaps
+   entirely. REMAINING: gap (a) now has only `achistory` (needs the
+   session-end rollup mechanism first) and `acsharedip`/`acsharedhw`/
+   `achighrisk`/`aclookup` (cross-account joins on `ip_address`/
+   `hardware_hash`/`bot_score` aggregates - each needs its own query
+   design, not a shared slice) left; gaps (b)/(d)/(e)/(f)/(g) remain
+   untouched, same as noted above.
+
+  Progress Log (iteration 214): picked gap (a)'s remaining `achistory`
+  item - ported the session-end lifetime-rollup half of `ac_player_
+  disconnect` (`db_ac_update_player_stats`, `database_anticheat.c:
+  480-517`, called from `anticheat.c:141-163` right after `db_ac_
+  session_end`/`db_ac_session_set_status`), the mechanism every prior
+  iteration's note since 210 had named as `achistory`'s blocker (not
+  `achistory`'s own display command itself, which remains unported -
+  this slice is the write side only). Extended `ac_player_stats` (new
+  migration `0017_ac_player_stats_rollup.sql`) with the lifetime
+  counters C's function actually reads/writes: `total_sessions`,
+  `flagged_sessions`, `suspicious_sessions`, `total_heartbeat_
+  violations`, `total_state_violations`, `total_challenge_failures`,
+  `total_anomalies`, `lifetime_bot_score`, `max_session_bot_score`,
+  `avg_session_bot_score`, `risk_level`, `last_seen` - deliberately not
+  `first_seen`/the fingerprint columns, which belong to the separate
+  sibling `db_ac_update_player_fingerprint` mutation (still unported).
+  New `AntiCheatRepository::update_player_stats` (`crates/ugaris-db/src/
+  anticheat.rs`) folds C's `db_ac_ensure_player_stats`-then-atomic-
+  `UPDATE` two-step into one Postgres upsert, same shape as `set_
+  flagged`/`set_trusted`/`issue_warning`: `was_flagged`/`was_suspicious`
+  (`session_status == 3`/`== 2`) are derived inside the method from a
+  plain `session_status` parameter, then folded into C's exact `risk_
+  level` threshold `CASE` (`max_session_bot_score >= 1.0 OR flagged_
+  sessions >= 3` -> critical, `>= 0.8 OR >= 1` -> high, `>= 0.5 OR
+  suspicious_sessions >= 3` -> medium, else low) reproduced via Postgres
+  `GREATEST`/`CASE` over `excluded.*` plus the pre-update column value,
+  instead of MySQL's `@variable` trick - no read-your-own-write ordering
+  issue since every intermediate recomputes directly from the same two
+  operands in each branch. Wired directly into `main.rs`'s `SessionEvent
+  ::Disconnected` handler right after the pre-existing `end_session`
+  call: takes a `find_session` snapshot (the same row `#acstatus`'s
+  `find_session` already reads) *before* `end_session` runs, matching
+  C's own read-in-memory-`player[nr]->ac`-before-either-DB-call-mutates-
+  it ordering, then resolves the subscriber id via the pre-existing
+  `account_id_for_session` and calls the new method with that snapshot's
+  `status`/`bot_score`/violation counters (`anomalies` hardcoded to `0`,
+  matching C's own literal `0` argument - "anomaly count is tracked
+  separately"). Since no detection engine exists yet, every one of those
+  snapshot fields is always `0`/status `0` at the only current call
+  site, so in practice only `total_sessions`/`last_seen` accumulate real
+  data per disconnect and `risk_level` stays permanently `low` - the
+  same "real but always-zero" state iteration 196 established for
+  session creation, now extended one step further down the lifecycle.
+  1 new `ugaris-db` live test (`update_player_stats_accumulates_and_
+  classifies_risk_tiers`: four sequential calls for one fixture
+  subscriber walking all three risk tiers - low, then high via bot score
+  alone crossing 0.8, then critical via a bot score of 1.0, then a fourth
+  low-score/verified-status call proving `max_session_bot_score` never
+  drops back down via `GREATEST` and a non-flagged call doesn't touch
+  `flagged_sessions` - also asserts every accumulator column adds across
+  calls rather than overwrites). `cargo fmt --all`, `cargo test
+  --workspace` (2104 ugaris-core + 72 db [+1] + 3 net + 44 protocol +
+  1013 server, all green, zero failures), `cargo build -p ugaris-server`
+  / `cargo build --workspace` clean with zero warnings, 10s boot-smoke
+  confirmed "entering Rust game loop" with no panic. Verified the new
+  migration and query for real by spinning up a throwaway `postgres:16-
+  alpine` container, applying all 17 `migrations/*.sql` files by hand,
+  and running `DATABASE_URL=... cargo test -p ugaris-db update_player_
+  stats` against it directly (1/1 passed) before destroying the
+  container; a full `cargo test -p ugaris-db` run against the same live
+  container still shows the same pre-existing order/isolation-dependent
+  flakiness in unrelated `clan_log`/`auction`/`achievement`/`character::
+  live_login` tests noted by iterations 212/213 (confirmed again here,
+  not investigated further, irrelevant to the default `cargo test
+  --workspace` contract which skips every live test cleanly without
+  `DATABASE_URL` set). REMAINING: `#achistory` itself (the display
+  command reading these now-real columns) is still unported - a natural
+  next slice now that its data actually accumulates, following the
+  `#acsessions`/`#acviolations` display-command pattern already
+  established for this family. `acsharedip`/`acsharedhw`/`achighrisk`/
+  `aclookup` remain the other open gap-(a) items; `acsharedip`/
+  `acsharedhw` in particular could plausibly reuse `anticheat_sessions`'
+  already-existing `ip_address`/`hardware_hash` columns instead of
+  porting C's separate `ac_ip_history`/`ac_hardware_history` tables (both
+  populated only by the unported `db_ac_record_ip`/fingerprint-on-login
+  calls) - worth trying before assuming new schema is needed, same
+  reuse-over-new-schema angle that already worked for `acsessions`/
+  `acviolations`/`acsiglist`; `achighrisk`/`aclookup` need the fuller
+  cross-subscriber `ac_player_stats` scan/lookup this iteration's
+  columns now make possible, but still require their own new query
+  surface. Gaps (b)/(d)/(e)/(f)/(g) remain untouched, same as noted
+  above.
 
 - [ ] **Cross-area transfer** - the big multi-server feature. Every
   cross-area teleport currently returns "target server down". Decide the

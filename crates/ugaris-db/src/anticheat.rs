@@ -268,6 +268,40 @@ pub trait AntiCheatRepository: Send + Sync {
     /// that id exists (C's own `affected == 0` branch), matching every
     /// other `bool`-returning mutator in this trait.
     async fn delete_signature(&self, signature_id: i64) -> anyhow::Result<bool>;
+    /// The session-end lifetime-rollup half of `ac_player_disconnect`
+    /// (`db_ac_update_player_stats`, `database_anticheat.c:480-517`),
+    /// called right after `end_session` with the same pre-mutation
+    /// session snapshot `#acstatus`'s `find_session` already reads (C
+    /// reads the equivalent fields straight out of the in-memory
+    /// `player[nr]->ac` struct before either DB call touches it). Folds
+    /// C's `db_ac_ensure_player_stats`-then-atomic-`UPDATE` two-step into
+    /// one upsert, same shape as `set_flagged`/`set_trusted`/
+    /// `issue_warning`. `session_status` is the raw `AC_STATUS_*` value
+    /// (`0`=unverified, `1`=verified, `2`=suspicious, `3`=flagged); C's
+    /// own `was_flagged`/`was_suspicious` booleans (`session_status == 3`/
+    /// `== 2`) are derived from it inside the implementation, not by the
+    /// caller. `anomalies` is always `0` at the only current call site,
+    /// matching C's own literal `0` argument ("anomaly count is tracked
+    /// separately") - the parameter exists for a future detection-engine
+    /// slice, not because any caller currently supplies a nonzero value.
+    /// Reproduces C's `risk_level` thresholds (`max_session_bot_score >=
+    /// 1.0 OR flagged_sessions >= 3` -> `critical`, `>= 0.8 OR >= 1` ->
+    /// `high`, `>= 0.5 OR suspicious_sessions >= 3` -> `medium`, else
+    /// `low`) via Postgres `GREATEST`/`CASE` over `excluded.*` plus the
+    /// pre-update column value, instead of MySQL's `@variable` trick - no
+    /// read-your-own-write ordering issue here since every intermediate
+    /// is recomputed directly from the same two operands in each branch.
+    #[allow(clippy::too_many_arguments)]
+    async fn update_player_stats(
+        &self,
+        subscriber_id: i64,
+        session_bot_score: f32,
+        session_status: i32,
+        heartbeat_violations: i32,
+        state_violations: i32,
+        challenge_failures: i32,
+        anomalies: i32,
+    ) -> anyhow::Result<()>;
 }
 
 #[derive(Debug, Clone)]
@@ -755,6 +789,80 @@ impl AntiCheatRepository for PgAntiCheatRepository {
             .execute(&self.pool)
             .await?;
         Ok(result.rows_affected() > 0)
+    }
+
+    async fn update_player_stats(
+        &self,
+        subscriber_id: i64,
+        session_bot_score: f32,
+        session_status: i32,
+        heartbeat_violations: i32,
+        state_violations: i32,
+        challenge_failures: i32,
+        anomalies: i32,
+    ) -> anyhow::Result<()> {
+        let was_flagged: i32 = if session_status == 3 { 1 } else { 0 };
+        let was_suspicious: i32 = if session_status == 2 { 1 } else { 0 };
+        sqlx::query(
+            "insert into ac_player_stats (\
+             subscriber_id, total_sessions, flagged_sessions, suspicious_sessions, \
+             total_heartbeat_violations, total_state_violations, total_challenge_failures, \
+             total_anomalies, lifetime_bot_score, max_session_bot_score, \
+             avg_session_bot_score, risk_level, last_seen, updated_at) \
+             values ($1, 1, $3, $4, $5, $6, $7, $8, $2, $2, $2, \
+             case \
+                 when $2 >= 1.0 or $3 >= 3 then 'critical' \
+                 when $2 >= 0.8 or $3 >= 1 then 'high' \
+                 when $2 >= 0.5 or $4 >= 3 then 'medium' \
+                 else 'low' \
+             end, \
+             now(), now()) \
+             on conflict (subscriber_id) do update set \
+             total_sessions = ac_player_stats.total_sessions + 1, \
+             flagged_sessions = ac_player_stats.flagged_sessions + excluded.flagged_sessions, \
+             suspicious_sessions = \
+                 ac_player_stats.suspicious_sessions + excluded.suspicious_sessions, \
+             total_heartbeat_violations = \
+                 ac_player_stats.total_heartbeat_violations + excluded.total_heartbeat_violations, \
+             total_state_violations = \
+                 ac_player_stats.total_state_violations + excluded.total_state_violations, \
+             total_challenge_failures = \
+                 ac_player_stats.total_challenge_failures + excluded.total_challenge_failures, \
+             total_anomalies = ac_player_stats.total_anomalies + excluded.total_anomalies, \
+             lifetime_bot_score = ac_player_stats.lifetime_bot_score + excluded.lifetime_bot_score, \
+             max_session_bot_score = \
+                 greatest(ac_player_stats.max_session_bot_score, excluded.max_session_bot_score), \
+             avg_session_bot_score = \
+                 (ac_player_stats.lifetime_bot_score + excluded.lifetime_bot_score) \
+                 / (ac_player_stats.total_sessions + 1), \
+             risk_level = case \
+                 when greatest(ac_player_stats.max_session_bot_score, \
+                               excluded.max_session_bot_score) >= 1.0 \
+                      or (ac_player_stats.flagged_sessions + excluded.flagged_sessions) >= 3 \
+                 then 'critical' \
+                 when greatest(ac_player_stats.max_session_bot_score, \
+                               excluded.max_session_bot_score) >= 0.8 \
+                      or (ac_player_stats.flagged_sessions + excluded.flagged_sessions) >= 1 \
+                 then 'high' \
+                 when greatest(ac_player_stats.max_session_bot_score, \
+                               excluded.max_session_bot_score) >= 0.5 \
+                      or (ac_player_stats.suspicious_sessions + excluded.suspicious_sessions) >= 3 \
+                 then 'medium' \
+                 else 'low' \
+             end, \
+             last_seen = now(), updated_at = now()",
+        )
+        .bind(subscriber_id)
+        .bind(session_bot_score)
+        .bind(was_flagged)
+        .bind(was_suspicious)
+        .bind(heartbeat_violations)
+        .bind(state_violations)
+        .bind(challenge_failures)
+        .bind(anomalies)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
     }
 }
 
@@ -1551,6 +1659,142 @@ mod tests {
                     .expect("delete already-deleted row"),
                 "deleting a vanished id must report false, not error"
             );
+        }
+
+        /// `ac_player_disconnect`'s rollup half (`update_player_stats`):
+        /// three sequential disconnects for the same subscriber exercise
+        /// every `risk_level` tier C's `db_ac_update_player_stats`
+        /// threshold `CASE` computes - `low` (a clean-ish first session),
+        /// `high` (a flagged session whose bot score alone crosses `0.8`),
+        /// then `critical` (a session whose bot score reaches `1.0`) -
+        /// while also asserting the plain accumulator columns
+        /// (`total_sessions`/violation totals/`lifetime_bot_score`) add up
+        /// across calls rather than overwrite, and `max_session_bot_score`
+        /// only ever grows (`GREATEST`, matching C's `@mbs := GREATEST(...
+        /// )`).
+        #[tokio::test]
+        async fn update_player_stats_accumulates_and_classifies_risk_tiers() {
+            let Some(pool) = connect().await else {
+                return;
+            };
+            let repo = PgAntiCheatRepository::new(pool.clone());
+
+            sqlx::query("delete from accounts where username = 'ac_rollup_fixture_acct'")
+                .execute(&pool)
+                .await
+                .expect("pre-clean fixture account");
+            let (account_id,): (i64,) = sqlx::query_as(
+                "insert into accounts(username, password_hash) values ($1, 'secret') returning id",
+            )
+            .bind("ac_rollup_fixture_acct")
+            .fetch_one(&pool)
+            .await
+            .expect("insert fixture account");
+
+            // First touch: no `ac_player_stats` row exists yet - a clean,
+            // unverified (status 0) session with a low bot score creates
+            // one at the `low` tier.
+            repo.update_player_stats(account_id, 0.4, 0, 1, 1, 1, 0)
+                .await
+                .expect("update_player_stats first call");
+
+            let row: (i32, i32, i32, i32, i32, i32, i32, f32, f32, f32, String) = sqlx::query_as(
+                "select total_sessions, flagged_sessions, suspicious_sessions, \
+                 total_heartbeat_violations, total_state_violations, \
+                 total_challenge_failures, total_anomalies, lifetime_bot_score, \
+                 max_session_bot_score, avg_session_bot_score, risk_level \
+                 from ac_player_stats where subscriber_id = $1",
+            )
+            .bind(account_id)
+            .fetch_one(&pool)
+            .await
+            .expect("fetch ac_player_stats row after first call");
+            assert_eq!(row.0, 1, "total_sessions");
+            assert_eq!(row.1, 0, "flagged_sessions");
+            assert_eq!(row.2, 0, "suspicious_sessions");
+            assert_eq!(row.3, 1, "total_heartbeat_violations");
+            assert_eq!(row.4, 1, "total_state_violations");
+            assert_eq!(row.5, 1, "total_challenge_failures");
+            assert_eq!(row.6, 0, "total_anomalies");
+            assert!((row.7 - 0.4).abs() < 0.001, "lifetime_bot_score");
+            assert!((row.8 - 0.4).abs() < 0.001, "max_session_bot_score");
+            assert!((row.9 - 0.4).abs() < 0.001, "avg_session_bot_score");
+            assert_eq!(row.10, "low");
+
+            // Second touch: a flagged (status 3) session with a bot score
+            // crossing 0.8 must push the row to `high` (bot score alone,
+            // since flagged_sessions is still only 1, below the `>= 3`
+            // threshold) and accumulate every counter rather than
+            // overwrite it.
+            repo.update_player_stats(account_id, 0.9, 3, 2, 0, 0, 0)
+                .await
+                .expect("update_player_stats second call");
+
+            let row: (i32, i32, i32, f32, f32, String) = sqlx::query_as(
+                "select total_sessions, flagged_sessions, total_heartbeat_violations, \
+                 lifetime_bot_score, max_session_bot_score, risk_level \
+                 from ac_player_stats where subscriber_id = $1",
+            )
+            .bind(account_id)
+            .fetch_one(&pool)
+            .await
+            .expect("fetch ac_player_stats row after second call");
+            assert_eq!(row.0, 2, "total_sessions accumulates");
+            assert_eq!(row.1, 1, "flagged_sessions accumulates");
+            assert_eq!(row.2, 3, "total_heartbeat_violations accumulates (1 + 2)");
+            assert!(
+                (row.3 - 1.3).abs() < 0.001,
+                "lifetime_bot_score accumulates"
+            );
+            assert!(
+                (row.4 - 0.9).abs() < 0.001,
+                "max_session_bot_score takes the new higher value"
+            );
+            assert_eq!(row.5, "high");
+
+            // Third touch: a session whose bot score reaches 1.0 must
+            // push the row to `critical`, and a lower bot score on this
+            // same call must NOT lower `max_session_bot_score` back down
+            // (`GREATEST`, not overwrite).
+            repo.update_player_stats(account_id, 1.0, 3, 0, 0, 0, 0)
+                .await
+                .expect("update_player_stats third call");
+            repo.update_player_stats(account_id, 0.1, 1, 0, 0, 0, 0)
+                .await
+                .expect("update_player_stats fourth call (low score, verified status)");
+
+            let row: (i32, i32, f32, String) = sqlx::query_as(
+                "select total_sessions, flagged_sessions, max_session_bot_score, risk_level \
+                 from ac_player_stats where subscriber_id = $1",
+            )
+            .bind(account_id)
+            .fetch_one(&pool)
+            .await
+            .expect("fetch ac_player_stats row after fourth call");
+            assert_eq!(row.0, 4, "total_sessions accumulates across all four calls");
+            assert_eq!(
+                row.1, 2,
+                "flagged_sessions unaffected by a non-flagged call"
+            );
+            assert!(
+                (row.2 - 1.0).abs() < 0.001,
+                "max_session_bot_score never drops back down"
+            );
+            assert_eq!(
+                row.3, "critical",
+                "risk_level stays critical once max_session_bot_score hit 1.0"
+            );
+
+            sqlx::query("delete from ac_player_stats where subscriber_id = $1")
+                .bind(account_id)
+                .execute(&pool)
+                .await
+                .expect("cleanup ac_player_stats row");
+            sqlx::query("delete from accounts where id = $1")
+                .bind(account_id)
+                .execute(&pool)
+                .await
+                .expect("cleanup fixture account");
         }
     }
 }
