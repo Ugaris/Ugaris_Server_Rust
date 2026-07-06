@@ -5025,24 +5025,25 @@ pub(crate) fn apply_admin_character_command(
     }
 
     // C's Anti-Cheat Admin Commands family (`command.c:10148-10192`):
-    // `#achelp`/`#acstatus <name>`/`#acstats`/`#aclist`, all
-    // `CF_GOD|CF_STAFF`-gated, exact-word only (`cmdcmp`'s `minlen` equals
-    // each command's full length, so no abbreviation is accepted for
-    // any of them). See `crates/ugaris-core/src/world/anticheat.rs`'s
-    // module doc comment for why `#acstatus`/`#acstats`/`#aclist` need an
-    // async DB round trip in this codebase (unlike C's synchronous
-    // in-memory `player[nr]->ac` struct read): the online-name-scan (C's
-    // `ac_find_player`, `CF_PLAYER`-filtered, first match by iteration
-    // order - ties broken by ascending character id here for determinism,
-    // same convention as `world/clanmaster.rs`'s sibling helper) plus the
+    // `#achelp`/`#acstatus <name>`/`#acstats`/`#aclist`/`#acsuspicious`,
+    // all `CF_GOD|CF_STAFF`-gated, exact-word only (`cmdcmp`'s `minlen`
+    // equals each command's full length, so no abbreviation is accepted
+    // for any of them). See `crates/ugaris-core/src/world/anticheat.rs`'s
+    // module doc comment for why `#acstatus`/`#acstats`/`#aclist`/
+    // `#acsuspicious` need an async DB round trip in this codebase
+    // (unlike C's synchronous in-memory `player[nr]->ac` struct read):
+    // the online-name-scan (C's `ac_find_player`, `CF_PLAYER`-filtered,
+    // first match by iteration order - ties broken by ascending
+    // character id here for determinism, same convention as
+    // `world/clanmaster.rs`'s sibling helper) plus the
     // `PlayerRuntime::anticheat_session_id` lookup happen here,
     // synchronously, before queuing to `World` for the DB half. Only
-    // these four of the ~20-member family are ported this iteration (see
+    // these five of the ~20-member family are ported so far (see
     // `PORTING_TODO.md`'s remaining-text-commands task's REMAINING note);
     // `acreset`/`acflag`/`acunflag`/`actrust`/`acuntrust`/`acwatch`/
     // `achistory`/`acsessions`/`acviolations`/`acsharedip`/`acsharedhw`/
     // `achighrisk`/`aclookup`/`acsiglist`/`acsigadd`/`acsigdel`/
-    // `accleanup`/`acwarn`/`acsuspicious` remain unported.
+    // `accleanup`/`acwarn` remain unported.
     if lower == "achelp" {
         let Some(caller) = world.characters.get(&character_id) else {
             return Some(KeyringCommandResult::default());
@@ -5095,7 +5096,7 @@ pub(crate) fn apply_admin_character_command(
         });
     }
 
-    if lower == "acstatus" || lower == "acstats" || lower == "aclist" {
+    if lower == "acstatus" || lower == "acstats" || lower == "aclist" || lower == "acsuspicious" {
         let Some(caller) = world.characters.get(&character_id) else {
             return Some(KeyringCommandResult::default());
         };
@@ -5144,12 +5145,15 @@ pub(crate) fn apply_admin_character_command(
             return Some(KeyringCommandResult::default());
         }
 
-        // `#acstats`/`#aclist` (`ac_cmd_stats`/`ac_cmd_list`,
-        // `anticheat.c:604-628,721-753`): gather every currently online
-        // `CF_PLAYER` character with a known anticheat session - see
-        // module doc comment for why a player with no session (DB not
-        // configured, or the session row failed to create at login) is
-        // simply omitted rather than padded with defaults.
+        // `#acstats`/`#aclist`/`#acsuspicious` (`ac_cmd_stats`/
+        // `ac_cmd_list`/`ac_cmd_suspicious`, `anticheat.c:604-628,721-780`):
+        // gather every currently online `CF_PLAYER` character with a known
+        // anticheat session - see module doc comment for why a player with
+        // no session (DB not configured, or the session row failed to
+        // create at login) is simply omitted rather than padded with
+        // defaults. `#acsuspicious`'s own status >= AC_STATUS_SUSPICIOUS
+        // filter can't happen here since status only becomes known after
+        // the async DB round trip - see `apply_ac_suspicious_events`.
         let mut player_ids: Vec<CharacterId> = world
             .characters
             .values()
@@ -5167,8 +5171,10 @@ pub(crate) fn apply_admin_character_command(
             .collect();
         if lower == "acstats" {
             world.queue_ac_stats_lookup(character_id, targets);
-        } else {
+        } else if lower == "aclist" {
             world.queue_ac_list_lookup(character_id, targets);
+        } else {
+            world.queue_ac_suspicious_lookup(character_id, targets);
         }
         return Some(KeyringCommandResult::default());
     }

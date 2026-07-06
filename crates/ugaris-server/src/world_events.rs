@@ -2130,6 +2130,80 @@ pub(crate) async fn apply_ac_list_events(
     applied
 }
 
+/// `#acsuspicious`'s async DB round trip - see `ugaris-core`'s
+/// `world/anticheat.rs` module doc comment. Reproduces `ac_cmd_suspicious`
+/// (`anticheat.c:754-780`): one line per online `CF_PLAYER` character
+/// with a known anticheat session whose status is
+/// `>= AC_STATUS_SUSPICIOUS` (padding/color dropped, matching `/global`'s
+/// established plain-text simplification), in the same ascending-
+/// character-id order the command handler gathered `targets` in,
+/// followed by a trailing "Total: N players" count - or, if none
+/// qualify, C's own "No suspicious or flagged players online." (the
+/// zero-count message is genuinely different text from `#aclist`'s,
+/// copied letter for letter).
+pub(crate) async fn apply_ac_suspicious_events(
+    world: &mut World,
+    anticheat_repository: &Option<ugaris_db::PgAntiCheatRepository>,
+) -> usize {
+    let lookups = world.drain_pending_ac_suspicious_lookups();
+    if lookups.is_empty() {
+        return 0;
+    }
+    let Some(repository) = anticheat_repository else {
+        return 0;
+    };
+    let mut applied = 0;
+    for lookup in lookups {
+        let session_ids: Vec<i64> = lookup
+            .targets
+            .iter()
+            .map(|target| target.session_id)
+            .collect();
+        let Ok(sessions) = repository.find_sessions(&session_ids).await else {
+            continue;
+        };
+        let sessions_by_id: HashMap<i64, ugaris_db::AntiCheatSessionInfo> =
+            sessions.into_iter().collect();
+
+        world.queue_system_text(
+            lookup.caller_id,
+            "--- Suspicious/Flagged Players ---".to_string(),
+        );
+        let mut count = 0;
+        for target in &lookup.targets {
+            let Some(info) = sessions_by_id.get(&target.session_id) else {
+                continue;
+            };
+            if info.status < AC_STATUS_SUSPICIOUS {
+                continue;
+            }
+            world.queue_system_text(
+                lookup.caller_id,
+                format!(
+                    "{} - {} (Bot: {:.2}, HB: {}, State: {}, Chal: {})",
+                    target.name,
+                    ac_status_string(info.status),
+                    info.bot_score,
+                    info.heartbeat_violations,
+                    info.state_violations,
+                    info.challenge_failures
+                ),
+            );
+            count += 1;
+        }
+        if count == 0 {
+            world.queue_system_text(
+                lookup.caller_id,
+                "No suspicious or flagged players online.".to_string(),
+            );
+        } else {
+            world.queue_system_text(lookup.caller_id, format!("Total: {count} players"));
+        }
+        applied += 1;
+    }
+    applied
+}
+
 /// `/jail`/`/unjail`'s async DB round trip (C `lookup_name`,
 /// `system/lookup.c:42-98` + `system/database/database_lookup.c:57-83`):
 /// resolves every `World::drain_pending_jail_lookups` entry (queued by a
@@ -2569,6 +2643,36 @@ mod ac_list_tests {
         assert_eq!(applied, 0);
         assert!(world.drain_pending_system_texts().is_empty());
         assert!(world.drain_pending_ac_list_lookups().is_empty());
+    }
+}
+
+#[cfg(test)]
+mod ac_suspicious_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn no_lookups_queued_is_a_cheap_no_op() {
+        let mut world = World::default();
+        let applied = apply_ac_suspicious_events(&mut world, &None).await;
+        assert_eq!(applied, 0);
+        assert!(world.drain_pending_system_texts().is_empty());
+    }
+
+    #[tokio::test]
+    async fn missing_repository_leaves_the_lookup_queued_state_untouched_but_drained() {
+        let mut world = World::default();
+        world.queue_ac_suspicious_lookup(
+            CharacterId(7),
+            vec![AcOnlineTarget {
+                name: "Baddie".to_string(),
+                session_id: 42,
+            }],
+        );
+
+        let applied = apply_ac_suspicious_events(&mut world, &None).await;
+        assert_eq!(applied, 0);
+        assert!(world.drain_pending_system_texts().is_empty());
+        assert!(world.drain_pending_ac_suspicious_lookups().is_empty());
     }
 }
 

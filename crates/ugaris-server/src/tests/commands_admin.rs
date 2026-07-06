@@ -7654,7 +7654,8 @@ fn ls_produces_no_packet_when_dir_exceeds_two_hundred_bytes_but_still_confirms()
 }
 
 // C's Anti-Cheat Admin Commands (`command.c:10148-10192`): `#achelp`/
-// `#acstatus <name>`/`#acstats`/`#aclist`, `CF_GOD|CF_STAFF`-gated.
+// `#acstatus <name>`/`#acstats`/`#aclist`/`#acsuspicious`,
+// `CF_GOD|CF_STAFF`-gated.
 
 #[test]
 fn achelp_is_god_or_staff_only() {
@@ -7793,6 +7794,10 @@ fn acstats_and_aclist_are_god_or_staff_only() {
     assert!(
         apply_admin_character_command(&mut world, &mut runtime, target_id, "#aclist", 1).is_none()
     );
+    assert!(
+        apply_admin_character_command(&mut world, &mut runtime, target_id, "#acsuspicious", 1)
+            .is_none()
+    );
 }
 
 #[test]
@@ -7827,6 +7832,21 @@ fn acstats_and_aclist_only_gather_online_players_with_a_known_anticheat_session(
         .expect("god aclist should be recognized");
     assert_eq!(result.messages, Vec::<String>::new());
     let queued = world.drain_pending_ac_list_lookups();
+    assert_eq!(queued.len(), 1);
+    assert_eq!(queued[0].caller_id, god_id);
+    assert_eq!(
+        queued[0].targets,
+        vec![AcOnlineTarget {
+            name: "Target".to_string(),
+            session_id: 555,
+        }]
+    );
+
+    let result =
+        apply_admin_character_command(&mut world, &mut runtime, god_id, "#acsuspicious", 1)
+            .expect("god acsuspicious should be recognized");
+    assert_eq!(result.messages, Vec::<String>::new());
+    let queued = world.drain_pending_ac_suspicious_lookups();
     assert_eq!(queued.len(), 1);
     assert_eq!(queued[0].caller_id, god_id);
     assert_eq!(

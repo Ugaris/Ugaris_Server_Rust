@@ -8986,10 +8986,57 @@ Unlocks every quest NPC. Do these before any P4 area work.
   `acsigdel` (a whole unported bad-signature table); `accleanup` (thin
   wrapper over the already-ported `cleanup_old_records`, likely the next
   quick win); `acwarn` (issues a warning - needs the notes/karmalog
-  subsystem gap #(c) already named above); `acsuspicious` (same shape as
-  `aclist` but filtered to suspicious/flagged - should be a quick follow-
-  up now that the plumbing exists). None of gaps (b)-(g) from iteration
-  195's list are touched by this slice.
+  subsystem gap #(c) already named above). `acsuspicious` done (see
+  iteration 198). None of gaps (b)-(g) from iteration 195's list are
+  touched by this slice.
+
+  Progress Log (iteration 198): picked gap (a)'s other suggested quick
+  win - ported `#acsuspicious` (`ac_cmd_suspicious`, `anticheat.c:
+  754-780`, `command.c:10191-10192`), `CF_GOD|CF_STAFF`-gated, exact-word
+  only, the last of the three "same shape as `#aclist`" read-only display
+  commands (`#achelp` and the name-lookup-driven `#acstatus` were already
+  done). Gathers every online `CF_PLAYER` character with a known
+  anticheat session exactly like `#aclist`/`#acstats` already do (same
+  synchronous-gather-then-queue-to-`World` split forced by `World` having
+  no visibility into `PlayerRuntime`), but - unlike `#aclist`, which shows
+  every gathered target - `#acsuspicious` can only apply its
+  `status >= AC_STATUS_SUSPICIOUS` filter after the async DB round trip
+  resolves each session's actual status, so the filtering lives in the
+  new `apply_ac_suspicious_events` (`world_events.rs`), not in the
+  command handler. Added `ugaris-core`'s `world/anticheat.rs::
+  AcSuspiciousLookup` (+ `queue_ac_suspicious_lookup`/
+  `drain_pending_ac_suspicious_lookups`, `world/mod.rs`'s matching
+  `pending_ac_suspicious_lookups` field) and the `AC_STATUS_SUSPICIOUS =
+  2` constant (C `anticheat.h:84`) the new filter checks against.
+  Reproduced C's exact zero-count text ("No suspicious or flagged players
+  online.") as a genuinely different message from `#aclist`'s unconditional
+  "Total: N players" tail - confirmed by reading the whole C function body,
+  which only emits a count line when `count == 0` is false. `commands_admin.rs`
+  wires `#acsuspicious` into the existing shared `acstatus`/`acstats`/`aclist`
+  dispatch arm (extending its condition rather than adding a new one, since
+  the online-`CF_PLAYER`-with-a-session gather is identical); `main.rs`'s
+  tick loop calls the new `apply_ac_suspicious_events` right after
+  `apply_ac_list_events`. `#achelp`'s help text already listed
+  `#acsuspicious` (added preemptively by an earlier iteration), so no
+  help-text change was needed. 2 new tests in `ugaris-core`'s
+  `world/tests/anticheat.rs` (queue/drain round trip, the
+  `AC_STATUS_SUSPICIOUS` constant value), 2 new tests in `ugaris-server`'s
+  `world_events.rs` (`ac_suspicious_tests`: no-lookups no-op,
+  missing-repository no-op - the same shape as `ac_list_tests`/
+  `ac_stats_tests`, no live-DB status-filter test exists for those either,
+  so none was added here for consistency), and 2 assertions extended into
+  the existing `acstats_and_aclist_are_god_or_staff_only`/
+  `acstats_and_aclist_only_gather_online_players_with_a_known_anticheat_
+  session` tests in `tests/commands_admin.rs` (not new test functions, to
+  match the sibling pair's own established shape). `cargo fmt --all`,
+  `cargo test --workspace` (2053 ugaris-core [+2] + 57 db + 3 net + 44
+  protocol + 865 server [+2], all green, zero failures), `cargo build -p
+  ugaris-server` / `cargo build --workspace` clean with zero warnings,
+  10s boot-smoke confirmed "entering Rust game loop" with no panic.
+  REMAINING: `accleanup` (thin wrapper over `cleanup_old_records`) is now
+  the clear next quick win in gap (a); everything else in the family
+  still needs one of the architecture gaps this note and iteration 195's
+  already named.
 
 - [ ] **Cross-area transfer** - the big multi-server feature. Every
   cross-area teleport currently returns "target server down". Decide the

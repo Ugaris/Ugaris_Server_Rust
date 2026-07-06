@@ -1,10 +1,11 @@
-//! `#acstatus`, `#acstats`, `#aclist` admin/staff text commands (C
-//! `command.c:10149-10192` dispatch -> `ac_cmd_status`/`ac_cmd_stats`/
-//! `ac_cmd_list`, `src/module/anticheat/anticheat.c:473-543,604-628,
-//! 721-753`), all `CF_GOD|CF_STAFF`-gated, exact-word only (`cmdcmp`'s
-//! `minlen` equals each command's full length). `#achelp` (a fourth
-//! member of this same slice) is pure static text and needs no queue at
-//! all - it lives directly in `commands_admin.rs`.
+//! `#acstatus`, `#acstats`, `#aclist`, `#acsuspicious` admin/staff text
+//! commands (C `command.c:10149-10192` dispatch -> `ac_cmd_status`/
+//! `ac_cmd_stats`/`ac_cmd_list`/`ac_cmd_suspicious`,
+//! `src/module/anticheat/anticheat.c:473-543,604-628,721-780`), all
+//! `CF_GOD|CF_STAFF`-gated, exact-word only (`cmdcmp`'s `minlen` equals
+//! each command's full length). `#achelp` (a fifth member of this same
+//! slice) is pure static text and needs no queue at all - it lives
+//! directly in `commands_admin.rs`.
 //!
 //! C's `ac_cmd_*` family reads its data straight out of the in-memory
 //! `player[nr]->ac` struct, kept live by the detection engine
@@ -60,6 +61,17 @@ pub struct AcStatsLookup {
     pub targets: Vec<AcOnlineTarget>,
 }
 
+/// `#acsuspicious` (`ac_cmd_suspicious`, `anticheat.c:754-780`) - same
+/// gather shape as `#aclist`/`#acstats` (every online `CF_PLAYER`
+/// character with a known anticheat session), filtered down to
+/// suspicious-or-worse status after the DB round trip returns each
+/// session's current status.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AcSuspiciousLookup {
+    pub caller_id: CharacterId,
+    pub targets: Vec<AcOnlineTarget>,
+}
+
 impl World {
     pub fn queue_ac_status_lookup(
         &mut self,
@@ -95,6 +107,19 @@ impl World {
     pub fn drain_pending_ac_stats_lookups(&mut self) -> Vec<AcStatsLookup> {
         self.pending_ac_stats_lookups.drain(..).collect()
     }
+
+    pub fn queue_ac_suspicious_lookup(
+        &mut self,
+        caller_id: CharacterId,
+        targets: Vec<AcOnlineTarget>,
+    ) {
+        self.pending_ac_suspicious_lookups
+            .push(AcSuspiciousLookup { caller_id, targets });
+    }
+
+    pub fn drain_pending_ac_suspicious_lookups(&mut self) -> Vec<AcSuspiciousLookup> {
+        self.pending_ac_suspicious_lookups.drain(..).collect()
+    }
 }
 
 /// C `ac_status_string` (`anticheat.c:436-449`).
@@ -107,3 +132,8 @@ pub fn ac_status_string(status: i32) -> &'static str {
         _ => "unknown",
     }
 }
+
+/// C `AC_STATUS_SUSPICIOUS` (`anticheat.h:84`) - the threshold
+/// `ac_cmd_suspicious` (`anticheat.c:762`, `player[nr]->ac.status <
+/// AC_STATUS_SUSPICIOUS`) filters against.
+pub const AC_STATUS_SUSPICIOUS: i32 = 2;

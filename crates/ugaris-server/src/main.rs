@@ -178,7 +178,7 @@ use ugaris_core::{
         ClubmasterEvent, DungeonRaidBuildRequest, FirstKillCheck, GateWelcomeOutcomeEvent,
         GateWelcomePlayerFacts, LegacyHurtEvent, LookMapRequest, LootKiller, LootRegistry,
         MerchantTradeResult, PendingDeathLootRoll, RaiseSkillOutcome, StealOutcome, StoreWare,
-        TraderEvent, WorldActionCompletion, MERCHANT_STORE_SIZE,
+        TraderEvent, WorldActionCompletion, AC_STATUS_SUSPICIOUS, MERCHANT_STORE_SIZE,
     },
     zone::ZoneLoader,
     ServerConfig, TickRate, World,
@@ -6617,6 +6617,15 @@ async fn main() -> anyhow::Result<()> {
                         ac_list_events_applied,
                         tick = world.tick.0,
                         "applied #aclist lookups"
+                    );
+                }
+                let ac_suspicious_events_applied =
+                    apply_ac_suspicious_events(&mut world, &anticheat_repository).await;
+                if ac_suspicious_events_applied != 0 {
+                    info!(
+                        ac_suspicious_events_applied,
+                        tick = world.tick.0,
+                        "applied #acsuspicious lookups"
                     );
                 }
                 // `/jail`/`/unjail <name>`'s async DB round-trip (C
