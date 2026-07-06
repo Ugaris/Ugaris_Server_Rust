@@ -45,6 +45,7 @@ mod military;
 mod npc_fight;
 mod npc_idle;
 mod npc_messages;
+mod player_driver;
 mod punish;
 mod querystats;
 mod regen;

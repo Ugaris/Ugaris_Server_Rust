@@ -11340,6 +11340,78 @@ Unlocks every quest NPC. Do these before any P4 area work.
   real consumer, whichever `player_driver.c:1050-1075`'s surrounding
   context (read it in full first) shows fires more often in practice.
 
+  REMAINING: (iteration 237) did the first half of the choice flagged
+  above: ported `player_driver.c:1067-1070`'s autobless/autopulse
+  consumer as new `World::process_player_autobless_autopulse`
+  (`crates/ugaris-core/src/world/player_driver.rs`, a new file - this is
+  the first slice of C's actual `player_driver` function itself, as
+  opposed to `lostcon_driver`/the fight-driver engine it wraps). Verified
+  in `do.c` that neither `do_bless` nor `do_pulse` gate on
+  `ch[cn].action`, and confirmed via `act.c:2223-2242`
+  (`char_driver`/`player_driver` is only ever invoked once
+  `ch[n].step >= ch[n].duration` and `ch[n].action` has already been
+  reset to `0` for that tick) that this codebase's existing convention of
+  skipping busy characters (`setup_world_actions`'s
+  `character.action != 0` continue-guard) is the correct Rust-side
+  equivalent of "only runs when the previous action just finished" - not
+  an invented gate. `fight_driver_pulse_value` is the already-ported
+  `simple_baddy_pulse_value` (`npc_fight.rs`; not NPC-specific despite
+  the name, confirmed by reading its body: no driver-kind check
+  anywhere). C's explicit `may_add_spell(cn, IDR_BLESS)` pre-check is
+  redundant with `do_bless`'s own internal `may_add_spell` gate, so it is
+  not duplicated, matching the `process_lostcon_self_care_postcascade`
+  precedent for the same spell. Wired into `main.rs`'s tick loop
+  immediately before `runtime.setup_world_actions` (matching C's real
+  ordering: the autobless/autopulse `return` pre-empts the queued-action
+  `switch` that follows it in `player_driver`), iterating
+  `runtime.players.values()` (every connected, non-lostcon session) with
+  the same busy-character skip `setup_world_actions` already uses. 9 new
+  tests (`world/tests/player_driver.rs`): bless fires when enabled/
+  affordable/known, no-ops when the toggle is off/the spell is unknown/
+  mana is too low, pulse fires when enabled and a target makes it
+  worthwhile (scenario lifted from the existing
+  `simple_baddy_fight_tasks_honor_legacy_nopulse_gate` NPC-side pulse
+  test, confirming the shared engine really is driver-kind-agnostic),
+  no-ops when the toggle is off or no target justifies it, bless takes
+  priority over pulse when both fire the same tick (matches C's
+  sequential `if...return` chain), and a missing-character guard. `cargo
+  fmt --all`, `cargo test --workspace` (2204 ugaris-core [+9] + 78 db + 3
+  net + 45 protocol + 1073 server, all green, zero failures), `cargo
+  build -p ugaris-server`/`--workspace` clean with zero warnings, 10s
+  boot-smoke confirmed "entering Rust game loop" with no panic (no live
+  players connected during this smoke test, so the new per-tick loop was
+  a no-op in practice, exercised only by the new unit tests). This task
+  stays `[~]`: while reading `death.c` to plan the second half, found
+  that `player_use_potion`/`player_use_recall` (`tool.c:3986-4033`) are
+  *not* actually normal-connected-player-tick consumers as the prior
+  iteration's note assumed - they are called from `death.c:1211-1216`'s
+  hurt/damage-application path, gated on `ch[cn].flags & CF_PLAYER &&
+  ch[cn].driver == CDR_LOSTCON` (i.e. only for a lingering character that
+  just took damage, not every tick and not for a normally-connected
+  player at all) - so this is actually still part of the *lostcon*
+  self-defense half of this task, triggered from the hurt path rather
+  than `lostcon_driver`'s own per-tick body. `player_use_potion` drinks an
+  `IDR_POTION` item with a life component (`drdata[1]`, gated by
+  `nolife`/`nocombo` on whether it's also a combo potion) when hp drops
+  under 50% max, `player_use_recall` uses an `IDR_RECALL` item
+  (level-gated `drdata[0] >= ch[cn].level`) when hp drops under 40% max
+  and not `norecall`, unless hp is already below the death threshold
+  (`POWERSCALE / 2`, checked first - don't recall after already dying).
+  Next iteration: port both as new `World` methods (`world/lostcon.rs`
+  is the natural home - same `no*` toggle family, same `LostconSelfCare
+  Suppressions`-shaped inputs, just missing `norecall`/needs a new
+  distinct life-potion search alongside the existing `find_lostcon_mana_
+  potion`), then wire them into the hurt/damage path
+  (`crates/ugaris-core/src/world/hurt.rs::apply_legacy_hurt`, which does
+  not yet have a `CDR_LOSTCON`-specific branch at all - check whether
+  `apply_legacy_hurt` already knows the attacker/damage amount needed or
+  whether the call needs to happen from the `ugaris-server` caller side
+  instead) for every character with `driver == CDR_LOSTCON` taking
+  damage, matching `death.c:1211-1216`'s exact placement (after damage is
+  applied and the sound-effect check, before the death-threshold check).
+  Once that's ported, every `no*`/`auto*` toggle in the whole family will
+  have a real gameplay consumer and this task can finally close.
+
 - [ ] **Macro-detection engine (`macro_driver`, `src/module/base.c:802-
   1243`, ~800 lines)** - anti-macro/anti-bot detection: activity
   tracking, math/type-word/reverse/multiple-choice challenge generation

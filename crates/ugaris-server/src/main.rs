@@ -2833,6 +2833,43 @@ async fn main() -> anyhow::Result<()> {
                     }
                     info!(feedback_sessions, inventory_sessions, container_sessions, name_sessions, tick = world.tick.0, "processed text/container commands");
                 }
+                // C `player_driver.c:1067-1070`'s autobless/autopulse
+                // consumer, run for every connected (non-lostcon) player
+                // once their previous action has finished
+                // (`character.action == 0`, mirroring C's own
+                // `char_driver`-is-only-called-when-`ch[n].action` was
+                // just reset invocation contract, `act.c:2223-2242`) and
+                // before `setup_world_actions` dispatches whatever is
+                // queued next - matching C's own ordering, where a
+                // successful autobless/autopulse `return`s before the
+                // queued-action `switch` ever runs.
+                let mut autobless_autopulse_casts = 0;
+                for player in runtime.players.values() {
+                    let Some(character_id) = player.character_id else {
+                        continue;
+                    };
+                    if !player.autobless_enabled && !player.autopulse_enabled {
+                        continue;
+                    }
+                    if world
+                        .characters
+                        .get(&character_id)
+                        .is_none_or(|character| character.action != 0)
+                    {
+                        continue;
+                    }
+                    if world.process_player_autobless_autopulse(
+                        character_id,
+                        player.autobless_enabled,
+                        player.autopulse_enabled,
+                    ) {
+                        autobless_autopulse_casts += 1;
+                    }
+                }
+                if autobless_autopulse_casts != 0 {
+                    info!(autobless_autopulse_casts, tick = world.tick.0, "queued player autobless/autopulse actions");
+                }
+
                 let setup_count = runtime.setup_world_actions(&mut world, config.area_id);
                 if setup_count != 0 {
                     info!(count = setup_count, tick = world.tick.0, "prepared player actions");
