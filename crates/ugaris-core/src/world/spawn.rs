@@ -13,7 +13,28 @@ pub(crate) const EDEMON_GATE_MODE0_POSITIONS: [(u16, u16); 7] = [
 pub(crate) const EDEMON_GATE_MODE1_SLOT_BASE: usize = 404;
 
 impl World {
-    pub fn add_character(&mut self, character: Character) {
+    pub fn add_character(&mut self, mut character: Character) {
+        // Backfill the independent `DRD_FIGHTDRIVER` slot
+        // (`Character::fight_driver`) from a `SimpleBaddyDriverData` that
+        // was constructed directly (bypassing
+        // `apply_simple_baddy_create_message`, the normal zone-load path
+        // that already seeds it) - e.g. hand-built test fixtures, or a
+        // pre-migration DB save deserialized with `fight_driver: None`.
+        // Mirrors C's `fight_driver_set_dist` always being able to derive
+        // the same distances from `simple_baddy`'s own copy.
+        if character.fight_driver.is_none() {
+            if let Some(CharacterDriverState::SimpleBaddy(data)) = character.driver_state.as_ref() {
+                character.fight_driver = Some(FightDriverData {
+                    enemies: data.enemies.clone(),
+                    start_dist: data.startdist,
+                    stop_dist: data.stopdist,
+                    char_dist: data.chardist,
+                    home_x: data.home_x,
+                    home_y: data.home_y,
+                    last_hit: data.last_hit,
+                });
+            }
+        }
         if self
             .map
             .tile(usize::from(character.x), usize::from(character.y))

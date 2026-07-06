@@ -207,14 +207,7 @@ impl World {
         let target_x = target_x as u16;
         let target_y = target_y as u16;
         if character.x == target_x && character.y == target_y {
-            if let Some(CharacterDriverState::SimpleBaddy(data)) = self
-                .characters
-                .get_mut(&character_id)
-                .and_then(|character| character.driver_state.as_mut())
-            {
-                data.home_x = target_x;
-                data.home_y = target_y;
-            }
+            let _ = self.set_simple_baddy_home(character_id, target_x, target_y);
             if target_dir != 0 {
                 if let Some(character) = self.characters.get_mut(&character_id) {
                     let _ = turn(character, target_dir as u8);

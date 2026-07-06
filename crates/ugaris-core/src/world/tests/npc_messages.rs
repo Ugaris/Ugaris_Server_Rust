@@ -361,11 +361,10 @@ fn simple_baddy_message_actions_add_npc_alert_enemy_for_same_group_caller() {
     let outcomes = world.process_simple_baddy_message_actions(CharacterId(1), 1);
 
     assert_eq!(outcomes, vec![ItemDriverOutcome::Noop]);
-    let Some(CharacterDriverState::SimpleBaddy(data)) =
-        world.characters[&CharacterId(1)].driver_state.as_ref()
-    else {
-        panic!("simple baddy state missing");
-    };
+    let data = world.characters[&CharacterId(1)]
+        .fight_driver
+        .as_ref()
+        .expect("fight driver state missing");
     assert_eq!(
         data.enemies,
         vec![SimpleBaddyEnemy {
@@ -401,11 +400,10 @@ fn simple_baddy_npc_alert_enemy_is_recorded_hidden_like_c() {
     let outcomes = world.process_simple_baddy_message_actions(CharacterId(1), 1);
 
     assert_eq!(outcomes, vec![ItemDriverOutcome::Noop]);
-    let Some(CharacterDriverState::SimpleBaddy(data)) =
-        world.characters[&CharacterId(1)].driver_state.as_ref()
-    else {
-        panic!("simple baddy state missing");
-    };
+    let data = world.characters[&CharacterId(1)]
+        .fight_driver
+        .as_ref()
+        .expect("fight driver state missing");
     assert_eq!(
         data.enemies,
         vec![SimpleBaddyEnemy {
@@ -450,11 +448,10 @@ fn simple_baddy_message_actions_remove_dead_enemy() {
     let outcomes = world.process_simple_baddy_message_actions(CharacterId(1), 1);
 
     assert_eq!(outcomes, vec![ItemDriverOutcome::Noop]);
-    let Some(CharacterDriverState::SimpleBaddy(data)) =
-        world.characters[&CharacterId(1)].driver_state.as_ref()
-    else {
-        panic!("simple baddy state missing");
-    };
+    let data = world.characters[&CharacterId(1)]
+        .fight_driver
+        .as_ref()
+        .expect("fight driver state missing");
     assert_eq!(data.enemies.len(), 1);
     assert_eq!(data.enemies[0].target_id, CharacterId(3));
 }
@@ -478,11 +475,10 @@ fn simple_baddy_message_actions_add_aggressive_seen_character_enemy() {
     let outcomes = world.process_simple_baddy_message_actions(CharacterId(1), 1);
 
     assert_eq!(outcomes, vec![ItemDriverOutcome::Noop]);
-    let Some(CharacterDriverState::SimpleBaddy(data)) =
-        world.characters[&CharacterId(1)].driver_state.as_ref()
-    else {
-        panic!("simple baddy state missing");
-    };
+    let data = world.characters[&CharacterId(1)]
+        .fight_driver
+        .as_ref()
+        .expect("fight driver state missing");
     assert_eq!(
         data.enemies,
         vec![SimpleBaddyEnemy {
@@ -520,11 +516,10 @@ fn simple_baddy_enemy_memory_sorts_and_caps_like_c_table() {
 
     world.sort_simple_baddy_enemies_like_c(CharacterId(1));
 
-    let Some(CharacterDriverState::SimpleBaddy(data)) =
-        world.characters[&CharacterId(1)].driver_state.as_ref()
-    else {
-        panic!("simple baddy state missing");
-    };
+    let data = world.characters[&CharacterId(1)]
+        .fight_driver
+        .as_ref()
+        .expect("fight driver state missing");
     assert_eq!(data.enemies.len(), 10);
     assert_eq!(data.enemies[0].target_id, CharacterId(12));
     assert_eq!(data.enemies[1].target_id, CharacterId(2));
@@ -587,11 +582,10 @@ fn simple_baddy_message_actions_use_explicit_fight_driver_home_for_start_distanc
     let outcomes = world.process_simple_baddy_message_actions(CharacterId(1), 1);
 
     assert_eq!(outcomes, vec![ItemDriverOutcome::Noop]);
-    let Some(CharacterDriverState::SimpleBaddy(data)) =
-        world.characters[&CharacterId(1)].driver_state.as_ref()
-    else {
-        panic!("simple baddy state missing");
-    };
+    let data = world.characters[&CharacterId(1)]
+        .fight_driver
+        .as_ref()
+        .expect("fight driver state missing");
     assert_eq!(data.home_x, 14);
     assert_eq!(data.home_y, 10);
     assert_eq!(data.enemies.len(), 1);
@@ -654,11 +648,10 @@ fn simple_baddy_message_actions_keeps_hurt_enemy_in_neutral_zone() {
     let outcomes = world.process_simple_baddy_message_actions(CharacterId(1), 1);
 
     assert_eq!(outcomes, vec![ItemDriverOutcome::Noop]);
-    let Some(CharacterDriverState::SimpleBaddy(data)) =
-        world.characters[&CharacterId(1)].driver_state.as_ref()
-    else {
-        panic!("simple baddy state missing");
-    };
+    let data = world.characters[&CharacterId(1)]
+        .fight_driver
+        .as_ref()
+        .expect("fight driver state missing");
     assert_eq!(
         data.enemies,
         vec![SimpleBaddyEnemy {
@@ -694,11 +687,10 @@ fn simple_baddy_message_actions_keeps_hurt_enemy_outside_start_or_char_distance(
     let outcomes = world.process_simple_baddy_message_actions(CharacterId(1), 1);
 
     assert_eq!(outcomes, vec![ItemDriverOutcome::Noop]);
-    let Some(CharacterDriverState::SimpleBaddy(data)) =
-        world.characters[&CharacterId(1)].driver_state.as_ref()
-    else {
-        panic!("simple baddy state missing");
-    };
+    let data = world.characters[&CharacterId(1)]
+        .fight_driver
+        .as_ref()
+        .expect("fight driver state missing");
     assert_eq!(data.last_hit, 325);
     assert_eq!(data.enemies.len(), 1);
     assert_eq!(data.enemies[0].target_id, CharacterId(2));
@@ -725,11 +717,10 @@ fn simple_baddy_message_actions_rejects_legacy_out_of_map_enemy_coordinate() {
     let outcomes = world.process_simple_baddy_message_actions(CharacterId(1), 1);
 
     assert_eq!(outcomes, vec![ItemDriverOutcome::Noop]);
-    let Some(CharacterDriverState::SimpleBaddy(data)) =
-        world.characters[&CharacterId(1)].driver_state.as_ref()
-    else {
-        panic!("simple baddy state missing");
-    };
+    let data = world.characters[&CharacterId(1)]
+        .fight_driver
+        .as_ref()
+        .expect("fight driver state missing");
     assert_eq!(data.last_hit, 326);
     assert!(data.enemies.is_empty());
 }
@@ -771,9 +762,10 @@ fn simple_baddy_attack_keeps_hidden_enemy_beyond_stopdist_like_c() {
     let npc = world.characters.get(&CharacterId(1)).unwrap();
     assert_eq!(npc.action, action::WALK);
     assert_eq!((npc.tox, npc.toy), (10, 11));
-    let Some(CharacterDriverState::SimpleBaddy(data)) = npc.driver_state.as_ref() else {
-        panic!("simple baddy state missing");
-    };
+    let data = npc
+        .fight_driver
+        .as_ref()
+        .expect("fight driver state missing");
     assert_eq!(data.enemies.len(), 1);
     assert_eq!(data.enemies[0].target_id, CharacterId(2));
     assert!(!data.enemies[0].visible);
@@ -807,11 +799,10 @@ fn simple_baddy_attack_drops_visible_enemy_beyond_stopdist_like_c() {
 
     assert!(!world.process_simple_baddy_attack_action(CharacterId(1), 1));
 
-    let Some(CharacterDriverState::SimpleBaddy(data)) =
-        world.characters[&CharacterId(1)].driver_state.as_ref()
-    else {
-        panic!("simple baddy state missing");
-    };
+    let data = world.characters[&CharacterId(1)]
+        .fight_driver
+        .as_ref()
+        .expect("fight driver state missing");
     assert!(data.enemies.is_empty());
 }
 
@@ -839,11 +830,10 @@ fn simple_baddy_message_actions_add_defensive_gothit_enemy_without_sight() {
     let outcomes = world.process_simple_baddy_message_actions(CharacterId(1), 1);
 
     assert_eq!(outcomes, vec![ItemDriverOutcome::Noop]);
-    let Some(CharacterDriverState::SimpleBaddy(data)) =
-        world.characters[&CharacterId(1)].driver_state.as_ref()
-    else {
-        panic!("simple baddy state missing");
-    };
+    let data = world.characters[&CharacterId(1)]
+        .fight_driver
+        .as_ref()
+        .expect("fight driver state missing");
     assert_eq!(data.last_hit, 322);
     assert_eq!(
         data.enemies,
@@ -880,11 +870,10 @@ fn simple_baddy_message_actions_helper_seen_hit_adds_enemy_for_friend() {
     let outcomes = world.process_simple_baddy_message_actions(CharacterId(1), 1);
 
     assert_eq!(outcomes, vec![ItemDriverOutcome::Noop]);
-    let Some(CharacterDriverState::SimpleBaddy(data)) =
-        world.characters[&CharacterId(1)].driver_state.as_ref()
-    else {
-        panic!("simple baddy state missing");
-    };
+    let data = world.characters[&CharacterId(1)]
+        .fight_driver
+        .as_ref()
+        .expect("fight driver state missing");
     assert_eq!(
         data.enemies,
         vec![SimpleBaddyEnemy {
@@ -1336,11 +1325,10 @@ fn simple_baddy_attack_action_removes_visible_enemy_past_stop_distance() {
 
     assert!(!world.process_simple_baddy_attack_action(CharacterId(1), 1));
 
-    let Some(CharacterDriverState::SimpleBaddy(data)) =
-        world.characters[&CharacterId(1)].driver_state.as_ref()
-    else {
-        panic!("simple baddy state missing");
-    };
+    let data = world.characters[&CharacterId(1)]
+        .fight_driver
+        .as_ref()
+        .expect("fight driver state missing");
     assert!(data.enemies.is_empty());
 }
 
@@ -1404,10 +1392,9 @@ fn simple_baddy_attack_action_drops_invisible_enemy_at_last_position() {
 
     assert!(!world.process_simple_baddy_attack_action(CharacterId(1), 1));
 
-    let Some(CharacterDriverState::SimpleBaddy(data)) =
-        world.characters[&CharacterId(1)].driver_state.as_ref()
-    else {
-        panic!("simple baddy state missing");
-    };
+    let data = world.characters[&CharacterId(1)]
+        .fight_driver
+        .as_ref()
+        .expect("fight driver state missing");
     assert!(data.enemies.is_empty());
 }

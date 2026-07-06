@@ -463,6 +463,7 @@ impl ZoneLoader {
             driver_memory: crate::character_driver::DriverMemory::default(),
             class: template.class,
             dungeonfighter: None,
+            fight_driver: None,
         };
 
         if template.driver == CDR_SIMPLEBADDY {

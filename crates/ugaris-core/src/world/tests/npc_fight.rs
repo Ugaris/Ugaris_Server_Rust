@@ -2191,9 +2191,10 @@ fn simple_baddy_attack_action_uses_explicit_fight_driver_home_for_stop_distance(
 
     let npc = world.characters.get(&CharacterId(1)).unwrap();
     assert_eq!(npc.action, action::WALK);
-    let Some(CharacterDriverState::SimpleBaddy(data)) = npc.driver_state.as_ref() else {
-        panic!("simple baddy state missing");
-    };
+    let data = npc
+        .fight_driver
+        .as_ref()
+        .expect("fight driver state missing");
     assert_eq!(data.home_x, 14);
     assert_eq!(data.home_y, 10);
     assert_eq!(data.enemies.len(), 1);

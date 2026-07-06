@@ -146,12 +146,19 @@ impl World {
                     applied.push(ItemDriverOutcome::Noop);
                 }
                 SimpleBaddyMessageOutcome::NoteHit => {
-                    if let Some(CharacterDriverState::SimpleBaddy(data)) = self
-                        .characters
-                        .get_mut(&character_id)
-                        .and_then(|character| character.driver_state.as_mut())
-                    {
-                        data.last_hit = self.tick.0 as i32;
+                    // C `fight_driver_note_hit` (`drvlib.c:2139-2147`): writes
+                    // the independent `DRD_FIGHTDRIVER` slot's `lasthit`,
+                    // not `simple_baddy`'s own data.
+                    if let Some(character) = self.characters.get_mut(&character_id) {
+                        if matches!(
+                            character.driver_state.as_ref(),
+                            Some(CharacterDriverState::SimpleBaddy(_))
+                        ) {
+                            character
+                                .fight_driver
+                                .get_or_insert_with(FightDriverData::default)
+                                .last_hit = self.tick.0 as i32;
+                        }
                     }
                 }
             }
@@ -165,36 +172,14 @@ impl World {
     ) -> Vec<CharacterId> {
         self.characters
             .get(&character_id)
-            .and_then(|character| match character.driver_state.as_ref()? {
-                CharacterDriverState::SimpleBaddy(data) => Some(
-                    data.enemies
-                        .iter()
-                        .map(|enemy| enemy.target_id)
-                        .collect::<Vec<_>>(),
-                ),
-                CharacterDriverState::Clara(_)
-                | CharacterDriverState::TwoSkelly(_)
-                | CharacterDriverState::Lab2Undead(_)
-                | CharacterDriverState::Merchant(_)
-                | CharacterDriverState::Aclerk(_)
-                | CharacterDriverState::Lostcon(_)
-                | CharacterDriverState::Bank(_)
-                | CharacterDriverState::Trader(_)
-                | CharacterDriverState::Janitor(_)
-                | CharacterDriverState::GateWelcome(_)
-                | CharacterDriverState::GateFight(_)
-                | CharacterDriverState::Clanmaster(_)
-                | CharacterDriverState::ClanFound(_)
-                | CharacterDriverState::Clanclerk(_)
-                | CharacterDriverState::Clubmaster(_)
-                | CharacterDriverState::MilitaryMaster(_)
-                | CharacterDriverState::MilitaryAdvisor(_)
-                | CharacterDriverState::ArenaMaster(_)
-                | CharacterDriverState::ArenaFighter(_)
-                | CharacterDriverState::ArenaManager(_)
-                | CharacterDriverState::Dungeonmaster(_)
-                | CharacterDriverState::Dungeonfighter(_) => None,
+            .filter(|character| {
+                matches!(
+                    character.driver_state.as_ref(),
+                    Some(CharacterDriverState::SimpleBaddy(_))
+                )
             })
+            .and_then(|character| character.fight_driver.as_ref())
+            .map(|data| data.enemies.iter().map(|enemy| enemy.target_id).collect())
             .unwrap_or_default()
     }
 
@@ -206,7 +191,13 @@ impl World {
         let Some((visible, last_x, last_y)) = tracking else {
             return;
         };
-        let Some(CharacterDriverState::SimpleBaddy(data)) = character.driver_state.as_mut() else {
+        if !matches!(
+            character.driver_state.as_ref(),
+            Some(CharacterDriverState::SimpleBaddy(_))
+        ) {
+            return;
+        }
+        let Some(data) = character.fight_driver.as_mut() else {
             return;
         };
         if let Some(enemy) = data
@@ -224,9 +215,15 @@ impl World {
         &mut self,
         attacker: &Character,
     ) -> Vec<SimpleBaddyEnemy> {
-        let enemies = match attacker.driver_state.as_ref() {
-            Some(CharacterDriverState::SimpleBaddy(data)) => data.enemies.clone(),
-            _ => return Vec::new(),
+        if !matches!(
+            attacker.driver_state.as_ref(),
+            Some(CharacterDriverState::SimpleBaddy(_))
+        ) {
+            return Vec::new();
+        }
+        let enemies = match attacker.fight_driver.as_ref() {
+            Some(data) => data.enemies.clone(),
+            None => return Vec::new(),
         };
         let mut updated = Vec::new();
         for mut enemy in enemies {
@@ -250,15 +247,15 @@ impl World {
         }
 
         if let Some(character) = self.characters.get_mut(&attacker.id) {
-            if let Some(CharacterDriverState::SimpleBaddy(data)) = character.driver_state.as_mut() {
+            if let Some(data) = character.fight_driver.as_mut() {
                 data.enemies = updated.clone();
             }
         }
         self.sort_simple_baddy_enemies_like_c(attacker.id);
-        if let Some(CharacterDriverState::SimpleBaddy(data)) = self
+        if let Some(data) = self
             .characters
             .get(&attacker.id)
-            .and_then(|character| character.driver_state.as_ref())
+            .and_then(|character| character.fight_driver.as_ref())
         {
             return data.enemies.clone();
         }
@@ -269,9 +266,9 @@ impl World {
         let Some(attacker) = self.characters.get(&character_id).cloned() else {
             return;
         };
-        let mut enemies = match attacker.driver_state.as_ref() {
-            Some(CharacterDriverState::SimpleBaddy(data)) => data.enemies.clone(),
-            _ => return,
+        let mut enemies = match attacker.fight_driver.as_ref() {
+            Some(data) => data.enemies.clone(),
+            None => return,
         };
         enemies.sort_by(|left, right| {
             let left_distance = attacker.x.abs_diff(left.last_x) + attacker.y.abs_diff(left.last_y);
@@ -296,10 +293,10 @@ impl World {
                 .then_with(|| right_facing.cmp(&left_facing))
         });
         enemies.truncate(10);
-        if let Some(CharacterDriverState::SimpleBaddy(data)) = self
+        if let Some(data) = self
             .characters
             .get_mut(&character_id)
-            .and_then(|character| character.driver_state.as_mut())
+            .and_then(|character| character.fight_driver.as_mut())
         {
             data.enemies = enemies;
         }
@@ -310,19 +307,26 @@ impl World {
         character: &Character,
         target: &Character,
     ) -> bool {
-        let Some(CharacterDriverState::SimpleBaddy(data)) = character.driver_state.as_ref() else {
+        let Some(data) = character.fight_driver.as_ref() else {
             return false;
         };
-        data.stopdist != 0 && self.simple_baddy_target_home_dist(character, target) > data.stopdist
+        data.stop_dist != 0
+            && self.simple_baddy_target_home_dist(character, target) > data.stop_dist
     }
 
     pub fn set_simple_baddy_home(&mut self, character_id: CharacterId, x: u16, y: u16) -> bool {
         let Some(character) = self.characters.get_mut(&character_id) else {
             return false;
         };
-        let Some(CharacterDriverState::SimpleBaddy(data)) = character.driver_state.as_mut() else {
+        if !matches!(
+            character.driver_state.as_ref(),
+            Some(CharacterDriverState::SimpleBaddy(_))
+        ) {
             return false;
-        };
+        }
+        let data = character
+            .fight_driver
+            .get_or_insert_with(FightDriverData::default);
         data.home_x = x;
         data.home_y = y;
         true
@@ -412,15 +416,15 @@ impl World {
         character: &Character,
         target: &Character,
     ) -> bool {
-        let Some(CharacterDriverState::SimpleBaddy(data)) = character.driver_state.as_ref() else {
+        let Some(data) = character.fight_driver.as_ref() else {
             return false;
         };
-        if data.startdist != 0
-            && self.simple_baddy_target_home_dist(character, target) > data.startdist
+        if data.start_dist != 0
+            && self.simple_baddy_target_home_dist(character, target) > data.start_dist
         {
             return false;
         }
-        if data.chardist != 0 && char_dist(character, target) > data.chardist {
+        if data.char_dist != 0 && char_dist(character, target) > data.char_dist {
             return false;
         }
         true
@@ -431,10 +435,8 @@ impl World {
         character: &Character,
         target: &Character,
     ) -> i32 {
-        let (home_x, home_y) = match character.driver_state.as_ref() {
-            Some(CharacterDriverState::SimpleBaddy(data)) if data.home_x != 0 => {
-                (data.home_x, data.home_y)
-            }
+        let (home_x, home_y) = match character.fight_driver.as_ref() {
+            Some(data) if data.home_x != 0 => (data.home_x, data.home_y),
             _ if character.rest_x != 0 => (character.rest_x, character.rest_y),
             _ => (character.x, character.y),
         };

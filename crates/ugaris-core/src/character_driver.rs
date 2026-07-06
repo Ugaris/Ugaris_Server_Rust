@@ -2283,6 +2283,47 @@ pub struct SimpleBaddyEnemy {
     pub last_y: u16,
 }
 
+/// C `struct fight_driver_data` (`src/common/fight.h:27-37`), stored via
+/// `set_data(cn, DRD_FIGHTDRIVER, ...)` - a slot independent of whichever
+/// `driver`/`driver_state` a character currently has (C's `set_data` lets
+/// one character hold named data blobs for several drivers/subsystems at
+/// once; the `simple_baddy` driver's own `startdist`/`chardist`/`stopdist`/
+/// `lastfight` fields on [`SimpleBaddyDriverData`] are a *different*,
+/// simple_baddy-owned copy only used to seed this one once at creation via
+/// `fight_driver_set_dist`, `simple_baddy.c:189` - see
+/// `apply_simple_baddy_create_message`). Lives on the dedicated
+/// [`crate::entity::Character::fight_driver`] field, mirroring the
+/// existing `Character::dungeonfighter` precedent, so any character
+/// (SimpleBaddy NPC, lostcon corpse, or a normal playing character with a
+/// `no*`/`auto*` toggle set) can drive `fight_driver_attack_enemy`'s
+/// enemy-tracking without needing a `SimpleBaddyDriverData` of its own.
+#[derive(Debug, Clone, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+pub struct FightDriverData {
+    /// C `struct person enemy[10]`.
+    #[serde(default)]
+    pub enemies: Vec<SimpleBaddyEnemy>,
+    /// C `start_dist`: distance from home at which to start attacking.
+    #[serde(default)]
+    pub start_dist: i32,
+    /// C `stop_dist`: distance from home at which to stop attacking.
+    #[serde(default)]
+    pub stop_dist: i32,
+    /// C `char_dist`: distance from the character we start attacking.
+    #[serde(default)]
+    pub char_dist: i32,
+    /// C `home_x`/`home_y`: position `start_dist`/`stop_dist` are measured
+    /// from; falls back to the respawn point (then current position) when
+    /// zero, exactly like `fight_driver_dist_from_home`.
+    #[serde(default)]
+    pub home_x: u16,
+    #[serde(default)]
+    pub home_y: u16,
+    /// C `lasthit`: tick of the last `fight_driver_note_hit` call, read by
+    /// `fight_driver_regen_value`'s post-hit regen-suppression window.
+    #[serde(default)]
+    pub last_hit: i32,
+}
+
 impl Default for SimpleBaddyDriverData {
     fn default() -> Self {
         Self {
@@ -2461,6 +2502,18 @@ pub fn apply_simple_baddy_create_message(
     };
 
     data.creation_time = current_tick;
+    // C `fight_driver_set_dist(cn, dat->startdist, dat->chardist,
+    // dat->stopdist)` (`simple_baddy.c:189`): seeds the independent
+    // `DRD_FIGHTDRIVER` slot's distance config from simple_baddy's own
+    // freshly (re)parsed copy, leaving any already-tracked enemies/home
+    // position/last-hit tick untouched (`fight_driver_set_dist` itself
+    // only ever writes the three distance fields).
+    let fight_driver = character
+        .fight_driver
+        .get_or_insert_with(FightDriverData::default);
+    fight_driver.start_dist = data.startdist;
+    fight_driver.char_dist = data.chardist;
+    fight_driver.stop_dist = data.stopdist;
     character.driver_state = Some(CharacterDriverState::SimpleBaddy(data));
     character
         .driver_messages
@@ -2699,9 +2752,15 @@ pub fn add_simple_baddy_enemy_unchecked(
     priority: i32,
     current_tick: i32,
 ) -> bool {
-    let Some(CharacterDriverState::SimpleBaddy(data)) = character.driver_state.as_mut() else {
+    if !matches!(
+        character.driver_state.as_ref(),
+        Some(CharacterDriverState::SimpleBaddy(_))
+    ) {
         return false;
-    };
+    }
+    let data = character
+        .fight_driver
+        .get_or_insert_with(FightDriverData::default);
 
     if let Some(enemy) = data
         .enemies
@@ -2731,7 +2790,13 @@ pub fn add_simple_baddy_enemy_unchecked(
 }
 
 pub fn remove_simple_baddy_enemy(character: &mut Character, target_id: CharacterId) -> bool {
-    let Some(CharacterDriverState::SimpleBaddy(data)) = character.driver_state.as_mut() else {
+    if !matches!(
+        character.driver_state.as_ref(),
+        Some(CharacterDriverState::SimpleBaddy(_))
+    ) {
+        return false;
+    }
+    let Some(data) = character.fight_driver.as_mut() else {
         return false;
     };
 
@@ -4040,6 +4105,59 @@ mod tests {
         assert_eq!(data.startdist, 9);
         assert_eq!(data.drink_inventory_potions, 1);
         assert_eq!(data.creation_time, 1234);
+
+        // C `fight_driver_set_dist(cn, dat->startdist, dat->chardist,
+        // dat->stopdist)` (`simple_baddy.c:189`): the independent
+        // `DRD_FIGHTDRIVER` slot gets seeded from the same freshly-parsed
+        // distances, not just `simple_baddy`'s own copy.
+        let fight_driver = character.fight_driver.expect("fight driver state missing");
+        assert_eq!(fight_driver.start_dist, 9);
+        assert_eq!(fight_driver.char_dist, 0);
+        assert_eq!(fight_driver.stop_dist, 40);
+    }
+
+    #[test]
+    fn simple_baddy_create_reseeds_fight_driver_distances_without_clearing_enemies() {
+        // C `fight_driver_set_dist` only ever writes `start_dist`/
+        // `char_dist`/`stop_dist` - a re-creation (e.g. `#reset`-style
+        // template reload) must not wipe out already-tracked enemies, home
+        // position, or last-hit tick.
+        let mut character = test_character();
+        character.driver_state = Some(CharacterDriverState::SimpleBaddy(
+            SimpleBaddyDriverData::default(),
+        ));
+        character.fight_driver = Some(FightDriverData {
+            enemies: vec![SimpleBaddyEnemy {
+                target_id: crate::ids::CharacterId(2),
+                priority: 1,
+                last_seen_tick: 5,
+                visible: true,
+                last_x: 11,
+                last_y: 12,
+            }],
+            start_dist: 20,
+            stop_dist: 40,
+            char_dist: 0,
+            home_x: 11,
+            home_y: 12,
+            last_hit: 7,
+        });
+        character.push_driver_message(NT_CREATE, 0, 0, 0);
+
+        apply_simple_baddy_create_message(&mut character, Some("startdist=6; stopdist=12;"), 42);
+
+        let fight_driver = character.fight_driver.expect("fight driver state missing");
+        assert_eq!(fight_driver.start_dist, 6);
+        assert_eq!(fight_driver.stop_dist, 12);
+        assert_eq!(fight_driver.char_dist, 0);
+        assert_eq!(fight_driver.home_x, 11);
+        assert_eq!(fight_driver.home_y, 12);
+        assert_eq!(fight_driver.last_hit, 7);
+        assert_eq!(fight_driver.enemies.len(), 1);
+        assert_eq!(
+            fight_driver.enemies[0].target_id,
+            crate::ids::CharacterId(2)
+        );
     }
 
     #[test]
@@ -4412,9 +4530,7 @@ mod tests {
             12,
         ));
 
-        let Some(CharacterDriverState::SimpleBaddy(data)) = character.driver_state else {
-            panic!("simple baddy state missing");
-        };
+        let data = character.fight_driver.expect("fight driver state missing");
         assert_eq!(
             data.enemies,
             vec![SimpleBaddyEnemy {
@@ -4444,9 +4560,7 @@ mod tests {
             ));
         }
 
-        let Some(CharacterDriverState::SimpleBaddy(data)) = character.driver_state else {
-            panic!("simple baddy state missing");
-        };
+        let data = character.fight_driver.expect("fight driver state missing");
         assert_eq!(data.enemies.len(), 10);
         assert_eq!(data.enemies[0].target_id, crate::ids::CharacterId(10));
         assert_eq!(data.enemies[8].target_id, crate::ids::CharacterId(18));
@@ -4476,9 +4590,7 @@ mod tests {
             99,
         ));
 
-        let Some(CharacterDriverState::SimpleBaddy(data)) = character.driver_state else {
-            panic!("simple baddy state missing");
-        };
+        let data = character.fight_driver.expect("fight driver state missing");
         assert_eq!(data.enemies.len(), 10);
         assert_eq!(data.enemies[9].target_id, crate::ids::CharacterId(10));
         assert_eq!(data.enemies[9].priority, 1);
@@ -4505,9 +4617,7 @@ mod tests {
             11,
         ));
 
-        let Some(CharacterDriverState::SimpleBaddy(data)) = character.driver_state else {
-            panic!("simple baddy state missing");
-        };
+        let data = character.fight_driver.expect("fight driver state missing");
         assert_eq!(data.enemies[0].priority, 0);
         assert_eq!(data.enemies[0].last_seen_tick, 11);
     }
@@ -4515,7 +4625,10 @@ mod tests {
     #[test]
     fn remove_simple_baddy_enemy_matches_fight_driver_remove_boundary() {
         let mut character = test_character();
-        character.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+        character.driver_state = Some(CharacterDriverState::SimpleBaddy(
+            SimpleBaddyDriverData::default(),
+        ));
+        character.fight_driver = Some(FightDriverData {
             enemies: vec![
                 SimpleBaddyEnemy {
                     target_id: crate::ids::CharacterId(2),
@@ -4534,8 +4647,8 @@ mod tests {
                     last_y: 31,
                 },
             ],
-            ..SimpleBaddyDriverData::default()
-        }));
+            ..FightDriverData::default()
+        });
 
         assert!(remove_simple_baddy_enemy(
             &mut character,
@@ -4546,9 +4659,7 @@ mod tests {
             crate::ids::CharacterId(99),
         ));
 
-        let Some(CharacterDriverState::SimpleBaddy(data)) = character.driver_state else {
-            panic!("simple baddy state missing");
-        };
+        let data = character.fight_driver.expect("fight driver state missing");
         assert_eq!(data.enemies.len(), 1);
         assert_eq!(data.enemies[0].target_id, crate::ids::CharacterId(3));
     }
@@ -5082,6 +5193,7 @@ mod tests {
             driver_memory: DriverMemory::default(),
             class: 0,
             dungeonfighter: None,
+            fight_driver: None,
         }
     }
 

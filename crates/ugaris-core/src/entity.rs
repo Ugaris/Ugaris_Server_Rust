@@ -423,6 +423,20 @@ pub struct Character {
     /// of dedicated fields living outside `driver_state`.
     #[serde(default)]
     pub dungeonfighter: Option<crate::character_driver::DungeonfighterDriverData>,
+    /// C `struct fight_driver_data` (`src/common/fight.h:27-37`), stored
+    /// via `set_data(cn, DRD_FIGHTDRIVER, ...)` independently of whichever
+    /// `driver`/`driver_state` this character currently has - mirroring
+    /// the `dungeonfighter` field's precedent above. Currently only
+    /// populated for `CDR_SIMPLEBADDY`/`CDR_DUNGEONFIGHTER` NPCs (seeded
+    /// from `SimpleBaddyDriverData` by
+    /// `character_driver::apply_simple_baddy_create_message`, mirroring C's
+    /// `fight_driver_set_dist`); a lostcon corpse or a normal playing
+    /// character with a `no*`/`auto*` self-defense/autopilot toggle set
+    /// will get one too once the player-side fight-driver task wires them
+    /// up (`PORTING_TODO.md`'s "Player-side fight-driver auto-combat"
+    /// task).
+    #[serde(default)]
+    pub fight_driver: Option<crate::character_driver::FightDriverData>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -627,6 +641,7 @@ mod tests {
             driver_memory: crate::character_driver::DriverMemory::default(),
             class: 0,
             dungeonfighter: None,
+            fight_driver: None,
         };
 
         character.push_driver_message(crate::character_driver::NT_CREATE, 1, 2, 3);

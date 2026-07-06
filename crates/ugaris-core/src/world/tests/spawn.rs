@@ -76,3 +76,75 @@ fn world_applies_clanspawn_exit_busy_target_feedback_outcome() {
     let character = world.characters.get(&CharacterId(1)).unwrap();
     assert_eq!((character.x, character.y), (10, 10));
 }
+
+#[test]
+fn add_character_backfills_fight_driver_from_hand_built_simple_baddy_state() {
+    // Mirrors a hand-built test fixture (or a pre-migration DB save
+    // deserialized with `fight_driver: None`) that only set up the legacy
+    // `SimpleBaddyDriverData` copy directly, bypassing
+    // `apply_simple_baddy_create_message`'s normal seeding.
+    let mut world = World::default();
+    let mut npc = character(1);
+    npc.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+        startdist: 6,
+        chardist: 2,
+        stopdist: 12,
+        home_x: 15,
+        home_y: 16,
+        last_hit: 9,
+        enemies: vec![SimpleBaddyEnemy {
+            target_id: CharacterId(2),
+            priority: 1,
+            last_seen_tick: 3,
+            visible: true,
+            last_x: 15,
+            last_y: 16,
+        }],
+        ..SimpleBaddyDriverData::default()
+    }));
+
+    world.add_character(npc);
+
+    let data = world.characters[&CharacterId(1)]
+        .fight_driver
+        .as_ref()
+        .expect("fight driver state missing");
+    assert_eq!(data.start_dist, 6);
+    assert_eq!(data.char_dist, 2);
+    assert_eq!(data.stop_dist, 12);
+    assert_eq!((data.home_x, data.home_y), (15, 16));
+    assert_eq!(data.last_hit, 9);
+    assert_eq!(data.enemies.len(), 1);
+}
+
+#[test]
+fn add_character_leaves_fight_driver_none_for_non_simple_baddy_characters() {
+    let mut world = World::default();
+    let npc = character(1);
+
+    world.add_character(npc);
+
+    assert!(world.characters[&CharacterId(1)].fight_driver.is_none());
+}
+
+#[test]
+fn add_character_does_not_override_already_populated_fight_driver() {
+    let mut world = World::default();
+    let mut npc = character(1);
+    npc.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+        stopdist: 99,
+        ..SimpleBaddyDriverData::default()
+    }));
+    npc.fight_driver = Some(FightDriverData {
+        stop_dist: 12,
+        ..FightDriverData::default()
+    });
+
+    world.add_character(npc);
+
+    let data = world.characters[&CharacterId(1)]
+        .fight_driver
+        .as_ref()
+        .expect("fight driver state missing");
+    assert_eq!(data.stop_dist, 12);
+}

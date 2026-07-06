@@ -11128,6 +11128,77 @@ Unlocks every quest NPC. Do these before any P4 area work.
   normal-player-tick `autobless`/`autopulse` consumers in
   `player_driver.c:1067-1070`.
 
+  REMAINING: (iteration 234) did the storage-migration slice flagged
+  above as the next step - the engine's enemy-tracking half is no longer
+  tightly coupled to `CharacterDriverState::SimpleBaddy`. Added C
+  `struct fight_driver_data` (`src/common/fight.h:27-37`) as a new
+  `FightDriverData` type (`character_driver.rs`: `enemies`/`start_dist`/
+  `stop_dist`/`char_dist`/`home_x`/`home_y`/`last_hit`) living on a new
+  independent `Character::fight_driver: Option<FightDriverData>` field
+  (`entity.rs`), mirroring the existing `Character::dungeonfighter`
+  precedent for "one character, two independent driver-data blobs".
+  Migrated every real read/write site off `SimpleBaddyDriverData`'s own
+  copy of these fields and onto `Character::fight_driver` instead:
+  `add_simple_baddy_enemy_unchecked`/`remove_simple_baddy_enemy`
+  (`character_driver.rs`), `simple_baddy_recorded_enemy_ids`/
+  `apply_simple_baddy_enemy_tracking`/`refresh_simple_baddy_enemy_tracking`/
+  `sort_simple_baddy_enemies_like_c`/`simple_baddy_enemy_past_stop_dist`/
+  `set_simple_baddy_home`/`simple_baddy_enemy_within_start_limits`/
+  `simple_baddy_target_home_dist` (`npc_messages.rs`), the `NoteHit`
+  handler's `last_hit` write, the direct `data.home_x`/`data.home_y`
+  writes in `npc_idle.rs`'s day/night-post arrival branch (now routed
+  through `set_simple_baddy_home`), and `simple_baddy_regenerate_task_value`'s
+  `last_hit` read (`npc_fight.rs`). `SimpleBaddyDriverData`'s own
+  `startdist`/`chardist`/`stopdist`/`home_x`/`home_y`/`last_hit` fields are
+  kept only as the zone-arg-parsed source copy (matching C: simple_baddy's
+  own struct duplicates these too, see `simple_baddy.c:66-101`) -
+  `apply_simple_baddy_create_message` now also seeds/reseeds
+  `Character::fight_driver`'s three distances from them via a new
+  `get_or_insert_with`, mirroring C's `fight_driver_set_dist(cn,
+  dat->startdist, dat->chardist, dat->stopdist)` call
+  (`simple_baddy.c:189`) without clobbering already-tracked enemies/home/
+  last-hit (`fight_driver_set_dist` itself only ever writes the three
+  distances). `lastfight` (simple_baddy's own scavenger/sound-cue
+  throttle, a genuinely different C field from `fight_driver_data`'s
+  `lasthit`) deliberately stays put on `SimpleBaddyDriverData` - it is
+  simple_baddy-driver-specific, not part of C's real `fight_driver_data`.
+  Added `World::add_character` backfill: if a character enters the world
+  with `SimpleBaddy` driver state but `fight_driver: None` (hand-built
+  test fixture, or a pre-migration DB save deserializing with the new
+  field defaulted), derive `fight_driver` from the embedded
+  `SimpleBaddyDriverData` copy once, matching `fight_driver_set_dist`'s
+  own derivation - this fixed ~40 existing test call sites that construct
+  `driver_state` directly without going through
+  `apply_simple_baddy_create_message`, so almost no test bodies needed
+  editing beyond updating assertions that read the old storage location.
+  ~20 existing test assertions updated in place (moved from
+  `driver_state`'s `SimpleBaddyDriverData` to `Character::fight_driver`,
+  including two that were passing *by coincidence* pre-migration because
+  the stale never-updated `driver_state.enemies` copy happened to still
+  match a "keeps unchanged" expectation) plus 4 new tests (`fight_driver`
+  seeding/reseeding in `character_driver.rs`, the `add_character` backfill
+  and its two edge cases in `world/tests/spawn.rs`). `cargo fmt --all`,
+  `cargo test --workspace` (2165 ugaris-core [+4] + 78 db + 3 net + 45
+  protocol + 1073 server, all green, zero failures), `cargo build
+  -p ugaris-server`/`--workspace` clean with zero warnings, 10s
+  boot-smoke confirmed "entering Rust game loop" with no panic and
+  hundreds of `simple_baddy_outcomes`/`simple_baddy_noncombat` NPC ticks
+  per game tick (pure storage relocation, no behavior change expected or
+  observed). Still not done: this iteration deliberately did NOT wire
+  `lostcon.rs`'s tick or the player-tick `no*`/`auto*` toggles to actually
+  call the fight-driver engine - `Character::fight_driver` is only ever
+  populated for `CDR_SIMPLEBADDY`/`CDR_DUNGEONFIGHTER` NPCs today. Next
+  iteration: wire `lostcon.rs`'s tick to call
+  `fight_driver_attack_visible`+`fight_driver_follow_invisible`-equivalent
+  logic (now storage-independent, so this should be a straightforward
+  read/populate of `Character::fight_driver` for a lostcon character, no
+  further engine changes needed) with suppressions built from the stashed
+  `PlayerRuntime`'s no* fields, then the low-hp-heal/low-mana-potion/
+  low-shield-magicshield pre-cascade and post-cascade fallback from
+  `lostcon_driver` itself (`lostcon.c:164-220`, not touched this
+  iteration), then finally the normal-player-tick `autobless`/`autopulse`
+  consumers in `player_driver.c:1067-1070`.
+
 - [ ] **Macro-detection engine (`macro_driver`, `src/module/base.c:802-
   1243`, ~800 lines)** - anti-macro/anti-bot detection: activity
   tracking, math/type-word/reverse/multiple-choice challenge generation

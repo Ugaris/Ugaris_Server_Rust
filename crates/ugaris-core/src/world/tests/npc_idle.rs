@@ -114,9 +114,10 @@ fn simple_baddy_noncombat_action_teleports_to_night_post_and_sets_home() {
 
     let npc = world.characters.get(&CharacterId(1)).unwrap();
     assert_eq!((npc.x, npc.y), (15, 10));
-    let Some(CharacterDriverState::SimpleBaddy(data)) = npc.driver_state.as_ref() else {
-        panic!("simple baddy state missing");
-    };
+    let data = npc
+        .fight_driver
+        .as_ref()
+        .expect("fight driver state missing");
     assert_eq!((data.home_x, data.home_y), (15, 10));
 }
 
@@ -144,9 +145,10 @@ fn simple_baddy_noncombat_action_turns_to_day_post_direction() {
     let npc = world.characters.get(&CharacterId(1)).unwrap();
     assert_eq!(npc.dir, Direction::Down as u8);
     assert_eq!(npc.action, action::IDLE);
-    let Some(CharacterDriverState::SimpleBaddy(data)) = npc.driver_state.as_ref() else {
-        panic!("simple baddy state missing");
-    };
+    let data = npc
+        .fight_driver
+        .as_ref()
+        .expect("fight driver state missing");
     assert_eq!((data.home_x, data.home_y), (10, 10));
 }
 
@@ -444,10 +446,15 @@ fn simple_baddy_scavenger_randomly_walks_inside_home_bounds() {
     assert_eq!(npc.action, action::WALK);
     assert_eq!((npc.tox, npc.toy), (11, 10));
     assert_eq!(npc.dir, Direction::Right as u8);
-    let Some(CharacterDriverState::SimpleBaddy(data)) = npc.driver_state.as_ref() else {
+    let Some(CharacterDriverState::SimpleBaddy(simple_baddy_data)) = npc.driver_state.as_ref()
+    else {
         panic!("simple baddy state missing");
     };
-    assert_eq!(data.dir, Direction::Right as i32);
+    assert_eq!(simple_baddy_data.dir, Direction::Right as i32);
+    let data = npc
+        .fight_driver
+        .as_ref()
+        .expect("fight driver state missing");
     assert_eq!((data.home_x, data.home_y), (10, 10));
 }
 

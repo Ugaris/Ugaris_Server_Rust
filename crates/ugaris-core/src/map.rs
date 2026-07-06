@@ -896,6 +896,7 @@ mod tests {
             driver_memory: crate::character_driver::DriverMemory::default(),
             class: 0,
             dungeonfighter: None,
+            fight_driver: None,
         }
     }
 

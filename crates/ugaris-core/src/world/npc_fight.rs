@@ -723,10 +723,11 @@ impl World {
             .max(character_value(character, CharacterValue::Freeze))
             .max(character_value(character, CharacterValue::Attack))
             * 2;
-        let last_hit = match character.driver_state.as_ref() {
-            Some(CharacterDriverState::SimpleBaddy(data)) => data.last_hit,
-            _ => 0,
-        };
+        let last_hit = character
+            .fight_driver
+            .as_ref()
+            .map(|data| data.last_hit)
+            .unwrap_or(0);
         let tick = self.tick.0 as i32;
         let regen_time = TICKS_PER_SECOND as i32;
         let regen_diff = character.regen_ticker as i32 + regen_time - tick;
