@@ -6889,7 +6889,7 @@ Unlocks every quest NPC. Do these before any P4 area work.
   confirmed "entering Rust game loop" with no panic and the pre-existing
   `loaded loot tables ... tables_added=9` log line unchanged.
 
-- [~] **Remaining `/` and `#` text commands** - diff
+- [x] **Remaining `/` and `#` text commands** - diff
   `src/system/command.c` against `crates/ugaris-server/src/commands_*.rs`
   and port what's missing (there are dozens; make a checklist in the PR
   note as you go). Priority: `/help` completeness, `/who` variants,
@@ -10440,12 +10440,102 @@ Unlocks every quest NPC. Do these before any P4 area work.
   zero warnings, 10s boot-smoke confirmed "entering Rust game loop" with
   no panic.
 
+  Progress Log (iteration 218, task closed): re-verified iteration 217's
+  REMAINING list is now fully accounted for and closed the task rather
+  than leaving it open indefinitely on permanently-blocked/deserves-its-
+  own-task items. `exterminate`/`values`/`showvalues`/`/allow` are
+  blocked on the unported cross-server IPC (`server_chat`'s real
+  multi-node relay and/or the offline DB task-queue read/mutate/write
+  pattern) - added an explicit cross-reference note to the existing open
+  "Cross-area transfer" task above so a future iteration porting that
+  design also picks these four commands up, instead of inventing a
+  second tracking spot for the same blocker. `respawn` is a `CF_GOD`
+  diagnostic whose only effect is an internal `xlog` line invisible to
+  every player (confirmed by re-reading `command.c:9665-9668` +
+  `src/system/respawn.c`) - deliberately left unported as genuinely low
+  value; flag a tiny dedicated task if a future iteration wants it.
+  Spun the two substantial remaining subsystems out into their own P3
+  tasks immediately below (both explicitly called out as "deserves its
+  own task" in iteration 217's note): "Player-side fight-driver
+  auto-combat" (wiring the already NPC-side-ported
+  `fight_driver_attack_enemy`/`fight_driver_attack_visible`/
+  `fight_driver_follow_invisible` engine, `drvlib.c:1682-2320`, to the
+  player/lostcon callers too - which is what would actually give the
+  already-ported no*/auto* toggle family and the closed "Logout/exit
+  flow" task's lingering lostcon characters real gameplay effect) and
+  "Macro-detection engine" (`macro_driver`,
+  `base.c:802-1243`, the ~800-line detection engine that would actually
+  populate the already-ported `PlayerRuntime::macro_ppd` storage the
+  iteration-217 admin commands read). No code changes this iteration -
+  paperwork only, so the existing green state is unaffected: `cargo fmt
+  --all`, `cargo test --workspace` (2108 ugaris-core + 73 db + 3 net + 44
+  protocol + 1050 server, all green, zero failures), `cargo build -p
+  ugaris-server` clean with zero warnings.
+
 - [ ] **Cross-area transfer** - the big multi-server feature. Every
   cross-area teleport currently returns "target server down". Decide the
   single-process stance first (likely: run multiple areas in one process
   or reject cleanly). If porting: C `change_area` in
   `src/system/database/database_area.c` + area handoff blobs. This is a
-  design task - write a plan in the ledger before coding.
+  design task - write a plan in the ledger before coding. Also blocks:
+  `/exterminate` (C `db_exterminate` task-queue + `server_chat`),
+  `/values`/`/showvalues` (`lookup_name` + `server_chat`), and `/allow`
+  (the cross-server corpse-loot-access grant) - see the "Remaining `/`
+  and `#` text commands" task's final Progress Log entry for the
+  per-command detail; none of the three need a separate task of their
+  own once this one lands.
+
+- [ ] **Player-side fight-driver auto-combat (lostcon self-defense +
+  no*/auto* toggle family)** - `fight_driver_attack_enemy`/
+  `fight_driver_attack_visible`/`fight_driver_follow_invisible`
+  (`src/system/drvlib.c:1682-2320`) already have a substantial Rust port
+  - see `crates/ugaris-core/src/world/npc_fight.rs`'s `order_fight_driver_
+  tasks`/`fight_driver_attackback_may_run`/the `simple_baddy_*_value`
+  scoring helpers, built up over many iterations (`PORTING_LEDGER.md`
+  rows for `src/module/simple_baddy.c`) - but it is only invoked from the
+  `CDR_SIMPLEBADDY` NPC driver tick. The *player*-side callers of the
+  exact same C function (`fight_driver_attack_visible(cn, ppd->nomove)`
+  called with the already-ported `PlayerRuntime` no*/auto* toggle family
+  as its `nobless`/`noheal`/.../`nopulse` arguments, plus the auto-
+  rebless/auto-pulse consumers in `src/system/player_driver.c:1067-1070`,
+  plus the `CDR_LOSTCON` self-defense driver in `src/module/lostcon.c`
+  hooked from the already-ported `world/lostcon.rs`) are not wired at
+  all: none of the 16 toggles
+  (`noball`/`nobless`/`nofireball`/`noflash`/`nofreeze`/`noheal`/
+  `noshield`/`nowarcry`/`nolife`/`nomana`/`nocombo`/`nomove`/`norecall`/
+  `nopulse`/`autobless`/`autopulse`) have any gameplay effect yet, and a
+  lingering lostcon character never fights back, heals, or drinks
+  potions on its own (see the closed "Logout/exit flow" task's REMAINING
+  note above). The task: extract/generalize `npc_fight.rs`'s existing
+  task-scoring engine so a player character (not just a
+  `SimpleBaddyDriverData`-bearing NPC) can drive it too, thread the
+  per-player no*/auto* flags through as the `nomove`/`nobless`/etc.
+  suppression arguments C passes positionally, and call it from both the
+  lostcon tick and the normal player tick (gated on "any no*/auto* flag
+  set", matching C only running this path when the player is either
+  lostcon or has opted into an autopilot toggle). Tests: each no* toggle
+  suppresses its corresponding task exactly like the NPC-side tests
+  already verify structurally, `autobless`/`autopulse` fire when enabled,
+  a lostcon character defends itself. Reuse the NPC-side engine - do not
+  re-port `fight_driver_attack_enemy` from scratch, and do not fold this
+  back into the closed text-commands task.
+
+- [ ] **Macro-detection engine (`macro_driver`, `src/module/base.c:802-
+  1243`, ~800 lines)** - anti-macro/anti-bot detection: activity
+  tracking, math/type-word/reverse/multiple-choice challenge generation
+  and checking, reward/failure handling, and the cross-server "challenge
+  room" teleport. The persistent storage side is already ported
+  (`PlayerRuntime::macro_ppd` / `MacroPpd`/`MacroHistoryEntry`,
+  `crates/ugaris-core/src/player.rs`, field-for-field mirror of C's
+  `struct macro_ppd`/`DRD_MACRO_PPD`) and the read-only admin/debug
+  commands already consume it (`macrostats`/`macrohistory`/`summonmacro`/
+  `macroimmune`/`macrolist`/`macrosuspicion`/`macrokarma`/
+  `macrofailures`/`macroreset`/`macrohelp` in `commands_admin.rs` /
+  `commands_player.rs`, see the "Remaining `/` and `#` text commands"
+  task's iteration-217 Progress Log) - but nothing actually drives
+  `macro_ppd`'s fields yet, so every admin view of it is permanently
+  empty/default. Port the real detection engine so it populates the
+  struct this task's admin commands already read.
 
 - [ ] **`.pre` zone preprocessor parity** - `src/system/create.c` expands
   `.pre` template includes; the Rust `ZoneLoader` skips them. Check which
