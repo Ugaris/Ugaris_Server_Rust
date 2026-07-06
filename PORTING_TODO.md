@@ -9892,16 +9892,87 @@ Unlocks every quest NPC. Do these before any P4 area work.
   genuinely large, unstarted sub-slices, not quick wins. Gaps (b)
   (`shutup`/`exterminate`, blocked on `subscriber_id`/`server_chat` per
   iteration 205's note) and (d)/(e)/(f)/(g) from iteration 195's list are
-  also untouched. Next iteration picking up this task should pick one of
-  the remaining `ac*` aggregate-query sub-slices (recommend starting with
-  `achistory`/`acsessions`/`acviolations` since they only need read
-  queries over data this codebase already writes - `anticheat_sessions`
-  and now `ac_player_stats` - unlike `acsharedip`/`acsharedhw`/
-  `acsiglist`/etc. which need genuinely new tracking tables), or pick a
-  different top-level `PORTING_TODO.md` task/section entirely, since this
-  one giant task's remaining gaps are all sizeable multi-iteration slices
-  now rather than the small independent wins that characterized
-  iterations 158-210.
+  also untouched. `acsessions` done (see iteration 211 - read directly
+  from the existing `anticheat_sessions` table, C's own per-session
+  `ac_sessions` history table under a different name in this codebase, so
+  no new table or rollup engine was needed for it, unlike its
+  `achistory` sibling below). `achistory` still needs the session-end
+  rollup mechanism (C `db_ac_update_player_stats`, called from
+  `ac_player_disconnect`/`anticheat.c:141-163` on every disconnect) wired
+  into this codebase's disconnect handling before its backing
+  `ac_player_stats` columns (`total_sessions`, `flagged_sessions`,
+  `avg_session_bot_score`, `risk_level`, `first_seen`/`last_seen`, etc. -
+  currently only `is_flagged`/`is_trusted`/`warnings_issued` exist,
+  see `migrations/0014_ac_player_stats.sql`'s doc comment) actually hold
+  real data - a genuinely bigger slice than `acsessions` turned out to
+  be, not a quick win. `acviolations` could plausibly reuse the existing
+  `anticheat_events` table (event_type/severity/details/created_at map
+  cleanly onto C's `ac_violations` join with `ac_violation_types`)
+  instead of porting a whole new violations-log schema - worth trying
+  first before assuming a new table is required. Next iteration picking
+  up this task should pick `achistory` (needs the rollup wiring) or
+  `acviolations` (try the `anticheat_events` reuse angle first), or pick
+  a different top-level `PORTING_TODO.md` task/section entirely.
+
+  Progress Log (iteration 211): closed the `#acsessions <player>` gap
+  from gap (a) (`ac_cmd_sessions`, `anticheat.c:975-1017`,
+  `CF_GOD|CF_STAFF`-gated, exact-word, `command.c:10241-10249` dispatch).
+  Realized C's own backing table (`ac_sessions`, populated by
+  `db_ac_session_create`/`db_ac_session_end`/etc.) is structurally the
+  same per-login-session history this codebase already maintains as
+  `anticheat_sessions` (`migrations/0002_sessions_questlog_anticheat.
+  sql`) - `session_start`/`session_end`/`final_bot_score`/violation
+  counters map 1:1 onto `started_at`/`ended_at`/`bot_score`/the same
+  counter columns `#acstatus`'s `find_session` already reads - so this
+  needed a new read query, not a new rollup engine or table (unlike
+  `achistory`, which genuinely does need one - see the note just above).
+  New `AntiCheatRepository::recent_sessions` (`ugaris-db/src/anticheat.
+  rs`) queries the `max_count` newest rows for an `account_id`, using
+  Postgres `to_char`/`extract(epoch ...)` to reproduce C's `DATE_FORMAT`/
+  `TIMESTAMPDIFF(MINUTE, session_start, COALESCE(session_end, NOW()))`
+  server-side (matching `find_last_seen`'s established no-chrono-in-Rust
+  convention) rather than parsing timestamps in Rust. New `ugaris-core`
+  `world/anticheat.rs` type `AcSessionsLookup` (same single-name-target
+  shape as `AcTrustLookup`: `caller_id`/`target_name`/`session_id`, the
+  `session_id` resolved synchronously in `commands_admin.rs` by the
+  online-name-scan, then turned into the target's `account_id` inside
+  `apply_ac_sessions_events` via the already-existing `account_id_for_
+  session`, same two-step resolution `#actrust`/`#acwarn` already use).
+  `apply_ac_sessions_events` (`world_events.rs`) queries up to 10 rows
+  (matching C's `sessions[10]` stack array) and formats them through a
+  new pure `ac_sessions_lines` helper - color wrapping dropped, matching
+  `ac_status_lines`'s/`/global`'s established plain-text simplification
+  for admin-only displays, and "No sessions found for {name}." when the
+  query comes back empty, matching C's own early-return message. An
+  unresolvable subscriber id is silently skipped (no C-side branch to
+  reproduce here, unlike `#acwarn`'s `subscriber_id <= 0` message, since
+  C's own `ac_find_player` guarantees a live connection and thus always
+  has *some* row). Dispatch (`commands_admin.rs`, right after `#acwarn`)
+  reuses the identical online-`CF_PLAYER`-name-scan-then-session-id-
+  lookup shape every sibling in this family already has. The
+  `#acsessions <name> - Show player's recent sessions` help line already
+  existed unwired in `#achelp`'s static text, like several other gaps
+  this file's REMAINING note has found before - no help-text change
+  needed. 1 new `ugaris-db` live test (`recent_sessions_orders_newest_
+  first_and_computes_duration`: two fixture sessions, one ended with a
+  fixed duration and one still open exercising the `COALESCE(...,
+  NOW())` branch, asserting newest-first ordering and a `limit` of 1
+  keeping only the newest row), 1 new `ugaris-core` test (queue/drain
+  round trip for `AcSessionsLookup`), 4 new `ugaris-server` tests in
+  `world_events.rs` (`ac_sessions_tests`: the standard no-lookups/
+  missing-repository no-op pair, plus two pure `ac_sessions_lines`
+  formatting tests for the empty and populated cases). `cargo fmt --all`,
+  `cargo test --workspace` (2100 ugaris-core [+1] + 69 db [+1] + 3 net +
+  44 protocol + 991 server [+4], all green, zero failures), `cargo build
+  -p ugaris-server` / `cargo build --workspace` clean with zero warnings,
+  10s boot-smoke confirmed "entering Rust game loop" with no panic. This
+  closes the `acsessions` gap entirely. REMAINING: gap (a) still has
+  `achistory` (needs the session-end rollup mechanism wired in first -
+  see the note above) and `acviolations` (try reusing the existing
+  `anticheat_events` table before assuming a new schema is needed - see
+  the note above); `acsharedip`/`acsharedhw`/`achighrisk`/`aclookup`/
+  `acsiglist`/`acsigadd`/`acsigdel` and gaps (b)/(d)/(e)/(f)/(g) remain
+  untouched, same as noted above.
 
 - [ ] **Cross-area transfer** - the big multi-server feature. Every
   cross-area teleport currently returns "target server down". Decide the

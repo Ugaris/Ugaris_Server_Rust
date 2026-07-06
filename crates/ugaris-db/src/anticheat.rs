@@ -66,6 +66,28 @@ pub struct AntiCheatSessionInfo {
     pub screen_h: Option<i32>,
 }
 
+/// `#acsessions <player>`'s per-row shape (`db_ac_session_result`,
+/// `database_anticheat.h:457-476`). C's own query reads from a separate
+/// `ac_sessions` history table populated by `db_ac_session_create`/
+/// `db_ac_session_end`/etc.; this codebase's `anticheat_sessions` table
+/// (`migrations/0002_sessions_questlog_anticheat.sql`) already is that
+/// same per-session history (one row per login, never overwritten in
+/// place except by the same handful of columns C's `ac_sessions` table
+/// tracks), so `recent_sessions` below reads it directly rather than
+/// requiring a second table - see `PgAntiCheatRepository::recent_
+/// sessions`'s doc comment for the column-by-column mapping.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AntiCheatSessionHistoryRow {
+    pub start_time: String,
+    pub duration_minutes: i32,
+    pub status: i32,
+    pub bot_score: f32,
+    pub heartbeat_violations: i32,
+    pub state_violations: i32,
+    pub challenge_failures: i32,
+    pub anomaly_count: i32,
+}
+
 #[async_trait]
 pub trait AntiCheatRepository: Send + Sync {
     async fn create_session(&self, request: AntiCheatSessionCreate) -> anyhow::Result<i64>;
@@ -150,6 +172,21 @@ pub trait AntiCheatRepository: Send + Sync {
     /// ensure-then-update shape and same skipped `db_ac_log_admin_action`
     /// audit row as `set_flagged`/`set_trusted`.
     async fn issue_warning(&self, subscriber_id: i64) -> anyhow::Result<()>;
+    /// `#acsessions <player>`'s backing query (`db_ac_get_recent_
+    /// sessions`, `database_anticheat.c:883-919`): the `max_count` most
+    /// recent `anticheat_sessions` rows for the subscriber's account,
+    /// newest first - see `AntiCheatSessionHistoryRow`'s doc comment for
+    /// why this reads the existing `anticheat_sessions` table (C's own
+    /// `ac_sessions`) rather than a new one. `duration_minutes` mirrors
+    /// C's `TIMESTAMPDIFF(MINUTE, session_start, COALESCE(session_end,
+    /// NOW()))` (an in-progress session's duration is measured against
+    /// "now"); `status`/`bot_score`/violation counters read back exactly
+    /// the same columns `#acstatus`'s `find_session` does.
+    async fn recent_sessions(
+        &self,
+        account_id: i64,
+        max_count: i64,
+    ) -> anyhow::Result<Vec<AntiCheatSessionHistoryRow>>;
 }
 
 #[derive(Debug, Clone)]
@@ -501,6 +538,49 @@ impl AntiCheatRepository for PgAntiCheatRepository {
         .execute(&self.pool)
         .await?;
         Ok(())
+    }
+
+    async fn recent_sessions(
+        &self,
+        account_id: i64,
+        max_count: i64,
+    ) -> anyhow::Result<Vec<AntiCheatSessionHistoryRow>> {
+        let rows = sqlx::query_as::<_, (String, i32, i32, f32, i32, i32, i32, i32)>(
+            "select to_char(started_at, 'MM-DD HH24:MI'), \
+             (extract(epoch from (coalesce(ended_at, now()) - started_at)) / 60)::int, \
+             status, bot_score, heartbeat_violations, state_violations, \
+             challenge_failures, anomaly_count \
+             from anticheat_sessions where account_id = $1 \
+             order by started_at desc limit $2",
+        )
+        .bind(account_id)
+        .bind(max_count)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .into_iter()
+            .map(
+                |(
+                    start_time,
+                    duration_minutes,
+                    status,
+                    bot_score,
+                    heartbeat_violations,
+                    state_violations,
+                    challenge_failures,
+                    anomaly_count,
+                )| AntiCheatSessionHistoryRow {
+                    start_time,
+                    duration_minutes,
+                    status,
+                    bot_score,
+                    heartbeat_violations,
+                    state_violations,
+                    challenge_failures,
+                    anomaly_count,
+                },
+            )
+            .collect())
     }
 }
 
@@ -991,6 +1071,96 @@ mod tests {
                 .await
                 .expect("cleanup ac_player_stats row");
             cleanup_session(&pool, session_id).await;
+            sqlx::query("delete from accounts where id = $1")
+                .bind(account_id)
+                .execute(&pool)
+                .await
+                .expect("cleanup fixture account");
+        }
+
+        /// `#acsessions`'s backing query (`recent_sessions`): two sessions
+        /// for the same subscriber - an ended one (fixed
+        /// `started_at`/`ended_at`, so `duration_minutes` is
+        /// deterministic) and a still-open one (`ended_at` left `NULL`,
+        /// so C's `COALESCE(session_end, NOW())` clause is exercised) -
+        /// come back newest-first with every counter column intact, and a
+        /// `limit` of `1` returns only the newest row.
+        #[tokio::test]
+        async fn recent_sessions_orders_newest_first_and_computes_duration() {
+            let Some(pool) = connect().await else {
+                return;
+            };
+            let repo = PgAntiCheatRepository::new(pool.clone());
+
+            sqlx::query("delete from accounts where username = 'ac_sessions_fixture_acct'")
+                .execute(&pool)
+                .await
+                .expect("pre-clean fixture account");
+            let (account_id,): (i64,) = sqlx::query_as(
+                "insert into accounts(username, password_hash) values ($1, 'secret') returning id",
+            )
+            .bind("ac_sessions_fixture_acct")
+            .fetch_one(&pool)
+            .await
+            .expect("insert fixture account");
+
+            let (older_id,): (i64,) = sqlx::query_as(
+                "insert into anticheat_sessions(account_id, ip_address, area_id, status, \
+                 bot_score, heartbeat_violations, state_violations, challenge_failures, \
+                 anomaly_count, started_at, ended_at) \
+                 values ($1, 1, 1, 1, 0.1, 1, 0, 0, 0, now() - interval '2 hours', \
+                 now() - interval '1 hour') returning id",
+            )
+            .bind(account_id)
+            .fetch_one(&pool)
+            .await
+            .expect("insert older session");
+            let (newer_id,): (i64,) = sqlx::query_as(
+                "insert into anticheat_sessions(account_id, ip_address, area_id, status, \
+                 bot_score, heartbeat_violations, state_violations, challenge_failures, \
+                 anomaly_count, started_at, ended_at) \
+                 values ($1, 1, 1, 3, 0.9, 2, 3, 4, 5, now() - interval '10 minutes', null) \
+                 returning id",
+            )
+            .bind(account_id)
+            .fetch_one(&pool)
+            .await
+            .expect("insert newer (still open) session");
+
+            let rows = repo
+                .recent_sessions(account_id, 10)
+                .await
+                .expect("recent_sessions");
+            assert_eq!(rows.len(), 2, "both sessions must come back");
+            assert_eq!(rows[0].status, 3, "newest session must sort first");
+            assert_eq!(rows[0].bot_score, 0.9);
+            assert_eq!(rows[0].heartbeat_violations, 2);
+            assert_eq!(rows[0].state_violations, 3);
+            assert_eq!(rows[0].challenge_failures, 4);
+            assert_eq!(rows[0].anomaly_count, 5);
+            assert!(
+                rows[0].duration_minutes >= 9 && rows[0].duration_minutes <= 11,
+                "an open session's duration must be measured against now(), got {}",
+                rows[0].duration_minutes
+            );
+            assert_eq!(rows[1].status, 1, "older session must sort second");
+            assert_eq!(
+                rows[1].duration_minutes, 60,
+                "an ended session's duration must use its own ended_at, not now()"
+            );
+
+            let limited = repo
+                .recent_sessions(account_id, 1)
+                .await
+                .expect("recent_sessions with limit 1");
+            assert_eq!(limited.len(), 1);
+            assert_eq!(limited[0].status, 3, "limit must keep only the newest row");
+
+            sqlx::query("delete from anticheat_sessions where id = any($1)")
+                .bind([older_id, newer_id])
+                .execute(&pool)
+                .await
+                .expect("cleanup fixture sessions");
             sqlx::query("delete from accounts where id = $1")
                 .bind(account_id)
                 .execute(&pool)

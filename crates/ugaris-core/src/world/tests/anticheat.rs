@@ -183,3 +183,16 @@ fn queue_and_drain_ac_warn_lookup_round_trips() {
     assert_eq!(queued[0].reason, "Speedhacking");
     assert!(world.drain_pending_ac_warn_lookups().is_empty());
 }
+
+#[test]
+fn queue_and_drain_ac_sessions_lookup_round_trips() {
+    let mut world = World::default();
+    world.queue_ac_sessions_lookup(CharacterId(13), "Baddie".to_string(), 104);
+
+    let queued = world.drain_pending_ac_sessions_lookups();
+    assert_eq!(queued.len(), 1);
+    assert_eq!(queued[0].caller_id, CharacterId(13));
+    assert_eq!(queued[0].target_name, "Baddie");
+    assert_eq!(queued[0].session_id, 104);
+    assert!(world.drain_pending_ac_sessions_lookups().is_empty());
+}

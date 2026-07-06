@@ -2523,6 +2523,76 @@ pub(crate) async fn apply_ac_warn_events(
     applied
 }
 
+/// `#acsessions <player>`'s async DB round trip - see `ugaris-core`'s
+/// `world/anticheat.rs` module doc comment. Reproduces `ac_cmd_sessions`
+/// (`anticheat.c:975-1017`): resolves the subscriber id the same way
+/// `apply_ac_trust_events` does (`account_id_for_session`), then queries
+/// up to 10 recent sessions (`AntiCheatRepository::recent_sessions`,
+/// matching C's own `sessions[10]` stack array / `db_ac_get_recent_
+/// sessions(..., 10)` call). An unresolvable subscriber id is silently
+/// skipped (no reply at all), matching the module doc comment's
+/// established "row deleted or unknown id -> silent skip" convention
+/// (unlike `#acwarn`, this command has no C-side `subscriber_id <= 0`
+/// branch to reproduce, since C's own `ac_find_player` guarantees an
+/// online connection exists and thus always has *some* row).
+pub(crate) async fn apply_ac_sessions_events(
+    world: &mut World,
+    anticheat_repository: &Option<ugaris_db::PgAntiCheatRepository>,
+) -> usize {
+    let lookups = world.drain_pending_ac_sessions_lookups();
+    if lookups.is_empty() {
+        return 0;
+    }
+    let Some(repository) = anticheat_repository else {
+        return 0;
+    };
+    let mut applied = 0;
+    for lookup in lookups {
+        let Ok(Some(account_id)) = repository.account_id_for_session(lookup.session_id).await
+        else {
+            continue;
+        };
+        let Ok(rows) = repository.recent_sessions(account_id, 10).await else {
+            continue;
+        };
+        for line in ac_sessions_lines(&lookup.target_name, &rows) {
+            world.queue_system_text(lookup.caller_id, line);
+        }
+        applied += 1;
+    }
+    applied
+}
+
+/// Pure message-formatting half of [`apply_ac_sessions_events`], split
+/// out so it can be unit-tested without a live database - same
+/// established convention as `ac_status_lines`. C `ac_cmd_sessions`
+/// (`anticheat.c:993-1017`) - color wrapping dropped, matching `ac_
+/// status_lines`'s/`/global`'s plain-text simplification for admin-only
+/// displays.
+fn ac_sessions_lines(
+    target_name: &str,
+    rows: &[ugaris_db::AntiCheatSessionHistoryRow],
+) -> Vec<String> {
+    if rows.is_empty() {
+        return vec![format!("No sessions found for {target_name}.")];
+    }
+    let mut lines = vec![format!("--- Recent Sessions for {target_name} ---")];
+    for row in rows {
+        lines.push(format!(
+            "{} ({}m) {} Bot:{:.2} V:{}/{}/{}/{}",
+            row.start_time,
+            row.duration_minutes,
+            ac_status_string(row.status),
+            row.bot_score,
+            row.heartbeat_violations,
+            row.state_violations,
+            row.challenge_failures,
+            row.anomaly_count,
+        ));
+    }
+    lines
+}
+
 /// `#querystats`/`/querystats`'s async round trip - see `ugaris-core`'s
 /// `world/querystats.rs` module doc comment for exactly which C counters
 /// this scoped-down port tracks (and why the rest are omitted rather than
@@ -3942,6 +4012,71 @@ mod ac_warn_tests {
         assert_eq!(applied, 0);
         assert!(world.drain_pending_system_texts().is_empty());
         assert!(world.drain_pending_ac_warn_lookups().is_empty());
+    }
+}
+
+#[cfg(test)]
+mod ac_sessions_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn no_lookups_queued_is_a_cheap_no_op() {
+        let mut world = World::default();
+        let applied = apply_ac_sessions_events(&mut world, &None).await;
+        assert_eq!(applied, 0);
+        assert!(world.drain_pending_system_texts().is_empty());
+    }
+
+    #[tokio::test]
+    async fn missing_repository_leaves_the_lookup_queued_state_untouched_but_drained() {
+        let mut world = World::default();
+        world.queue_ac_sessions_lookup(CharacterId(7), "Baddie".to_string(), 30);
+
+        let applied = apply_ac_sessions_events(&mut world, &None).await;
+        assert_eq!(applied, 0);
+        assert!(world.drain_pending_system_texts().is_empty());
+        assert!(world.drain_pending_ac_sessions_lookups().is_empty());
+    }
+
+    #[test]
+    fn ac_sessions_lines_reports_no_sessions_when_empty() {
+        let lines = ac_sessions_lines("Baddie", &[]);
+        assert_eq!(lines, vec!["No sessions found for Baddie.".to_string()]);
+    }
+
+    #[test]
+    fn ac_sessions_lines_formats_header_and_rows() {
+        let rows = vec![
+            ugaris_db::AntiCheatSessionHistoryRow {
+                start_time: "07-06 10:00".to_string(),
+                duration_minutes: 15,
+                status: 3,
+                bot_score: 0.91,
+                heartbeat_violations: 2,
+                state_violations: 3,
+                challenge_failures: 4,
+                anomaly_count: 5,
+            },
+            ugaris_db::AntiCheatSessionHistoryRow {
+                start_time: "07-05 09:00".to_string(),
+                duration_minutes: 60,
+                status: 1,
+                bot_score: 0.0,
+                heartbeat_violations: 0,
+                state_violations: 0,
+                challenge_failures: 0,
+                anomaly_count: 0,
+            },
+        ];
+        let lines = ac_sessions_lines("Baddie", &rows);
+        assert_eq!(
+            lines,
+            vec![
+                "--- Recent Sessions for Baddie ---".to_string(),
+                "07-06 10:00 (15m) flagged Bot:0.91 V:2/3/4/5".to_string(),
+                "07-05 09:00 (60m) verified Bot:0.00 V:0/0/0/0".to_string(),
+            ]
+        );
     }
 }
 

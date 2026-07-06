@@ -5470,10 +5470,10 @@ pub(crate) fn apply_admin_character_command(
     // synchronously, before queuing to `World` for the DB half. Only
     // these six of the ~20-member family are ported so far (see
     // `PORTING_TODO.md`'s remaining-text-commands task's REMAINING note);
-    // `acreset`/`acflag`/`acwatch` are also ported, further below;
-    // `acunflag`/`actrust`/`acuntrust`/`achistory`/`acsessions`/
-    // `acviolations`/`acsharedip`/`acsharedhw`/`achighrisk`/`aclookup`/
-    // `acsiglist`/`acsigadd`/`acsigdel`/`acwarn` remain unported.
+    // `acreset`/`acflag`/`acwatch`/`acunflag`/`actrust`/`acuntrust`/
+    // `acwarn`/`acsessions` are also ported, further below;
+    // `achistory`/`acviolations`/`acsharedip`/`acsharedhw`/`achighrisk`/
+    // `aclookup`/`acsiglist`/`acsigadd`/`acsigdel` remain unported.
     // `#accleanup` (below, right after this block) needs no name
     // resolution at all, so it isn't part of this shared `lower ==` arm.
     if lower == "achelp" {
@@ -6031,6 +6031,59 @@ pub(crate) fn apply_admin_character_command(
             });
         };
         world.queue_ac_warn_lookup(character_id, target_id, target_name, session_id, reason);
+        return Some(KeyringCommandResult::default());
+    }
+
+    // C `#acsessions <player>` (`command.c:10241-10249` dispatch,
+    // `CF_GOD|CF_STAFF`-gated, exact-word; `ac_cmd_sessions`, `anticheat.c:
+    // 975-1017`). Same single-name-target resolution as `#acwarn`/
+    // `#actrust` above (online `CF_PLAYER` name scan, first match by
+    // ascending character id, then `PlayerRuntime::anticheat_session_id`)
+    // - see `apply_ac_sessions_events` for the subscriber-id resolution
+    // and the recent-session-history query itself.
+    if lower == "acsessions" {
+        let Some(caller) = world.characters.get(&character_id) else {
+            return Some(KeyringCommandResult::default());
+        };
+        if !caller
+            .flags
+            .intersects(CharacterFlags::STAFF | CharacterFlags::GOD)
+        {
+            return None;
+        }
+        let name = rest.trim_start();
+        if name.is_empty() {
+            return Some(KeyringCommandResult {
+                messages: vec!["Usage: #acsessions <player>".to_string()],
+                ..Default::default()
+            });
+        }
+        let mut candidates: Vec<&Character> = world
+            .characters
+            .values()
+            .filter(|character| {
+                character.flags.contains(CharacterFlags::PLAYER)
+                    && character.name.eq_ignore_ascii_case(name)
+            })
+            .collect();
+        candidates.sort_by_key(|character| character.id.0);
+        let Some(target_id) = candidates.first().map(|character| character.id) else {
+            return Some(KeyringCommandResult {
+                messages: vec![format!("Player '{name}' not found online.")],
+                ..Default::default()
+            });
+        };
+        let target_name = world.characters[&target_id].name.clone();
+        let Some(session_id) = runtime
+            .player_for_character(target_id)
+            .and_then(|player| player.anticheat_session_id)
+        else {
+            return Some(KeyringCommandResult {
+                messages: vec![format!("Player '{target_name}' has no connection data.")],
+                ..Default::default()
+            });
+        };
+        world.queue_ac_sessions_lookup(character_id, target_name, session_id);
         return Some(KeyringCommandResult::default());
     }
 
