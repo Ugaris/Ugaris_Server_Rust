@@ -3787,10 +3787,27 @@ async fn main() -> anyhow::Result<()> {
                                                 }
                                             }
                                         }
-                                        ugaris_core::item_driver::ItemDriverOutcome::ClanSpawnExit { character_id, area_id, .. } => {
+                                        ugaris_core::item_driver::ItemDriverOutcome::ClanSpawnExit { character_id, area_id, x, y, .. } => {
                                             if area_id != config.area_id {
-                                                feedback.push((character_id, "Nothing happens - target area server is down.".to_string()));
-                                                blocked += 1;
+                                                let transferred = attempt_cross_area_transfer(
+                                                    &mut world,
+                                                    &mut runtime,
+                                                    &character_repository,
+                                                    &area_repository,
+                                                    config.area_id,
+                                                    config.mirror_id,
+                                                    character_id,
+                                                    area_id,
+                                                    u32::from(config.mirror_id),
+                                                    x,
+                                                    y,
+                                                ).await;
+                                                if transferred {
+                                                    executed += 1;
+                                                } else {
+                                                    feedback.push((character_id, "Nothing happens - target area server is down.".to_string()));
+                                                    blocked += 1;
+                                                }
                                             } else {
                                                 executed += 1;
                                             }
@@ -5590,10 +5607,27 @@ async fn main() -> anyhow::Result<()> {
                                             feedback.push((character_id, "Interesting idea. Really. Doesn't work, though.".to_string()));
                                             blocked += 1;
                                         }
-                                        ugaris_core::item_driver::ItemDriverOutcome::MineGateway { character_id, area_id, .. } => {
+                                        ugaris_core::item_driver::ItemDriverOutcome::MineGateway { character_id, area_id, x, y, .. } => {
                                             if area_id != config.area_id {
-                                                feedback.push((character_id, "Nothing happens - target area server is down.".to_string()));
-                                                blocked += 1;
+                                                let transferred = attempt_cross_area_transfer(
+                                                    &mut world,
+                                                    &mut runtime,
+                                                    &character_repository,
+                                                    &area_repository,
+                                                    config.area_id,
+                                                    config.mirror_id,
+                                                    character_id,
+                                                    area_id,
+                                                    u32::from(config.mirror_id),
+                                                    x,
+                                                    y,
+                                                ).await;
+                                                if transferred {
+                                                    executed += 1;
+                                                } else {
+                                                    feedback.push((character_id, "Nothing happens - target area server is down.".to_string()));
+                                                    blocked += 1;
+                                                }
                                             } else {
                                                 executed += 1;
                                             }

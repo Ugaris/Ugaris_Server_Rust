@@ -10484,54 +10484,58 @@ Unlocks every quest NPC. Do these before any P4 area work.
   and `#` text commands" task's final Progress Log entry for the
   per-command detail; none of the three need a separate task of their
   own once this one lands.
-  REMAINING (iteration 221): iteration 220 decided the single-process
-  stance and ported the login-side redirect (see prior notes, still
-  accurate). This iteration ported the first slice of the *mid-game*
-  teleport half the prior note flagged as missing: a new reusable
-  `crates/ugaris-server/src/cross_area.rs::attempt_cross_area_transfer`
-  helper reproduces C's real `change_area`/`kick_char`/`player_to_server`
-  sequence end-to-end (`AreaRepository::get_area` lookup ->
-  `CharacterSaveMode::Logout` save with the *destination*
-  area/mirror/coords written via a new
-  `crates/ugaris-server/src/snapshots.rs::character_area_transfer_save_
-  request` builder -> `world.remove_character` despawn -> `SV_SERVER`
-  redirect + session disconnect, matching C's "lookup failure is the
-  only hard abort; a save failure still proceeds to disconnect, exactly
-  like `kick_char` never checking `save_char`'s return value" semantics)
-  and wired it into exactly one call site: transport-point travel
-  (`TransportTravelResult::CrossArea` in `main.rs`'s `TransportTravel`
-  outcome handler - the "most self-contained" starting point the prior
-  iteration's design plan recommended). This codebase's `Character` has
-  no separate `tmpx`/`tmpy`/`tmpa` fields the way C does (see the design
-  plan), so the destination coordinates are written directly into the
-  saved `x`/`y` snapshot fields instead - the receiving server's existing
-  `apply_character_snapshot` already spawns from exactly those fields, so
-  no additional "arrival" state is needed. Still missing, in the same
-  priority order as before: (1) the other 6 `TransportTravelResult::
-  CrossArea`/`area_id != config.area_id` call sites listed in the design
-  plan - clan-spawn exit and mine gateway (both in `main.rs`), `/office`
-  + `/goto` (`commands_admin.rs::finish_goto_jump`), `/jail`/`/unjail`
+  REMAINING (iteration 222): iterations 220-221 decided the
+  single-process stance, ported the login-side redirect, and wired the
+  new `attempt_cross_area_transfer` helper into transport-point travel
+  (see prior notes, still accurate). This iteration wired two more of
+  the six remaining `area_id != config.area_id` call sites the prior
+  note flagged: **clan-spawn exit** (`ItemDriverOutcome::ClanSpawnExit`
+  in `main.rs`, C `clanspawn_exit` in `src/area/30/clanmaster.c:1478-
+  1490`) and **mine gateway** (`ItemDriverOutcome::MineGateway` in
+  `main.rs`, C's gateway-touch tail in `src/area/12/mine.c:1275-1303`).
+  Both C sites call `change_area(cn, target_area, target_x, target_y)`
+  which internally calls `get_area(area_number, ch[cn].mirror, ...)` -
+  i.e. the *character's own current mirror*, never a different target
+  mirror - and since this codebase's per-process `config.area_id`/
+  `config.mirror_id` already represent every connected character's
+  current area+mirror (single-process-per-area-mirror stance from
+  iteration 220), both new call sites simply pass
+  `u32::from(config.mirror_id)` as both the source and target mirror,
+  matching the transport-point call site's source-mirror argument
+  exactly but (unlike transport travel, whose `spec` can name a
+  different mirror) reusing the *same* mirror for the target since
+  neither `ClanSpawnExit` nor `MineGateway` carries a mirror field of
+  its own. Both match arms now destructure `x, y` in addition to
+  `character_id, area_id` (previously discarded via `..`) and call
+  `attempt_cross_area_transfer(...).await`, falling back to the
+  existing "Nothing happens - target area server is down." message on
+  `false`, mirroring the `TransportTravelResult::CrossArea` arm's
+  `if transferred {...} else {...}` shape exactly. No new tests added
+  this iteration: the shared `attempt_cross_area_transfer` helper
+  already has full coverage (`tests/cross_area.rs`,
+  `tests/snapshots.rs`) and the outcome-producing driver functions
+  (`clanspawn_exit_driver`, `mine_gateway_driver`) already have
+  unchanged-shape tests in `item_driver/tests/area30_clan.rs` and
+  `item_driver/tests/area12_mine.rs`); the `main.rs` tick-loop dispatch
+  match itself has no extracted/testable function to unit-test against
+  (same gap as the pre-existing `TransportTravel` arm it mirrors).
+  Still missing, in the same priority order as before: (1) the
+  remaining 4 call sites - `/office` + `/goto`
+  (`commands_admin.rs::finish_goto_jump`), `/jail`/`/unjail`
   (`world/jail.rs`, currently resolved via `World`-side queued lookups
-  with no DB handle of its own - would need its own wiring path since it
-  can't call the new async helper directly from `ugaris-core`), and the
-  dungeon-master eviction rescue (`world/dungeon_master.rs`) - all still
-  only ever send the "down" message; each should be a switch to calling
-  `attempt_cross_area_transfer` (or, for the `world/`-side callers, a
-  thin `ugaris-server`-side wrapper around it) one at a time; (2) a
-  periodic `mark_alive` heartbeat (still startup-only); (3) the three
-  blocked commands (`/exterminate`/`/values`+`/showvalues`/`/allow`)
-  still need their own `server_chat`-equivalent design once (1) fully
-  lands. New tests: `crates/ugaris-server/src/tests/snapshots.rs`
-  (`area_transfer_save_request_writes_destination_coords_and_allowed_
-  area`, `area_transfer_save_request_also_strips_logout_vanishing_
-  items` - the pure snapshot-builder half, fully unit-tested without a
-  database) and `crates/ugaris-server/src/tests/cross_area.rs`
-  (`cross_area_transfer_stays_put_without_a_registered_repository_pair`
-  - the no-`DATABASE_URL` fallback path, matching every other DB-optional
-  codepath's test convention in this codebase); the actual DB-backed
-  save+redirect path itself has no live-Postgres test yet (same gap as
-  the login-side redirect it reuses `area_redirect_payload` from), only
-  the 10s boot-smoke this iteration re-ran.
+  with no DB handle of its own - would need its own wiring path since
+  it can't call the new async helper directly from `ugaris-core`), and
+  the dungeon-master eviction rescue (`world/dungeon_master.rs`) - all
+  still only ever send the "down" message; each should be a switch to
+  calling `attempt_cross_area_transfer` (or, for the `world/`-side
+  callers, a thin `ugaris-server`-side wrapper around it) one at a
+  time; (2) a periodic `mark_alive` heartbeat (still startup-only); (3)
+  the three blocked commands (`/exterminate`/`/values`+`/showvalues`/
+  `/allow`) still need their own `server_chat`-equivalent design once
+  (1) fully lands. The actual DB-backed save+redirect path itself still
+  has no live-Postgres test (same gap as before), only the 10s
+  boot-smoke this iteration re-ran (confirmed "entering Rust game loop"
+  with no panic).
 
 - [ ] **Player-side fight-driver auto-combat (lostcon self-defense +
   no*/auto* toggle family)** - `fight_driver_attack_enemy`/
@@ -11174,3 +11178,15 @@ Add one line per completed task: date, task, ledger section touched.
   disconnect, falling back to the existing down-reject text only when
   unregistered/offline); ledger "Continuation Handoff" design-plan
   section and the new `crates/ugaris-db/src/area.rs` ledger row.
+- 2026-07-06: Cross-area transfer (P3, still `[~]`) - wired two more of
+  the six remaining mid-game teleport call sites into the existing
+  `attempt_cross_area_transfer` helper: clan-spawn exit and mine
+  gateway (both `ItemDriverOutcome` arms in
+  `crates/ugaris-server/src/main.rs`), using `config.mirror_id` as both
+  source and target mirror (C's `change_area` always resolves the
+  target mirror as the character's own current mirror via `ch[cn].
+  mirror`, and this codebase's per-process config already represents
+  that). Remaining 4 call sites (`/office`+`/goto`, `/jail`/`/unjail`,
+  dungeon-master rescue) and the periodic `mark_alive` heartbeat are
+  unchanged; ledger row for `src/system/database/database_area.h`/`.c`
+  updated with the iteration-222 note.
