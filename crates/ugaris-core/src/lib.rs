@@ -23,6 +23,7 @@ pub mod key_registry;
 pub mod legacy;
 pub mod light;
 pub mod log_text;
+pub mod macro_daemon;
 pub mod map;
 pub mod path;
 pub mod player;

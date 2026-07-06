@@ -11475,7 +11475,7 @@ Unlocks every quest NPC. Do these before any P4 area work.
   potion+recall reaction, `autobless`/`autopulse` via the iteration-237
   player-tick consumer) - this task is complete.
 
-- [ ] **Macro-detection engine (`macro_driver`, `src/module/base.c:802-
+- [~] **Macro-detection engine (`macro_driver`, `src/module/base.c:802-
   1243`, ~800 lines)** - anti-macro/anti-bot detection: activity
   tracking, math/type-word/reverse/multiple-choice challenge generation
   and checking, reward/failure handling, and the cross-server "challenge
@@ -11491,6 +11491,39 @@ Unlocks every quest NPC. Do these before any P4 area work.
   `macro_ppd`'s fields yet, so every admin view of it is permanently
   empty/default. Port the real detection engine so it populates the
   struct this task's admin commands already read.
+
+  REMAINING: (iteration 239) ported the full pure "brain" (new top-level
+  `crates/ugaris-core/src/macro_daemon.rs`, 22 tests) - challenge
+  generation/asking/checking for all 3 reachable types
+  (math/word/reverse, + the C-dead-but-preserved choice branch),
+  `macro_is_player_active`'s activity gate, the area/section victim-
+  search exclusions, history recording, and the correct-answer/failure
+  `MacroPpd` mutations (karma/suspicion/failures/nextcheck, operating on
+  a real `&mut MacroPpd`), plus the reward-type roll classification
+  (`MacroReward` enum + message/template lookups). Still needed before
+  this NPC does anything live in-game: (1) the `CharacterDriverState::
+  Macro`/`struct macro_data` NPC-side state machine and `World::
+  process_macro_actions` message loop/search/teleport driver (follow
+  `world/dungeon_master.rs`'s shape); (2) since `World` cannot reach
+  `PlayerRuntime` (where `macro_ppd` actually lives - same constraint
+  `world/military.rs`'s doc comment documents for its own PPD-backed
+  driver), an `apply_macro_events`-shaped bridge in `ugaris-server`
+  (mirroring `apply_military_master_events`) that has both a `&mut
+  World` and a `&mut ServerRuntime` to call this iteration's pure
+  functions against a real online player's `PlayerRuntime::macro_ppd`;
+  (3) the cross-server "challenge room" teleport-and-restore hand-off
+  (reuse `attempt_cross_area_transfer`, same shape as `world/jail.rs`'s
+  `JailCrossAreaTransfer`); (4) resolving `MacroReward::Gold`/`Item`/
+  `HealingPotion`/`ComboPotion`/`Lollipop` into an actual `create_item`/
+  `grant_template_item_smart` call (needs a `ZoneLoader`, `World` has
+  none either); (5) wiring `macro_track_exp_gain`/`macro_track_combat`/
+  `macro_track_gold_change` at their real (`PlayerRuntime`-requiring, so
+  `ugaris-server`-side) call sites so `macro_is_player_active` ever sees
+  a non-default value; (6) the pentagram-progress save/restore (no-op
+  until `pents.c` itself is ported) and the `isxmas` NPC name/sprite
+  reskin (cosmetic, needs `ugaris-server`'s xmas-event state). See
+  `crates/ugaris-core/src/macro_daemon.rs`'s module doc comment for the
+  full breakdown.
 
 - [x] **`.pre` zone preprocessor parity** - `src/system/create.c` expands
   `.pre` template includes; the Rust `ZoneLoader` skips them. Check which

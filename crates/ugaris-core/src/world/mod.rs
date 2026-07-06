@@ -245,7 +245,15 @@ const REMOVE_SPELL_TIMER: &str = "remove_spell";
 
 const POISON_CALLBACK_TIMER: &str = "poison_callback";
 
-fn legacy_random_below_from_seed(seed: &mut u32, below: u32) -> u32 {
+/// C `RANDOM(n)` (`src/system/tool.h`, an `lrand48`-free LCG the legacy
+/// server seeds once at startup): visible crate-wide (rather than
+/// `world`-private like most of this module's internals) so
+/// `crate::macro_daemon`'s pure decision functions - which cannot be
+/// `impl World` methods since they don't touch `World` at all, see that
+/// module's doc comment - can still reproduce the exact same random
+/// sequence a real `World`-driven caller's `legacy_random_seed` would
+/// produce, instead of duplicating this two-line LCG a second time.
+pub(crate) fn legacy_random_below_from_seed(seed: &mut u32, below: u32) -> u32 {
     if below == 0 {
         return 0;
     }
