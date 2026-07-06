@@ -10537,10 +10537,43 @@ Unlocks every quest NPC. Do these before any P4 area work.
   empty/default. Port the real detection engine so it populates the
   struct this task's admin commands already read.
 
-- [ ] **`.pre` zone preprocessor parity** - `src/system/create.c` expands
+- [x] **`.pre` zone preprocessor parity** - `src/system/create.c` expands
   `.pre` template includes; the Rust `ZoneLoader` skips them. Check which
   areas' data actually use `.pre` and port expansion so those areas load
   fully.
+
+  Progress Log (iteration 219, task closed - premise was false): read
+  `create.c` completely (`load_zone`/`load_zones`/`create_items`/
+  `create_characters`/`create_map`/`process_map`/`get_text`) - it only
+  ever calls `load_zones` with masks `.itm`/`.chr`/`.map`, never `.pre`;
+  `process_map`'s directive grammar recognizes exactly `origin`/`field`/
+  `from`/`to`/`gsprite`/`fsprite`/`ch`/`it`/`flag`/`#`-comments and hard-
+  fails (`return 0`) on anything else - there is no `PRESET`/`LINEWALL`/
+  `CHANCE`/include/template-expansion token anywhere in the C oracle.
+  Grepped every `.map`/`.itm`/`.chr` file under `ugaris_data/zones/`
+  (recursively, all 3 extensions) for `.pre`/`PRESET`/`LINEWALL` -
+  zero matches; no area's actual server-loaded data references a `.pre`
+  file or an editor-preset block. The 38 `.pre` files scattered through
+  `zones/*/` (e.g. `zones/18/bones.pre`, `zones/presets/grave.pre`) are
+  the closed-source Windows map editor's paint-palette source format
+  (`PRESET:`/`CHANCE:`/`LINEWALL:`/`GROUND:` blocks with `name=`/
+  `setflag=`/`clrflag=`/`gsprite=`/`gsprite2=`/`sprite=`/`it=` fields,
+  including `gsprite2=` which `process_map` itself doesn't even
+  recognize) - purely editor-authoring sidecar files whose *expanded
+  output* is already baked into the plain `.map`/`.itm` files the server
+  (and the Rust `ZoneLoader`) actually loads; the server has never read
+  them, in C or Rust. Confirmed the Rust `zone.rs` `MapDirective` enum
+  (`Origin`/`Field`/`From`/`To`/`GroundSprite`/`ForegroundSprite`/
+  `Character`/`Item`/`Flag`) is already a 1:1 mirror of `process_map`'s
+  token set, and `ugaris-server/src/zone.rs`'s `files_with_extension`
+  filters by exact `.map`/`.itm`/`.chr` extension match (mirroring C's
+  `endcmp(de->d_name, mask)`), so `.pre` files are already correctly
+  excluded by construction on both sides - there is no missing
+  expansion step to port. No code changes needed; this was a paperwork-
+  only closure once the false premise was disproven by direct
+  cross-reference against the C oracle. `cargo fmt --all`, `cargo test
+  --workspace` and `cargo build -p ugaris-server` unaffected (still
+  green, see the health-check run this same iteration).
 
 - [ ] **Sector skip optimization (`skipx_sector`)** - C skips unchanged
   sectors in the per-tick map scan. Port once per-tick diff CPU becomes a
@@ -10650,6 +10683,14 @@ Ordered by player progression; the C file is the oracle.
   static registry.
 - `src/module/anticheat/*` runtime heartbeats - scaffolded DB side exists;
   defer until multiplayer testing starts.
+- `.pre` zone/map files (`ugaris_data/zones/*/*.pre`) - closed-source
+  Windows map editor paint-palette sources (`PRESET:`/`CHANCE:`/
+  `LINEWALL:`/`GROUND:` blocks); `create.c` never reads them (confirmed:
+  `load_zones` only ever runs with masks `.itm`/`.chr`/`.map`), and no
+  area's `.map`/`.itm`/`.chr` data references one. The Rust `ZoneLoader`
+  already has full parity by loading the same 3 extensions the C server
+  does. See the closed "`.pre` zone preprocessor parity" P3 task
+  (iteration 219) for the full cross-reference.
 
 ---
 
