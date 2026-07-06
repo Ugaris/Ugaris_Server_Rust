@@ -11767,17 +11767,20 @@ Ordered by player progression; the C file is the oracle.
   REMAINING: `camhermit_driver` (`CDR_CAMHERMIT`, the forest hermit's
   bear-kill/tooth-necklace quest chain, `:707-996`), `yoakin_driver`
   (`CDR_YOAKIN`, the hunter's bear-hunt quest chain plus the shrike-
-  talisman/leftover-give branches it also handles, `:996-1217`), and
+  talisman/leftover-give branches it also handles, `:996-1217`),
   `terion_driver` (`CDR_TERION`, the village's ambient lore/storyteller
-  NPC, `:1228-1472`) are ported so far - see the Progress Log entries
-  below and `crates/ugaris-core/src/world/camhermit.rs`/`world/yoakin.rs`/
-  `world/terion.rs`'s own module doc comments for their documented gaps
-  (camhermit's `monster_dead` bear-kill counter is still unported, so its
-  `CAMHERMIT_STATE_QUEST1DO` branch can never actually complete on a live
-  server yet; yoakin's `destroy_item_byID` sweep does not reach the
-  account depot; terion is pure ambient dialogue with no gaps of its own).
-  Every other NPC in this file is still unported:
-  `gwendylon_driver` (the main quest-giver, `:234-680`), `greeter_driver`
+  NPC, `:1228-1472`), and `gwendylon_driver` (`CDR_GWENDYLON`, the main
+  quest-giver mage's four-skull quest chain, `:234-673`) are ported so
+  far - see the Progress Log entries below and
+  `crates/ugaris-core/src/world/camhermit.rs`/`world/yoakin.rs`/
+  `world/terion.rs`/`world/gwendylon.rs`'s own module doc comments for
+  their documented gaps (camhermit's `monster_dead` bear-kill counter is
+  still unported, so its `CAMHERMIT_STATE_QUEST1DO` branch can never
+  actually complete on a live server yet; yoakin's and gwendylon's
+  `destroy_item_byID` sweeps do not reach the account depot; terion is
+  pure ambient dialogue with no gaps of its own). Every other NPC in this
+  file is still unported:
+  `greeter_driver`
   (`:1485-1808`), `jessica_driver` (`:1809-2073`), `jiu_driver` (`:2074-
   2255`), `forest_ranger_driver` (`:2284-2473`), `brithildie_driver`
   (`:2474-2826`), `james_driver` (`:2901-3179`), `nook_driver` (`:3180-
@@ -12437,10 +12440,50 @@ Add one line per completed task: date, task, ledger section touched.
   that needed the new variant), `CDR_TERION` default driver-state wiring
   in `zone.rs`. Extended `crates/ugaris-server/src/area1.rs` (facts
   snapshot + event application) and wired into `main.rs`'s tick loop
-  right after yoakin's. Terion is pure ambient dialogue - no quest log,
+  right after yoakin's.   Terion is pure ambient dialogue - no quest log,
   no item reward, no gold - so `world::terion`'s module doc comment
   records no outstanding gaps of its own. `cargo fmt --all`, `cargo test
   --workspace` (2296 core + 1084 server, all green), `cargo build -p
   ugaris-server` all clean with zero warnings; boot-smoked (10s run,
   "entering Rust game loop" `area_id=1`, tick loop advancing, no
   panics).
+- Iteration 247 (Area 1 - `gwendylon.c`, fourth NPC slice): ported
+  `gwendylon_driver` (`CDR_GWENDYLON`, the main quest-giver mage's
+  four-skull quest chain, `:234-673` - new `CDR_GWENDYLON = 8` constant).
+  20-state `NT_CHAR` chain covering all four `QLOG_GWENDY_*` quests
+  including all three `questlog_isdone` skip-ahead jumps ported as
+  literal jump targets exactly as C writes them (a real, verified
+  asymmetry: skipping skull 1 jumps to the next tier's own "done"
+  checkpoint, but skipping skulls 2/3 jump to the tier *after that one's*
+  "wait" checkpoint instead), plus the final `GWENDYLON_STATE_DONE_BLESS`
+  periodic-bless branch. `NT_TEXT` small-talk via the same shared
+  `GWENDYLON_QA` table with its own 5-bucket "repeat" state-reset ranges.
+  `NT_GIVE`'s five branches share a new `gwendylon_turn_in_skull` helper
+  for the four skull turn-ins (quest completion, inventory sweep, state
+  advance, first-completion-only gold reward) plus the `IID_CALIGARLETTER`
+  teleport-letter hand-off and the generic give-back fallback. The
+  `DONE_BLESS` branch reproduces a genuine C `return`-before-
+  `remove_message` quirk (the triggering `NT_CHAR` message is spliced
+  back onto the NPC's own `driver_messages` and the turn/idle-move tail
+  skipped for that tick, matching C's early `return` exactly) via
+  `World::setup_bless_spell` (no new spell-system code needed).
+  `IID_CALIGARLETTER`'s `change_area(co, 36, 240, 10)` needed a new
+  `GwendylonCrossAreaTransfer` pending-queue on `World` (mirroring
+  `world::jail`/`world::macro_npc`'s existing pattern), resolved by
+  `crates/ugaris-server/src/area1.rs::apply_gwendylon_cross_area_transfers`
+  through the existing shared `attempt_cross_area_transfer` helper, with
+  Gwendylon audibly saying the C fallback line on failure (a `quiet_say`,
+  not a private message - a genuine difference from every other
+  cross-area call site). Nine new item IDs in `item_driver/ids.rs`. New
+  `crates/ugaris-core/src/world/gwendylon.rs` (+9 tests),
+  `CDR_GWENDYLON`/`GwendylonDriverData`/`CharacterDriverState::Gwendylon`
+  in `character_driver.rs` (plus the two exhaustive-match call sites that
+  needed the new variant), `CDR_GWENDYLON` default driver-state wiring in
+  `zone.rs`. Extended `crates/ugaris-server/src/area1.rs` (facts snapshot,
+  event application, cross-area transfer application) and wired into
+  `main.rs`'s tick loop right after terion's. One documented gap shared
+  with yoakin: `destroy_items_by_template_id` does not sweep the account
+  depot. `cargo fmt --all`, `cargo test --workspace` (2305 core + 1084
+  server, all green, zero failures, zero warnings), `cargo build -p
+  ugaris-server`/`--workspace` all clean; boot-smoked (8s run, "entering
+  Rust game loop" `area_id=1`, tick loop advancing, no panics).

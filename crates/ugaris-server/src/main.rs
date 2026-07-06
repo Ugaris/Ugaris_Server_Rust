@@ -7616,6 +7616,48 @@ async fn main() -> anyhow::Result<()> {
                         "applied terion dialogue events"
                     );
                 }
+                // C `gwendylon_driver`: area 1's main quest-giver mage NPC
+                // (`src/area/1/gwendylon.c`).
+                let gwendylon_facts = gwendylon_player_facts(&runtime);
+                let gwendylon_events = world.process_gwendylon_actions(
+                    &gwendylon_facts,
+                    current_unix_time() as i32,
+                    config.area_id,
+                );
+                let gwendylon_events_applied = apply_gwendylon_events(
+                    &mut world,
+                    &mut runtime,
+                    &achievement_repository,
+                    gwendylon_events,
+                )
+                .await;
+                if gwendylon_events_applied != 0 {
+                    info!(
+                        gwendylon_events_applied,
+                        tick = world.tick.0,
+                        "applied gwendylon dialogue events"
+                    );
+                }
+                // `gwendylon_driver`'s `IID_CALIGARLETTER` cross-area
+                // hand-off to area 36 (C `change_area(co, 36, 240, 10)`,
+                // `src/area/1/gwendylon.c:637`), queued above when the
+                // teleport letter is handed in.
+                let gwendylon_cross_area_transfers_applied = apply_gwendylon_cross_area_transfers(
+                    &mut world,
+                    &mut runtime,
+                    &character_repository,
+                    &area_repository,
+                    config.area_id,
+                    config.mirror_id,
+                )
+                .await;
+                if gwendylon_cross_area_transfers_applied != 0 {
+                    info!(
+                        gwendylon_cross_area_transfers_applied,
+                        tick = world.tick.0,
+                        "applied gwendylon cross-area transfers"
+                    );
+                }
                 // C `gate_welcome_driver`: the Ishtar labyrinth gatekeeper
                 // greeter NPC (`src/system/gatekeeper.c`).
                 let gate_welcome_facts = gate_welcome_player_facts(&runtime);

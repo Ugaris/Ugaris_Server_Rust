@@ -23,8 +23,8 @@
 use super::*;
 use ugaris_core::quest::{QLOG_HERMIT_QUEST2, QLOG_YOAKIN};
 use ugaris_core::world::{
-    CamhermitOutcomeEvent, CamhermitPlayerFacts, TerionOutcomeEvent, TerionPlayerFacts,
-    YoakinOutcomeEvent, YoakinPlayerFacts,
+    CamhermitOutcomeEvent, CamhermitPlayerFacts, GwendylonOutcomeEvent, GwendylonPlayerFacts,
+    TerionOutcomeEvent, TerionPlayerFacts, YoakinOutcomeEvent, YoakinPlayerFacts,
 };
 
 pub(crate) fn camhermit_player_facts(
@@ -304,6 +304,163 @@ pub(crate) fn apply_terion_events(
                 applied += 1;
             }
         }
+    }
+    applied
+}
+
+pub(crate) fn gwendylon_player_facts(
+    runtime: &ServerRuntime,
+) -> HashMap<CharacterId, GwendylonPlayerFacts> {
+    use ugaris_core::quest::{
+        QLOG_GWENDY_FIRST_SKULL, QLOG_GWENDY_FOUL_MAGICIAN, QLOG_GWENDY_SECOND_SKULL,
+        QLOG_GWENDY_THIRD_SKULL,
+    };
+    runtime
+        .players
+        .values()
+        .filter_map(|player| {
+            let character_id = player.character_id?;
+            Some((
+                character_id,
+                GwendylonPlayerFacts {
+                    state: player.area1_gwendy_state(),
+                    seen_timer: player.area1_gwendy_seen_timer(),
+                    quest2_isdone: player.quest_log.is_done(QLOG_GWENDY_SECOND_SKULL),
+                    quest3_isdone: player.quest_log.is_done(QLOG_GWENDY_THIRD_SKULL),
+                    quest4_isdone: player.quest_log.is_done(QLOG_GWENDY_FOUL_MAGICIAN),
+                    quest1_done_count: player.quest_log.count(QLOG_GWENDY_FIRST_SKULL),
+                    quest2_done_count: player.quest_log.count(QLOG_GWENDY_SECOND_SKULL),
+                    quest3_done_count: player.quest_log.count(QLOG_GWENDY_THIRD_SKULL),
+                    quest4_done_count: player.quest_log.count(QLOG_GWENDY_FOUL_MAGICIAN),
+                },
+            ))
+        })
+        .collect()
+}
+
+/// Applies each [`GwendylonOutcomeEvent`] queued by
+/// `World::process_gwendylon_actions`. See the module doc comment.
+pub(crate) async fn apply_gwendylon_events(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    achievement_repository: &Option<ugaris_db::PgAchievementRepository>,
+    events: Vec<GwendylonOutcomeEvent>,
+) -> usize {
+    let mut applied = 0;
+    for event in events {
+        match event {
+            GwendylonOutcomeEvent::UpdateState {
+                player_id,
+                new_state,
+            } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.set_area1_gwendy_state(new_state);
+                applied += 1;
+            }
+            GwendylonOutcomeEvent::UpdateSeenTimer { player_id, value } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.set_area1_gwendy_seen_timer(value);
+                applied += 1;
+            }
+            // C `questlog_open(co, ...)` (`src/system/questlog.c:204-217`):
+            // sets the flag and unconditionally resends the questlog.
+            GwendylonOutcomeEvent::QuestOpen { player_id, quest } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.quest_log.open(quest);
+                let payload = legacy_questlog_payload(player);
+                for (session_id, _) in runtime.sessions_for_character(player_id) {
+                    runtime.send_to_session(session_id, payload.clone());
+                }
+                applied += 1;
+            }
+            // C `questlog_done(co, ...)` (`src/system/questlog.c:267-305`):
+            // full exp-reward port via `QuestLog::complete_legacy`,
+            // applied through `World::give_exp` (matching every other
+            // quest-completion exp grant in this codebase), plus the
+            // unconditional questlog resend.
+            GwendylonOutcomeEvent::QuestDone { player_id, quest } => {
+                let Some(level) = world.characters.get(&player_id).map(|c| c.level) else {
+                    continue;
+                };
+                let level_val = level_value(level);
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                if let Some(completion) = player.quest_log.complete_legacy(quest, level, level_val)
+                {
+                    let payload = legacy_questlog_payload(player);
+                    world.give_exp(player_id, completion.granted_exp, u32::from(world.area_id));
+                    for (session_id, _) in runtime.sessions_for_character(player_id) {
+                        runtime.send_to_session(session_id, payload.clone());
+                    }
+                    applied += 1;
+                }
+            }
+            GwendylonOutcomeEvent::GoldEarned { player_id, amount } => {
+                award_swap_money_converted_achievement(
+                    world,
+                    runtime,
+                    achievement_repository,
+                    player_id,
+                    amount,
+                )
+                .await;
+                applied += 1;
+            }
+        }
+    }
+    applied
+}
+
+/// Resolves every `IID_CALIGARLETTER` cross-area hand-off queued by
+/// `World::process_gwendylon_actions` (C `change_area(co, 36, 240, 10)`,
+/// `src/area/1/gwendylon.c:637`) via the shared `attempt_cross_area_transfer`
+/// helper, same as every other cross-area call site. On failure, Gwendylon
+/// herself says the "rift in the space-time continuum" line (C `quiet_say
+/// (cn, ...)`, `gwendylon.c:638-639`) rather than a private message to the
+/// caller, since C's own fallback here is an audible NPC line, not a
+/// targeted system text.
+pub(crate) async fn apply_gwendylon_cross_area_transfers(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    character_repository: &Option<ugaris_db::PgCharacterRepository>,
+    area_repository: &Option<ugaris_db::PgAreaRepository>,
+    area_id: u16,
+    mirror_id: u16,
+) -> usize {
+    let transfers = world.drain_pending_gwendylon_cross_area_transfers();
+    if transfers.is_empty() {
+        return 0;
+    }
+    let mut applied = 0;
+    for transfer in transfers {
+        let transferred = attempt_cross_area_transfer(
+            world,
+            runtime,
+            character_repository,
+            area_repository,
+            area_id,
+            mirror_id,
+            transfer.player_id,
+            36,
+            u32::from(mirror_id),
+            240,
+            10,
+        )
+        .await;
+        if !transferred {
+            world.npc_quiet_say(
+                transfer.gwendylon_id,
+                "Uh-Oh. There seems to be a rift in the space-time continuum. Please come again later so we can try again.",
+            );
+        }
+        applied += 1;
     }
     applied
 }

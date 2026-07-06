@@ -38,6 +38,7 @@ mod exp;
 mod exterminate;
 mod gate_fight;
 mod gatekeeper;
+mod gwendylon;
 mod helpers;
 mod hurt;
 mod item_outcomes;
@@ -106,6 +107,7 @@ pub(crate) use effects::*;
 pub use exp::*;
 pub use exterminate::*;
 pub use gatekeeper::*;
+pub use gwendylon::*;
 pub(crate) use helpers::*;
 pub use hurt::*;
 #[allow(unused_imports)]
@@ -438,6 +440,10 @@ pub struct World {
     /// destination area differs from this area server's own `area_id` -
     /// see `world/macro_npc.rs`'s module doc comment.
     pending_macro_cross_area_transfers: Vec<MacroCrossAreaTransfer>,
+    /// `gwendylon_driver`'s `IID_CALIGARLETTER` hand-off to area 36 (C
+    /// `change_area(co, 36, 240, 10)`, `src/area/1/gwendylon.c:637`) - see
+    /// `world/gwendylon.rs`'s module doc comment.
+    pending_gwendylon_cross_area_transfers: Vec<GwendylonCrossAreaTransfer>,
     /// `/rmdeath` targets not found among the currently loaded characters
     /// yet - see `world/rmdeath.rs`'s module doc comment.
     pending_rmdeath_lookups: Vec<RmdeathLookup>,

@@ -48,6 +48,10 @@ pub const CDR_YOAKIN: u16 = 9;
 /// C `#define CDR_TERION 11` (`src/system/drvlib.h`): the ambient lore NPC
 /// in area 1's village (`src/area/1/gwendylon.c::terion_driver`).
 pub const CDR_TERION: u16 = 11;
+/// C `#define CDR_GWENDYLON 8` (`src/system/drvlib.h`): the area-1 main
+/// quest-giver mage at the knight castle
+/// (`src/area/1/gwendylon.c::gwendylon_driver`).
+pub const CDR_GWENDYLON: u16 = 8;
 /// C `#define CDR_GATE_WELCOME 39` (`src/system/drvlib.h`): the stationary
 /// gatekeeper-welcome NPC (`gate_welcome` template,
 /// `src/system/gatekeeper.c::gate_welcome_driver`).
@@ -193,6 +197,7 @@ pub enum CharacterDriverState {
     Camhermit(CamhermitDriverData),
     Yoakin(YoakinDriverData),
     Terion(TerionDriverData),
+    Gwendylon(GwendylonDriverData),
 }
 
 /// C `struct lostcon_driver_data` (`src/module/lostcon.c`): the linger-timer
@@ -504,6 +509,20 @@ pub struct YoakinDriverData {
 /// ported.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct TerionDriverData {
+    #[serde(default)]
+    pub last_talk: u64,
+    pub current_victim: Option<CharacterId>,
+}
+
+/// C `struct gwendylon_driver_data` (`src/area/1/gwendylon.c:227-232`): the
+/// main quest-giver mage's own driver memory (`CDR_GWENDYLON`, distinct
+/// from the per-player `gwendy_state`/`gwendy_seen_timer` fields in
+/// `crate::player::PlayerRuntime`'s `area1_ppd` - see `world::gwendylon`'s
+/// module doc comment for the split). The C struct's `nighttime`/`giveto`
+/// fields are never read or written anywhere in `gwendylon_driver`'s body -
+/// dead even in C - so they are not ported.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct GwendylonDriverData {
     #[serde(default)]
     pub last_talk: u64,
     pub current_victim: Option<CharacterId>,
@@ -2728,7 +2747,8 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::Macro(_)
             | CharacterDriverState::Camhermit(_)
             | CharacterDriverState::Yoakin(_)
-            | CharacterDriverState::Terion(_),
+            | CharacterDriverState::Terion(_)
+            | CharacterDriverState::Gwendylon(_),
         ) => SimpleBaddyDriverData::default(),
         None => SimpleBaddyDriverData::default(),
     };

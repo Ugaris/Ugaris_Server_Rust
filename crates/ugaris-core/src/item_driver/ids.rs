@@ -560,3 +560,33 @@ pub const IID_AREA1_BIGBEAR_TOOTH: u32 = make_item_id(DEV_ID_DB, 0x000001);
 /// own `shrike_state` side-quest branch. `pub` (not `pub(crate)`) since
 /// `world::yoakin` needs it outside the `item_driver` module.
 pub const IID_SHRIKE_TALISMAN: u32 = make_item_id(DEV_ID_DB, 0x000092);
+
+/// C `IID_AREA1_SKELKEY1` (`src/common/item_id.h:61`): `gwendylon_driver`'s
+/// first-skull quest key, destroyed (not scored) alongside the skull item
+/// on turn-in. `pub` (not `pub(crate)`) since `world::gwendylon` needs it
+/// outside the `item_driver` module.
+pub const IID_AREA1_SKELKEY1: u32 = make_item_id(DEV_ID_DB, 0x000002);
+/// C `IID_AREA1_SKELKEY2` (`src/common/item_id.h:62`).
+pub const IID_AREA1_SKELKEY2: u32 = make_item_id(DEV_ID_DB, 0x000003);
+/// C `IID_AREA1_SKELKEY3` (`src/common/item_id.h:63`).
+pub const IID_AREA1_SKELKEY3: u32 = make_item_id(DEV_ID_DB, 0x000004);
+/// C `IID_AREA1_SKELSKULL` (`src/common/item_id.h:64`): `gwendylon_driver`'s
+/// first-skull quest proof item.
+pub const IID_AREA1_SKELSKULL: u32 = make_item_id(DEV_ID_DB, 0x000005);
+/// C `IID_AREA1_WOODKEY` (`src/common/item_id.h:65`).
+pub const IID_AREA1_WOODKEY: u32 = make_item_id(DEV_ID_DB, 0x000006);
+/// C `IID_AREA1_WOODSKULL` (`src/common/item_id.h:66`): `gwendylon_driver`'s
+/// second-skull quest proof item.
+pub const IID_AREA1_WOODSKULL: u32 = make_item_id(DEV_ID_DB, 0x000007);
+/// C `IID_AREA1_MAGESKULL` (`src/common/item_id.h:67`): `gwendylon_driver`'s
+/// third-skull quest proof item.
+pub const IID_AREA1_MAGESKULL: u32 = make_item_id(DEV_ID_DB, 0x000008);
+/// C `IID_AREA1_WARLOCKSKULL` (`src/common/item_id.h:68`):
+/// `gwendylon_driver`'s fourth-skull ("foul magician") quest proof item.
+pub const IID_AREA1_WARLOCKSKULL: u32 = make_item_id(DEV_ID_DB, 0x000009);
+/// C `IID_AREA1_WARLOCKKEY` (`src/common/item_id.h:69`).
+pub const IID_AREA1_WARLOCKKEY: u32 = make_item_id(DEV_ID_DB, 0x00000A);
+/// C `IID_CALIGARLETTER` (`src/common/item_id.h:234`): the Caligar
+/// teleport-letter item `gwendylon_driver` accepts to trigger a cross-area
+/// hand-off to area 36 - see `world::gwendylon`'s module doc comment.
+pub const IID_CALIGARLETTER: u32 = make_item_id(DEV_ID_DB, 0x0000AF);
