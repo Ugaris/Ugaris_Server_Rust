@@ -1,0 +1,393 @@
+//! Tick passes extracted from `main()`; called in the
+//! original order by `tick_npc::run_all`.
+
+use super::*;
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn camhermit_driver_41(
+    mut world: &mut World,
+    mut runtime: &mut ServerRuntime,
+    _zone_loader: &mut ZoneLoader,
+    config: &ServerConfig,
+    _args: &Args,
+    _completed_actions: &[WorldActionCompletion],
+    achievement_repository: &Option<ugaris_db::PgAchievementRepository>,
+    _character_repository: &Option<ugaris_db::PgCharacterRepository>,
+    _area_repository: &Option<ugaris_db::PgAreaRepository>,
+    _clan_repository: &Option<ugaris_db::PgClanRegistryRepository>,
+    _clan_log_repository: &Option<ugaris_db::PgClanLogRepository>,
+    _merchant_repository: &Option<ugaris_db::PgMerchantRepository>,
+    _military_master_storage_repository: &Option<ugaris_db::PgMilitaryMasterStorageRepository>,
+    _military_advisor_storage_repository: &Option<ugaris_db::PgMilitaryAdvisorStorageRepository>,
+    _notes_repository: &Option<ugaris_db::PgNotesRepository>,
+    _anticheat_repository: &Option<ugaris_db::PgAntiCheatRepository>,
+    _auction_repository: &Option<ugaris_db::PgAuctionRepository>,
+) {
+    // C `camhermit_driver`: area 1's forest hermit quest NPC
+    // (`src/area/1/gwendylon.c`).
+    let camhermit_facts = camhermit_player_facts(&runtime);
+    let camhermit_events = world.process_camhermit_actions(
+        &camhermit_facts,
+        current_unix_time() as i32,
+        config.area_id,
+    );
+    let camhermit_events_applied = apply_camhermit_events(
+        &mut world,
+        &mut runtime,
+        &achievement_repository,
+        camhermit_events,
+    )
+    .await;
+    if camhermit_events_applied != 0 {
+        info!(
+            camhermit_events_applied,
+            tick = world.tick.0,
+            "applied camp hermit dialogue events"
+        );
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn yoakin_driver_42(
+    mut world: &mut World,
+    mut runtime: &mut ServerRuntime,
+    _zone_loader: &mut ZoneLoader,
+    config: &ServerConfig,
+    _args: &Args,
+    _completed_actions: &[WorldActionCompletion],
+    achievement_repository: &Option<ugaris_db::PgAchievementRepository>,
+    _character_repository: &Option<ugaris_db::PgCharacterRepository>,
+    _area_repository: &Option<ugaris_db::PgAreaRepository>,
+    _clan_repository: &Option<ugaris_db::PgClanRegistryRepository>,
+    _clan_log_repository: &Option<ugaris_db::PgClanLogRepository>,
+    _merchant_repository: &Option<ugaris_db::PgMerchantRepository>,
+    _military_master_storage_repository: &Option<ugaris_db::PgMilitaryMasterStorageRepository>,
+    _military_advisor_storage_repository: &Option<ugaris_db::PgMilitaryAdvisorStorageRepository>,
+    _notes_repository: &Option<ugaris_db::PgNotesRepository>,
+    _anticheat_repository: &Option<ugaris_db::PgAntiCheatRepository>,
+    _auction_repository: &Option<ugaris_db::PgAuctionRepository>,
+) {
+    // C `yoakin_driver`: area 1's hunter/bear-hunt quest NPC
+    // (`src/area/1/gwendylon.c`).
+    let yoakin_facts = yoakin_player_facts(&world, &runtime);
+    let yoakin_events =
+        world.process_yoakin_actions(&yoakin_facts, current_unix_time() as i32, config.area_id);
+    let yoakin_events_applied = apply_yoakin_events(
+        &mut world,
+        &mut runtime,
+        &achievement_repository,
+        yoakin_events,
+    )
+    .await;
+    if yoakin_events_applied != 0 {
+        info!(
+            yoakin_events_applied,
+            tick = world.tick.0,
+            "applied yoakin dialogue events"
+        );
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn terion_driver_43(
+    world: &mut World,
+    mut runtime: &mut ServerRuntime,
+    _zone_loader: &mut ZoneLoader,
+    config: &ServerConfig,
+    _args: &Args,
+    _completed_actions: &[WorldActionCompletion],
+    _achievement_repository: &Option<ugaris_db::PgAchievementRepository>,
+    _character_repository: &Option<ugaris_db::PgCharacterRepository>,
+    _area_repository: &Option<ugaris_db::PgAreaRepository>,
+    _clan_repository: &Option<ugaris_db::PgClanRegistryRepository>,
+    _clan_log_repository: &Option<ugaris_db::PgClanLogRepository>,
+    _merchant_repository: &Option<ugaris_db::PgMerchantRepository>,
+    _military_master_storage_repository: &Option<ugaris_db::PgMilitaryMasterStorageRepository>,
+    _military_advisor_storage_repository: &Option<ugaris_db::PgMilitaryAdvisorStorageRepository>,
+    _notes_repository: &Option<ugaris_db::PgNotesRepository>,
+    _anticheat_repository: &Option<ugaris_db::PgAntiCheatRepository>,
+    _auction_repository: &Option<ugaris_db::PgAuctionRepository>,
+) {
+    // C `terion_driver`: area 1's ambient lore/storyteller NPC
+    // (`src/area/1/gwendylon.c`).
+    let terion_facts = terion_player_facts(&runtime);
+    let terion_events = world.process_terion_actions(&terion_facts, config.area_id);
+    let terion_events_applied = apply_terion_events(&mut runtime, terion_events);
+    if terion_events_applied != 0 {
+        info!(
+            terion_events_applied,
+            tick = world.tick.0,
+            "applied terion dialogue events"
+        );
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn gwendylon_driver_44(
+    mut world: &mut World,
+    mut runtime: &mut ServerRuntime,
+    _zone_loader: &mut ZoneLoader,
+    config: &ServerConfig,
+    _args: &Args,
+    _completed_actions: &[WorldActionCompletion],
+    achievement_repository: &Option<ugaris_db::PgAchievementRepository>,
+    _character_repository: &Option<ugaris_db::PgCharacterRepository>,
+    _area_repository: &Option<ugaris_db::PgAreaRepository>,
+    _clan_repository: &Option<ugaris_db::PgClanRegistryRepository>,
+    _clan_log_repository: &Option<ugaris_db::PgClanLogRepository>,
+    _merchant_repository: &Option<ugaris_db::PgMerchantRepository>,
+    _military_master_storage_repository: &Option<ugaris_db::PgMilitaryMasterStorageRepository>,
+    _military_advisor_storage_repository: &Option<ugaris_db::PgMilitaryAdvisorStorageRepository>,
+    _notes_repository: &Option<ugaris_db::PgNotesRepository>,
+    _anticheat_repository: &Option<ugaris_db::PgAntiCheatRepository>,
+    _auction_repository: &Option<ugaris_db::PgAuctionRepository>,
+) {
+    // C `gwendylon_driver`: area 1's main quest-giver mage NPC
+    // (`src/area/1/gwendylon.c`).
+    let gwendylon_facts = gwendylon_player_facts(&runtime);
+    let gwendylon_events = world.process_gwendylon_actions(
+        &gwendylon_facts,
+        current_unix_time() as i32,
+        config.area_id,
+    );
+    let gwendylon_events_applied = apply_gwendylon_events(
+        &mut world,
+        &mut runtime,
+        &achievement_repository,
+        gwendylon_events,
+    )
+    .await;
+    if gwendylon_events_applied != 0 {
+        info!(
+            gwendylon_events_applied,
+            tick = world.tick.0,
+            "applied gwendylon dialogue events"
+        );
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn gwendylon_driver_45(
+    mut world: &mut World,
+    mut runtime: &mut ServerRuntime,
+    _zone_loader: &mut ZoneLoader,
+    config: &ServerConfig,
+    _args: &Args,
+    _completed_actions: &[WorldActionCompletion],
+    _achievement_repository: &Option<ugaris_db::PgAchievementRepository>,
+    character_repository: &Option<ugaris_db::PgCharacterRepository>,
+    area_repository: &Option<ugaris_db::PgAreaRepository>,
+    _clan_repository: &Option<ugaris_db::PgClanRegistryRepository>,
+    _clan_log_repository: &Option<ugaris_db::PgClanLogRepository>,
+    _merchant_repository: &Option<ugaris_db::PgMerchantRepository>,
+    _military_master_storage_repository: &Option<ugaris_db::PgMilitaryMasterStorageRepository>,
+    _military_advisor_storage_repository: &Option<ugaris_db::PgMilitaryAdvisorStorageRepository>,
+    _notes_repository: &Option<ugaris_db::PgNotesRepository>,
+    _anticheat_repository: &Option<ugaris_db::PgAntiCheatRepository>,
+    _auction_repository: &Option<ugaris_db::PgAuctionRepository>,
+) {
+    // `gwendylon_driver`'s `IID_CALIGARLETTER` cross-area
+    // hand-off to area 36 (C `change_area(co, 36, 240, 10)`,
+    // `src/area/1/gwendylon.c:637`), queued above when the
+    // teleport letter is handed in.
+    let gwendylon_cross_area_transfers_applied = apply_gwendylon_cross_area_transfers(
+        &mut world,
+        &mut runtime,
+        &character_repository,
+        &area_repository,
+        config.area_id,
+        config.mirror_id,
+    )
+    .await;
+    if gwendylon_cross_area_transfers_applied != 0 {
+        info!(
+            gwendylon_cross_area_transfers_applied,
+            tick = world.tick.0,
+            "applied gwendylon cross-area transfers"
+        );
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn greeter_driver_46(
+    world: &mut World,
+    mut runtime: &mut ServerRuntime,
+    _zone_loader: &mut ZoneLoader,
+    config: &ServerConfig,
+    _args: &Args,
+    _completed_actions: &[WorldActionCompletion],
+    _achievement_repository: &Option<ugaris_db::PgAchievementRepository>,
+    _character_repository: &Option<ugaris_db::PgCharacterRepository>,
+    _area_repository: &Option<ugaris_db::PgAreaRepository>,
+    _clan_repository: &Option<ugaris_db::PgClanRegistryRepository>,
+    _clan_log_repository: &Option<ugaris_db::PgClanLogRepository>,
+    _merchant_repository: &Option<ugaris_db::PgMerchantRepository>,
+    _military_master_storage_repository: &Option<ugaris_db::PgMilitaryMasterStorageRepository>,
+    _military_advisor_storage_repository: &Option<ugaris_db::PgMilitaryAdvisorStorageRepository>,
+    _notes_repository: &Option<ugaris_db::PgNotesRepository>,
+    _anticheat_repository: &Option<ugaris_db::PgAntiCheatRepository>,
+    _auction_repository: &Option<ugaris_db::PgAuctionRepository>,
+) {
+    // C `greeter_driver`: area 1's tutorial-town greeter NPC
+    // (Cameron the Governor, `src/area/1/gwendylon.c`).
+    let greeter_facts = greeter_player_facts(&runtime);
+    let greeter_events =
+        world.process_greeter_actions(&greeter_facts, current_unix_time() as i32, config.area_id);
+    let greeter_events_applied = apply_greeter_events(&mut runtime, greeter_events);
+    if greeter_events_applied != 0 {
+        info!(
+            greeter_events_applied,
+            tick = world.tick.0,
+            "applied greeter dialogue events"
+        );
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn jessica_driver_47(
+    mut world: &mut World,
+    mut runtime: &mut ServerRuntime,
+    _zone_loader: &mut ZoneLoader,
+    config: &ServerConfig,
+    _args: &Args,
+    _completed_actions: &[WorldActionCompletion],
+    _achievement_repository: &Option<ugaris_db::PgAchievementRepository>,
+    _character_repository: &Option<ugaris_db::PgCharacterRepository>,
+    _area_repository: &Option<ugaris_db::PgAreaRepository>,
+    _clan_repository: &Option<ugaris_db::PgClanRegistryRepository>,
+    _clan_log_repository: &Option<ugaris_db::PgClanLogRepository>,
+    _merchant_repository: &Option<ugaris_db::PgMerchantRepository>,
+    _military_master_storage_repository: &Option<ugaris_db::PgMilitaryMasterStorageRepository>,
+    _military_advisor_storage_repository: &Option<ugaris_db::PgMilitaryAdvisorStorageRepository>,
+    _notes_repository: &Option<ugaris_db::PgNotesRepository>,
+    _anticheat_repository: &Option<ugaris_db::PgAntiCheatRepository>,
+    _auction_repository: &Option<ugaris_db::PgAuctionRepository>,
+) {
+    // C `jessica_driver`: area 1's robber-operations quest NPC
+    // (`src/area/1/gwendylon.c`).
+    let jessica_facts = jessica_player_facts(&runtime);
+    let jessica_events =
+        world.process_jessica_actions(&jessica_facts, current_unix_time() as i32, config.area_id);
+    let jessica_events_applied = apply_jessica_events(&mut world, &mut runtime, jessica_events);
+    if jessica_events_applied != 0 {
+        info!(
+            jessica_events_applied,
+            tick = world.tick.0,
+            "applied jessica dialogue events"
+        );
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn jiu_driver_48(
+    mut world: &mut World,
+    mut runtime: &mut ServerRuntime,
+    _zone_loader: &mut ZoneLoader,
+    config: &ServerConfig,
+    _args: &Args,
+    _completed_actions: &[WorldActionCompletion],
+    _achievement_repository: &Option<ugaris_db::PgAchievementRepository>,
+    _character_repository: &Option<ugaris_db::PgCharacterRepository>,
+    _area_repository: &Option<ugaris_db::PgAreaRepository>,
+    _clan_repository: &Option<ugaris_db::PgClanRegistryRepository>,
+    _clan_log_repository: &Option<ugaris_db::PgClanLogRepository>,
+    _merchant_repository: &Option<ugaris_db::PgMerchantRepository>,
+    _military_master_storage_repository: &Option<ugaris_db::PgMilitaryMasterStorageRepository>,
+    _military_advisor_storage_repository: &Option<ugaris_db::PgMilitaryAdvisorStorageRepository>,
+    _notes_repository: &Option<ugaris_db::PgNotesRepository>,
+    _anticheat_repository: &Option<ugaris_db::PgAntiCheatRepository>,
+    _auction_repository: &Option<ugaris_db::PgAuctionRepository>,
+) {
+    // C `jiu_driver`: area 1's riverbeast quest-giving pilgrim
+    // NPC (`src/area/1/gwendylon.c`).
+    let jiu_facts = jiu_player_facts(&runtime);
+    let jiu_events =
+        world.process_jiu_actions(&jiu_facts, current_unix_time() as i32, config.area_id);
+    let jiu_events_applied = apply_jiu_events(&mut world, &mut runtime, jiu_events);
+    if jiu_events_applied != 0 {
+        info!(
+            jiu_events_applied,
+            tick = world.tick.0,
+            "applied jiu dialogue events"
+        );
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn forest_ranger_driver_49(
+    world: &mut World,
+    mut runtime: &mut ServerRuntime,
+    _zone_loader: &mut ZoneLoader,
+    config: &ServerConfig,
+    _args: &Args,
+    _completed_actions: &[WorldActionCompletion],
+    _achievement_repository: &Option<ugaris_db::PgAchievementRepository>,
+    _character_repository: &Option<ugaris_db::PgCharacterRepository>,
+    _area_repository: &Option<ugaris_db::PgAreaRepository>,
+    _clan_repository: &Option<ugaris_db::PgClanRegistryRepository>,
+    _clan_log_repository: &Option<ugaris_db::PgClanLogRepository>,
+    _merchant_repository: &Option<ugaris_db::PgMerchantRepository>,
+    _military_master_storage_repository: &Option<ugaris_db::PgMilitaryMasterStorageRepository>,
+    _military_advisor_storage_repository: &Option<ugaris_db::PgMilitaryAdvisorStorageRepository>,
+    _notes_repository: &Option<ugaris_db::PgNotesRepository>,
+    _anticheat_repository: &Option<ugaris_db::PgAntiCheatRepository>,
+    _auction_repository: &Option<ugaris_db::PgAuctionRepository>,
+) {
+    // C `forest_ranger_driver`: area 1's bear-attack warning
+    // sentry NPC (`src/area/1/gwendylon.c`).
+    let forest_ranger_facts = forest_ranger_player_facts(&runtime);
+    let forest_ranger_events = world.process_forest_ranger_actions(
+        &forest_ranger_facts,
+        current_unix_time() as i32,
+        config.area_id,
+    );
+    let forest_ranger_events_applied =
+        apply_forest_ranger_events(&mut runtime, forest_ranger_events);
+    if forest_ranger_events_applied != 0 {
+        info!(
+            forest_ranger_events_applied,
+            tick = world.tick.0,
+            "applied forest ranger dialogue events"
+        );
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn gate_welcome_driver_50(
+    mut world: &mut World,
+    mut runtime: &mut ServerRuntime,
+    mut zone_loader: &mut ZoneLoader,
+    config: &ServerConfig,
+    _args: &Args,
+    _completed_actions: &[WorldActionCompletion],
+    _achievement_repository: &Option<ugaris_db::PgAchievementRepository>,
+    _character_repository: &Option<ugaris_db::PgCharacterRepository>,
+    _area_repository: &Option<ugaris_db::PgAreaRepository>,
+    _clan_repository: &Option<ugaris_db::PgClanRegistryRepository>,
+    _clan_log_repository: &Option<ugaris_db::PgClanLogRepository>,
+    _merchant_repository: &Option<ugaris_db::PgMerchantRepository>,
+    _military_master_storage_repository: &Option<ugaris_db::PgMilitaryMasterStorageRepository>,
+    _military_advisor_storage_repository: &Option<ugaris_db::PgMilitaryAdvisorStorageRepository>,
+    _notes_repository: &Option<ugaris_db::PgNotesRepository>,
+    _anticheat_repository: &Option<ugaris_db::PgAntiCheatRepository>,
+    _auction_repository: &Option<ugaris_db::PgAuctionRepository>,
+) {
+    // C `gate_welcome_driver`: the Ishtar labyrinth gatekeeper
+    // greeter NPC (`src/system/gatekeeper.c`).
+    let gate_welcome_facts = gate_welcome_player_facts(&runtime);
+    let gate_welcome_events =
+        world.process_gate_welcome_actions(&gate_welcome_facts, config.area_id);
+    let gate_welcome_events_applied = apply_gate_welcome_events(
+        &mut runtime,
+        &mut world,
+        &mut zone_loader,
+        gate_welcome_events,
+    );
+    if gate_welcome_events_applied != 0 {
+        info!(
+            gate_welcome_events_applied,
+            tick = world.tick.0,
+            "applied gate-welcome dialogue state updates"
+        );
+    }
+}
