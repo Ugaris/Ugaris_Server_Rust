@@ -10,6 +10,7 @@ fn character_snapshot_restores_active_legacy_shutup_ppd() {
     let ppd_blob = persisted.encode_legacy_ppd_blob(&[]);
 
     let snapshot = CharacterSnapshot {
+        player_state_json: None,
         character,
         items: Vec::new(),
         ppd_blob,
@@ -143,4 +144,52 @@ fn area_transfer_save_request_also_strips_logout_vanishing_items() {
     assert!(request.items.is_empty());
     assert_eq!(request.character.x, 126);
     assert_eq!(request.character.y, 179);
+}
+
+#[test]
+fn persisted_player_state_json_round_trips_typed_state() {
+    let mut player = PlayerRuntime::connected(9, 100);
+    player.character_id = Some(CharacterId(42));
+    player.character_number = 4242;
+    player.set_area1_gwendy_state(7);
+    let _ = player.add_keyring_entry(ugaris_core::player::KeyringEntry {
+        template_id: 0x0100_0002,
+        name: "Copper Key".into(),
+        description: "Opens something coppery.".into(),
+        sprite: 12,
+        flags: 0,
+        value: 5,
+        driver: 0,
+        driver_data: vec![0; 16],
+        expire_serial: 0,
+    });
+    let mut depot = AccountDepotState::default();
+    let mut stored = test_item(ugaris_core::ids::ItemId(900), 12, ItemFlags::TAKE);
+    stored.name = "Stored Sword".into();
+    depot.slots[3] = Some(stored);
+
+    let value = persisted_player_state_json(&player, Some(&depot)).expect("serializes");
+    // Section names double as the public integration read schema.
+    assert!(value["player"]["keyring"].is_array());
+    assert!(value["account_depot"]["slots"].is_array());
+
+    // A brand-new session restores the persisted state but keeps its own
+    // connection identity.
+    let mut live = PlayerRuntime::connected(77, 555);
+    live.character_id = Some(CharacterId(42));
+    live.character_number = 4242;
+    live.mark_login_parsed(Some(3), 556);
+    let persisted: PersistedPlayerState = serde_json::from_value(value).expect("deserializes");
+    let restored_depot = restore_player_from_persisted(&mut live, persisted);
+
+    assert_eq!(live.session_id, 77, "live session id preserved");
+    assert_eq!(live.view_distance, 40, "negotiated view distance preserved");
+    assert_eq!(live.area1_gwendy_state(), 7, "typed quest state restored");
+    assert_eq!(live.keyring.len(), 1, "keyring restored");
+    assert_eq!(
+        restored_depot.expect("depot restored").slots[3]
+            .as_ref()
+            .map(|item| item.name.as_str()),
+        Some("Stored Sword")
+    );
 }

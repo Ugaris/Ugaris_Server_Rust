@@ -788,7 +788,8 @@ async fn main() -> anyhow::Result<()> {
     ) = if let Some(database_url) = args.database_url.as_deref() {
         let db = ugaris_db::Database::connect(database_url, 8).await?;
         db.ping().await?;
-        info!("connected to PostgreSQL");
+        db.run_migrations().await?;
+        info!("connected to PostgreSQL and applied pending migrations");
         let auctions = db.auctions();
         // C `init_auction_house` (`auction_house.c:37-47`): clean up
         // any auctions that expired while the server was down, before

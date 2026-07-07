@@ -542,6 +542,8 @@ pub(crate) async fn apply_offline_clan_rank(
     let request = ugaris_db::CharacterSaveRequest {
         character,
         items: snapshot.items,
+        // Offline mutation: None preserves the stored JSON via coalesce.
+        player_state_json: None,
         ppd_blob: snapshot.ppd_blob,
         subscriber_blob: snapshot.subscriber_blob,
         mode: ugaris_db::CharacterSaveMode::Backup {
@@ -627,6 +629,8 @@ pub(crate) async fn apply_offline_clan_fire(
     let request = ugaris_db::CharacterSaveRequest {
         character,
         items: snapshot.items,
+        // Offline mutation: None preserves the stored JSON via coalesce.
+        player_state_json: None,
         ppd_blob: snapshot.ppd_blob,
         subscriber_blob: snapshot.subscriber_blob,
         mode: ugaris_db::CharacterSaveMode::Backup {
@@ -835,6 +839,8 @@ pub(crate) async fn apply_offline_club_rank(
     let request = ugaris_db::CharacterSaveRequest {
         character,
         items: snapshot.items,
+        // Offline mutation: None preserves the stored JSON via coalesce.
+        player_state_json: None,
         ppd_blob: snapshot.ppd_blob,
         subscriber_blob: snapshot.subscriber_blob,
         mode: ugaris_db::CharacterSaveMode::Backup {
@@ -917,6 +923,8 @@ pub(crate) async fn apply_offline_club_fire(
     let request = ugaris_db::CharacterSaveRequest {
         character,
         items: snapshot.items,
+        // Offline mutation: None preserves the stored JSON via coalesce.
+        player_state_json: None,
         ppd_blob: snapshot.ppd_blob,
         subscriber_blob: snapshot.subscriber_blob,
         mode: ugaris_db::CharacterSaveMode::Backup {

@@ -1,0 +1,24 @@
+# Local development / integration-test PostgreSQL.
+#
+#   docker compose up -d
+#   export DATABASE_URL=postgres://ugaris:ugaris@localhost:5433/ugaris
+#   target/debug/ugaris-server --bind-addr 0.0.0.0:5556
+#
+# Migrations under migrations/ are applied automatically at server startup.
+# The throwaway testcontainers suite (cargo test -p ugaris-db -- --ignored)
+# does not use this instance.
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ugaris
+      POSTGRES_PASSWORD: ugaris
+      POSTGRES_DB: ugaris
+    ports:
+      - "5433:5432"
+    volumes:
+      - ugaris-pgdata:/var/lib/postgresql/data
+
+volumes:
+  ugaris-pgdata:

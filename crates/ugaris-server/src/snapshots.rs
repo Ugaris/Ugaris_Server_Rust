@@ -19,25 +19,51 @@ pub(crate) fn apply_character_snapshot(
         items,
         ppd_blob,
         subscriber_blob,
+        player_state_json,
         ..
     } = snapshot;
 
-    player.ppd_blob = ppd_blob;
-    player.subscriber_blob = subscriber_blob;
-    let account_depot = decode_legacy_account_depot_subscriber_blob(&player.subscriber_blob);
-    if let Some(data) = decode_legacy_achievement_data_subscriber_blob(&player.subscriber_blob) {
-        player.achievement_data = data;
-    }
-    if let Some(stats) = decode_legacy_achievement_stats_subscriber_blob(&player.subscriber_blob) {
-        player.achievement_stats = stats;
-    }
-    let ppd_blob = player.ppd_blob.clone();
-    if !ppd_blob.is_empty() && !player.decode_legacy_ppd_blob(&ppd_blob) {
-        warn!(
-            character_id = character.id.0,
-            "failed to decode legacy PPD blob for DB character"
-        );
-    }
+    // Typed JSON state (migration 0020) is authoritative when present; the
+    // legacy PPD/subscriber blobs remain a read fallback for rows saved
+    // before the column existed.
+    let restored_from_json = player_state_json.and_then(|value| {
+        match serde_json::from_value::<PersistedPlayerState>(value) {
+            Ok(persisted) => Some(restore_player_from_persisted(player, persisted)),
+            Err(err) => {
+                warn!(
+                    character_id = character.id.0,
+                    error = %err,
+                    "failed to deserialize player state document; falling back to legacy blobs"
+                );
+                None
+            }
+        }
+    });
+
+    let account_depot = if let Some(account_depot) = restored_from_json {
+        account_depot
+    } else {
+        player.ppd_blob = ppd_blob;
+        player.subscriber_blob = subscriber_blob;
+        let account_depot = decode_legacy_account_depot_subscriber_blob(&player.subscriber_blob);
+        if let Some(data) = decode_legacy_achievement_data_subscriber_blob(&player.subscriber_blob)
+        {
+            player.achievement_data = data;
+        }
+        if let Some(stats) =
+            decode_legacy_achievement_stats_subscriber_blob(&player.subscriber_blob)
+        {
+            player.achievement_stats = stats;
+        }
+        let ppd_blob = player.ppd_blob.clone();
+        if !ppd_blob.is_empty() && !player.decode_legacy_ppd_blob(&ppd_blob) {
+            warn!(
+                character_id = character.id.0,
+                "failed to decode legacy PPD blob for DB character"
+            );
+        }
+        account_depot
+    };
     if player.shutup_until_seconds > realtime_seconds {
         character.flags.insert(CharacterFlags::SHUTUP);
     } else {
@@ -162,6 +188,64 @@ pub(crate) fn character_logout_snapshot(
     (snapshot_character, items)
 }
 
+/// Authoritative typed persistence document (migration 0020,
+/// `characters.player_state_json`). The full serde `PlayerRuntime` is the
+/// payload on purpose: every `#[serde(default)]` field added to it in the
+/// future persists automatically, and the JSON section names double as the
+/// public read schema for website/launcher/bot integration
+/// (`player_state_json->'player'->'keyring'`, `->'quest_log'`, ...). The
+/// legacy PPD/subscriber blobs are still written during the transition but
+/// are no longer read when this document is present.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub(crate) struct PersistedPlayerState {
+    pub(crate) player: PlayerRuntime,
+    #[serde(default)]
+    pub(crate) account_depot: Option<AccountDepotState>,
+}
+
+pub(crate) fn persisted_player_state_json(
+    player: &PlayerRuntime,
+    account_depot: Option<&AccountDepotState>,
+) -> Option<serde_json::Value> {
+    match serde_json::to_value(PersistedPlayerState {
+        player: player.clone(),
+        account_depot: account_depot.cloned(),
+    }) {
+        Ok(value) => Some(value),
+        Err(err) => {
+            warn!(error = %err, "failed to serialize player state document; falling back to legacy blobs");
+            None
+        }
+    }
+}
+
+/// Restore a freshly deserialized [`PersistedPlayerState`] into the live
+/// session runtime, preserving the connection/handshake identity of the
+/// current session (the persisted document was written by a previous
+/// session). Returns the persisted account depot, if any.
+pub(crate) fn restore_player_from_persisted(
+    player: &mut PlayerRuntime,
+    persisted: PersistedPlayerState,
+) -> Option<AccountDepotState> {
+    let mut restored = persisted.player;
+    restored.session_id = player.session_id;
+    restored.state = player.state;
+    restored.client_version = player.client_version;
+    restored.view_distance = player.view_distance;
+    restored.login_tick = player.login_tick;
+    restored.last_command_tick = player.last_command_tick;
+    restored.character_id = player.character_id;
+    restored.character_number = player.character_number;
+    restored.anticheat_session_id = player.anticheat_session_id;
+    restored.ac_watch_enabled = player.ac_watch_enabled;
+    restored.current_mirror_id = player.current_mirror_id;
+    restored.action = Default::default();
+    restored.queue.clear();
+    restored.scrollback.clear();
+    *player = restored;
+    persisted.account_depot
+}
+
 pub(crate) fn character_save_request(
     world: &World,
     player: &PlayerRuntime,
@@ -179,6 +263,7 @@ pub(crate) fn character_save_request(
     CharacterSaveRequest {
         character: snapshot_character,
         items: snapshot_items,
+        player_state_json: persisted_player_state_json(player, account_depot),
         ppd_blob: player.encode_legacy_ppd_blob(&player.ppd_blob),
         subscriber_blob: encode_legacy_achievement_stats_subscriber_blob(
             &encode_legacy_achievement_data_subscriber_blob(
@@ -233,6 +318,7 @@ pub(crate) fn character_area_transfer_save_request(
     CharacterSaveRequest {
         character: snapshot_character,
         items: snapshot_items,
+        player_state_json: persisted_player_state_json(player, account_depot),
         ppd_blob: player.encode_legacy_ppd_blob(&player.ppd_blob),
         subscriber_blob: encode_legacy_achievement_stats_subscriber_blob(
             &encode_legacy_achievement_data_subscriber_blob(
@@ -276,6 +362,7 @@ pub(crate) fn character_backup_save_request(
     CharacterSaveRequest {
         character: character.clone(),
         items: character_snapshot_items(world, character),
+        player_state_json: persisted_player_state_json(player, account_depot),
         ppd_blob: player.encode_legacy_ppd_blob(&player.ppd_blob),
         subscriber_blob: encode_legacy_achievement_stats_subscriber_blob(
             &encode_legacy_achievement_data_subscriber_blob(

@@ -170,6 +170,10 @@ pub struct CharacterSaveRequest {
     pub items: Vec<Item>,
     pub ppd_blob: Vec<u8>,
     pub subscriber_blob: Vec<u8>,
+    /// Typed serde state document (see migration 0020): the authoritative
+    /// per-player persistence going forward. The legacy blobs above remain
+    /// only as a read fallback for pre-0020 rows.
+    pub player_state_json: Option<serde_json::Value>,
     pub mode: CharacterSaveMode,
 }
 
@@ -179,6 +183,7 @@ pub struct CharacterSnapshot {
     pub items: Vec<Item>,
     pub ppd_blob: Vec<u8>,
     pub subscriber_blob: Vec<u8>,
+    pub player_state_json: Option<serde_json::Value>,
     pub current_area: i32,
     pub current_mirror: i32,
     pub allowed_area: i32,
@@ -423,6 +428,7 @@ impl CharacterRepository for PgCharacterRepository {
             character,
             ppd_blob,
             subscriber_blob,
+            player_state_json,
             current_area,
             current_mirror,
             allowed_area,
@@ -433,6 +439,7 @@ impl CharacterRepository for PgCharacterRepository {
                 Option<Json<Character>>,
                 Vec<u8>,
                 Vec<u8>,
+                Option<serde_json::Value>,
                 i32,
                 i32,
                 i32,
@@ -461,6 +468,7 @@ impl CharacterRepository for PgCharacterRepository {
             items,
             ppd_blob,
             subscriber_blob,
+            player_state_json,
             current_area,
             current_mirror,
             allowed_area,
@@ -595,8 +603,9 @@ dir = $12, action = $13, duration = $14, step = $15, act1 = $16, act2 = $17, \
 hp = $18, mana = $19, endurance = $20, lifeshield = $21, level = $22, exp = $23, \
 exp_used = $24, gold = $25, cursor_item_id = $26, current_container_item_id = $27, \
 values_json = $28, professions_json = $29, inventory_json = $30, \
-character_json = $31, ppd_blob = $32, subscriber_blob = $33, mirror = $34, updated_at = now() \
-where id = $35 and current_area = $36 and current_mirror = $37";
+character_json = $31, ppd_blob = $32, subscriber_blob = $33, player_state_json = coalesce($34, player_state_json), \
+mirror = $35, updated_at = now() \
+where id = $36 and current_area = $37 and current_mirror = $38";
 
 const SAVE_CHARACTER_LOGOUT_SQL: &str = "update characters set \
 name = $1, description = $2, flags_bits = $3, speed_mode = $4, \
@@ -605,9 +614,10 @@ dir = $12, action = $13, duration = $14, step = $15, act1 = $16, act2 = $17, \
 hp = $18, mana = $19, endurance = $20, lifeshield = $21, level = $22, exp = $23, \
 exp_used = $24, gold = $25, cursor_item_id = $26, current_container_item_id = $27, \
 values_json = $28, professions_json = $29, inventory_json = $30, \
-character_json = $31, ppd_blob = $32, subscriber_blob = $33, mirror = $34, \
-current_area = 0, current_mirror = 0, allowed_area = $35, logout_time = now(), updated_at = now() \
-where id = $36 and current_area = $37 and current_mirror = $38";
+character_json = $31, ppd_blob = $32, subscriber_blob = $33, player_state_json = coalesce($34, player_state_json), \
+mirror = $35, \
+current_area = 0, current_mirror = 0, allowed_area = $36, logout_time = now(), updated_at = now() \
+where id = $37 and current_area = $38 and current_mirror = $39";
 
 const INSERT_CHARACTER_ITEM_SQL: &str = "insert into character_items(\
 character_id, item_id, inventory_slot, is_cursor, item_json, name, description, flags_bits, \
@@ -617,7 +627,8 @@ values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, \
 $16, $17, $18, $19, $20, $21, $22, $23, $24, now())";
 
 const LOAD_CHARACTER_SNAPSHOT_SQL: &str = "select character_json, ppd_blob, subscriber_blob, \
-current_area, current_mirror, allowed_area, mirror from characters where id = $1";
+player_state_json, current_area, current_mirror, allowed_area, mirror \
+from characters where id = $1";
 
 /// C `db_lastseen` (`database_notes.c:352-390`): `login_time`/
 /// `logout_time` are nullable (never-logged-in-since-this-column-existed
@@ -709,7 +720,8 @@ fn bind_character_snapshot<'q>(
         .bind(Json(character.inventory.clone()))
         .bind(Json(character.clone()))
         .bind(request.ppd_blob.clone())
-        .bind(request.subscriber_blob.clone()))
+        .bind(request.subscriber_blob.clone())
+        .bind(request.player_state_json.clone()))
 }
 
 async fn replace_character_items_tx(
@@ -1128,12 +1140,16 @@ mod tests {
         assert!(SAVE_CHARACTER_BACKUP_SQL.contains("ppd_blob = $32"));
         assert!(SAVE_CHARACTER_BACKUP_SQL.contains("subscriber_blob = $33"));
         assert!(SAVE_CHARACTER_BACKUP_SQL
-            .contains("where id = $35 and current_area = $36 and current_mirror = $37"));
+            .contains("player_state_json = coalesce($34, player_state_json)"));
+        assert!(SAVE_CHARACTER_BACKUP_SQL
+            .contains("where id = $36 and current_area = $37 and current_mirror = $38"));
 
-        assert!(SAVE_CHARACTER_LOGOUT_SQL.contains("allowed_area = $35"));
+        assert!(SAVE_CHARACTER_LOGOUT_SQL
+            .contains("player_state_json = coalesce($34, player_state_json)"));
+        assert!(SAVE_CHARACTER_LOGOUT_SQL.contains("allowed_area = $36"));
         assert!(SAVE_CHARACTER_LOGOUT_SQL.contains("logout_time = now()"));
         assert!(SAVE_CHARACTER_LOGOUT_SQL
-            .contains("where id = $36 and current_area = $37 and current_mirror = $38"));
+            .contains("where id = $37 and current_area = $38 and current_mirror = $39"));
     }
 
     #[test]

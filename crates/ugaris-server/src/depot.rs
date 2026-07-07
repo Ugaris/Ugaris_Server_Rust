@@ -1,7 +1,8 @@
 use super::*;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub(crate) struct AccountDepotState {
+    #[serde(default)]
     pub(crate) slots: Vec<Option<Item>>,
 }
 

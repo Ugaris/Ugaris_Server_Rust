@@ -56,6 +56,16 @@ impl Database {
         Ok(Self { pool })
     }
 
+    /// Apply every SQL file under the workspace `migrations/` directory
+    /// (embedded at compile time). All migrations are written idempotently
+    /// (`create table if not exists` / `add column if not exists`), so
+    /// running against a database that predates the `_sqlx_migrations`
+    /// bookkeeping table is safe.
+    pub async fn run_migrations(&self) -> anyhow::Result<()> {
+        sqlx::migrate!("../../migrations").run(&self.pool).await?;
+        Ok(())
+    }
+
     pub fn pool(&self) -> &PgPool {
         &self.pool
     }

@@ -501,6 +501,8 @@ pub(crate) async fn apply_admin_flag_events(
         let request = ugaris_db::CharacterSaveRequest {
             character,
             items: snapshot.items,
+            // Offline mutation: None preserves the stored JSON via coalesce.
+            player_state_json: None,
             ppd_blob: snapshot.ppd_blob,
             subscriber_blob: snapshot.subscriber_blob,
             mode: ugaris_db::CharacterSaveMode::Backup {
@@ -686,6 +688,8 @@ pub(crate) async fn apply_punish_events(
         let save_request = ugaris_db::CharacterSaveRequest {
             character,
             items: snapshot.items,
+            // Offline mutation: None preserves the stored JSON via coalesce.
+            player_state_json: None,
             ppd_blob: snapshot.ppd_blob,
             subscriber_blob: snapshot.subscriber_blob,
             mode: ugaris_db::CharacterSaveMode::Backup {
@@ -846,6 +850,8 @@ pub(crate) async fn apply_unpunish_events(
         let save_request = ugaris_db::CharacterSaveRequest {
             character,
             items: snapshot.items,
+            // Offline mutation: None preserves the stored JSON via coalesce.
+            player_state_json: None,
             ppd_blob: snapshot.ppd_blob,
             subscriber_blob: snapshot.subscriber_blob,
             mode: ugaris_db::CharacterSaveMode::Backup {
