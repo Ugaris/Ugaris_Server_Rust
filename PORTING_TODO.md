@@ -226,9 +226,15 @@ order.
   `for completion in &completed_actions` loop; since the function is now
   called once per outcome these became `return`, the equivalent
   "stop processing this outcome" behavior at function scope.
+  Eleventh family slice done: the two-city burndown-barrel family (5
+  contiguous variants - `BurndownTooHot`/`BurndownAlreadyBurned`/
+  `BurndownTouch`/`BurndownIgnite`/`BurndownTimerTick`) is extracted into
+  `tick_item_use_burndown::dispatch_burndown_outcome`
+  (`crates/ugaris-server/src/tick_item_use_burndown.rs`, 52 lines;
+  `main.rs` down to 3,882).
   Still inline in `main.rs`: every other outcome family (
   xmas,
-  swamp, burndown, key-assembly, and the
+  swamp, key-assembly, and the
   large no-op catch-all) - continue slicing one family per iteration
   following this file's pattern (`use super::*;`, take
   `world`/`zone_loader`/`runtime`/`achievement_repository`/`config` or
@@ -608,4 +614,8 @@ notes live in `PROGRESS_ARCHIVE.md`.
   action-outcome family (shrines, 8 contiguous variants) into
   `tick_item_use_shrines::dispatch_shrine_outcome` (`main.rs` down to
   3,889). 1091 server tests unchanged, clean build/boot-smoke.
+- 2026-07-07: P0.5 main() decomposition: sliced the eleventh completed-
+  action-outcome family (burndown barrel, 5 contiguous variants) into
+  `tick_item_use_burndown::dispatch_burndown_outcome` (`main.rs` down
+  to 3,882). 1091 server tests unchanged, clean build/boot-smoke.
 

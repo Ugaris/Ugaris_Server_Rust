@@ -43,6 +43,7 @@ mod snapshots;
 mod spawns;
 mod stacks;
 mod tick_client_actions;
+mod tick_item_use_burndown;
 mod tick_item_use_chests;
 mod tick_item_use_clan_lq_arena;
 mod tick_item_use_dungeon;
@@ -1419,26 +1420,18 @@ async fn main() -> anyhow::Result<()> {
                                             feedback.push((character_id, "The door is locked and you don't have the right key.".to_string()));
                                             blocked += 1;
                                         }
-                                        ugaris_core::item_driver::ItemDriverOutcome::BurndownTooHot { character_id, .. } => {
-                                            feedback.push((character_id, "It is too hot to touch.".to_string()));
-                                            blocked += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::BurndownAlreadyBurned { character_id, .. } => {
-                                            feedback.push((character_id, "It was burned down already.".to_string()));
-                                            blocked += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::BurndownTouch { character_id, .. } => {
-                                            feedback.push((character_id, "You touch the barrel.".to_string()));
-                                            blocked += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::BurndownIgnite { character_id, .. } => {
-                                            if let Some(player) = runtime.player_for_character_mut(character_id) {
-                                                player.mark_twocity_burndown_kill();
-                                            }
-                                            executed += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::BurndownTimerTick { .. } => {
-                                            executed += 1;
+                                        outcome @ (ugaris_core::item_driver::ItemDriverOutcome::BurndownTooHot { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::BurndownAlreadyBurned { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::BurndownTouch { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::BurndownIgnite { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::BurndownTimerTick { .. }) => {
+                                            tick_item_use_burndown::dispatch_burndown_outcome(
+                                                &mut runtime,
+                                                outcome,
+                                                &mut feedback,
+                                                &mut executed,
+                                                &mut blocked,
+                                            );
                                         }
                                         outcome @ (ugaris_core::item_driver::ItemDriverOutcome::TeufelArena { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::TeufelArenaExit { .. }
