@@ -324,21 +324,12 @@ order.
   keyword using `tools/rust_split/splitter.py` with a spec like the ones
   described in the ledger; keep shared helpers in the tests `mod.rs`.
   *(done - details in PORTING_LEDGER.md)*
-- [~] **Area-text color markers** - `WorldAreaText.message: String` drops
+- [x] **Area-text color markers** - `WorldAreaText.message: String` drops
   legacy `COL_*` byte markers from every NPC line (documented deviation in
   several `world/npc/**` module docs). Carry bytes end-to-end and restore
-  the C markers in the QA tables that had them.
-  REMAINING: mechanism is built and 12 of the 13 originally-listed
-  deviation sites are now restored: `gwendylon.rs`, `greeter.rs`,
-  `yoakin.rs`, `jessica.rs`, `reskin.rs`, `lydia.rs`, `james.rs`,
-  `guiwynn.rs`, `logain.rs`, `brithildie.rs`, `npc/trader.rs` (plus its
-  `world_events::npc_events::apply_trader_events` "gave me:" system-text
-  call site), and `npc/bank.rs`'s `BANK_QA`. Only `area32/military.rs`
-  remains - a much larger slice (20+ `COL_LIGHT_BLUE`/`COL_RESET` call
-  sites scattered across `process_military_master_actions`/`_messages`,
-  `process_military_advisor_actions`, mission-text rendering, and
-  `offer_favor`/`adv_favor_desc`, in a file already at 3,598 lines) -
-  do it as its own dedicated slice next.
+  the C markers in the QA tables that had them. *(done - all 13
+  originally-listed deviation sites restored, `area32/military.rs` closed
+  last; details in PORTING_LEDGER.md)*
 - [ ] **Retire legacy blob writes** - after a few clean iterations with
   `player_state_json` (migration 0020): stop populating
   `ppd_blob`/`subscriber_blob` in the three `snapshots.rs` builders, add a
@@ -715,5 +706,10 @@ notes live in `PROGRESS_ARCHIVE.md`.
   lydia/james/guiwynn/logain/brithildie/trader/bank) via `COL_STR_*`
   sentinels + `_bytes` siblings; added `text::has_color_sentinels` helper
   for bank's shared reply loop. Only `area32/military.rs` remains. 1098
+  server + 2534 core tests pass, clean build/boot-smoke.
+- 2026-07-08: P0.5 area-text color markers COMPLETE: restored the last
+  site, `area32/military.rs` (27 `COL_LIGHT_BLUE`/`COL_RESET` call sites
+  across mission-offer/accept/hear/reroll/greet text and both Advisor
+  favor flows) via `COL_STR_*` sentinels + `_bytes` siblings. 1098
   server + 2534 core tests pass, clean build/boot-smoke.
 

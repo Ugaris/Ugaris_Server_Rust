@@ -13,6 +13,7 @@
 //! same shape).
 
 use super::*;
+use ugaris_core::text::{COL_STR_LIGHT_BLUE, COL_STR_RESET};
 use ugaris_core::world::{
     adv_favor_desc_lines, adv_introduction_text, army_rank_for_points, army_rank_name,
     calculate_advisor_index, display_mission_text, favor_size_name,
@@ -260,10 +261,14 @@ async fn apply_military_master_nearby_player(
             followup,
         } => {
             world.npc_quiet_say(master_id, &greeting);
+            // `description` (via `describe_mission_text`) and `followup`'s
+            // "Say X to accept" branch carry `COL_STR_LIGHT_BLUE`/
+            // `COL_STR_RESET` sentinels (C `military.c:1199`/`:1742`) -
+            // route both through the byte-native sibling.
             if let Some(description) = description {
-                world.npc_quiet_say(master_id, &description);
+                world.npc_quiet_say_bytes(master_id, &description);
             }
-            world.npc_quiet_say(master_id, &followup);
+            world.npc_quiet_say_bytes(master_id, &followup);
         }
         AdvisorRecommendationOutcome::StandardRecommendations(lines) => {
             for line in lines {
@@ -277,11 +282,14 @@ async fn apply_military_master_nearby_player(
         GreetPlayerOutcome::AlreadyGreeted
         | GreetPlayerOutcome::AdvisorRecommendationAlreadyShown => {}
         GreetPlayerOutcome::HasActiveMission => {
-            world.npc_quiet_say(
+            // C `military.c:1786,1788` wraps "hear"/"failed" in
+            // `COL_LIGHT_BLUE`/`COL_RESET`.
+            world.npc_quiet_say_bytes(
                 master_id,
                 &format!(
                     "Ah, hello {player_name}. Any luck with your mission? Or would you like to \
-                     hear it again? Or have you failed to complete it?"
+                     {COL_STR_LIGHT_BLUE}hear{COL_STR_RESET} it again? Or have you \
+                     {COL_STR_LIGHT_BLUE}failed{COL_STR_RESET} to complete it?"
                 ),
             );
         }
@@ -292,11 +300,14 @@ async fn apply_military_master_nearby_player(
             );
         }
         GreetPlayerOutcome::HasRank => {
-            world.npc_quiet_say(
+            // C `military.c:1798-1799` wraps "mission"/"reroll" in
+            // `COL_LIGHT_BLUE`/`COL_RESET`.
+            world.npc_quiet_say_bytes(
                 master_id,
                 &format!(
-                    "Hello, {player_name}. I might have a mission for you. If you don't like \
-                     the available missions, you can reroll for 200 gold."
+                    "Hello, {player_name}. I might have a {COL_STR_LIGHT_BLUE}mission{COL_STR_RESET} \
+                     for you. If you don't like the available missions, you can \
+                     {COL_STR_LIGHT_BLUE}reroll{COL_STR_RESET} for 200 gold."
                 ),
             );
         }
@@ -307,11 +318,14 @@ async fn apply_military_master_nearby_player(
 
     // C `military_master_driver`'s `master_state == 1` rank-follow-up
     // (`military.c:2172-2176`): the player was greeted as a new recruit
-    // last visit but has since gained an army rank elsewhere.
+    // last visit but has since gained an army rank elsewhere. C wraps
+    // "mission" in `COL_LIGHT_BLUE`/`COL_RESET`.
     if player.master_state() == 1 && has_army_rank {
-        world.npc_quiet_say(
+        world.npc_quiet_say_bytes(
             master_id,
-            &format!("Hello again, {player_name}. I might have a mission for you."),
+            &format!(
+                "Hello again, {player_name}. I might have a {COL_STR_LIGHT_BLUE}mission{COL_STR_RESET} for you."
+            ),
         );
         player.set_master_state(2);
     }
@@ -369,9 +383,12 @@ fn apply_military_master_mission_request(
 
     match outcome {
         MissionRequestOutcome::AlreadyHasMission => {
-            world.npc_quiet_say(
+            // C `military.c:1845` wraps "hear" in `COL_LIGHT_BLUE`/`COL_RESET`.
+            world.npc_quiet_say_bytes(
                 master_id,
-                "You already have a mission. Would you like to hear it again?",
+                &format!(
+                    "You already have a mission. Would you like to {COL_STR_LIGHT_BLUE}hear{COL_STR_RESET} it again?"
+                ),
             );
         }
         MissionRequestOutcome::AlreadyCompletedToday => {
@@ -393,12 +410,18 @@ fn apply_military_master_mission_request(
             description,
             prompt,
         } => {
-            world.npc_quiet_say(master_id, &description);
-            world.npc_quiet_say(master_id, &prompt);
+            // Both carry `COL_STR_LIGHT_BLUE`/`COL_STR_RESET` sentinels
+            // from `describe_mission_text`/the "saying X" prompt
+            // (C `military.c:1876`).
+            world.npc_quiet_say_bytes(master_id, &description);
+            world.npc_quiet_say_bytes(master_id, &prompt);
         }
         MissionRequestOutcome::Offered(lines) => {
+            // Lines carry `COL_STR_*` sentinels (mission descriptions via
+            // `describe_mission_text`, plus the "reroll" footer,
+            // C `military.c:1893`).
             for line in lines {
-                world.npc_quiet_say(master_id, &line);
+                world.npc_quiet_say_bytes(master_id, &line);
             }
         }
     }
@@ -424,10 +447,12 @@ fn apply_military_master_accept_mission(
 
     match player.accept_mission(difficulty, yday) {
         AcceptMissionOutcome::AlreadyHasMission => {
-            world.npc_quiet_say(
+            // C `military.c:1303` wraps "hear" in `COL_LIGHT_BLUE`/`COL_RESET`.
+            world.npc_quiet_say_bytes(
                 master_id,
                 &format!(
-                    "You already have a mission, {player_name}. Would you like to hear it again?"
+                    "You already have a mission, {player_name}. Would you like to \
+                     {COL_STR_LIGHT_BLUE}hear{COL_STR_RESET} it again?"
                 ),
             );
         }
@@ -483,24 +508,25 @@ fn apply_military_master_failed(
     };
 
     if player.military_took_mission() == 0 {
-        // C: `say(cn, "But you did not take any mission, %s.",
-        // ch[co].name);` - this particular branch uses the player's own
-        // name, unlike the branch below.
-        world.npc_quiet_say(
+        // C: `say(cn, "But you did not take any " COL_LIGHT_BLUE "mission"
+        // COL_RESET ", %s.", ch[co].name);` - this particular branch uses
+        // the player's own name, unlike the branch below.
+        world.npc_quiet_say_bytes(
             master_id,
-            &format!("But you did not take any mission, {player_name}."),
+            &format!("But you did not take any {COL_STR_LIGHT_BLUE}mission{COL_STR_RESET}, {player_name}."),
         );
         return true;
     }
 
-    // C: `say(cn, "So, you failed? ...", get_army_rank_string(co));` -
-    // this branch substitutes the army rank *title*, not the player's
-    // name (a genuine C quirk, preserved verbatim).
-    world.npc_quiet_say(
+    // C: `say(cn, "So, you failed? ... another " COL_LIGHT_BLUE "mission"
+    // COL_RESET "?", get_army_rank_string(co));` - this branch substitutes
+    // the army rank *title*, not the player's name (a genuine C quirk,
+    // preserved verbatim); only the second "mission" is colored.
+    world.npc_quiet_say_bytes(
         master_id,
         &format!(
             "So, you failed? Well, {rank_name}, I'll remove that mission from your record. \
-             Would you like to get another mission?"
+             Would you like to get another {COL_STR_LIGHT_BLUE}mission{COL_STR_RESET}?"
         ),
     );
     player.set_military_took_mission(0);
@@ -525,12 +551,12 @@ fn apply_military_master_hear(
 
     let took_mission = player.military_took_mission();
     if took_mission == 0 {
-        // C: `say(cn, "But you do not have a mission yet, %s.",
-        // get_army_rank_string(co));` - substitutes the army rank title,
-        // same quirk as the "failed" branch above.
-        world.npc_quiet_say(
+        // C: `say(cn, "But you do not have a " COL_LIGHT_BLUE "mission"
+        // COL_RESET " yet, %s.", get_army_rank_string(co));` - substitutes
+        // the army rank title, same quirk as the "failed" branch above.
+        world.npc_quiet_say_bytes(
             master_id,
-            &format!("But you do not have a mission yet, {rank_name}."),
+            &format!("But you do not have a {COL_STR_LIGHT_BLUE}mission{COL_STR_RESET} yet, {rank_name}."),
         );
         return true;
     }
@@ -591,11 +617,13 @@ fn apply_military_master_reroll(
             );
         }
         MissionRerollOutcome::ConfirmationRequested => {
-            world.npc_quiet_say(
+            // C `military.c:1934-1935` wraps "reroll" in
+            // `COL_LIGHT_BLUE`/`COL_RESET`.
+            world.npc_quiet_say_bytes(
                 master_id,
                 &format!(
                     "I can prepare a different set of missions for you, {player_name}, but it \
-                     will cost 200 gold. Say reroll again to confirm."
+                     will cost 200 gold. Say {COL_STR_LIGHT_BLUE}reroll{COL_STR_RESET} again to confirm."
                 ),
             );
         }
@@ -609,8 +637,9 @@ fn apply_military_master_reroll(
                     std::array::from_fn(|i| player.military_mission(i));
                 let lines =
                     offer_missions_text(&missions, player.military_current_pts(), &player_name);
+                // `describe_mission_text` embeds `COL_STR_*` sentinels.
                 for line in lines {
-                    world.npc_quiet_say(master_id, &line);
+                    world.npc_quiet_say_bytes(master_id, &line);
                 }
             }
         }
@@ -872,8 +901,9 @@ fn apply_military_advisor_nearby_player(
                 &format!("Ah, {player_name}. I haven't forgotten you."),
             );
         } else {
+            // `adv_introduction_text` embeds `COL_STR_*` sentinels.
             let text = adv_introduction_text(storage_id, &player_name);
-            world.npc_quiet_say(advisor_id, &text);
+            world.npc_quiet_say_bytes(advisor_id, &text);
         }
         if let Some(player) = runtime.player_for_character_mut(player_id) {
             player.set_advisor_state(1);
@@ -908,8 +938,9 @@ fn apply_military_advisor_favor_desc(
             &format!("Mentioning your name twice a day won't accomplish much, {player_name}."),
         );
     } else {
+        // `adv_favor_desc_lines` embeds `COL_STR_*` sentinels.
         for line in adv_favor_desc_lines() {
-            world.npc_quiet_say(advisor_id, line);
+            world.npc_quiet_say_bytes(advisor_id, line);
         }
     }
     true
@@ -944,11 +975,12 @@ fn apply_military_advisor_favor(
         // unreachable via the fixed qa-code mapping.
         OfferFavorOutcome::InvalidFavorSize => {}
         OfferFavorOutcome::Offered { favor_size, cost } => {
-            world.npc_quiet_say(
+            // C `military.c:2375` wraps "pay" in `COL_LIGHT_BLUE`/`COL_RESET`.
+            world.npc_quiet_say_bytes(
                 advisor_id,
                 &format!(
                     "You can get a {} favor for the humble fee of {}G, {}S, {player_name}. Say \
-                     pay if you want it.",
+                     {COL_STR_LIGHT_BLUE}pay{COL_STR_RESET} if you want it.",
                     favor_size_name(favor_size),
                     cost / 100,
                     cost % 100
@@ -1105,11 +1137,12 @@ fn apply_military_advisor_specific_mission_request(
                     ),
                 );
             }
-            world.npc_quiet_say(
+            // C `military.c:556` wraps "pay" in `COL_LIGHT_BLUE`/`COL_RESET`.
+            world.npc_quiet_say_bytes(
                 advisor_id,
                 &format!(
-                    "I can recommend you for an {} {} mission for {}G, {}S. Say pay if you want \
-                     it.",
+                    "I can recommend you for an {} {} mission for {}G, {}S. Say \
+                     {COL_STR_LIGHT_BLUE}pay{COL_STR_RESET} if you want it.",
                     mission_difficulty_name(difficulty as usize),
                     mission_type_name(mission_type),
                     cost / 100,

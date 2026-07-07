@@ -202,6 +202,7 @@
 //! branch already uses) with `gold_awarded` as the silver price.
 
 use crate::character_driver::{analyse_text_qa, TextAnalysisOutcome};
+use crate::text::{COL_STR_LIGHT_BLUE, COL_STR_RESET};
 use crate::world::*;
 
 /// C `military.h:12`'s `MAX_ARMY_RANK`.
@@ -615,34 +616,41 @@ pub fn mission_type_name(mission_type: i32) -> &'static str {
 }
 
 /// C `adv_introduction` (`military.c:2262-2281`): the Advisor NPC's
-/// initial greeting, varying by `dat->storage_ID % 4`.
+/// initial greeting, varying by `dat->storage_ID % 4`. Every branch wraps
+/// "favor" in `COL_LIGHT_BLUE`/`COL_RESET` in C; restored here via the
+/// `COL_STR_LIGHT_BLUE`/`COL_STR_RESET` sentinels (see `crate::text`) -
+/// callers must use `npc_quiet_say_bytes`, not the lossy `npc_quiet_say`.
 pub fn adv_introduction_text(storage_id: i32, player_name: &str) -> String {
     let template = match storage_id.rem_euclid(4) {
         0 => {
-            "I could do you a favor, {name}, I could mention your name to the military governor \
-             of Aston. I'm sure that'd help you get that promotion early!"
+            "I could do you a \u{E0C4}favor\u{E0C0}, {name}, I could mention your name to the \
+             military governor of Aston. I'm sure that'd help you get that promotion early!"
         }
         1 => {
             "Say, {name}, would you like to speed up your way up the rank ladder? I could speak \
-             to the military governor of Aston if you want me to do you that favor."
+             to the military governor of Aston if you want me to do you that \u{E0C4}favor\u{E0C0}."
         }
         2 => {
-            "Not getting promoted as fast as you want, {name}? I could do you the favor of \
-             talking to the military governor of Aston about you."
+            "Not getting promoted as fast as you want, {name}? I could do you the \
+             \u{E0C4}favor\u{E0C0} of talking to the military governor of Aston about you."
         }
-        _ => "Need a favor, {name}?",
+        _ => "Need a \u{E0C4}favor\u{E0C0}, {name}?",
     };
     template.replace("{name}", player_name)
 }
 
 /// C `adv_favor_desc` (`military.c:2296-2308`): the two-line "favor
 /// sizes"/"specific missions" explanation, sent as two separate
-/// `quiet_say` calls.
+/// `quiet_say` calls. C wraps every favor-size word and the two example
+/// phrases in `COL_LIGHT_BLUE`/`COL_RESET`; restored here via
+/// `COL_STR_LIGHT_BLUE`/`COL_STR_RESET` sentinels - callers must use
+/// `npc_quiet_say_bytes`, not the lossy `npc_quiet_say`.
 pub fn adv_favor_desc_lines() -> [&'static str; 2] {
     [
-        "My favors come in five sizes, small, medium, big, huge and vast.",
+        "My favors come in five sizes, \u{E0C4}small\u{E0C0}, \u{E0C4}medium\u{E0C0}, \
+         \u{E0C4}big\u{E0C0}, \u{E0C4}huge\u{E0C0} and \u{E0C4}vast\u{E0C0}.",
         "I can also recommend you for specific missions. Just tell me the difficulty and type \
-         like easy demon or insane mining.",
+         like \u{E0C4}easy demon\u{E0C0} or \u{E0C4}insane mining\u{E0C0}.",
     ]
 }
 
@@ -1673,7 +1681,11 @@ pub fn mission_difficulty_name(difficulty: usize) -> &'static str {
 /// C `describe_mission` (`military.c:1194-1220`): the offer-time
 /// description ("I have an easy mission for you, NAME. ..."). `None` for
 /// an empty mission slot (`mission->type == 0`) or an unrecognized type,
-/// matching C's own guard/`default: return 0`.
+/// matching C's own guard/`default: return 0`. C wraps the difficulty
+/// name in `COL_LIGHT_BLUE`/`COL_RESET` via `get_colored_difficulty_name`
+/// (`military.c:1172-1182`); restored here via `COL_STR_LIGHT_BLUE`/
+/// `COL_STR_RESET` sentinels - callers must use `npc_quiet_say_bytes`,
+/// not the lossy `npc_quiet_say`.
 pub fn describe_mission_text(
     mission: &SingleMission,
     difficulty: usize,
@@ -1682,7 +1694,10 @@ pub fn describe_mission_text(
     if mission.is_empty() {
         return None;
     }
-    let diff = mission_difficulty_name(difficulty);
+    let diff = format!(
+        "{COL_STR_LIGHT_BLUE}{}{COL_STR_RESET}",
+        mission_difficulty_name(difficulty)
+    );
     match mission.mission_type {
         MISSION_TYPE_DEMON => Some(format!(
             "I have an {diff} mission for you, {player_name}. It is to slay {} level {} demons \
@@ -1832,7 +1847,7 @@ impl World {
                                 .unwrap_or_default();
                         let prompt = format!(
                             "This mission was specifically requested by your advisor. You may \
-                             accept it by saying {}.",
+                             accept it by saying {COL_STR_LIGHT_BLUE}{}{COL_STR_RESET}.",
                             mission_difficulty_name(diff_pref as usize)
                         );
                         return MissionRequestOutcome::AdvisorRecommendation {
@@ -1846,11 +1861,11 @@ impl World {
 
         let missions: [SingleMission; 5] = std::array::from_fn(|i| player.military_mission(i));
         let mut lines = offer_missions_text(&missions, player.military_current_pts(), player_name);
-        lines.push(
-            "If you don't like these missions, you can request a new set by saying reroll for \
-             200 gold. This can only be done once per day."
-                .to_string(),
-        );
+        lines.push(format!(
+            "If you don't like these missions, you can request a new set by saying \
+             {COL_STR_LIGHT_BLUE}reroll{COL_STR_RESET} for 200 gold. This can only be done once \
+             per day."
+        ));
         MissionRequestOutcome::Offered(lines)
     }
 }
@@ -2522,7 +2537,9 @@ impl World {
                      abandon it first, then come back to accept this one."
                 )
             } else {
-                format!("Say {diff_text} to accept this mission.")
+                format!(
+                    "Say {COL_STR_LIGHT_BLUE}{diff_text}{COL_STR_RESET} to accept this mission."
+                )
             };
 
             AdvisorRecommendationOutcome::SpecificMission {

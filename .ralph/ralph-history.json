@@ -1252,21 +1252,51 @@
         "test result: ok. 1098 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.09s",
         "115:| `src/module/military.c` / `military.h`, `src/system/tool.c` (`get_army_rank_int`/`set_army_rank`/`get_army_rank_string`/`give_military_pts`/`give_military_pts_no_npc`) | `crates/ugaris-core/src/"
       ]
+    },
+    {
+      "iteration": 39,
+      "startedAt": "2026-07-07T22:01:12.680Z",
+      "endedAt": "2026-07-07T22:28:19.175Z",
+      "durationMs": 1625555,
+      "agent": "opencode",
+      "model": "anthropic/claude-sonnet-5",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "PORTING_TODO.md",
+        "crates/ugaris-core/src/world/npc/area32/military.rs",
+        "crates/ugaris-core/src/world/tests/military.rs",
+        "crates/ugaris-server/src/military.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "- `cargo test --workspace` - 2534 core + 78 db + 3 net + 45 protocol + 1098 server, all green, zero failures",
+        "test result: ok. 1098 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.09s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test world::tests::military::handle_mission_request_advisor_recommendation_short_circuits ... FAILED",
+        "test world::tests::military::military_master_repeat_failed_hear_and_reroll_keywords_queue_matching_events ... ok",
+        "assertion failed: prompt.contains(\"saying normal\")",
+        "test result: FAILED. 158 passed; 1 failed; 0 ignored; 0 measured; 2375 filtered out; finished in 0.01s",
+        "error: test failed, to rerun pass `-p ugaris-core --lib`",
+        "test result: ok. 159 passed; 0 failed; 0 ignored; 0 measured; 2375 filtered out; finished in 0.01s",
+        "test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 1080 filtered out; finished in 0.01s"
+      ]
     }
   ],
-  "totalDurationMs": 39051434,
+  "totalDurationMs": 40676989,
   "struggleIndicators": {
     "repeatedErrors": {
       "Everything builds cleanly, all tests pass (2380 core + 1091 server, zero failures, zero warnings), f": 1,
       "Verification: `cargo fmt --all`, `cargo test --workspace` (2380 ugaris-core + 1091 ugaris-server, al": 1,
       "test result: ok. 1089 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.09s": 1,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 38,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 39,
       "The arguments provided to the tool are invalid: Invalid input for tool read: JSON parsing failed: Te": 5,
       "Error message: JSON Parse error: Property name must be a string literal": 5,
       "error: could not compile `ugaris-core` (lib) due to 4 previous errors": 2,
       "test world::tests::brithildie::give_hands_item_back_to_giver ... FAILED": 1,
       "test result: FAILED. 17 passed; 1 failed; 0 ignored; 0 measured; 2362 filtered out; finished in 0.00": 1,
-      "error: test failed, to rerun pass `-p ugaris-core --lib`": 1,
+      "error: test failed, to rerun pass `-p ugaris-core --lib`": 2,
       "All 1091 server tests still pass (same count as before), no failures. Let's check for warnings speci": 1,
       "1. Health check: `cargo test --workspace` was already green (2380 core + 78 db + 3 net + 45 protocol": 1,
       "\u001b[0m$ \u001b[0mcargo test --workspace 2>&1 | grep -E \"FAILED|error|test result\"": 2,
@@ -1389,11 +1419,17 @@
       "/// returns `DoError::AlreadyWorking` otherwise), so it is not": 1,
       "Good, health check passes (need to check full output for failures, but tail shows all doctest ok). L": 1,
       "test result: ok. 2531 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.23s": 1,
-      "test result: ok. 1098 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.09s": 2,
+      "test result: ok. 1098 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.09s": 3,
       "+pub const COL_STR_ERROR: &str = COL_STR_LIGHT_RED;": 1,
-      "- `cargo test --workspace` - 2534 core + 78 db + 3 net + 45 protocol + 1098 server, all green, zero ": 1,
+      "- `cargo test --workspace` - 2534 core + 78 db + 3 net + 45 protocol + 1098 server, all green, zero ": 2,
       "test result: ok. 2534 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.20s": 1,
-      "115:| `src/module/military.c` / `military.h`, `src/system/tool.c` (`get_army_rank_int`/`set_army_ran": 1
+      "115:| `src/module/military.c` / `military.h`, `src/system/tool.c` (`get_army_rank_int`/`set_army_ran": 1,
+      "test world::tests::military::handle_mission_request_advisor_recommendation_short_circuits ... FAILED": 1,
+      "test world::tests::military::military_master_repeat_failed_hear_and_reroll_keywords_queue_matching_e": 1,
+      "assertion failed: prompt.contains(\"saying normal\")": 1,
+      "test result: FAILED. 158 passed; 1 failed; 0 ignored; 0 measured; 2375 filtered out; finished in 0.0": 1,
+      "test result: ok. 159 passed; 0 failed; 0 ignored; 0 measured; 2375 filtered out; finished in 0.01s": 1,
+      "test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 1080 filtered out; finished in 0.01s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

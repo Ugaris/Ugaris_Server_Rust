@@ -4,6 +4,7 @@ use crate::character_driver::{
     MilitaryAdvisorDriverData, MilitaryMasterDriverData, CDR_MILITARY_ADVISOR, CDR_MILITARY_MASTER,
 };
 use crate::clan::CLAN_BONUS_MILITARY_ADVISOR;
+use crate::text::{COL_STR_LIGHT_BLUE, COL_STR_RESET};
 
 // C `get_army_rank_int` (`tool.c:2023-2035`): `cbrt(military_pts)` clamped
 // to `[0, MAX_ARMY_RANK]`.
@@ -1114,8 +1115,10 @@ fn describe_mission_text_renders_each_mission_type() {
     };
     assert_eq!(
         describe_mission_text(&demon, 0, "Godmode").unwrap(),
-        "I have an easy mission for you, Godmode. It is to slay 3 level 10 demons in the \
-         Pentagram Quest."
+        format!(
+            "I have an {COL_STR_LIGHT_BLUE}easy{COL_STR_RESET} mission for you, Godmode. It is \
+             to slay 3 level 10 demons in the Pentagram Quest."
+        )
     );
 
     let ratling = SingleMission {
@@ -1127,8 +1130,10 @@ fn describe_mission_text_renders_each_mission_type() {
     };
     assert_eq!(
         describe_mission_text(&ratling, 2, "Godmode").unwrap(),
-        "I have an hard mission for you, Godmode. It is to slay 4 level 12 ratlings in the \
-         Sewers."
+        format!(
+            "I have an {COL_STR_LIGHT_BLUE}hard{COL_STR_RESET} mission for you, Godmode. It is \
+             to slay 4 level 12 ratlings in the Sewers."
+        )
     );
 
     let silver = SingleMission {
@@ -1140,8 +1145,10 @@ fn describe_mission_text_renders_each_mission_type() {
     };
     assert_eq!(
         describe_mission_text(&silver, 4, "Godmode").unwrap(),
-        "I have an insane mission for you, Godmode. It is to find 50 units of silver in the \
-         Mine."
+        format!(
+            "I have an {COL_STR_LIGHT_BLUE}insane{COL_STR_RESET} mission for you, Godmode. It \
+             is to find 50 units of silver in the Mine."
+        )
     );
 
     assert!(describe_mission_text(&SingleMission::default(), 0, "Godmode").is_none());
@@ -1272,8 +1279,11 @@ fn handle_mission_request_generates_and_offers_missions_for_enrolled_player() {
     let MissionRequestOutcome::Offered(lines) = outcome else {
         panic!("expected Offered, got {outcome:?}");
     };
-    // Reroll-footer line always appended last.
-    assert!(lines.last().unwrap().contains("saying reroll for 200 gold"));
+    // Reroll-footer line always appended last. C `military.c:1893` wraps
+    // "reroll" in `COL_LIGHT_BLUE`/`COL_RESET`.
+    assert!(lines.last().unwrap().contains(&format!(
+        "saying {COL_STR_LIGHT_BLUE}reroll{COL_STR_RESET} for 200 gold"
+    )));
     assert_eq!(player.mission_yday(), 101);
     // A fresh 5-slot offer table was generated (matches `mission_reroll`'s
     // own equivalent assertion).
@@ -1345,7 +1355,9 @@ fn handle_mission_request_advisor_recommendation_short_circuits() {
         panic!("expected AdvisorRecommendation, got {outcome:?}");
     };
     assert!(description.contains("ratlings in the Sewers"));
-    assert!(prompt.contains("saying normal"));
+    // C `military.c:1876` wraps the difficulty word in
+    // `COL_LIGHT_BLUE`/`COL_RESET`.
+    assert!(prompt.contains(&format!("saying {COL_STR_LIGHT_BLUE}normal{COL_STR_RESET}")));
 }
 
 // C `process_advisor_recommendation` (`military.c:1685-1755`): already
@@ -1439,7 +1451,10 @@ fn process_advisor_recommendation_specific_mission_regenerates_and_prompts_accep
     };
     assert!(greeting.contains("oddly specific request for normal ratling-hunting"));
     assert!(description.unwrap().contains("ratlings in the Sewers"));
-    assert!(followup.contains("Say normal to accept this mission"));
+    // C `military.c:1742` wraps the difficulty word in `COL_LIGHT_BLUE`/`COL_RESET`.
+    assert!(followup.contains(&format!(
+        "Say {COL_STR_LIGHT_BLUE}normal{COL_STR_RESET} to accept this mission"
+    )));
     assert_eq!(player.mission_yday(), 101);
     assert_eq!(player.military_recommend(), 101);
 }
@@ -1556,7 +1571,9 @@ fn process_advisor_recommendation_difficulty_text_falls_through_to_insane() {
         panic!("expected SpecificMission, got {outcome:?}");
     };
     assert!(greeting.contains("oddly specific request for insane ratling-hunting"));
-    assert!(followup.contains("Say insane to accept this mission"));
+    assert!(followup.contains(&format!(
+        "Say {COL_STR_LIGHT_BLUE}insane{COL_STR_RESET} to accept this mission"
+    )));
 }
 
 // C `military_master_driver`'s `NT_CHAR` branch (`military.c:2153-2177`),
@@ -1956,12 +1973,18 @@ fn mission_type_name_matches_c_table() {
 // keyed by `storage_ID % 4`.
 #[test]
 fn adv_introduction_text_rotates_by_storage_id_modulo_four() {
-    assert!(adv_introduction_text(0, "Bob").contains("I could do you a favor, Bob"));
+    // C wraps every "favor" in `COL_LIGHT_BLUE`/`COL_RESET`
+    // (`military.c:2262-2281`).
+    assert!(adv_introduction_text(0, "Bob").contains(&format!(
+        "I could do you a {COL_STR_LIGHT_BLUE}favor{COL_STR_RESET}, Bob"
+    )));
     assert!(adv_introduction_text(1, "Bob").contains("Say, Bob, would you like to speed up"));
     assert!(
         adv_introduction_text(2, "Bob").contains("Not getting promoted as fast as you want, Bob?")
     );
-    assert!(adv_introduction_text(3, "Bob").contains("Need a favor, Bob?"));
+    assert!(adv_introduction_text(3, "Bob").contains(&format!(
+        "Need a {COL_STR_LIGHT_BLUE}favor{COL_STR_RESET}, Bob?"
+    )));
     // Wraps around: storage_ID 4 behaves like 0, 7 like 3.
     assert_eq!(
         adv_introduction_text(4, "Bob"),
@@ -1975,10 +1998,16 @@ fn adv_introduction_text_rotates_by_storage_id_modulo_four() {
 
 #[test]
 fn adv_favor_desc_lines_matches_c_text() {
+    // C wraps every favor-size word and the two example phrases in
+    // `COL_LIGHT_BLUE`/`COL_RESET` (`military.c:2296-2308`).
     let lines = adv_favor_desc_lines();
     assert_eq!(
         lines[0],
-        "My favors come in five sizes, small, medium, big, huge and vast."
+        format!(
+            "My favors come in five sizes, {COL_STR_LIGHT_BLUE}small{COL_STR_RESET}, \
+             {COL_STR_LIGHT_BLUE}medium{COL_STR_RESET}, {COL_STR_LIGHT_BLUE}big{COL_STR_RESET}, \
+             {COL_STR_LIGHT_BLUE}huge{COL_STR_RESET} and {COL_STR_LIGHT_BLUE}vast{COL_STR_RESET}."
+        )
     );
     assert!(lines[1].contains("easy demon"));
     assert!(lines[1].contains("insane mining"));
