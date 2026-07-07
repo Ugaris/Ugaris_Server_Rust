@@ -245,10 +245,23 @@ order.
   `tick_item_use_caligar::dispatch_caligar_outcome`
   (`crates/ugaris-server/src/tick_item_use_caligar.rs`, 179 lines;
   `main.rs` down to 3,743).
+  Fourteenth family slice done: the key-assembly family (51 variants
+  scattered across 6 spots - staffer/saltmine `StafferBookText`/
+  `StafferAnimationBook`/`StafferMineExhausted`/`StafferBlockBlocked`/
+  `StafferSpecDoorLocked`/`StafferMineDig`/`StafferMineTimer`/
+  `StafferBlockMove`/`StafferBlockTimer`/`StafferSpecDoorToggle`/
+  `SaltmineDoorBlocked`/`SaltmineLadderUse`/`SaltmineSaltbagUse`,
+  `BoneHint` + `BoneHolder*` (rune stand), `PalaceKey*`/`EnchantCursorItem`/
+  `AntiEnchantCursorItem`/`EnchantNeedsCursor`, `ShrikeAmulet*`,
+  `MineGateway*`/`MineKeyDoor*`, `Arkhata*`, `LizardFlower*`) is extracted
+  into `tick_item_use_keyassembly::dispatch_keyassembly_outcome`
+  (`crates/ugaris-server/src/tick_item_use_keyassembly.rs`, 536 lines;
+  `main.rs` down to 3,451). `SaltmineSaltbagUse`'s original `continue`
+  (valid inside the enclosing `for completion in &completed_actions` loop)
+  became `return`, same precedent as the shrines slice.
   Still inline in `main.rs`: every other outcome family (
-  key-assembly for staffer/saltmine/bone-holder/arkhata/lizard-flower/
-  palace-key/mine-gateway/shrike-amulet, lab2/lab3, and the
-  large no-op catch-all) - continue slicing one family per iteration
+  lab2/lab3, and the large no-op catch-all) - continue slicing one
+  family per iteration
   following this file's pattern (`use super::*;`, take
   `world`/`zone_loader`/`runtime`/`achievement_repository`/`config` or
   `args` by the same reference kinds already used inside the match body,
@@ -640,4 +653,11 @@ notes live in `PROGRESS_ARCHIVE.md`.
   action-outcome family (Caligar, 14 variants scattered across 4 spots)
   into `tick_item_use_caligar::dispatch_caligar_outcome` (`main.rs` down
   to 3,743). 1091 server tests unchanged, clean build/boot-smoke.
+- 2026-07-07: P0.5 main() decomposition: sliced the fourteenth completed-
+  action-outcome family (key-assembly: staffer/saltmine/bone-holder/
+  arkhata/lizard-flower/palace-key/mine-gateway/shrike-amulet, 51
+  variants across 6 spots) into
+  `tick_item_use_keyassembly::dispatch_keyassembly_outcome` (`main.rs`
+  down to 3,451). 1091 server + 2415 core tests unchanged, clean
+  build/boot-smoke.
 
