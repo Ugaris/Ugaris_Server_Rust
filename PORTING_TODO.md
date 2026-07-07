@@ -123,7 +123,7 @@ order.
 
 ## P0.5 - Structural Maintenance (do these before new area content)
 
-- [~] **Finish main() phase decomposition** - `main.rs` is ~7.1K lines; the
+- [x] **Finish main() phase decomposition** - `main.rs` is ~7.1K lines; the
   remaining tick-branch phases (world stepping, client command loop, sync)
   should extract into phase functions like `tick_npc::run_all` did for NPC
   passes. Verbatim moves with superset params; keep execution order.
@@ -305,18 +305,21 @@ order.
   `FlaskIngredientBug`/`FlaskMixed`/`FlaskRuined`) is extracted into
   `tick_item_use_crafting::dispatch_crafting_outcome`
   (`crates/ugaris-server/src/tick_item_use_crafting.rs`, 368 lines;
-  `main.rs` down to 2,848).
-  Still inline in `main.rs`: every other outcome family (the large
-  no-op catch-all) - continue slicing one family per iteration
-  following this file's pattern (`use super::*;`, take
-  `world`/`zone_loader`/`runtime`/`achievement_repository`/`config` or
-  `args` by the same reference kinds already used inside the match body,
-  plus `&mut` refs to the shared `feedback`/`feedback_bytes`/counter
-  accumulators, bind the moved `outcome` value with an `outcome @ (A {..}
-  | B {..} | ...)` or-pattern at the call site in `main.rs`; if a
-  family's variants are scattered non-contiguously, `grep` all variant
-  names first, put the combined or-pattern arm at the first occurrence,
-  and delete the rest).
+  `main.rs` down to 2,848). Final slice done: the remaining scaffolding
+  around the giant `match outcome { ... }` (auto-keyring pickup, the
+  item-use dispatch loop that calls every per-family `tick_item_use_*`
+  dispatcher plus the small no-op catch-all arms, item-use feedback/
+  container-refresh flush, the post-completion per-session map/inventory/
+  effects refresh, and the queued sound-specials drain) - the whole
+  `if !completed_actions.is_empty() { ... }` block following
+  `tick_basic_actions_with_attack_policy` - is extracted verbatim into
+  `tick_item_use_completion::process_completed_action_outcomes`
+  (`crates/ugaris-server/src/tick_item_use_completion.rs`, 1,312 lines;
+  `main.rs` down to 1,586, under the 2,000 hard cap for the first time).
+  This closes the task: every tick-loop phase (world stepping, NPC
+  passes, sync, queued-client-actions, completed-action outcomes) now
+  lives in its own module and `main.rs` only orchestrates the calls in
+  order.
 - [ ] **Split `tests/commands_admin/character.rs` (~8K)** by command
   keyword using `tools/rust_split/splitter.py` with a spec like the ones
   described in the ledger; keep shared helpers in the tests `mod.rs`.
@@ -731,4 +734,9 @@ notes live in `PROGRESS_ARCHIVE.md`.
   contiguous variants) into
   `tick_item_use_crafting::dispatch_crafting_outcome` (`main.rs` down to
   2,848). 1091 server + 2415 core tests unchanged, clean build/boot-smoke.
+- 2026-07-07: P0.5 main() decomposition COMPLETE: extracted the last
+  scaffolding around the outcome match into
+  `tick_item_use_completion::process_completed_action_outcomes`
+  (`main.rs` down to 1,586, under the 2,000 cap). 1091 server + 2415 core
+  tests unchanged, clean build/boot-smoke.
 
