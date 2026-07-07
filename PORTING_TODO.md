@@ -330,24 +330,14 @@ order.
   the C markers in the QA tables that had them. *(done - all 13
   originally-listed deviation sites restored, `area32/military.rs` closed
   last; details in PORTING_LEDGER.md)*
-- [~] **Retire legacy blob writes** - after a few clean iterations with
+- [x] **Retire legacy blob writes** - after a few clean iterations with
   `player_state_json` (migration 0020): stop populating
   `ppd_blob`/`subscriber_blob` in the three `snapshots.rs` builders, add a
   backfill migration converting remaining blob-only rows through the
   legacy decoders, then mark the decoders `#[deprecated]`. Keep the raw
   `PlayerRuntime::ppd_blob` field (it preserves unknown legacy blocks
-  inside the JSON document).
-  REMAINING: the backfill migration itself. `ppd_blob`/`subscriber_blob`
-  decoding needs full `PlayerRuntime`/`AccountAchievements`/
-  `AccountDepotState` Rust logic (dozens of typed block layouts), which a
-  plain `.sql` file under `migrations/` cannot express (`sqlx::migrate!`
-  only runs raw SQL) - this needs a one-off Rust startup routine (e.g. in
-  `main.rs` after `run_migrations()`) that selects `characters` rows where
-  `player_state_json is null and (ppd_blob != '' or subscriber_blob !=
-  '')`, decodes them with the (now `#[deprecated]`, still-functional)
-  legacy decoders, and writes back `player_state_json`. Not started this
-  iteration; see `PORTING_LEDGER.md` for the write-path closure that *is*
-  done.
+  inside the JSON document). *(done - backfill startup routine closes the
+  task; details in PORTING_LEDGER.md)*
 - [ ] **`military.rs` (3.2K) split** - `world/npc/area32/military.rs`
   holds two NPCs plus shared mission logic; split into
   `military_master.rs`, `military_advisor.rs`, and `missions.rs`.
@@ -730,4 +720,10 @@ notes live in `PROGRESS_ARCHIVE.md`.
   migration (needs Rust decode logic, not plain SQL) not yet started - `[~]`.
   2534 core + 1098 server tests pass, live DB suite green, clean build/
   boot-smoke.
+- 2026-07-08: P0.5 "Retire legacy blob writes" CLOSED: added the backfill
+  startup routine (`ugaris-server/src/legacy_backfill.rs`, called from
+  `main.rs` after `run_migrations()`) plus two new `CharacterRepository`
+  methods; verified against a live Docker Postgres with real legacy rows
+  (decode-success and decode-failure-retry paths both confirmed). 2534
+  core + 1101 server tests pass, live DB suite green, clean build/boot.
 

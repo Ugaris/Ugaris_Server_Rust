@@ -18,3 +18,6 @@ ugaris-core = { path = "../ugaris-core" }
 ugaris-db = { path = "../ugaris-db" }
 ugaris-net = { path = "../ugaris-net" }
 ugaris-protocol = { path = "../ugaris-protocol" }
+
+[dev-dependencies]
+async-trait.workspace = true

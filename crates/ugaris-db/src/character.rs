@@ -289,6 +289,27 @@ pub trait CharacterRepository: Send + Sync {
     /// `Some(ExterminateOutcome)` otherwise, whose counts drive the
     /// "Locked %d accounts and %d IP addresses." reply.
     async fn exterminate_account(&self, name: &str) -> anyhow::Result<Option<ExterminateOutcome>>;
+    /// See the "Retire legacy blob writes" `PORTING_TODO.md` task: finds
+    /// every `characters` row that predates migration 0020 (`player_state_
+    /// json is null`) but still carries decodable legacy data (`ppd_blob`/
+    /// `subscriber_blob` non-empty), for a one-off startup backfill that
+    /// decodes each row through the legacy `#[deprecated]` decoders and
+    /// writes the typed document back via [`Self::backfill_player_state_
+    /// json`]. Decoding itself can't happen in this crate (the decoders
+    /// live in `ugaris-server`, next to `PlayerRuntime`); this only does
+    /// the raw row scan.
+    async fn find_legacy_blob_only_characters(&self) -> anyhow::Result<Vec<LegacyBlobRow>>;
+    /// Writes the decoded `player_state_json` document back for one row
+    /// produced by [`Self::find_legacy_blob_only_characters`]. Guarded by
+    /// `player_state_json is null` so this can never clobber a document a
+    /// live session already saved since the row was read (this runs once
+    /// at startup before any session exists, so that should never happen
+    /// in practice - the guard is defense in depth, not a real race).
+    async fn backfill_player_state_json(
+        &self,
+        character_id: CharacterId,
+        player_state_json: serde_json::Value,
+    ) -> anyhow::Result<()>;
 }
 
 /// See [`CharacterRepository::exterminate_account`].
@@ -296,6 +317,14 @@ pub trait CharacterRepository: Send + Sync {
 pub struct ExterminateOutcome {
     pub locked_accounts: u64,
     pub banned_ips: u64,
+}
+
+/// See [`CharacterRepository::find_legacy_blob_only_characters`].
+#[derive(Debug, Clone)]
+pub struct LegacyBlobRow {
+    pub character_id: CharacterId,
+    pub ppd_blob: Vec<u8>,
+    pub subscriber_blob: Vec<u8>,
 }
 
 #[derive(Debug, Clone)]
@@ -588,9 +617,44 @@ impl CharacterRepository for PgCharacterRepository {
             banned_ips,
         }))
     }
+
+    async fn find_legacy_blob_only_characters(&self) -> anyhow::Result<Vec<LegacyBlobRow>> {
+        let rows = sqlx::query_as::<_, (i64, Vec<u8>, Vec<u8>)>(FIND_LEGACY_BLOB_ONLY_SQL)
+            .fetch_all(&self.pool)
+            .await?;
+        Ok(rows
+            .into_iter()
+            .map(|(id, ppd_blob, subscriber_blob)| LegacyBlobRow {
+                character_id: CharacterId(id as u32),
+                ppd_blob,
+                subscriber_blob,
+            })
+            .collect())
+    }
+
+    async fn backfill_player_state_json(
+        &self,
+        character_id: CharacterId,
+        player_state_json: serde_json::Value,
+    ) -> anyhow::Result<()> {
+        sqlx::query(BACKFILL_PLAYER_STATE_JSON_SQL)
+            .bind(player_state_json)
+            .bind(character_id.0 as i64)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
 }
 
 const FIND_NAME_BY_ID_SQL: &str = "select name from characters where id = $1";
+
+/// See [`CharacterRepository::find_legacy_blob_only_characters`].
+const FIND_LEGACY_BLOB_ONLY_SQL: &str = "select id, ppd_blob, subscriber_blob from characters \
+where player_state_json is null and (ppd_blob <> ''::bytea or subscriber_blob <> ''::bytea)";
+
+/// See [`CharacterRepository::backfill_player_state_json`].
+const BACKFILL_PLAYER_STATE_JSON_SQL: &str =
+    "update characters set player_state_json = $1 where id = $2 and player_state_json is null";
 
 /// See [`CharacterRepository::find_paid_until_info`].
 const FIND_PAID_UNTIL_INFO_SQL: &str = "select extract(epoch from a.paid_until)::bigint, \

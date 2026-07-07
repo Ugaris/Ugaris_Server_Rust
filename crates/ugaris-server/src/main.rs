@@ -28,6 +28,7 @@ mod events;
 mod inventory;
 mod item_apply;
 mod keyring;
+mod legacy_backfill;
 mod login;
 mod loot;
 mod lostcon;
@@ -224,8 +225,9 @@ use ugaris_core::{
 use ugaris_db::{
     AntiCheatRepository, AreaRepository, AreaServerRecord, AuctionRepository, CharacterRepository,
     CharacterSaveMode, CharacterSaveRequest, CharacterSnapshot, ClanRegistryRepository,
-    LoginOutcome, LoginRequest, MerchantRepository, MerchantStoreSnapshot, MerchantWareSnapshot,
-    MilitaryAdvisorStorageRepository, MilitaryMasterStorageRepository, NotesRepository,
+    LegacyBlobRow, LoginOutcome, LoginRequest, MerchantRepository, MerchantStoreSnapshot,
+    MerchantWareSnapshot, MilitaryAdvisorStorageRepository, MilitaryMasterStorageRepository,
+    NotesRepository,
 };
 
 use ugaris_net::{NetServer, SessionCommand, SessionEvent};
@@ -816,6 +818,23 @@ async fn main() -> anyhow::Result<()> {
         db.ping().await?;
         db.run_migrations().await?;
         info!("connected to PostgreSQL and applied pending migrations");
+        let characters = db.characters();
+        // "Retire legacy blob writes" (PORTING_TODO.md): decode any
+        // pre-migration-0020 rows still carrying only `ppd_blob`/
+        // `subscriber_blob` and write their typed `player_state_json`
+        // document back, once, before any session can touch them.
+        match legacy_backfill::backfill_legacy_player_state(&characters).await {
+            Ok(0) => {}
+            Ok(count) => {
+                info!(
+                    count,
+                    "backfilled legacy ppd_blob/subscriber_blob rows into player_state_json"
+                );
+            }
+            Err(err) => {
+                warn!(error = %err, "failed to backfill legacy player state rows");
+            }
+        }
         let auctions = db.auctions();
         // C `init_auction_house` (`auction_house.c:37-47`): clean up
         // any auctions that expired while the server was down, before
@@ -825,7 +844,7 @@ async fn main() -> anyhow::Result<()> {
             warn!(error = %err, "failed to clean up expired auctions at startup");
         }
         (
-            Some(db.characters()),
+            Some(characters),
             Some(db.merchants()),
             Some(auctions),
             Some(db.achievements()),

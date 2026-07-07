@@ -26,7 +26,8 @@ pub use auction::{
 };
 pub use character::{
     CharacterQueryStats, CharacterRepository, CharacterSaveMode, CharacterSaveRequest,
-    CharacterSnapshot, LastSeenInfo, LoginOutcome, LoginRequest, PgCharacterRepository,
+    CharacterSnapshot, LastSeenInfo, LegacyBlobRow, LoginOutcome, LoginRequest,
+    PgCharacterRepository,
 };
 pub use clan::{ClanRegistryRepository, PgClanRegistryRepository};
 pub use clan_log::{
