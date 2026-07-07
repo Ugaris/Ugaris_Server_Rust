@@ -44,6 +44,7 @@ mod spawns;
 mod stacks;
 mod tick_client_actions;
 mod tick_item_use_chests;
+mod tick_item_use_clan_lq_arena;
 mod tick_item_use_dungeon;
 mod tick_item_use_edemon_fdemon;
 mod tick_item_use_ice;
@@ -1635,113 +1636,32 @@ async fn main() -> anyhow::Result<()> {
                                             )
                                             .await;
                                         }
-                                        ugaris_core::item_driver::ItemDriverOutcome::ClanSpawnExit { character_id, area_id, x, y, .. } => {
-                                            if area_id != config.area_id {
-                                                let transferred = attempt_cross_area_transfer(
-                                                    &mut world,
-                                                    &mut runtime,
-                                                    &character_repository,
-                                                    &area_repository,
-                                                    config.area_id,
-                                                    config.mirror_id,
-                                                    character_id,
-                                                    area_id,
-                                                    u32::from(config.mirror_id),
-                                                    x,
-                                                    y,
-                                                ).await;
-                                                if transferred {
-                                                    executed += 1;
-                                                } else {
-                                                    feedback.push((character_id, "Nothing happens - target area server is down.".to_string()));
-                                                    blocked += 1;
-                                                }
-                                            } else {
-                                                executed += 1;
-                                            }
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::ClanSpawnExitBusy { character_id, .. } => {
-                                            feedback.push((character_id, "Please try again soon. Target is busy".to_string()));
-                                            blocked += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::ClanSpawnLevelTooHigh { character_id, .. } => {
-                                            feedback.push((character_id, "Thou mayest not use this clan spawner for thy level is too great.".to_string()));
-                                            blocked += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::ClanSpawnContested { character_id, .. } => {
-                                            feedback.push((character_id, "Thou mayest not use this clan spawner while others can touch it.".to_string()));
-                                            blocked += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::ClanSpawnCountdown { character_id, remaining_minutes, freq_hours, god_added, .. } => {
-                                            if god_added {
-                                                feedback.push((character_id, "A jewel has been added to the clan spawner.".to_string()));
-                                            }
-                                            feedback.push((character_id, format!(
-                                                "{:02}:{:02} to go, about one jewel every {} hours.",
-                                                remaining_minutes / 60,
-                                                remaining_minutes % 60,
-                                                freq_hours
-                                            )));
-                                            blocked += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::ClanSpawnAward { character_id, level, .. } => {
-                                            // C fires the "won a Jewel" broadcast/clan-log
-                                            // (`clanmaster.c:1373-1397`) unconditionally, before
-                                            // even calling `award_clan_jewel` - it never checks
-                                            // that call's return value, so the announcement
-                                            // still fires even if item delivery fails (e.g. a
-                                            // full inventory).
-                                            world.resolve_clan_spawn_jewel_award(character_id, level);
-                                            if grant_clan_jewel(&mut world, &mut zone_loader, character_id) {
-                                                executed += 1;
-                                            } else {
-                                                blocked += 1;
-                                            }
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::ClanSpawnTimer { .. } => {
-                                            executed += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::LqTicker { item_id, schedule_after_ticks } => {
-                                            world.schedule_item_driver_timer(item_id, CharacterId(0), schedule_after_ticks);
-                                            executed += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::LqEntranceClosed { character_id, .. } => {
-                                            feedback.push((character_id, "No quest is in progress, you may not enter.".to_string()));
-                                            blocked += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::LqEntranceLevelBlocked { character_id, min_level, max_level, .. } => {
-                                            feedback.push((character_id, format!("This quest is for levels {min_level} to {max_level}, you may not enter.")));
-                                            blocked += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::LqEntranceUndefined { character_id, .. } => {
-                                            feedback.push((character_id, "No entrance defined, bad quest.".to_string()));
-                                            blocked += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::LqEntrancePenalty { character_id, remaining_seconds, .. } => {
-                                            feedback.push((character_id, format!(
-                                                "You may not enter again yet. Your remaining penalty is: {:.2} minutes.",
-                                                remaining_seconds as f64 / 60.0
-                                            )));
-                                            blocked += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::ArenaToplist { character_id, .. } => {
-                                            // C `toplist_driver` (`arena.c:1045-1087`): top-10 lines,
-                                            // a +/-5 window around the reader's own rank, then their
-                                            // own score/wins/losses summary line.
-                                            if let Some(player) = runtime.player_for_character(character_id) {
-                                                let entries = world.arena_toplist_entries();
-                                                let lines = ugaris_core::item_driver::arena_toplist_lines(
-                                                    &entries,
-                                                    player.arena_score(),
-                                                    player.arena_wins(),
-                                                    player.arena_losses(),
-                                                    player.arena_fights(),
-                                                );
-                                                for line in lines {
-                                                    feedback.push((character_id, line));
-                                                }
-                                            }
-                                            executed += 1;
+                                        outcome @ (ugaris_core::item_driver::ItemDriverOutcome::ClanSpawnExit { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::ClanSpawnExitBusy { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::ClanSpawnLevelTooHigh { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::ClanSpawnContested { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::ClanSpawnCountdown { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::ClanSpawnAward { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::ClanSpawnTimer { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::LqTicker { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::LqEntranceClosed { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::LqEntranceLevelBlocked { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::LqEntranceUndefined { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::LqEntrancePenalty { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::ArenaToplist { .. }) => {
+                                            tick_item_use_clan_lq_arena::dispatch_clan_lq_arena_outcome(
+                                                &mut world,
+                                                &mut runtime,
+                                                &mut zone_loader,
+                                                &character_repository,
+                                                &area_repository,
+                                                &config,
+                                                outcome,
+                                                &mut feedback,
+                                                &mut executed,
+                                                &mut blocked,
+                                            )
+                                            .await;
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::ZombieShrine { item_id, character_id, shrine_type } => {
                                             let random_seed = world.tick.0

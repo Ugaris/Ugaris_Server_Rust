@@ -207,8 +207,16 @@ order.
   extracted into `tick_item_use_transport::dispatch_transport_outcome`
   (`crates/ugaris-server/src/tick_item_use_transport.rs`, 128 lines;
   `main.rs` down to 4,300).
+  Ninth family slice done: the clan-spawn/LQ/arena family (13 contiguous
+  variants - `ClanSpawnExit`/`ClanSpawnExitBusy`/`ClanSpawnLevelTooHigh`/
+  `ClanSpawnContested`/`ClanSpawnCountdown`/`ClanSpawnAward`/
+  `ClanSpawnTimer`/`LqTicker`/`LqEntranceClosed`/`LqEntranceLevelBlocked`/
+  `LqEntranceUndefined`/`LqEntrancePenalty`/`ArenaToplist`) is extracted
+  into `tick_item_use_clan_lq_arena::dispatch_clan_lq_arena_outcome`
+  (`crates/ugaris-server/src/tick_item_use_clan_lq_arena.rs`, 203 lines;
+  `main.rs` down to 4,220).
   Still inline in `main.rs`: every other outcome family (
-  clan-spawn, lq, arena, shrines, xmas,
+  shrines, xmas,
   swamp, burndown, key-assembly, and the
   large no-op catch-all) - continue slicing one family per iteration
   following this file's pattern (`use super::*;`, take
@@ -581,4 +589,8 @@ notes live in `PROGRESS_ARCHIVE.md`.
   action-outcome family (transport-point, 3 contiguous variants) into
   `tick_item_use_transport::dispatch_transport_outcome` (`main.rs` down
   to 4,300). 1091 server tests unchanged, clean build/boot-smoke.
+- 2026-07-07: P0.5 main() decomposition: sliced the ninth completed-
+  action-outcome family (clan-spawn/LQ/arena, 13 contiguous variants)
+  into `tick_item_use_clan_lq_arena::dispatch_clan_lq_arena_outcome`
+  (`main.rs` down to 4,220). 1091 server tests unchanged, clean build/boot-smoke.
 
