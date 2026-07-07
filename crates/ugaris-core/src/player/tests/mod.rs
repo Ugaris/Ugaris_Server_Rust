@@ -1,5 +1,3 @@
-use super::*;
-
 mod actions;
 mod area1;
 mod area3;

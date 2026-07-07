@@ -128,17 +128,20 @@ order.
   should extract into phase functions like `tick_npc::run_all` did for NPC
   passes. Verbatim moves with superset params; keep execution order.
   REMAINING: the "world stepping" phase is extracted into
-  `tick_world::world_step` and the post-NPC-pass "sync" phase (PK hate
-  updates, shutdown scheduler, pending text/channel broadcast drains,
-  resource sync, periodic map/action diffs, final frame flush) is now
-  extracted into `tick_sync::sync_phase`
-  (`crates/ugaris-server/src/tick_sync.rs`, ~65 lines cut from `main.rs`,
-  down to ~6.6K). Still inline in `main.rs`: the huge queued-client-action
-  match (the "client command loop", still ~5.1K lines between
-  `tick_world::world_step`'s call site and `tick_npc::run_all`'s) - this
+  `tick_world::world_step`, the post-NPC-pass "sync" phase is extracted
+  into `tick_sync::sync_phase`, and now the queued-client-action drain/
+  dispatch/feedback-flush phase (draining `drain_actions_for_tick`,
+  matching every `ClientAction` variant, then flushing feedback/inventory/
+  container/name-refresh packets) is extracted into
+  `tick_client_actions::process_queued_client_actions`
+  (`crates/ugaris-server/src/tick_client_actions.rs`, 1,388 lines cut from
+  `main.rs`, now ~5.3K). Still inline in `main.rs`: the huge
+  completed-action-outcome handling block (`if !completed_actions.is_empty()
+  { ... }` following `tick_basic_actions_with_attack_policy`, still ~3.7K
+  lines between this phase's call site and `tick_npc::run_all`'s) - this
   one is too large to move verbatim into one file (would blow the 2,000
-  line cap) and needs splitting by command-action family across several
-  files, not just relocation.
+  line cap) and needs splitting by completed-action-kind family across
+  several files, not just relocation.
 - [ ] **Split `tests/commands_admin/character.rs` (~8K)** by command
   keyword using `tools/rust_split/splitter.py` with a spec like the ones
   described in the ledger; keep shared helpers in the tests `mod.rs`.
@@ -431,4 +434,9 @@ notes live in `PROGRESS_ARCHIVE.md`.
   "sync" phase into `tick_sync::sync_phase` (`main.rs` down to 6,632).
   Only the client-command-loop phase remains inline. 1091 tests
   unchanged, clean build/boot-smoke.
+- 2026-07-07: P0.5 main() decomposition: extracted the queued-client-
+  action drain/dispatch/feedback-flush phase into
+  `tick_client_actions::process_queued_client_actions` (`main.rs` down
+  to 5,262). Only completed-action-outcome handling (~3.7K lines)
+  remains inline. 1091 tests unchanged, clean build/boot-smoke.
 
