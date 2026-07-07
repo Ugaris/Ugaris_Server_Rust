@@ -237,8 +237,17 @@ order.
   extracted into `tick_item_use_xmas_swamp::dispatch_xmas_swamp_outcome`
   (`crates/ugaris-server/src/tick_item_use_xmas_swamp.rs`, 108 lines;
   `main.rs` down to 3,834).
+  Thirteenth family slice done: the Caligar family (14 variants, scattered
+  across 4 spots - `CaligarWeightBlocked`/`DoorLocked`/`DoorBusy`/`Move`/
+  `Door`/`Timer`/`GunProjectile`, `CaligarKeyAssemble` (both `final_key`
+  guards)/`KeyNeedsCursor`/`KeyDoesNotFit`, `CaligarSkellyDoor`/
+  `SkellyDoorLocked`/`SkellyDoorBusy`, `CaligarTraining`) is extracted into
+  `tick_item_use_caligar::dispatch_caligar_outcome`
+  (`crates/ugaris-server/src/tick_item_use_caligar.rs`, 179 lines;
+  `main.rs` down to 3,743).
   Still inline in `main.rs`: every other outcome family (
-  key-assembly and the
+  key-assembly for staffer/saltmine/bone-holder/arkhata/lizard-flower/
+  palace-key/mine-gateway/shrike-amulet, lab2/lab3, and the
   large no-op catch-all) - continue slicing one family per iteration
   following this file's pattern (`use super::*;`, take
   `world`/`zone_loader`/`runtime`/`achievement_repository`/`config` or
@@ -627,4 +636,8 @@ notes live in `PROGRESS_ARCHIVE.md`.
   into `tick_item_use_xmas_swamp::dispatch_xmas_swamp_outcome`
   (`main.rs` down to 3,834). 1091 server tests unchanged, clean
   build/boot-smoke.
+- 2026-07-07: P0.5 main() decomposition: sliced the thirteenth completed-
+  action-outcome family (Caligar, 14 variants scattered across 4 spots)
+  into `tick_item_use_caligar::dispatch_caligar_outcome` (`main.rs` down
+  to 3,743). 1091 server tests unchanged, clean build/boot-smoke.
 

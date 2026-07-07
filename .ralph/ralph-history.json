@@ -590,15 +590,44 @@
         "test world::tests::dungeon_master::attack_command_failure_says_error_and_never_charges_or_queues ... ok",
         "test result: ok. 2415 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.19s"
       ]
+    },
+    {
+      "iteration": 20,
+      "startedAt": "2026-07-07T14:55:24.865Z",
+      "endedAt": "2026-07-07T15:01:50.980Z",
+      "durationMs": 385220,
+      "agent": "opencode",
+      "model": "anthropic/claude-sonnet-5",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "PORTING_TODO.md",
+        "crates/ugaris-server/src/main.rs",
+        "crates/ugaris-server/src/tick_item_use_caligar.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 1091 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.09s",
+        "7512:- 2026-07-07: continued the P0.5 \"Finish main() phase decomposition\" task with its first completed-action-outcome family slice, following the \"needs splitting by completed-action-kind family acro",
+        "7513:- 2026-07-07: continued the P0.5 \"Finish main() phase decomposition\" task with its second completed-action-outcome family slice: the chest family - 16 `ItemDriverOutcome` variants (`ChestTreasure",
+        "7514:- 2026-07-07: continued the P0.5 \"Finish main() phase decomposition\" task with its third completed-action-outcome family slice: the dungeon family (`src/area/13/dungeon.c`) - 7 contiguous `ItemDr",
+        "7515:- 2026-07-07: continued the P0.5 \"Finish main() phase decomposition\" task with its fourth completed-action-outcome family slice: the ice family (`src/area/10/ice.c`) plus the adjacent Palace/Isle",
+        "7517:- 2026-07-07: continued the P0.5 \"Finish main() phase decomposition\" task with its fifth completed-action-outcome family slice: the Teufel family (`src/area/34/teufel.c`) - 16 contiguous `ItemDri",
+        "7518:- 2026-07-07: continued the P0.5 \"Finish main() phase decomposition\" task with its sixth completed-action-outcome family slice: the skeleton-raise family (area 1's chair/blood-raise sequence, `gw",
+        "7520:- 2026-07-07: continued the P0.5 \"Finish main() phase decomposition\" task with its seventh completed-action-outcome family slice: the Edemon (`src/area/6/edemon.c`) + Fdemon (`src/area/8/fdemon.c",
+        "7521: - 2026-07-07: continued the P0.5 \"Finish main() phase decomposition\" task with its eighth completed-action-outcome family slice: the transport-point family (`src/system/transport.c`) - 3 contigu"
+      ]
     }
   ],
-  "totalDurationMs": 13593945,
+  "totalDurationMs": 13979165,
   "struggleIndicators": {
     "repeatedErrors": {
       "Everything builds cleanly, all tests pass (2380 core + 1091 server, zero failures, zero warnings), f": 1,
       "Verification: `cargo fmt --all`, `cargo test --workspace` (2380 ugaris-core + 1091 ugaris-server, al": 1,
       "test result: ok. 1089 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.09s": 1,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 19,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 20,
       "The arguments provided to the tool are invalid: Invalid input for tool read: JSON parsing failed: Te": 2,
       "Error message: JSON Parse error: Property name must be a string literal": 2,
       "error: could not compile `ugaris-core` (lib) due to 4 previous errors": 1,
@@ -614,7 +643,7 @@
       "test world::tests::dungeon_master::attack_command_failure_says_error_and_never_charges_or_queues ...": 5,
       "test result: ok. 2380 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.19s": 3,
       "test result: ok. 78 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 13,
-      "test result: ok. 1091 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.09s": 9,
+      "test result: ok. 1091 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.09s": 10,
       "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&": 10,
       "test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s": 12,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 12,
@@ -667,8 +696,15 @@
       "3. **Verification**: `cargo fmt --all`, `cargo test --workspace` (all green, zero failures, zero war": 1,
       "- `cargo test --workspace`: 2415 core + 78 db + 3 net + 45 protocol + 1091 server, all green, zero f": 1,
       "test result: ok. 2415 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.20s": 1,
-      "7512:- 2026-07-07: continued the P0.5 \"Finish main() phase decomposition\" task with its first comple": 1,
-      "- `cargo test --workspace` - 2415 core + 78 db + 3 net + 45 protocol + 1091 server, zero failures, z": 1
+      "7512:- 2026-07-07: continued the P0.5 \"Finish main() phase decomposition\" task with its first comple": 2,
+      "- `cargo test --workspace` - 2415 core + 78 db + 3 net + 45 protocol + 1091 server, zero failures, z": 1,
+      "7513:- 2026-07-07: continued the P0.5 \"Finish main() phase decomposition\" task with its second compl": 1,
+      "7514:- 2026-07-07: continued the P0.5 \"Finish main() phase decomposition\" task with its third comple": 1,
+      "7515:- 2026-07-07: continued the P0.5 \"Finish main() phase decomposition\" task with its fourth compl": 1,
+      "7517:- 2026-07-07: continued the P0.5 \"Finish main() phase decomposition\" task with its fifth comple": 1,
+      "7518:- 2026-07-07: continued the P0.5 \"Finish main() phase decomposition\" task with its sixth comple": 1,
+      "7520:- 2026-07-07: continued the P0.5 \"Finish main() phase decomposition\" task with its seventh comp": 1,
+      "7521: - 2026-07-07: continued the P0.5 \"Finish main() phase decomposition\" task with its eighth comp": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

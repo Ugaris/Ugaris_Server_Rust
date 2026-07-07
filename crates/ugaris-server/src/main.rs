@@ -44,6 +44,7 @@ mod spawns;
 mod stacks;
 mod tick_client_actions;
 mod tick_item_use_burndown;
+mod tick_item_use_caligar;
 mod tick_item_use_chests;
 mod tick_item_use_clan_lq_arena;
 mod tick_item_use_dungeon;
@@ -1885,7 +1886,6 @@ async fn main() -> anyhow::Result<()> {
                                          | ugaris_core::item_driver::ItemDriverOutcome::MineGatewayKeyAssemble { .. }
                                          | ugaris_core::item_driver::ItemDriverOutcome::MineKeyDoor { .. }
                                          | ugaris_core::item_driver::ItemDriverOutcome::ArkhataKeyAssemble { .. }
-                                         | ugaris_core::item_driver::ItemDriverOutcome::CaligarKeyAssemble { final_key: false, .. }
                                             | ugaris_core::item_driver::ItemDriverOutcome::PalaceKeyCombine { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::AccountDepotOpened { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::LookItem { .. } => {
@@ -2165,26 +2165,30 @@ async fn main() -> anyhow::Result<()> {
                                             feedback.push((character_id, "It won't move.".to_string()));
                                             executed += 1;
                                         }
-                                        ugaris_core::item_driver::ItemDriverOutcome::CaligarWeightBlocked {
-                                            character_id,
-                                            ..
-                                        } => {
-                                            feedback.push((character_id, "It won't move.".to_string()));
-                                            executed += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::CaligarWeightDoorLocked {
-                                            character_id,
-                                            ..
-                                        } => {
-                                            feedback.push((character_id, "The door is locked.".to_string()));
-                                            executed += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::CaligarWeightDoorBusy {
-                                            character_id,
-                                            ..
-                                        } => {
-                                            feedback.push((character_id, "Please try again soon. Target is busy.".to_string()));
-                                            executed += 1;
+                                        outcome @ (ugaris_core::item_driver::ItemDriverOutcome::CaligarWeightBlocked { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::CaligarWeightDoorLocked { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::CaligarWeightDoorBusy { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::CaligarWeightMove { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::CaligarWeightDoor { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::CaligarWeightTimer { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::CaligarGunProjectile { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::CaligarKeyAssemble { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::CaligarKeyNeedsCursor { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::CaligarKeyDoesNotFit { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::CaligarSkellyDoor { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::CaligarSkellyDoorLocked { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::CaligarSkellyDoorBusy { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::CaligarTraining { .. }) => {
+                                            tick_item_use_caligar::dispatch_caligar_outcome(
+                                                &mut world,
+                                                &mut zone_loader,
+                                                &mut runtime,
+                                                outcome,
+                                                &mut feedback,
+                                                &mut executed,
+                                                &mut blocked,
+                                                &mut failed,
+                                            );
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::StafferSpecDoorLocked {
                                             character_id,
@@ -2197,10 +2201,6 @@ async fn main() -> anyhow::Result<()> {
                                         | ugaris_core::item_driver::ItemDriverOutcome::StafferMineTimer { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::StafferBlockMove { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::StafferBlockTimer { .. }
-                                        | ugaris_core::item_driver::ItemDriverOutcome::CaligarWeightMove { .. }
-                                         | ugaris_core::item_driver::ItemDriverOutcome::CaligarWeightDoor { .. }
-                                         | ugaris_core::item_driver::ItemDriverOutcome::CaligarWeightTimer { .. }
-                                         | ugaris_core::item_driver::ItemDriverOutcome::CaligarGunProjectile { .. }
                                           | ugaris_core::item_driver::ItemDriverOutcome::StafferSpecDoorToggle { .. } => {
                                             executed += 1;
                                         }
@@ -2579,79 +2579,6 @@ async fn main() -> anyhow::Result<()> {
                                             feedback.push((character_id, "This rune does not belong to you. You cannot take it.".to_string()));
                                             blocked += 1;
                                         }
-                                        ugaris_core::item_driver::ItemDriverOutcome::CaligarKeyAssemble {
-                                            item_id,
-                                            character_id,
-                                            cursor_item_id,
-                                            final_key: true,
-                                            ..
-                                        } => {
-                                            match apply_caligar_key_final(
-                                                &mut world,
-                                                &mut zone_loader,
-                                                item_id,
-                                                character_id,
-                                                cursor_item_id,
-                                            ) {
-                                                AssembleApplyResult::Assembled => {
-                                                    executed += 1;
-                                                }
-                                                AssembleApplyResult::TemplateUnavailable => {
-                                                    feedback.push((character_id, "This does not seem to fit.".to_string()));
-                                                    blocked += 1;
-                                                }
-                                                AssembleApplyResult::MissingPlayer
-                                                | AssembleApplyResult::MissingItem => {
-                                                    failed += 1;
-                                                }
-                                            }
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::CaligarKeyNeedsCursor { character_id, .. } => {
-                                            feedback.push((character_id, "Nothing happens.".to_string()));
-                                            blocked += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::CaligarKeyDoesNotFit { character_id, .. } => {
-                                            feedback.push((character_id, "This does not seem to fit.".to_string()));
-                                            blocked += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::CaligarSkellyDoor {
-                                            item_id,
-                                            character_id,
-                                            door_index,
-                                        } => {
-                                            if runtime
-                                                .player_for_character(character_id)
-                                                .is_some_and(|player| player.caligar_skelly_door_unlocked(door_index))
-                                            {
-                                                match world.apply_caligar_skelly_door(
-                                                    item_id,
-                                                    character_id,
-                                                    door_index,
-                                                ) {
-                                                    ugaris_core::item_driver::ItemDriverOutcome::CaligarSkellyDoor { .. } => {
-                                                        executed += 1;
-                                                    }
-                                                    ugaris_core::item_driver::ItemDriverOutcome::CaligarSkellyDoorBusy { character_id, .. } => {
-                                                        feedback.push((character_id, "Please try again soon. Target is busy.".to_string()));
-                                                        blocked += 1;
-                                                    }
-                                                    _ => {
-                                                        failed += 1;
-                                                    }
-                                                }
-                                            } else {
-                                                feedback.push((character_id, "The door appears to be locked by some strange mechanism. It seems you need to open three seperate locks.".to_string()));
-                                                blocked += 1;
-                                            }
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::CaligarSkellyDoorLocked { character_id, .. } => {
-                                            feedback.push((character_id, "The door appears to be locked by some strange mechanism. It seems you need to open three seperate locks.".to_string()));
-                                            blocked += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::CaligarSkellyDoorBusy { character_id, .. } => {
-                                            feedback.push((character_id, "Please try again soon. Target is busy.".to_string()));
-                                            blocked += 1;
-                                        }
                                         ugaris_core::item_driver::ItemDriverOutcome::ParkShrine { character_id, shrine, .. } => {
                                             if let Some(player) = runtime.player_for_character_mut(character_id) {
                                                 if player.memorize_park_shrine(shrine).unwrap_or(false) {
@@ -2667,24 +2594,6 @@ async fn main() -> anyhow::Result<()> {
                                         ugaris_core::item_driver::ItemDriverOutcome::ParkShrineBug { character_id, .. } => {
                                             feedback.push((character_id, "BUG #55343, please report".to_string()));
                                             failed += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::CaligarTraining { character_id, lesson, .. } => {
-                                            if let Some(player) = runtime.player_for_character_mut(character_id) {
-                                                if player.observe_caligar_training(lesson).unwrap_or(false) {
-                                                    let text = match lesson {
-                                                        1 => "You observe the skeletons fighting techniques: Melee.",
-                                                        2 => "You observe the vampires fighting techniques: Magic and Melee.",
-                                                        3 => "You observe the zombies fighting techniques: Magic.",
-                                                        _ => "",
-                                                    };
-                                                    if !text.is_empty() {
-                                                        feedback.push((character_id, text.to_string()));
-                                                    }
-                                                }
-                                                executed += 1;
-                                            } else {
-                                                failed += 1;
-                                            }
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::PickBerry {
                                             character_id,
