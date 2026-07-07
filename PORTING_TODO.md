@@ -137,11 +137,24 @@ order.
   (`crates/ugaris-server/src/tick_client_actions.rs`, 1,388 lines cut from
   `main.rs`, now ~5.3K). Still inline in `main.rs`: the huge
   completed-action-outcome handling block (`if !completed_actions.is_empty()
-  { ... }` following `tick_basic_actions_with_attack_policy`, still ~3.7K
-  lines between this phase's call site and `tick_npc::run_all`'s) - this
-  one is too large to move verbatim into one file (would blow the 2,000
-  line cap) and needs splitting by completed-action-kind family across
-  several files, not just relocation.
+  { ... }` following `tick_basic_actions_with_attack_policy`) - this one is
+  too large to move verbatim into one file (would blow the 2,000 line cap)
+  and needs splitting by completed-action-kind family across several
+  files, not just relocation. First family slice done: the Warp-area
+  (`src/area/25/warped.c`) `ItemDriverOutcome` family (17 variants -
+  teleport/bonus-level/key-spawn/key-door/trial-door) is extracted into
+  `tick_item_use_warp::dispatch_warp_outcome`
+  (`crates/ugaris-server/src/tick_item_use_warp.rs`, 389 lines; `main.rs`
+  down to ~4.9K). Still inline in `main.rs`: every other outcome family
+  (chests, ice, dungeon, teufel, skel-raise, transport, clan-spawn, lq,
+  arena, shrines, xmas, swamp, edemon/fdemon, burndown, palace doors,
+  key-assembly, and the large no-op catch-all) - continue slicing one
+  family per iteration following this file's pattern (`use super::*;`,
+  take `world`/`zone_loader`/`runtime`/`achievement_repository`/`args` by
+  the same reference kinds already used inside the match body, plus
+  `&mut` refs to the shared `feedback`/`feedback_bytes`/counter
+  accumulators, bind the moved `outcome` value with an `outcome @ (A {..}
+  | B {..} | ...)` or-pattern at the call site in `main.rs`).
 - [ ] **Split `tests/commands_admin/character.rs` (~8K)** by command
   keyword using `tools/rust_split/splitter.py` with a spec like the ones
   described in the ledger; keep shared helpers in the tests `mod.rs`.
@@ -453,4 +466,8 @@ notes live in `PROGRESS_ARCHIVE.md`.
   crisis judge/knight/jester's greeting chain plus the stolen-cap
   side quest (`QLOG_NOOK`) and its idle mutterings. 2393 core + 1091
   server tests pass, clean build/boot-smoke.
+- 2026-07-07: P0.5 main() decomposition: sliced the first completed-
+  action-outcome family (Warp-area, 17 variants) into
+  `tick_item_use_warp::dispatch_warp_outcome` (`main.rs` down to
+  ~4.9K). 1091 server tests unchanged, clean build/boot-smoke.
 
