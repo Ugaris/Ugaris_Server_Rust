@@ -62,6 +62,7 @@ mod regen;
 mod rename;
 mod rmdeath;
 mod robber;
+mod sanoa;
 mod skills;
 mod spawn;
 mod special_item;

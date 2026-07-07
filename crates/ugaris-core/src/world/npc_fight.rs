@@ -589,7 +589,8 @@ impl World {
             | CharacterDriverState::Brithildie(_)
             | CharacterDriverState::Nook(_)
             | CharacterDriverState::Lydia(_)
-            | CharacterDriverState::Robber(_) => None,
+            | CharacterDriverState::Robber(_)
+            | CharacterDriverState::Sanoa(_) => None,
         }
     }
 
