@@ -161,9 +161,17 @@ order.
   `tick_item_use_dungeon::dispatch_dungeon_outcome`
   (`crates/ugaris-server/src/tick_item_use_dungeon.rs`, 127 lines;
   `main.rs` down to ~4.7K/4,683 lines).
-  Still inline in `main.rs`: every other outcome family (ice,
+  Fourth family slice done: the ice + palace/Islena-door family (12
+  contiguous variants - `IceItemSpawn`/`IceItemSpawnCursorOccupied`/
+  `WarmFireCursorOccupied`/`IceItemSpawnBug`/`WarmFire`/`BackToFire`/
+  `MeltingKeyTick`/`PalaceDoorKeyRequired`/`IslenaDoorBusy`/
+  `IslenaDoorRespawning`/`IslenaDoorResting`/`PalaceDoorTick`) is
+  extracted into `tick_item_use_ice::dispatch_ice_outcome`
+  (`crates/ugaris-server/src/tick_item_use_ice.rs`, 149 lines; `main.rs`
+  down to 4,610).
+  Still inline in `main.rs`: every other outcome family (
   teufel, skel-raise, transport, clan-spawn, lq, arena, shrines, xmas,
-  swamp, edemon/fdemon, burndown, palace doors, key-assembly, and the
+  swamp, edemon/fdemon, burndown, key-assembly, and the
   large no-op catch-all) - continue slicing one family per iteration
   following this file's pattern (`use super::*;`, take
   `world`/`zone_loader`/`runtime`/`achievement_repository`/`config` or
@@ -497,4 +505,8 @@ notes live in `PROGRESS_ARCHIVE.md`.
   action-outcome family (dungeon, 7 contiguous variants) into
   `tick_item_use_dungeon::dispatch_dungeon_outcome` (`main.rs` down to
   4,683). 1091 server tests unchanged, clean build/boot-smoke.
+- 2026-07-07: P0.5 main() decomposition: sliced the fourth completed-
+  action-outcome family (ice + palace/Islena doors, 12 contiguous
+  variants) into `tick_item_use_ice::dispatch_ice_outcome` (`main.rs`
+  down to 4,610). 1091 server tests unchanged, clean build/boot-smoke.
 
