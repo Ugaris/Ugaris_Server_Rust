@@ -271,6 +271,12 @@ order.
   `tick_item_use_lab::dispatch_lab_outcome`
   (`crates/ugaris-server/src/tick_item_use_lab.rs`, 230 lines; `main.rs`
   down to 3,345).
+  Sixteenth family slice done: the mine-wall digging family (5 contiguous
+  variants - `MineWallInitialized`/`MineWallDig`/`MineWallCursorOccupied`/
+  `MineWallExhausted`/`MineWallCollapse`) is extracted into
+  `tick_item_use_minewall::dispatch_minewall_outcome`
+  (`crates/ugaris-server/src/tick_item_use_minewall.rs`, 68 lines;
+  `main.rs` down to 3,317).
   Still inline in `main.rs`: every other outcome family (the large
   no-op catch-all) - continue slicing one family per iteration
   following this file's pattern (`use super::*;`, take
@@ -676,4 +682,8 @@ notes live in `PROGRESS_ARCHIVE.md`.
   lab-entrance/exit, 18 contiguous variants) into
   `tick_item_use_lab::dispatch_lab_outcome` (`main.rs` down to 3,345).
   1091 server + 2415 core tests unchanged, clean build/boot-smoke.
+- 2026-07-07: P0.5 main() decomposition: sliced the sixteenth completed-
+  action-outcome family (mine-wall digging, 5 contiguous variants) into
+  `tick_item_use_minewall::dispatch_minewall_outcome` (`main.rs` down to
+  3,317). 1091 server + 2415 core tests unchanged, clean build/boot-smoke.
 

@@ -52,6 +52,7 @@ mod tick_item_use_edemon_fdemon;
 mod tick_item_use_ice;
 mod tick_item_use_keyassembly;
 mod tick_item_use_lab;
+mod tick_item_use_minewall;
 mod tick_item_use_shrines;
 mod tick_item_use_skelraise;
 mod tick_item_use_teufel;
@@ -2608,48 +2609,19 @@ async fn main() -> anyhow::Result<()> {
                                         | ugaris_core::item_driver::ItemDriverOutcome::BoneBridgeTimerTick { .. } => {
                                             executed += 1;
                                         }
-                                        ugaris_core::item_driver::ItemDriverOutcome::MineWallInitialized { .. } => {
-                                            executed += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::MineWallDig {
-                                            character_id,
-                                            endurance_delta,
-                                            opened,
-                                            ..
-                                        } => {
-                                            if let Some(character) = world.characters.get_mut(&character_id) {
-                                                character.endurance = character.endurance.saturating_add(endurance_delta);
-                                            }
-                                            if opened {
-                                                deferred_templates += 1;
-                                            } else {
-                                                executed += 1;
-                                            }
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::MineWallCursorOccupied { character_id, .. } => {
-                                            feedback.push((
-                                                character_id,
-                                                "Please empty your hand (mouse cursor) first.".to_string(),
-                                            ));
-                                            blocked += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::MineWallExhausted { character_id, .. } => {
-                                            feedback.push((
-                                                character_id,
-                                                "You're too exhausted to continue digging.".to_string(),
-                                            ));
-                                            blocked += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::MineWallCollapse {
-                                            item_id,
-                                            schedule_after_ticks,
-                                        } => {
-                                            world.schedule_item_driver_timer(
-                                                item_id,
-                                                CharacterId(0),
-                                                u64::from(schedule_after_ticks),
+                                        outcome @ (ugaris_core::item_driver::ItemDriverOutcome::MineWallInitialized { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::MineWallDig { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::MineWallCursorOccupied { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::MineWallExhausted { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::MineWallCollapse { .. }) => {
+                                            tick_item_use_minewall::dispatch_minewall_outcome(
+                                                &mut world,
+                                                outcome,
+                                                &mut feedback,
+                                                &mut executed,
+                                                &mut blocked,
+                                                &mut deferred_templates,
                                             );
-                                            executed += 1;
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::IdentityTag { .. } => {
                                             executed += 1;
