@@ -1,288 +1,7 @@
 use super::*;
-use ugaris_core::player::{MacroHistoryEntry, MacroPpd};
-use ugaris_core::world::SingleMission;
-use ugaris_protocol::packet::{SV_CAT, SV_LS};
 
 #[test]
-fn random_shrine_edge_blocks_without_marking_for_no_saves_or_noexp() {
-    let mut player = PlayerRuntime::connected(1, 0);
-    let mut no_saves = login_character(CharacterId(7), &login_block("Ralph"), 14, 10, 10);
-
-    let result = apply_random_shrine_edge(&mut player, &mut no_saves, 31, 20);
-
-    assert_eq!(result, RandomShrineEdgeApplyResult::AlreadyOnEdge);
-    assert!(!player.has_used_random_shrine(31));
-
-    let mut noexp = login_character(CharacterId(8), &login_block("Lisa"), 14, 10, 10);
-    noexp.saves = 1;
-    noexp.flags.insert(CharacterFlags::NOEXP);
-
-    let result = apply_random_shrine_edge(&mut player, &mut noexp, 32, 20);
-
-    assert_eq!(result, RandomShrineEdgeApplyResult::NoExp);
-    assert_eq!(noexp.saves, 1);
-    assert!(!player.has_used_random_shrine(32));
-}
-
-#[test]
-fn random_shrine_vitality_blocks_noexp_and_capped_without_marking() {
-    let mut player = PlayerRuntime::connected(1, 0);
-    let mut noexp = login_character(CharacterId(7), &login_block("Ralph"), 14, 10, 10);
-    noexp
-        .flags
-        .insert(CharacterFlags::WARRIOR | CharacterFlags::NOEXP);
-
-    let result = apply_random_shrine_vitality(&mut player, &mut noexp, 50);
-
-    assert_eq!(result, RandomShrineVitalityApplyResult::NoExp);
-    assert!(!player.has_used_random_shrine(50));
-
-    let mut capped = login_character(CharacterId(8), &login_block("Lisa"), 14, 10, 10);
-    capped.values[1][CharacterValue::Mana as usize] = 115;
-
-    let result = apply_random_shrine_vitality(&mut player, &mut capped, 50);
-
-    assert_eq!(result, RandomShrineVitalityApplyResult::Capped);
-    assert!(!player.has_used_random_shrine(50));
-}
-
-#[test]
-fn gold_command_moves_character_gold_to_cursor_money_item() {
-    let mut world = World::default();
-    let mut loader = ZoneLoader::new();
-    let character_id = CharacterId(7);
-    let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
-    character.gold = 12_500;
-    world.add_character(character);
-
-    let result = apply_gold_command(&mut world, &mut loader, character_id, "/gold 12")
-        .expect("gold command should be recognized");
-
-    assert!(result.messages.is_empty());
-    assert!(result.inventory_changed);
-    let character = world.characters.get(&character_id).unwrap();
-    assert_eq!(character.gold, 11_300);
-    let money_id = character.cursor_item.expect("money should be on cursor");
-    let money = world.items.get(&money_id).unwrap();
-    assert!(money.flags.contains(ItemFlags::MONEY));
-    assert_eq!(money.value, 1_200);
-    assert_eq!(money.carried_by, Some(character_id));
-}
-
-#[test]
-fn gold_command_preserves_c_guard_order_and_atoi_prefix() {
-    let mut world = World::default();
-    let mut loader = ZoneLoader::new();
-    let character_id = CharacterId(7);
-    let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
-    character.gold = 500;
-    world.add_character(character);
-
-    let invalid = apply_gold_command(&mut world, &mut loader, character_id, "/gold abc")
-        .expect("gold command should be recognized");
-    assert_eq!(invalid.messages, vec!["Hu?"]);
-
-    let too_much = apply_gold_command(&mut world, &mut loader, character_id, "/gold 6")
-        .expect("gold command should be recognized");
-    assert_eq!(too_much.messages, vec!["You do not have that much gold."]);
-
-    world.characters.get_mut(&character_id).unwrap().gold = 1_000;
-    let cursor_item = test_item(ItemId(99), 100, ItemFlags::TAKE);
-    world.add_item(cursor_item);
-    world.characters.get_mut(&character_id).unwrap().cursor_item = Some(ItemId(99));
-    let occupied = apply_gold_command(&mut world, &mut loader, character_id, "/gold 6abc")
-        .expect("gold command should be recognized");
-    assert_eq!(
-        occupied.messages,
-        vec!["Please free your hand (mouse cursor) first."]
-    );
-}
-
-#[test]
-fn create_command_instantiates_template_on_god_cursor() {
-    let mut world = World::default();
-    let mut loader = ZoneLoader::new();
-    loader
-        .load_item_templates_str(
-            r#"test_sword: name="Test Sword" description="Created" ID=01001234 sprite=4321 flag=IF_TAKE ;"#,
-        )
-        .unwrap();
-    let character_id = CharacterId(7);
-    let mut character = login_character(character_id, &login_block("God"), 1, 10, 10);
-    character
-        .flags
-        .insert(CharacterFlags::GOD | CharacterFlags::PLAYER);
-    world.add_character(character);
-
-    let result = apply_create_command(&mut world, &mut loader, character_id, "/cre test_sword")
-        .expect("legacy create prefix should be recognized");
-
-    assert!(result.messages.is_empty());
-    assert!(result.inventory_changed);
-    let character = world.characters.get(&character_id).unwrap();
-    assert!(character.flags.contains(CharacterFlags::ITEMS));
-    let item_id = character
-        .cursor_item
-        .expect("created item should be on cursor");
-    let item = world.items.get(&item_id).unwrap();
-    assert_eq!(item.name, "Test Sword");
-    assert_eq!(item.description, "Created");
-    assert_eq!(item.template_id, 0x0100_1234);
-    assert_eq!(item.sprite, 4321);
-    assert_eq!(item.carried_by, Some(character_id));
-}
-
-#[test]
-fn create_command_is_god_only_and_preserves_legacy_feedback() {
-    let mut world = World::default();
-    let mut loader = ZoneLoader::new();
-    loader
-        .load_item_templates_str(r#"test_item: name="Test Item" flag=IF_TAKE ;"#)
-        .unwrap();
-    let character_id = CharacterId(7);
-    let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
-    character.flags.insert(CharacterFlags::PLAYER);
-    world.add_character(character);
-
-    assert!(
-        apply_create_command(&mut world, &mut loader, character_id, "/create test_item").is_none()
-    );
-
-    world
-        .characters
-        .get_mut(&character_id)
-        .unwrap()
-        .flags
-        .insert(CharacterFlags::GOD);
-    let missing = apply_create_command(&mut world, &mut loader, character_id, "/create missing")
-        .expect("god create should handle missing templates");
-    assert_eq!(missing.messages, vec!["No such template exists."]);
-
-    let cursor_id = ItemId(99);
-    world.add_item(test_item(cursor_id, 1234, ItemFlags::TAKE));
-    world.characters.get_mut(&character_id).unwrap().cursor_item = Some(cursor_id);
-    let occupied = apply_create_command(&mut world, &mut loader, character_id, "/create test_item")
-        .expect("god create should handle occupied cursor");
-    assert_eq!(
-        occupied.messages,
-        vec!["Please empty your mouse cursor first."]
-    );
-}
-
-#[test]
-fn create_orb_command_supports_random_skill_and_valued_skill() {
-    let mut world = World::default();
-    let mut loader = ZoneLoader::new();
-    loader
-        .load_item_templates_str(r#"empty_orb: name="Empty Orb" flag=IF_TAKE ;"#)
-        .unwrap();
-    let character_id = CharacterId(7);
-    let mut character = login_character(character_id, &login_block("God"), 1, 10, 10);
-    character.flags.insert(CharacterFlags::GOD);
-    world.add_character(character);
-
-    let skill =
-        apply_create_orb_command(&mut world, &mut loader, character_id, "/create_orb sword")
-            .expect("god create_orb should be recognized");
-    assert!(skill.inventory_changed);
-    let skill_item_id = world.characters[&character_id].inventory[30].unwrap();
-    let skill_item = world.items.get(&skill_item_id).unwrap();
-    assert_eq!(skill_item.name, "Orb of Sword");
-    assert_eq!(skill_item.driver_data[0], CharacterValue::Sword as u8);
-    assert_eq!(skill_item.driver_data[1], 1);
-
-    let valued = apply_create_orb_command(
-        &mut world,
-        &mut loader,
-        character_id,
-        "/create_orb 5 immunity",
-    )
-    .expect("god create_orb valued skill should be recognized");
-    assert!(valued.inventory_changed);
-    let valued_item_id = world.characters[&character_id].inventory[31].unwrap();
-    let valued_item = world.items.get(&valued_item_id).unwrap();
-    assert_eq!(valued_item.name, "Orb of 5 Immunity");
-    assert_eq!(valued_item.driver_data[0], CharacterValue::Immunity as u8);
-    assert_eq!(valued_item.driver_data[1], 5);
-
-    world.tick = ugaris_core::Tick(0);
-    let random = apply_create_orb_command(&mut world, &mut loader, character_id, "/create_orb")
-        .expect("god create_orb random should be recognized");
-    assert!(random.inventory_changed);
-    let random_item_id = world.characters[&character_id].inventory[32].unwrap();
-    let random_item = world.items.get(&random_item_id).unwrap();
-    assert!(random_item.name.starts_with("Orb of "));
-    assert_eq!(random_item.driver_data[1], 1);
-}
-
-#[test]
-fn create_orb_command_is_god_only_and_silent_on_bad_args() {
-    let mut world = World::default();
-    let mut loader = ZoneLoader::new();
-    loader
-        .load_item_templates_str(r#"empty_orb: name="Empty Orb" flag=IF_TAKE ;"#)
-        .unwrap();
-    let character_id = CharacterId(7);
-    world.add_character(login_character(
-        character_id,
-        &login_block("Tester"),
-        1,
-        10,
-        10,
-    ));
-
-    assert!(
-        apply_create_orb_command(&mut world, &mut loader, character_id, "/create_orb sword")
-            .is_none()
-    );
-
-    world
-        .characters
-        .get_mut(&character_id)
-        .unwrap()
-        .flags
-        .insert(CharacterFlags::GOD);
-    let bad = apply_create_orb_command(
-        &mut world,
-        &mut loader,
-        character_id,
-        "/create_orb nonsense",
-    )
-    .expect("god create_orb bad args should be handled");
-    assert_eq!(bad, KeyringCommandResult::default());
-    assert!(world.characters[&character_id].inventory[30].is_none());
-}
-
-#[test]
-fn ggold_command_is_god_only_and_uses_atoi_prefix() {
-    let mut world = World::default();
-    let mut loader = ZoneLoader::new();
-    let character_id = CharacterId(7);
-    let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
-    character.gold = 500;
-    world.add_character(character);
-
-    assert!(apply_gold_command(&mut world, &mut loader, character_id, "/ggold 12").is_none());
-    assert_eq!(world.characters.get(&character_id).unwrap().gold, 500);
-
-    world
-        .characters
-        .get_mut(&character_id)
-        .unwrap()
-        .flags
-        .insert(CharacterFlags::GOD);
-    let result = apply_gold_command(&mut world, &mut loader, character_id, "/ggold 12abc")
-        .expect("god gold command should be recognized");
-
-    assert!(result.messages.is_empty());
-    assert!(result.inventory_changed);
-    let character = world.characters.get(&character_id).unwrap();
-    assert_eq!(character.gold, 1_700);
-    assert!(character.flags.contains(CharacterFlags::ITEMS));
-}
-
-#[test]
-fn laugh_command_is_god_only_and_queues_legacy_sound() {
+pub(crate) fn laugh_command_is_god_only_and_queues_legacy_sound() {
     let mut world = World::default();
     let character_id = CharacterId(7);
     let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
@@ -304,83 +23,7 @@ fn laugh_command_is_god_only_and_queues_legacy_sound() {
 }
 
 #[test]
-fn status_command_shows_represented_lostcon_and_account_state() {
-    let mut character = login_character(CharacterId(7), &login_block("Tester"), 1, 10, 10);
-    character
-        .flags
-        .insert(CharacterFlags::PAID | CharacterFlags::NOBLESS);
-    character.values[1][CharacterValue::Bless as usize] = 10;
-    character.values[1][CharacterValue::Pulse as usize] = 8;
-    character.values[1][CharacterValue::Fireball as usize] = 5;
-    let mut player = PlayerRuntime::connected(1, 0);
-    player.set_max_lag_seconds(12);
-    player.autoturn_enabled = true;
-
-    let result = apply_status_command(&character, &player, "/status")
-        .expect("status command should be recognized");
-
-    assert_eq!(result.messages[0], "Lag Control Settings:");
-    assert!(result
-        .messages
-        .contains(&"Max. Lag [/MAXLAG]: 12 sec.".to_string()));
-    assert!(result
-        .messages
-        .contains(&"Don't use Bless [/NOBLESS]: Off.".to_string()));
-    assert!(result
-        .messages
-        .contains(&"Don't use Fireball [/NOFIREBALL]: Off.".to_string()));
-    assert!(result
-        .messages
-        .contains(&"Automatic Pulse [/AUTOPULSE]: Off.".to_string()));
-    assert!(result
-        .messages
-        .contains(&"Automatic Turning [/AUTOTURN]: On.".to_string()));
-    assert!(result
-        .messages
-        .contains(&"Allow others to bless me [/ALLOWBLESS]: No.".to_string()));
-    assert!(result.messages.contains(&"Account Status:".to_string()));
-    assert!(result.messages.contains(&"Paid Account".to_string()));
-}
-
-#[test]
-fn status_command_reflects_enabled_lag_control_toggles() {
-    let mut character = login_character(CharacterId(7), &login_block("Tester"), 1, 10, 10);
-    character.values[1][CharacterValue::Bless as usize] = 10;
-    let mut player = PlayerRuntime::connected(1, 0);
-    player.no_bless = true;
-    player.no_life = true;
-    player.no_move = true;
-    player.autobless_enabled = true;
-
-    let result = apply_status_command(&character, &player, "/status")
-        .expect("status command should be recognized");
-
-    assert!(result
-        .messages
-        .contains(&"Don't use Bless [/NOBLESS]: On.".to_string()));
-    assert!(result
-        .messages
-        .contains(&"Don't use Healing Potions [/NOLIFE]: On.".to_string()));
-    assert!(result
-        .messages
-        .contains(&"Don't Move [/NOMOVE]: On.".to_string()));
-    assert!(result
-        .messages
-        .contains(&"Automatic Re-Bless [/AUTOBLESS]: On.".to_string()));
-}
-
-#[test]
-fn status_command_preserves_cmdcmp_prefix_shape() {
-    let character = login_character(CharacterId(7), &login_block("Tester"), 1, 10, 10);
-    let player = PlayerRuntime::connected(1, 0);
-
-    assert!(apply_status_command(&character, &player, "/s").is_some());
-    assert!(apply_status_command(&character, &player, "/stat").is_some());
-    assert!(apply_status_command(&character, &player, "/statusx").is_none());
-}
-
-#[test]
-fn saves_command_is_god_only_and_uses_legacy_prefix_parsing() {
+pub(crate) fn saves_command_is_god_only_and_uses_legacy_prefix_parsing() {
     let mut world = World::default();
     let character_id = CharacterId(7);
     let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
@@ -414,7 +57,7 @@ fn saves_command_is_god_only_and_uses_legacy_prefix_parsing() {
 }
 
 #[test]
-fn saveall_command_is_god_only_and_disambiguated_from_saves() {
+pub(crate) fn saveall_command_is_god_only_and_disambiguated_from_saves() {
     let mut world = World::default();
     let character_id = CharacterId(7);
     let character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
@@ -463,7 +106,7 @@ fn saveall_command_is_god_only_and_disambiguated_from_saves() {
 }
 
 #[test]
-fn backup_rotation_cursor_cycles_through_connected_players_deterministically() {
+pub(crate) fn backup_rotation_cursor_cycles_through_connected_players_deterministically() {
     let mut runtime = ServerRuntime::default();
     // No connected players yet.
     assert_eq!(runtime.next_backup_rotation_target(), None);
@@ -488,7 +131,7 @@ fn backup_rotation_cursor_cycles_through_connected_players_deterministically() {
 }
 
 #[test]
-fn god_visibility_toggle_commands_preserve_legacy_feedback() {
+pub(crate) fn god_visibility_toggle_commands_preserve_legacy_feedback() {
     let mut world = World::default();
     let character_id = CharacterId(7);
     let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
@@ -529,7 +172,7 @@ fn god_visibility_toggle_commands_preserve_legacy_feedback() {
 }
 
 #[test]
-fn god_dlight_and_showattack_commands_mutate_runtime_without_feedback() {
+pub(crate) fn god_dlight_and_showattack_commands_mutate_runtime_without_feedback() {
     let mut world = World::default();
     world.date = GameDate::calculate(START_TIME + HOUR_LEN * 12, 23, None);
     let character_id = CharacterId(7);
@@ -567,7 +210,7 @@ fn god_dlight_and_showattack_commands_mutate_runtime_without_feedback() {
 }
 
 #[test]
-fn god_joinclan_and_joinclub_commands_mutate_identity_without_feedback() {
+pub(crate) fn god_joinclan_and_joinclub_commands_mutate_identity_without_feedback() {
     let mut world = World::default();
     let character_id = CharacterId(7);
     let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
@@ -603,7 +246,7 @@ fn god_joinclan_and_joinclub_commands_mutate_identity_without_feedback() {
 }
 
 #[test]
-fn joinclan_and_joinclub_require_exact_god_commands() {
+pub(crate) fn joinclan_and_joinclub_require_exact_god_commands() {
     let mut world = World::default();
     let character_id = CharacterId(7);
     let character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
@@ -636,7 +279,7 @@ fn joinclan_and_joinclub_require_exact_god_commands() {
 }
 
 #[test]
-fn god_killclan_command_deletes_an_existing_clan_immediately() {
+pub(crate) fn god_killclan_command_deletes_an_existing_clan_immediately() {
     let mut world = World::default();
     let character_id = CharacterId(7);
     let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
@@ -660,7 +303,7 @@ fn god_killclan_command_deletes_an_existing_clan_immediately() {
 }
 
 #[test]
-fn killclan_requires_god_and_ignores_out_of_range_numbers() {
+pub(crate) fn killclan_requires_god_and_ignores_out_of_range_numbers() {
     let mut world = World::default();
     let character_id = CharacterId(7);
     let character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
@@ -689,7 +332,7 @@ fn killclan_requires_god_and_ignores_out_of_range_numbers() {
 }
 
 #[test]
-fn staff_renclan_command_renames_an_existing_clan_in_aston() {
+pub(crate) fn staff_renclan_command_renames_an_existing_clan_in_aston() {
     let mut world = World::default();
     let character_id = CharacterId(7);
     let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
@@ -715,7 +358,7 @@ fn staff_renclan_command_renames_an_existing_clan_in_aston() {
 }
 
 #[test]
-fn renclan_is_rejected_outside_aston_and_for_unknown_clans() {
+pub(crate) fn renclan_is_rejected_outside_aston_and_for_unknown_clans() {
     let mut world = World::default();
     let character_id = CharacterId(7);
     let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
@@ -751,7 +394,7 @@ fn renclan_is_rejected_outside_aston_and_for_unknown_clans() {
 }
 
 #[test]
-fn renclan_requires_staff_or_god() {
+pub(crate) fn renclan_requires_staff_or_god() {
     let mut world = World::default();
     let character_id = CharacterId(7);
     let character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
@@ -769,7 +412,7 @@ fn renclan_requires_staff_or_god() {
 }
 
 #[test]
-fn god_killclub_command_bankrupts_an_existing_club_without_deleting_it() {
+pub(crate) fn god_killclub_command_bankrupts_an_existing_club_without_deleting_it() {
     let mut world = World::default();
     let character_id = CharacterId(7);
     let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
@@ -804,7 +447,7 @@ fn god_killclub_command_bankrupts_an_existing_club_without_deleting_it() {
 }
 
 #[test]
-fn killclub_requires_god_and_ignores_numbers_at_or_past_the_buggy_maxclan_cap() {
+pub(crate) fn killclub_requires_god_and_ignores_numbers_at_or_past_the_buggy_maxclan_cap() {
     let mut world = World::default();
     let character_id = CharacterId(7);
     let character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
@@ -836,7 +479,7 @@ fn killclub_requires_god_and_ignores_numbers_at_or_past_the_buggy_maxclan_cap() 
 }
 
 #[test]
-fn god_setclanjewels_changes_jewels_and_reports_a_default_log_entry() {
+pub(crate) fn god_setclanjewels_changes_jewels_and_reports_a_default_log_entry() {
     let mut world = World::default();
     let character_id = CharacterId(7);
     let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
@@ -876,7 +519,7 @@ fn god_setclanjewels_changes_jewels_and_reports_a_default_log_entry() {
 }
 
 #[test]
-fn setclanjewels_do_log_zero_suppresses_the_clan_log_entry() {
+pub(crate) fn setclanjewels_do_log_zero_suppresses_the_clan_log_entry() {
     let mut world = World::default();
     let character_id = CharacterId(7);
     let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
@@ -903,7 +546,7 @@ fn setclanjewels_do_log_zero_suppresses_the_clan_log_entry() {
 }
 
 #[test]
-fn setclanjewels_requires_god_and_rejects_bad_args() {
+pub(crate) fn setclanjewels_requires_god_and_rejects_bad_args() {
     let mut world = World::default();
     let character_id = CharacterId(7);
     let character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
@@ -976,7 +619,7 @@ fn setclanjewels_requires_god_and_rejects_bad_args() {
 }
 
 #[test]
-fn staff_renclub_command_renames_an_existing_club_in_aston() {
+pub(crate) fn staff_renclub_command_renames_an_existing_club_in_aston() {
     let mut world = World::default();
     let character_id = CharacterId(7);
     let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
@@ -1002,7 +645,7 @@ fn staff_renclub_command_renames_an_existing_club_in_aston() {
 }
 
 #[test]
-fn renclub_is_rejected_outside_aston_and_for_illegal_names() {
+pub(crate) fn renclub_is_rejected_outside_aston_and_for_illegal_names() {
     let mut world = World::default();
     let character_id = CharacterId(7);
     let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
@@ -1042,7 +685,7 @@ fn renclub_is_rejected_outside_aston_and_for_illegal_names() {
 }
 
 #[test]
-fn renclub_requires_staff_or_god() {
+pub(crate) fn renclub_requires_staff_or_god() {
     let mut world = World::default();
     let character_id = CharacterId(7);
     let character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
@@ -1060,7 +703,7 @@ fn renclub_requires_staff_or_god() {
 }
 
 #[test]
-fn god_setxmas_command_sets_runtime_christmas_override() {
+pub(crate) fn god_setxmas_command_sets_runtime_christmas_override() {
     let mut world = World::default();
     let character_id = CharacterId(7);
     let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
@@ -1091,7 +734,7 @@ fn god_setxmas_command_sets_runtime_christmas_override() {
 }
 
 #[test]
-fn god_prof_command_reports_empty_profile_boundary_like_c() {
+pub(crate) fn god_prof_command_reports_empty_profile_boundary_like_c() {
     let mut world = World::default();
     let god_id = CharacterId(7);
     let mut god = login_character(god_id, &login_block("Godmode"), 1, 10, 10);
@@ -1119,7 +762,7 @@ fn god_prof_command_reports_empty_profile_boundary_like_c() {
 }
 
 #[test]
-fn god_profinfo_command_reports_header_only_like_c() {
+pub(crate) fn god_profinfo_command_reports_header_only_like_c() {
     let mut world = World::default();
     let god_id = CharacterId(7);
     let mut god = login_character(god_id, &login_block("Godmode"), 1, 10, 10);
@@ -1161,7 +804,7 @@ fn god_profinfo_command_reports_header_only_like_c() {
 }
 
 #[test]
-fn god_poolstats_command_reports_header_only_like_c() {
+pub(crate) fn god_poolstats_command_reports_header_only_like_c() {
     let mut world = World::default();
     let god_id = CharacterId(7);
     let mut god = login_character(god_id, &login_block("Godmode"), 1, 10, 10);
@@ -1196,7 +839,7 @@ fn god_poolstats_command_reports_header_only_like_c() {
 }
 
 #[test]
-fn god_memstats_command_reports_live_world_counts() {
+pub(crate) fn god_memstats_command_reports_live_world_counts() {
     let mut world = World::default();
     let god_id = CharacterId(7);
     let mut god = login_character(god_id, &login_block("Godmode"), 1, 10, 10);
@@ -1293,48 +936,7 @@ fn god_memstats_command_reports_live_world_counts() {
 }
 
 #[test]
-fn god_querystats_command_queues_a_lookup() {
-    let mut world = World::default();
-    let god_id = CharacterId(7);
-    let mut god = login_character(god_id, &login_block("Godmode"), 1, 10, 10);
-    god.flags.insert(CharacterFlags::GOD);
-    world.add_character(god);
-    let mut runtime = ServerRuntime::default();
-
-    // No immediate reply - the actual data needs a `PgCharacterRepository`
-    // read, resolved by `apply_querystats_events` once queued (see
-    // `ugaris-core`'s `world/querystats.rs` module doc comment).
-    let result = apply_admin_character_command(&mut world, &mut runtime, god_id, "/querystats", 1)
-        .expect("legacy cmdcmp accepts the full querystats word");
-    assert!(result.messages.is_empty());
-    let queued = world.drain_pending_querystats_lookups();
-    assert_eq!(queued.len(), 1);
-    assert_eq!(queued[0].caller_id, god_id);
-
-    // minlen 5: "query" is the shortest accepted abbreviation.
-    apply_admin_character_command(&mut world, &mut runtime, god_id, "/query", 1)
-        .expect("legacy cmdcmp accepts prefix length five");
-    assert_eq!(world.drain_pending_querystats_lookups().len(), 1);
-    // Shorter than minlen 5 doesn't reach `querystats` at all.
-    assert!(apply_admin_character_command(&mut world, &mut runtime, god_id, "/quer", 1).is_none());
-
-    let mortal_id = CharacterId(8);
-    world.add_character(login_character(
-        mortal_id,
-        &login_block("Mortal"),
-        1,
-        11,
-        10,
-    ));
-    assert!(
-        apply_admin_character_command(&mut world, &mut runtime, mortal_id, "/querystats", 1)
-            .is_none()
-    );
-    assert!(world.drain_pending_querystats_lookups().is_empty());
-}
-
-#[test]
-fn god_staffcode_command_sets_runtime_code_with_legacy_parsing() {
+pub(crate) fn god_staffcode_command_sets_runtime_code_with_legacy_parsing() {
     let mut world = World::default();
     let god_id = CharacterId(7);
     let staff_id = CharacterId(8);
@@ -1372,7 +974,7 @@ fn god_staffcode_command_sets_runtime_code_with_legacy_parsing() {
 }
 
 #[test]
-fn god_reset_command_clamps_target_values_like_c() {
+pub(crate) fn god_reset_command_clamps_target_values_like_c() {
     let mut world = World::default();
     let god_id = CharacterId(7);
     let target_id = CharacterId(8);
@@ -1409,7 +1011,7 @@ fn god_reset_command_clamps_target_values_like_c() {
 }
 
 #[test]
-fn reset_command_is_god_only_and_reports_missing_target_like_c() {
+pub(crate) fn reset_command_is_god_only_and_reports_missing_target_like_c() {
     let mut world = World::default();
     let caller_id = CharacterId(7);
     world.add_character(login_character(
@@ -1446,7 +1048,7 @@ fn reset_command_is_god_only_and_reports_missing_target_like_c() {
 }
 
 #[test]
-fn god_resetgift_clears_xmas_tree_area_bit_with_legacy_feedback() {
+pub(crate) fn god_resetgift_clears_xmas_tree_area_bit_with_legacy_feedback() {
     let mut world = World::default();
     let god_id = CharacterId(7);
     let target_id = CharacterId(8);
@@ -1497,7 +1099,7 @@ fn god_resetgift_clears_xmas_tree_area_bit_with_legacy_feedback() {
 }
 
 #[test]
-fn resetgift_is_god_only_checks_target_and_area() {
+pub(crate) fn resetgift_is_god_only_checks_target_and_area() {
     let mut world = World::default();
     let caller_id = CharacterId(7);
     world.add_character(login_character(
@@ -1569,135 +1171,8 @@ fn resetgift_is_god_only_checks_target_and_area() {
     assert_eq!(no_runtime.messages, vec!["Could not retrieve player data."]);
 }
 
-fn seyan_m_loader() -> ZoneLoader {
-    let mut loader = ZoneLoader::new();
-    loader
-        .load_character_templates_str(
-            r#"
-                seyan_m:
-                  name="Seyan'Du"
-                  description="A Seyan'Du"
-                  V_HP=10
-                  V_ENDURANCE=8
-                  V_MANA=6
-                ;
-            "#,
-        )
-        .unwrap();
-    loader
-}
-
 #[test]
-fn god_setseyan_rerolls_target_and_messages_the_target_not_the_caller() {
-    let mut world = World::default();
-    let god_id = CharacterId(7);
-    let target_id = CharacterId(8);
-    let mut god = login_character(god_id, &login_block("Godmode"), 40, 10, 10);
-    god.flags.insert(CharacterFlags::GOD);
-    world.add_character(god);
-    let mut target = login_character(target_id, &login_block("Target"), 40, 11, 10);
-    target.flags.insert(CharacterFlags::ARCH);
-    target.exp = 500_000;
-    world.add_character(target);
-
-    let mut runtime = ServerRuntime::default();
-    let mut target_player = PlayerRuntime::connected(80, 0);
-    target_player.character_id = Some(target_id);
-    target_player.demonshrines.push(77);
-    runtime.players.insert(80, target_player);
-
-    let loader = seyan_m_loader();
-
-    let result = apply_setseyan_command(
-        &mut world,
-        &loader,
-        &mut runtime,
-        god_id,
-        "/setseyan Target",
-    )
-    .expect("god setseyan should be recognized");
-
-    assert!(result.messages.is_empty());
-    assert_eq!(
-        result.other_messages,
-        vec![(target_id, "You are a Seyan'Du now.".to_string())]
-    );
-    assert!(!result.inventory_changed);
-    assert!(!result.name_changed);
-
-    let target = world.characters.get(&target_id).unwrap();
-    assert_eq!(target.level, 1);
-    assert_eq!(target.exp, 0);
-    assert!(target.flags.contains(CharacterFlags::MAGE));
-    assert!(target.flags.contains(CharacterFlags::WARRIOR));
-
-    let player = runtime.player_for_character(target_id).unwrap();
-    assert!(player.demonshrines.is_empty());
-}
-
-#[test]
-fn setseyan_is_god_only_and_reports_missing_target() {
-    let mut world = World::default();
-    let caller_id = CharacterId(7);
-    world.add_character(login_character(
-        caller_id,
-        &login_block("Tester"),
-        1,
-        10,
-        10,
-    ));
-    let mut runtime = ServerRuntime::default();
-    let loader = seyan_m_loader();
-
-    assert!(apply_setseyan_command(
-        &mut world,
-        &loader,
-        &mut runtime,
-        caller_id,
-        "/setseyan Missing",
-    )
-    .is_none());
-
-    world
-        .characters
-        .get_mut(&caller_id)
-        .unwrap()
-        .flags
-        .insert(CharacterFlags::GOD);
-    let missing = apply_setseyan_command(
-        &mut world,
-        &loader,
-        &mut runtime,
-        caller_id,
-        "/setseyan Missing",
-    )
-    .expect("god setseyan missing target should be handled");
-    assert_eq!(
-        missing.messages,
-        vec!["Sorry, no one by the name Missing around."]
-    );
-}
-
-#[test]
-fn setseyan_requires_exact_full_word_no_abbreviation() {
-    let mut world = World::default();
-    let god_id = CharacterId(7);
-    let mut god = login_character(god_id, &login_block("Godmode"), 1, 10, 10);
-    god.flags.insert(CharacterFlags::GOD);
-    world.add_character(god);
-    let mut runtime = ServerRuntime::default();
-    let loader = seyan_m_loader();
-
-    // C `cmdcmp(ptr, "setseyan", 8)`: `minlen` equals the full command's
-    // length, so an abbreviation like `/setsey` must not match at all.
-    assert!(
-        apply_setseyan_command(&mut world, &loader, &mut runtime, god_id, "/setsey Godmode")
-            .is_none()
-    );
-}
-
-#[test]
-fn god_questlog_lists_flagged_quests_like_c() {
+pub(crate) fn god_questlog_lists_flagged_quests_like_c() {
     let mut world = World::default();
     let god_id = CharacterId(7);
     let target_id = CharacterId(8);
@@ -1733,7 +1208,7 @@ fn god_questlog_lists_flagged_quests_like_c() {
 }
 
 #[test]
-fn questlog_is_god_only_and_reports_missing_data_like_c() {
+pub(crate) fn questlog_is_god_only_and_reports_missing_data_like_c() {
     let mut world = World::default();
     let caller_id = CharacterId(7);
     let target_id = CharacterId(8);
@@ -1787,7 +1262,7 @@ fn questlog_is_god_only_and_reports_missing_data_like_c() {
 }
 
 #[test]
-fn dlight_and_showattack_are_god_only_and_keep_full_dlight_minlen() {
+pub(crate) fn dlight_and_showattack_are_god_only_and_keep_full_dlight_minlen() {
     let mut world = World::default();
     let character_id = CharacterId(7);
     world.add_character(login_character(
@@ -1833,7 +1308,7 @@ fn dlight_and_showattack_are_god_only_and_keep_full_dlight_minlen() {
 }
 
 #[test]
-fn god_sprite_command_sets_character_sprite_silently() {
+pub(crate) fn god_sprite_command_sets_character_sprite_silently() {
     let mut world = World::default();
     let character_id = CharacterId(7);
     let mut character = login_character(character_id, &login_block("Godmode"), 1, 10, 10);
@@ -1853,7 +1328,7 @@ fn god_sprite_command_sets_character_sprite_silently() {
 }
 
 #[test]
-fn sprite_command_is_god_only_and_requires_full_name() {
+pub(crate) fn sprite_command_is_god_only_and_requires_full_name() {
     let mut world = World::default();
     let character_id = CharacterId(7);
     world.add_character(login_character(
@@ -1883,7 +1358,7 @@ fn sprite_command_is_god_only_and_requires_full_name() {
 }
 
 #[test]
-fn god_itemname_and_itemdesc_mutate_cursor_item_with_look_feedback() {
+pub(crate) fn god_itemname_and_itemdesc_mutate_cursor_item_with_look_feedback() {
     let mut world = World::default();
     let character_id = CharacterId(7);
     let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
@@ -1947,7 +1422,7 @@ fn god_itemname_and_itemdesc_mutate_cursor_item_with_look_feedback() {
 }
 
 #[test]
-fn god_listitem_reports_legacy_item_details() {
+pub(crate) fn god_listitem_reports_legacy_item_details() {
     let mut world = World::default();
     let god_id = CharacterId(7);
     let mut god = login_character(god_id, &login_block("Godmode"), 1, 10, 10);
@@ -2013,7 +1488,7 @@ fn god_listitem_reports_legacy_item_details() {
 }
 
 #[test]
-fn listitem_is_god_only_and_reports_invalid_ids() {
+pub(crate) fn listitem_is_god_only_and_reports_invalid_ids() {
     let mut world = World::default();
     let character_id = CharacterId(7);
     world.add_character(login_character(
@@ -2054,7 +1529,7 @@ fn listitem_is_god_only_and_reports_invalid_ids() {
 }
 
 #[test]
-fn god_setkarma_mutates_online_target_with_legacy_feedback() {
+pub(crate) fn god_setkarma_mutates_online_target_with_legacy_feedback() {
     let mut world = World::default();
     let god_id = CharacterId(7);
     let target_id = CharacterId(8);
@@ -2078,7 +1553,7 @@ fn god_setkarma_mutates_online_target_with_legacy_feedback() {
 }
 
 #[test]
-fn setkarma_is_god_only_and_reports_missing_target_like_c() {
+pub(crate) fn setkarma_is_god_only_and_reports_missing_target_like_c() {
     let mut world = World::default();
     let character_id = CharacterId(7);
     world.add_character(login_character(
@@ -2125,74 +1600,7 @@ fn setkarma_is_god_only_and_reports_missing_target_like_c() {
 }
 
 #[test]
-fn god_setexpmod_updates_runtime_with_legacy_feedback() {
-    let mut world = World::default();
-    let god_id = CharacterId(7);
-    let mut god = login_character(god_id, &login_block("Godmode"), 1, 10, 10);
-    god.flags.insert(CharacterFlags::GOD);
-    world.add_character(god);
-    let mut runtime = ServerRuntime::default();
-
-    let result =
-        apply_admin_character_command(&mut world, &mut runtime, god_id, "/setexpmod 2.5xyz", 1)
-            .expect("god setexpmod should be recognized");
-
-    assert_eq!(world.settings.exp_modifier, 2.5);
-    assert_eq!(
-        result.messages,
-        vec!["Global experience modifier changed from 1.00 to 2.50"]
-    );
-
-    let invalid =
-        apply_admin_character_command(&mut world, &mut runtime, god_id, "/setexpmod 0.09", 1)
-            .expect("god setexpmod should handle invalid values");
-    assert_eq!(world.settings.exp_modifier, 2.5);
-    assert_eq!(
-        invalid.messages,
-        vec!["Invalid value. Please specify a number between 0.1 and 1000.0"]
-    );
-}
-
-#[test]
-fn setexpmod_is_god_only_and_full_command_only() {
-    let mut world = World::default();
-    let character_id = CharacterId(7);
-    world.add_character(login_character(
-        character_id,
-        &login_block("Tester"),
-        1,
-        10,
-        10,
-    ));
-    let mut runtime = ServerRuntime::default();
-
-    assert!(apply_admin_character_command(
-        &mut world,
-        &mut runtime,
-        character_id,
-        "/setexpmod 2",
-        1,
-    )
-    .is_none());
-
-    world
-        .characters
-        .get_mut(&character_id)
-        .unwrap()
-        .flags
-        .insert(CharacterFlags::GOD);
-    assert!(apply_admin_character_command(
-        &mut world,
-        &mut runtime,
-        character_id,
-        "/setexpmo 2",
-        1,
-    )
-    .is_none());
-}
-
-#[test]
-fn god_sethardcore_bonus_commands_match_legacy_ranges_and_feedback() {
+pub(crate) fn god_sethardcore_bonus_commands_match_legacy_ranges_and_feedback() {
     let mut world = World::default();
     let god_id = CharacterId(7);
     let mut god = login_character(god_id, &login_block("Godmode"), 1, 10, 10);
@@ -2272,7 +1680,7 @@ fn god_sethardcore_bonus_commands_match_legacy_ranges_and_feedback() {
 }
 
 #[test]
-fn hardcore_bonus_commands_are_god_only_and_full_command_only() {
+pub(crate) fn hardcore_bonus_commands_are_god_only_and_full_command_only() {
     let mut world = World::default();
     let character_id = CharacterId(7);
     world.add_character(login_character(
@@ -2310,454 +1718,7 @@ fn hardcore_bonus_commands_are_god_only_and_full_command_only() {
 }
 
 #[test]
-fn god_tick_tuning_commands_match_legacy_ranges_and_feedback() {
-    let mut world = World::default();
-    let god_id = CharacterId(7);
-    let mut god = login_character(god_id, &login_block("Godmode"), 1, 10, 10);
-    god.flags.insert(CharacterFlags::GOD);
-    world.add_character(god);
-    let mut runtime = ServerRuntime::default();
-    let ticks = TICKS_PER_SECOND as i32;
-
-    let decay = apply_admin_character_command(
-        &mut world,
-        &mut runtime,
-        god_id,
-        "/setdecaytime 1440tail",
-        1,
-    )
-    .expect("god setdecaytime should be recognized");
-    assert_eq!(runtime.item_decay_time, 1440);
-    assert_eq!(
-        decay.messages,
-        vec!["Item decay time changed from 7200 to 1440 ticks (5 to 1 minutes)"]
-    );
-
-    let player_body = apply_admin_character_command(
-        &mut world,
-        &mut runtime,
-        god_id,
-        "/setplayerbodytime 7200",
-        1,
-    )
-    .expect("god setplayerbodytime should be recognized");
-    assert_eq!(runtime.player_body_decay_time, 7200);
-    assert_eq!(
-        player_body.messages,
-        vec!["Player body decay time changed from 43200 to 7200 ticks (30 to 5 minutes)"]
-    );
-
-    let npc_body =
-        apply_admin_character_command(&mut world, &mut runtime, god_id, "/setnpcbodytime 720", 1)
-            .expect("god setnpcbodytime should be recognized");
-    assert_eq!(runtime.npc_body_decay_time, 720);
-    assert_eq!(
-        npc_body.messages,
-        vec!["NPC body decay time changed from 2880 to 720 ticks (2 to 0 minutes)"]
-    );
-
-    let area32_body = apply_admin_character_command(
-        &mut world,
-        &mut runtime,
-        god_id,
-        "/setnpcbodytimearea32 7200",
-        1,
-    )
-    .expect("god setnpcbodytimearea32 should be recognized");
-    assert_eq!(runtime.npc_body_decay_time_area32, 7200);
-    assert_eq!(
-        area32_body.messages,
-        vec!["NPC body decay time for area 32 changed from 21600 to 7200 ticks (15 to 5 minutes)"]
-    );
-
-    let respawn =
-        apply_admin_character_command(&mut world, &mut runtime, god_id, "/setrespawntime 720", 1)
-            .expect("god setrespawntime should be recognized");
-    assert_eq!(runtime.npc_respawn_timer, 720);
-    assert_eq!(
-        respawn.messages,
-        vec!["NPC respawn time changed from 2880 to 720 ticks (2 to 0 minutes)"]
-    );
-
-    let sewer_respawn = apply_admin_character_command(
-        &mut world,
-        &mut runtime,
-        god_id,
-        "/setsewerrespawntime 3600tail",
-        1,
-    )
-    .expect("god setsewerrespawntime should be recognized");
-    assert_eq!(runtime.sewer_item_respawn_time, 3600);
-    assert_eq!(
-        sewer_respawn.messages,
-        vec!["Sewer item respawn time changed from 86400 to 3600 seconds (24 to 1 hours)"]
-    );
-
-    let lagout =
-        apply_admin_character_command(&mut world, &mut runtime, god_id, "/setlagouttime 1440", 1)
-            .expect("god setlagouttime should be recognized");
-    assert_eq!(runtime.lagout_time, 1440);
-    assert_eq!(
-        lagout.messages,
-        vec!["Lagout time changed from 7200 to 1440 ticks (5 to 1 minutes)"]
-    );
-
-    let regen =
-        apply_admin_character_command(&mut world, &mut runtime, god_id, "/setregentime 12", 1)
-            .expect("god setregentime should be recognized");
-    assert_eq!(runtime.regen_time, 12);
-    assert_eq!(
-        regen.messages,
-        vec!["Regeneration time changed from 96 to 12 ticks"]
-    );
-
-    let invalid =
-        apply_admin_character_command(&mut world, &mut runtime, god_id, "/setrespawntime 719", 1)
-            .expect("invalid setrespawntime should still be handled");
-    assert_eq!(runtime.npc_respawn_timer, 720);
-    assert_eq!(
-        invalid.messages,
-        vec![format!(
-            "Invalid value. Please specify a time between {} and {} ticks (0.5-10 minutes)",
-            30 * ticks,
-            10 * 60 * ticks
-        )]
-    );
-
-    let invalid_sewer = apply_admin_character_command(
-        &mut world,
-        &mut runtime,
-        god_id,
-        "/setsewerrespawntime 3599",
-        1,
-    )
-    .expect("invalid setsewerrespawntime should still be handled");
-    assert_eq!(runtime.sewer_item_respawn_time, 3600);
-    assert_eq!(
-        invalid_sewer.messages,
-        vec!["Invalid value. Please specify a time between 3600 and 604800 seconds (1 hour to 7 days)"]
-    );
-}
-
-#[test]
-fn tick_tuning_commands_are_god_only_and_preserve_minimum_lengths() {
-    let mut world = World::default();
-    let character_id = CharacterId(7);
-    world.add_character(login_character(
-        character_id,
-        &login_block("Tester"),
-        1,
-        10,
-        10,
-    ));
-    let mut runtime = ServerRuntime::default();
-
-    assert!(apply_admin_character_command(
-        &mut world,
-        &mut runtime,
-        character_id,
-        "/setdecaytime 1440",
-        1,
-    )
-    .is_none());
-    assert_eq!(
-        runtime.item_decay_time,
-        GameSettings::default().item_decay_time
-    );
-    assert_eq!(
-        runtime.sewer_item_respawn_time,
-        GameSettings::default().sewer_item_respawn_time
-    );
-
-    world
-        .characters
-        .get_mut(&character_id)
-        .unwrap()
-        .flags
-        .insert(CharacterFlags::GOD);
-    assert!(apply_admin_character_command(
-        &mut world,
-        &mut runtime,
-        character_id,
-        "/setdecaytim 1440",
-        1,
-    )
-    .is_none());
-    assert_eq!(
-        runtime.item_decay_time,
-        GameSettings::default().item_decay_time
-    );
-
-    assert!(apply_admin_character_command(
-        &mut world,
-        &mut runtime,
-        character_id,
-        "/setnpcbodytim 720",
-        1,
-    )
-    .is_none());
-    assert_eq!(
-        runtime.npc_body_decay_time,
-        GameSettings::default().npc_body_decay_time
-    );
-
-    assert!(apply_admin_character_command(
-        &mut world,
-        &mut runtime,
-        character_id,
-        "/setsewerrespawntim 3600",
-        1,
-    )
-    .is_none());
-    assert_eq!(
-        runtime.sewer_item_respawn_time,
-        GameSettings::default().sewer_item_respawn_time
-    );
-}
-
-#[test]
-fn god_communication_tuning_commands_match_legacy_ranges_and_feedback() {
-    let mut world = World::default();
-    let god_id = CharacterId(7);
-    let mut god = login_character(god_id, &login_block("Godmode"), 1, 10, 10);
-    god.flags.insert(CharacterFlags::GOD);
-    world.add_character(god);
-    let mut runtime = ServerRuntime::default();
-
-    let holler =
-        apply_admin_character_command(&mut world, &mut runtime, god_id, "/sethollerdist 75tail", 1)
-            .expect("god sethollerdist should be recognized");
-    assert_eq!(runtime.holler_dist, 75);
-    assert_eq!(
-        holler.messages,
-        vec!["Holler distance changed from 75 to 75 tiles"]
-    );
-
-    let quiet =
-        apply_admin_character_command(&mut world, &mut runtime, god_id, "/setquietsaydist 4", 1)
-            .expect("god setquietsaydist should be recognized");
-    assert_eq!(runtime.quietsay_dist, 4);
-    assert_eq!(
-        quiet.messages,
-        vec!["Quiet say distance changed from 8 to 4 tiles"]
-    );
-
-    let shout_cost =
-        apply_admin_character_command(&mut world, &mut runtime, god_id, "/setshoutcost 2000", 1)
-            .expect("god setshoutcost should be recognized");
-    assert_eq!(runtime.shout_cost, 2000);
-    assert_eq!(
-        shout_cost.messages,
-        vec!["Shout cost changed from 6 to 2 endurance points"]
-    );
-
-    let invalid_whisper =
-        apply_admin_character_command(&mut world, &mut runtime, god_id, "/setwhisperdist 0", 1)
-            .expect("invalid setwhisperdist should still be handled");
-    assert_eq!(runtime.whisper_dist, GameSettings::default().whisper_dist);
-    assert_eq!(
-        invalid_whisper.messages,
-        vec!["Invalid value. Please specify a distance between 1 and 12 tiles"]
-    );
-}
-
-#[test]
-fn communication_tuning_commands_are_god_only_and_preserve_minimum_lengths() {
-    let mut world = World::default();
-    let character_id = CharacterId(7);
-    world.add_character(login_character(
-        character_id,
-        &login_block("Tester"),
-        1,
-        10,
-        10,
-    ));
-    let mut runtime = ServerRuntime::default();
-
-    assert!(apply_admin_character_command(
-        &mut world,
-        &mut runtime,
-        character_id,
-        "/setshoutdist 50",
-        1,
-    )
-    .is_none());
-    assert_eq!(runtime.shout_dist, GameSettings::default().shout_dist);
-
-    world
-        .characters
-        .get_mut(&character_id)
-        .unwrap()
-        .flags
-        .insert(CharacterFlags::GOD);
-    assert!(apply_admin_character_command(
-        &mut world,
-        &mut runtime,
-        character_id,
-        "/setshoutdis 50",
-        1,
-    )
-    .is_none());
-    assert_eq!(runtime.shout_dist, GameSettings::default().shout_dist);
-}
-
-#[test]
-fn god_game_settings_int_tuning_commands_match_legacy_ranges_and_feedback() {
-    let mut world = World::default();
-    let god_id = CharacterId(7);
-    let mut god = login_character(god_id, &login_block("Godmode"), 1, 10, 10);
-    god.flags.insert(CharacterFlags::GOD);
-    world.add_character(god);
-    let mut runtime = ServerRuntime::default();
-
-    let lots =
-        apply_admin_character_command(&mut world, &mut runtime, god_id, "/setsplots 8000", 1)
-            .expect("god setsplots should be recognized");
-    assert_eq!(world.settings.sp_lots, 8000);
-    assert_eq!(
-        lots.messages,
-        vec!["Special item probability 'lots' category changed from 5000 to 8000"]
-    );
-
-    let invalid_lots =
-        apply_admin_character_command(&mut world, &mut runtime, god_id, "/setsplots 999", 1)
-            .expect("invalid setsplots should still be handled");
-    assert_eq!(world.settings.sp_lots, 8000);
-    assert_eq!(
-        invalid_lots.messages,
-        vec!["Invalid value. Please specify a value between 1000 and 10000"]
-    );
-
-    let dungeon =
-        apply_admin_character_command(&mut world, &mut runtime, god_id, "/setdungeontime 43200", 1)
-            .expect("god setdungeontime should be recognized");
-    assert_eq!(world.settings.dungeon_time, 43200);
-    assert_eq!(
-        dungeon.messages,
-        vec!["Dungeon time limit changed from 86400 to 43200 ticks (60 to 30 minutes)"]
-    );
-
-    let invalid_dungeon =
-        apply_admin_character_command(&mut world, &mut runtime, god_id, "/setdungeontime 100", 1)
-            .expect("invalid setdungeontime should still be handled");
-    assert_eq!(world.settings.dungeon_time, 43200);
-    assert_eq!(
-        invalid_dungeon.messages,
-        vec![
-            "Invalid value. Please specify a time between 43200 and 172800 ticks (30-120 minutes)"
-        ]
-    );
-
-    let jewel =
-        apply_admin_character_command(&mut world, &mut runtime, god_id, "/setmaxjewelcount 5", 1)
-            .expect("god setmaxjewelcount should be recognized");
-    assert_eq!(world.settings.max_jewel_count, 5);
-    assert_eq!(
-        jewel.messages,
-        vec!["Maximum jewel count changed from 2 to 5"]
-    );
-
-    let drop_low =
-        apply_admin_character_command(&mut world, &mut runtime, god_id, "/setdropproblow 500", 1)
-            .expect("god setdropproblow should be recognized");
-    assert_eq!(world.settings.drop_prob_low_level, 500);
-    assert_eq!(
-        drop_low.messages,
-        vec!["Drop probability (low level) changed from 1700 to 500"]
-    );
-}
-
-#[test]
-fn god_game_settings_float_tuning_commands_match_legacy_ranges_and_feedback() {
-    let mut world = World::default();
-    let god_id = CharacterId(7);
-    let mut god = login_character(god_id, &login_block("Godmode"), 1, 10, 10);
-    god.flags.insert(CharacterFlags::GOD);
-    world.add_character(god);
-    let mut runtime = ServerRuntime::default();
-
-    let divider = apply_admin_character_command(
-        &mut world,
-        &mut runtime,
-        god_id,
-        "/settunnelexpdivider 4.5",
-        1,
-    )
-    .expect("god settunnelexpdivider should be recognized");
-    assert_eq!(world.settings.tunnel_exp_base_value_divider, 4.5);
-    assert_eq!(
-        divider.messages,
-        vec!["Tunnel experience base value divider changed from 5.00 to 4.50"]
-    );
-
-    let invalid_divider = apply_admin_character_command(
-        &mut world,
-        &mut runtime,
-        god_id,
-        "/settunnelexpdivider 0.5",
-        1,
-    )
-    .expect("invalid settunnelexpdivider should still be handled");
-    assert_eq!(world.settings.tunnel_exp_base_value_divider, 4.5);
-    assert_eq!(
-        invalid_divider.messages,
-        vec!["Invalid value. Please specify a value between 1.0 and 10.0"]
-    );
-
-    let solve =
-        apply_admin_character_command(&mut world, &mut runtime, god_id, "/setexpsolve 1.5", 1)
-            .expect("god setexpsolve should be recognized");
-    assert_eq!(world.settings.exp_solve_multiplier, 1.5);
-    assert_eq!(
-        solve.messages,
-        vec!["Experience solve multiplier changed from 0.66 to 1.50"]
-    );
-
-    let reflection = apply_admin_character_command(
-        &mut world,
-        &mut runtime,
-        god_id,
-        "/setclanreflection 0.5",
-        1,
-    )
-    .expect("god setclanreflection should be recognized");
-    assert_eq!(world.settings.exp_clan_reflection_multiplier, 0.5);
-    assert_eq!(
-        reflection.messages,
-        vec!["Clan reflection multiplier changed from 0.70 to 0.50"]
-    );
-
-    let rare_mult = apply_admin_character_command(
-        &mut world,
-        &mut runtime,
-        god_id,
-        "/setraredropmultiplier 2.0",
-        1,
-    )
-    .expect("god setraredropmultiplier should be recognized");
-    assert_eq!(world.settings.rare_drop_multiplier, 2.0);
-    assert_eq!(
-        rare_mult.messages,
-        vec!["Rare drop multiplier changed from 1.20 to 2.00"]
-    );
-
-    let invalid_rare_mult = apply_admin_character_command(
-        &mut world,
-        &mut runtime,
-        god_id,
-        "/setraredropmultiplier 5.0",
-        1,
-    )
-    .expect("invalid setraredropmultiplier should still be handled");
-    assert_eq!(world.settings.rare_drop_multiplier, 2.0);
-    assert_eq!(
-        invalid_rare_mult.messages,
-        vec!["Invalid value. Please specify a value between 1.0 and 3.0"]
-    );
-}
-
-#[test]
-fn god_setspecialdropmult_truncates_old_value_like_c() {
+pub(crate) fn god_setspecialdropmult_truncates_old_value_like_c() {
     let mut world = World::default();
     let god_id = CharacterId(7);
     let mut god = login_character(god_id, &login_block("Godmode"), 1, 10, 10);
@@ -2799,166 +1760,7 @@ fn god_setspecialdropmult_truncates_old_value_like_c() {
 }
 
 #[test]
-fn god_setjaillocation_and_setastonlocation_update_settings_like_c() {
-    let mut world = World::default();
-    let god_id = CharacterId(7);
-    let mut god = login_character(god_id, &login_block("Godmode"), 1, 10, 10);
-    god.flags.insert(CharacterFlags::GOD);
-    world.add_character(god);
-    let mut runtime = ServerRuntime::default();
-
-    let jail = apply_admin_character_command(
-        &mut world,
-        &mut runtime,
-        god_id,
-        "/setjaillocation 100 200 5",
-        1,
-    )
-    .expect("god setjaillocation should be recognized");
-    assert_eq!(
-        (
-            world.settings.jail_x,
-            world.settings.jail_y,
-            world.settings.jail_area
-        ),
-        (100, 200, 5)
-    );
-    assert_eq!(
-        jail.messages,
-        vec!["Jail location changed from 186,234 (area 3) to 100,200 (area 5)"]
-    );
-
-    let invalid_jail = apply_admin_character_command(
-        &mut world,
-        &mut runtime,
-        god_id,
-        "/setjaillocation 0 200 5",
-        1,
-    )
-    .expect("invalid setjaillocation should still be handled");
-    assert_eq!(
-        (
-            world.settings.jail_x,
-            world.settings.jail_y,
-            world.settings.jail_area
-        ),
-        (100, 200, 5)
-    );
-    assert_eq!(
-        invalid_jail.messages,
-        vec!["Invalid coordinates or area. Format: /setjaillocation x y area"]
-    );
-
-    let aston = apply_admin_character_command(
-        &mut world,
-        &mut runtime,
-        god_id,
-        "/setastonlocation 50 60 7",
-        1,
-    )
-    .expect("god setastonlocation should be recognized");
-    assert_eq!(
-        (
-            world.settings.aston_x,
-            world.settings.aston_y,
-            world.settings.aston_area
-        ),
-        (50, 60, 7)
-    );
-    assert_eq!(
-        aston.messages,
-        vec!["Aston location changed from 133,203 (area 3) to 50,60 (area 7)"]
-    );
-}
-
-#[test]
-fn game_settings_tuning_commands_are_god_only_and_resolve_ambiguous_abbreviations_by_source_order()
-{
-    let mut world = World::default();
-    let character_id = CharacterId(7);
-    world.add_character(login_character(
-        character_id,
-        &login_block("Tester"),
-        1,
-        10,
-        10,
-    ));
-    let mut runtime = ServerRuntime::default();
-
-    // Non-god caller: recognized-but-gated commands must return `None`.
-    assert!(apply_admin_character_command(
-        &mut world,
-        &mut runtime,
-        character_id,
-        "/setsplots 8000",
-        1,
-    )
-    .is_none());
-    assert_eq!(world.settings.sp_lots, GameSettings::default().sp_lots);
-
-    world
-        .characters
-        .get_mut(&character_id)
-        .unwrap()
-        .flags
-        .insert(CharacterFlags::GOD);
-
-    // `setpentmaxpower`'s C `cmdcmp` `minlen` is 15 - equal to the full
-    // command's own length, i.e. no abbreviation is accepted at all.
-    // Dropping the trailing "r" (14 characters) must not match anything
-    // (C `cmdcmp` returns 0 when the matched length is short of `minlen`).
-    assert!(apply_admin_character_command(
-        &mut world,
-        &mut runtime,
-        character_id,
-        "/setpentmaxpowe 5000",
-        1,
-    )
-    .is_none());
-    assert_eq!(
-        world.settings.max_power_level,
-        GameSettings::default().max_power_level
-    );
-
-    // "setmax" (6 chars) is a valid abbreviation-length prefix of
-    // `setmaxjewelcount` (minlen 16, too short here), `setmaxsilvergolemtype`
-    // (minlen 6, matches) and `setmaxclanbonus` (minlen 6, matches) - C's
-    // first-declared-wins `if` chain resolves this to
-    // `setmaxsilvergolemtype` (`command.c:7610`, declared before
-    // `setmaxclanbonus` at `command.c:8008`), so the Rust port must too.
-    let result =
-        apply_admin_character_command(&mut world, &mut runtime, character_id, "/setmax 15", 1)
-            .expect("ambiguous setmax abbreviation should still resolve to a command");
-    assert_eq!(world.settings.max_silver_golem_type, 15);
-    assert_eq!(
-        world.settings.max_clan_bonus_percent,
-        GameSettings::default().max_clan_bonus_percent
-    );
-    assert_eq!(
-        result.messages,
-        vec!["Max silver golem type changed from 8 to 15"]
-    );
-
-    // Likewise "setpent" (7 chars) is too short for `setpentvismaxpents`
-    // (minlen 18) and `setpentmaxpower` (minlen 15) but long enough for
-    // `setpentvaluemultiplier` (minlen 6, declared next at
-    // `command.c:7829`), which therefore wins.
-    let pent_result =
-        apply_admin_character_command(&mut world, &mut runtime, character_id, "/setpent 99", 1)
-            .expect("ambiguous setpent abbreviation should still resolve to a command");
-    assert_eq!(world.settings.pentagram_value_multiplier, 99);
-    assert_eq!(
-        world.settings.max_visible_pents,
-        GameSettings::default().max_visible_pents
-    );
-    assert_eq!(
-        pent_result.messages,
-        vec!["Pentagram value multiplier changed from 50 to 99"]
-    );
-}
-
-#[test]
-fn god_setlootmod_command_validates_and_stores_modifier() {
+pub(crate) fn god_setlootmod_command_validates_and_stores_modifier() {
     let mut world = World::default();
     let god_id = CharacterId(7);
     let mut god = login_character(god_id, &login_block("Godmode"), 1, 10, 10);
@@ -3015,7 +1817,7 @@ fn god_setlootmod_command_validates_and_stores_modifier() {
 }
 
 #[test]
-fn god_reloadloot_command_clears_and_rescans_from_disk() {
+pub(crate) fn god_reloadloot_command_clears_and_rescans_from_disk() {
     let mut world = World::default();
     let god_id = CharacterId(7);
     let mut god = login_character(god_id, &login_block("Godmode"), 1, 10, 10);
@@ -3063,7 +1865,7 @@ fn god_reloadloot_command_clears_and_rescans_from_disk() {
 }
 
 #[test]
-fn god_listchars_reports_active_players_and_npcs_like_c() {
+pub(crate) fn god_listchars_reports_active_players_and_npcs_like_c() {
     let mut world = World::default();
     let god_id = CharacterId(7);
     let mut god = login_character(god_id, &login_block("Godmode"), 1, 10, 10);
@@ -3098,7 +1900,7 @@ fn god_listchars_reports_active_players_and_npcs_like_c() {
 }
 
 #[test]
-fn listchars_is_god_only_and_rejects_too_short_prefix() {
+pub(crate) fn listchars_is_god_only_and_rejects_too_short_prefix() {
     let mut world = World::default();
     let character_id = CharacterId(7);
     world.add_character(login_character(
@@ -3128,54 +1930,7 @@ fn listchars_is_god_only_and_rejects_too_short_prefix() {
 }
 
 #[test]
-fn god_clearmerchantstores_resets_gold_and_clears_every_ware() {
-    use ugaris_core::character_driver::CDR_MERCHANT;
-    use ugaris_core::world::StoreWare;
-
-    let mut world = World::default();
-    let god_id = CharacterId(7);
-    let mut god = login_character(god_id, &login_block("Godmode"), 1, 10, 10);
-    god.flags.insert(CharacterFlags::GOD);
-    world.add_character(god);
-
-    let merchant_id = CharacterId(20);
-    let mut merchant = login_character(merchant_id, &login_block("Dolf"), 1, 11, 10);
-    merchant.flags.remove(CharacterFlags::PLAYER);
-    merchant.driver = CDR_MERCHANT;
-    world.add_character(merchant);
-    assert!(world.ensure_merchant_store(merchant_id));
-    {
-        let store = world.merchant_stores.get_mut(&merchant_id).unwrap();
-        store.gold = 42;
-        store.wares[0] = Some(StoreWare {
-            item: test_item(ItemId(900), 1234, ItemFlags::TAKE),
-            count: 3,
-            always: true,
-        });
-    }
-
-    let mut runtime = ServerRuntime::default();
-    let result = apply_admin_character_command(
-        &mut world,
-        &mut runtime,
-        god_id,
-        "/clearmerchantstores 20",
-        1,
-    )
-    .expect("god clearmerchantstores should be recognized");
-
-    assert_eq!(
-        result.messages,
-        vec!["Merchant Dolf (ID: 20) inventory cleared and gold reset"]
-    );
-    assert_eq!(result.clear_merchant_store_requested, Some(merchant_id));
-    let store = world.merchant_stores.get(&merchant_id).unwrap();
-    assert_eq!(store.gold, 10_000);
-    assert!(store.wares.iter().all(Option::is_none));
-}
-
-#[test]
-fn clearmerchantstores_rejects_non_merchant_and_missing_ids() {
+pub(crate) fn clearmerchantstores_rejects_non_merchant_and_missing_ids() {
     let mut world = World::default();
     let god_id = CharacterId(7);
     let mut god = login_character(god_id, &login_block("Godmode"), 1, 10, 10);
@@ -3222,7 +1977,7 @@ fn clearmerchantstores_rejects_non_merchant_and_missing_ids() {
 }
 
 #[test]
-fn clearmerchantstores_is_god_only_and_rejects_too_short_prefix() {
+pub(crate) fn clearmerchantstores_is_god_only_and_rejects_too_short_prefix() {
     use ugaris_core::character_driver::CDR_MERCHANT;
 
     let mut world = World::default();
@@ -3267,7 +2022,7 @@ fn clearmerchantstores_is_god_only_and_rejects_too_short_prefix() {
 }
 
 #[test]
-fn god_checksanity_reports_zero_errors_on_a_clean_world() {
+pub(crate) fn god_checksanity_reports_zero_errors_on_a_clean_world() {
     let mut world = World::default();
     let god_id = CharacterId(7);
     let mut god = login_character(god_id, &login_block("Godmode"), 1, 10, 10);
@@ -3292,7 +2047,7 @@ fn god_checksanity_reports_zero_errors_on_a_clean_world() {
 }
 
 #[test]
-fn god_checksanity_repairs_a_dangling_carried_item_and_reports_the_count() {
+pub(crate) fn god_checksanity_repairs_a_dangling_carried_item_and_reports_the_count() {
     let mut world = World::default();
     let god_id = CharacterId(7);
     let mut god = login_character(god_id, &login_block("Godmode"), 1, 10, 10);
@@ -3324,7 +2079,7 @@ fn god_checksanity_repairs_a_dangling_carried_item_and_reports_the_count() {
 }
 
 #[test]
-fn checksanity_is_god_only_and_rejects_too_short_prefix() {
+pub(crate) fn checksanity_is_god_only_and_rejects_too_short_prefix() {
     let mut world = World::default();
     let character_id = CharacterId(7);
     world.add_character(login_character(
@@ -3358,7 +2113,7 @@ fn checksanity_is_god_only_and_rejects_too_short_prefix() {
 }
 
 #[test]
-fn itemname_and_itemdesc_are_god_only_and_require_cursor_item() {
+pub(crate) fn itemname_and_itemdesc_are_god_only_and_require_cursor_item() {
     let mut world = World::default();
     let character_id = CharacterId(7);
     world.add_character(login_character(
@@ -3405,342 +2160,7 @@ fn itemname_and_itemdesc_are_god_only_and_require_cursor_item() {
 }
 
 #[test]
-fn god_itemmod_mutates_cursor_modifier_with_legacy_feedback() {
-    let mut world = World::default();
-    let character_id = CharacterId(7);
-    let mut character = login_character(character_id, &login_block("Tester"), 1, 10, 10);
-    character.flags.insert(CharacterFlags::GOD);
-    character.cursor_item = Some(ItemId(99));
-    world.add_character(character);
-    world.add_item(Item {
-        id: ItemId(99),
-        name: "Modded Item".to_string(),
-        description: String::new(),
-        flags: ItemFlags::TAKE,
-        sprite: 123,
-        value: 0,
-        min_level: 0,
-        max_level: 0,
-        needs_class: 0,
-        template_id: 0,
-        owner_id: 0,
-        modifier_index: [0; 5],
-        modifier_value: [0; 5],
-        x: 0,
-        y: 0,
-        carried_by: Some(character_id),
-        contained_in: None,
-        content_id: 0,
-        driver: 0,
-        driver_data: vec![0; 40],
-        serial: 1,
-    });
-    let mut runtime = ServerRuntime::default();
-
-    let result = apply_admin_character_command(
-        &mut world,
-        &mut runtime,
-        character_id,
-        "/itemmod 2 sword 7",
-        1,
-    )
-    .expect("god itemmod should be recognized");
-    assert!(result.inventory_changed);
-    assert_eq!(result.messages[0], "Modded Item:");
-    assert!(result.messages.iter().any(|line| line == "Sword +7"));
-    assert_eq!(
-        result.messages.last().unwrap(),
-        "Item modified: Sword (skill 15) at pos 2 with value 7"
-    );
-    let item = world.items.get(&ItemId(99)).unwrap();
-    assert_eq!(item.modifier_index[2], CharacterValue::Sword as i16);
-    assert_eq!(item.modifier_value[2], 7);
-
-    let numeric = apply_admin_character_command(
-        &mut world,
-        &mut runtime,
-        character_id,
-        "/itemmod 0 18 21",
-        1,
-    )
-    .expect("numeric itemmod should be recognized");
-    assert!(numeric.messages.iter().any(|line| line == "Attack +21"));
-    let item = world.items.get(&ItemId(99)).unwrap();
-    assert_eq!(item.modifier_index[0], CharacterValue::Attack as i16);
-    assert_eq!(item.modifier_value[0], 21);
-}
-
-#[test]
-fn god_exp_command_reports_and_grants_self_or_named_target() {
-    let mut world = World::default();
-    let god_id = CharacterId(7);
-    let target_id = CharacterId(8);
-    let mut god = login_character(god_id, &login_block("Godmode"), 1, 10, 10);
-    god.flags.insert(CharacterFlags::GOD);
-    god.exp = 100;
-    let mut target = login_character(target_id, &login_block("Target"), 1, 11, 10);
-    target.exp = 200;
-    world.add_character(god);
-    world.add_character(target);
-    let mut runtime = ServerRuntime::default();
-
-    let report = apply_admin_character_command(&mut world, &mut runtime, god_id, "/exp", 1)
-        .expect("god exp should be recognized");
-    assert_eq!(report.messages, vec!["Godmode has 100 exp."]);
-
-    let self_grant = apply_admin_character_command(&mut world, &mut runtime, god_id, "/exp 25", 1)
-        .expect("god exp self grant should be recognized");
-    assert_eq!(self_grant.messages, vec!["Gave Godmode 25 exp."]);
-    assert!(self_grant.inventory_changed);
-    assert_eq!(world.characters.get(&god_id).unwrap().exp, 125);
-    assert!(world
-        .characters
-        .get(&god_id)
-        .unwrap()
-        .flags
-        .contains(CharacterFlags::UPDATE));
-
-    let target_grant =
-        apply_admin_character_command(&mut world, &mut runtime, god_id, "/exp Target 50", 1)
-            .expect("god exp target grant should be recognized");
-    assert_eq!(target_grant.messages, vec!["Gave Target 50 exp."]);
-    assert_eq!(world.characters.get(&target_id).unwrap().exp, 250);
-
-    let target_report =
-        apply_admin_character_command(&mut world, &mut runtime, god_id, "/exp Target", 1)
-            .expect("god exp target report should be recognized");
-    assert_eq!(target_report.messages, vec!["Target has 250 exp."]);
-}
-
-#[test]
-fn god_exp_command_uses_runtime_exp_modifiers_and_legacy_gates() {
-    let mut world = World::default();
-    let god_id = CharacterId(7);
-    let target_id = CharacterId(8);
-    let blocked_id = CharacterId(9);
-    let capped_id = CharacterId(10);
-
-    let mut god = login_character(god_id, &login_block("Godmode"), 1, 10, 10);
-    god.flags.insert(CharacterFlags::GOD);
-    world.add_character(god);
-
-    let mut target = login_character(target_id, &login_block("Target"), 1, 11, 10);
-    target.exp = 100;
-    target.flags.insert(CharacterFlags::HARDCORE);
-    world.add_character(target);
-
-    let mut blocked = login_character(blocked_id, &login_block("Blocked"), 1, 12, 10);
-    blocked.exp = 100;
-    blocked.flags.insert(CharacterFlags::NOEXP);
-    world.add_character(blocked);
-
-    let mut capped = login_character(capped_id, &login_block("Capped"), 1, 13, 10);
-    capped.level = 10;
-    capped.exp = level2exp(10);
-    capped.flags.insert(CharacterFlags::NOLEVEL);
-    world.add_character(capped);
-
-    let mut runtime = ServerRuntime::default();
-    world.settings.exp_modifier = 2.0;
-    world.settings.hardcore_exp_bonus = 1.5;
-
-    apply_admin_character_command(&mut world, &mut runtime, god_id, "/exp Target 10", 1)
-        .expect("god exp target grant should be recognized");
-    let target = world.characters.get(&target_id).unwrap();
-    assert_eq!(target.exp, 130);
-    // C `give_exp` -> `check_levelup`: 130 exp crosses level2exp(3) == 81,
-    // so the target levels up from 1 to 3 in the same call. Hardcore
-    // characters reset `saves` to 0 on every level (already 0 here, so this
-    // just confirms it stays 0 rather than incrementing).
-    assert_eq!(target.level, 3);
-    assert_eq!(target.saves, 0);
-
-    apply_admin_character_command(&mut world, &mut runtime, god_id, "/exp Blocked 10", 1)
-        .expect("god exp noexp target should be recognized");
-    assert_eq!(world.characters.get(&blocked_id).unwrap().exp, 100);
-
-    apply_admin_character_command(&mut world, &mut runtime, god_id, "/exp Capped 100000", 1)
-        .expect("god exp nolevel target should be recognized");
-    let capped = world.characters.get(&capped_id).unwrap();
-    assert_eq!(capped.exp, level2exp(11) - 1);
-    // C `give_exp`: `check_levelup` only runs `if (!(ch[cn].flags &
-    // CF_NOLEVEL))`, so a NOLEVEL character never levels up even though its
-    // capped exp is one shy of level2exp(11).
-    assert_eq!(capped.level, 10);
-}
-
-#[test]
-fn exp_command_is_god_only_uses_legacy_prefix_and_not_found_feedback() {
-    let mut world = World::default();
-    let character_id = CharacterId(7);
-    world.add_character(login_character(
-        character_id,
-        &login_block("Tester"),
-        1,
-        10,
-        10,
-    ));
-    let mut runtime = ServerRuntime::default();
-
-    assert!(
-        apply_admin_character_command(&mut world, &mut runtime, character_id, "/exp 10", 1)
-            .is_none()
-    );
-
-    world
-        .characters
-        .get_mut(&character_id)
-        .unwrap()
-        .flags
-        .insert(CharacterFlags::GOD);
-    let missing =
-        apply_admin_character_command(&mut world, &mut runtime, character_id, "/exp Missing 10", 1)
-            .expect("god exp missing target should be handled");
-    assert_eq!(
-        missing.messages,
-        vec!["Sorry, no one by the name Missing around."]
-    );
-    assert!(
-        apply_admin_character_command(&mut world, &mut runtime, character_id, "/ex 10", 1)
-            .is_none()
-    );
-    assert!(
-        apply_admin_character_command(&mut world, &mut runtime, character_id, "/expx 10", 1)
-            .is_none()
-    );
-}
-
-#[test]
-fn god_milexp_command_reports_and_grants_military_points() {
-    let mut world = World::default();
-    let god_id = CharacterId(7);
-    let target_id = CharacterId(8);
-    let mut god = login_character(god_id, &login_block("Godmode"), 1, 10, 10);
-    god.flags.insert(CharacterFlags::GOD);
-    god.exp = 100;
-    let mut target = login_character(target_id, &login_block("Target"), 1, 11, 10);
-    target.exp = 200;
-    target.flags.insert(CharacterFlags::HARDCORE);
-    world.add_character(god);
-    world.add_character(target);
-    let mut runtime = ServerRuntime::default();
-
-    let report = apply_admin_character_command(&mut world, &mut runtime, god_id, "/milexp", 1)
-        .expect("god milexp should be recognized");
-    assert_eq!(report.messages, vec!["Godmode has 100 exp."]);
-
-    let self_grant =
-        apply_admin_character_command(&mut world, &mut runtime, god_id, "/milexp 25", 1)
-            .expect("god milexp self grant should be recognized");
-    assert_eq!(self_grant.messages, vec!["Gave Godmode 25 military exp."]);
-    assert!(self_grant.inventory_changed);
-    let god = world.characters.get(&god_id).unwrap();
-    assert_eq!(god.exp, 101);
-    assert_eq!(god.military_normal_exp, 1);
-    assert_eq!(god.military_points, 25);
-    assert!(god.flags.contains(CharacterFlags::UPDATE));
-
-    let target_grant =
-        apply_admin_character_command(&mut world, &mut runtime, god_id, "/milexp Target 50", 1)
-            .expect("god milexp target grant should be recognized");
-    assert_eq!(target_grant.messages, vec!["Gave Target 50 military exp."]);
-    let target = world.characters.get(&target_id).unwrap();
-    assert_eq!(target.exp, 201);
-    assert_eq!(target.military_normal_exp, 1);
-    assert_eq!(target.military_points, 55);
-
-    let target_report =
-        apply_admin_character_command(&mut world, &mut runtime, god_id, "/milexp Target", 1)
-            .expect("god milexp target report should be recognized");
-    assert_eq!(target_report.messages, vec!["Target has 201 exp."]);
-}
-
-#[test]
-fn milexp_routes_its_fixed_one_exp_through_give_exp_and_honors_military_bonus() {
-    // C `cmd_milexp` -> `give_military_pts_no_npc(co, val, 1)`
-    // (`command.c:3048`, `tool.c:3281-3299`): the exp side is always a
-    // fixed `1` through `give_exp` (so `exp_modifier`/`hardcore_exp_bonus`
-    // apply), while `military_points` uses the typed amount multiplied by
-    // the separately-tunable `hardcore_military_exp_bonus`.
-    let mut world = World::default();
-    world.settings.exp_modifier = 3.0;
-    let god_id = CharacterId(7);
-    let target_id = CharacterId(8);
-    let mut god = login_character(god_id, &login_block("Godmode"), 1, 10, 10);
-    god.flags.insert(CharacterFlags::GOD);
-    let mut target = login_character(target_id, &login_block("Target"), 1, 11, 10);
-    target.exp = 0;
-    target.flags.insert(CharacterFlags::HARDCORE);
-    world.add_character(god);
-    world.add_character(target);
-    let mut runtime = ServerRuntime::default();
-    world.settings.hardcore_military_exp_bonus = 2.0;
-
-    apply_admin_character_command(&mut world, &mut runtime, god_id, "/milexp Target 50", 1)
-        .expect("god milexp target grant should be recognized");
-
-    let target = world.characters.get(&target_id).unwrap();
-    // give_exp(co, 1) with exp_modifier 3.0 (no hardcore_exp_bonus set,
-    // defaults to 1.0) -> +3, not the raw +1 a bare mutation would give.
-    assert_eq!(target.exp, 3);
-    assert_eq!(target.military_normal_exp, 1);
-    // 50 * hardcore_military_exp_bonus(2.0) = 100, not the old hardcoded
-    // 1.10 multiplier.
-    assert_eq!(target.military_points, 100);
-}
-
-#[test]
-fn milexp_command_is_god_only_full_command_and_not_found_feedback() {
-    let mut world = World::default();
-    let character_id = CharacterId(7);
-    world.add_character(login_character(
-        character_id,
-        &login_block("Tester"),
-        1,
-        10,
-        10,
-    ));
-    let mut runtime = ServerRuntime::default();
-
-    assert!(
-        apply_admin_character_command(&mut world, &mut runtime, character_id, "/milexp 10", 1)
-            .is_none()
-    );
-
-    world
-        .characters
-        .get_mut(&character_id)
-        .unwrap()
-        .flags
-        .insert(CharacterFlags::GOD);
-    let missing = apply_admin_character_command(
-        &mut world,
-        &mut runtime,
-        character_id,
-        "/milexp Missing 10",
-        1,
-    )
-    .expect("god milexp missing target should be handled");
-    assert_eq!(
-        missing.messages,
-        vec!["Sorry, no one by the name Missing around."]
-    );
-    assert!(
-        apply_admin_character_command(&mut world, &mut runtime, character_id, "/milex 10", 1)
-            .is_none()
-    );
-    assert!(apply_admin_character_command(
-        &mut world,
-        &mut runtime,
-        character_id,
-        "/milexpx 10",
-        1
-    )
-    .is_none());
-}
-
-#[test]
-fn labsolved_command_is_god_only_and_supports_the_8_char_prefix() {
+pub(crate) fn labsolved_command_is_god_only_and_supports_the_8_char_prefix() {
     let mut world = World::default();
     let character_id = CharacterId(7);
     world.add_character(login_character(
@@ -3780,7 +2200,7 @@ fn labsolved_command_is_god_only_and_supports_the_8_char_prefix() {
 }
 
 #[test]
-fn labsolved_command_toggles_bits_and_lists_solved_labs_for_self() {
+pub(crate) fn labsolved_command_toggles_bits_and_lists_solved_labs_for_self() {
     let mut world = World::default();
     let character_id = CharacterId(7);
     let mut god = login_character(character_id, &login_block("Godmode"), 1, 10, 10);
@@ -3836,48 +2256,7 @@ fn labsolved_command_toggles_bits_and_lists_solved_labs_for_self() {
 }
 
 #[test]
-fn labsolved_command_supports_named_target_and_missing_lookup() {
-    let mut world = World::default();
-    let god_id = CharacterId(7);
-    let target_id = CharacterId(8);
-    let mut god = login_character(god_id, &login_block("Godmode"), 1, 10, 10);
-    god.flags.insert(CharacterFlags::GOD);
-    world.add_character(god);
-    world.add_character(login_character(
-        target_id,
-        &login_block("Target"),
-        1,
-        11,
-        10,
-    ));
-    let mut runtime = ServerRuntime::default();
-    let mut target_player = PlayerRuntime::connected(80, 0);
-    target_player.character_id = Some(target_id);
-    runtime.players.insert(80, target_player);
-
-    let missing =
-        apply_admin_character_command(&mut world, &mut runtime, god_id, "/labsolved Missing 3", 1)
-            .expect("god labsolved missing target should be handled");
-    assert_eq!(
-        missing.messages,
-        vec!["Sorry, no one by the name Missing around."]
-    );
-
-    let granted =
-        apply_admin_character_command(&mut world, &mut runtime, god_id, "/labsolved Target 3", 1)
-            .expect("god labsolved named target should be recognized");
-    assert_eq!(granted.messages, vec!["Target has solved lab 3."]);
-    assert_eq!(
-        runtime
-            .player_for_character(target_id)
-            .unwrap()
-            .lab_solved_bits,
-        1u64 << 3
-    );
-}
-
-#[test]
-fn labsolved_command_reports_missing_runtime_for_online_character() {
+pub(crate) fn labsolved_command_reports_missing_runtime_for_online_character() {
     let mut world = World::default();
     let character_id = CharacterId(7);
     let mut god = login_character(character_id, &login_block("Godmode"), 1, 10, 10);
@@ -3891,7 +2270,7 @@ fn labsolved_command_reports_missing_runtime_for_online_character() {
     assert_eq!(result.messages, vec!["Could not get lab data for Godmode."]);
 }
 
-fn setup_god_and_target_with_military_ppd(
+pub(crate) fn setup_god_and_target_with_military_ppd(
     world: &mut World,
     runtime: &mut ServerRuntime,
 ) -> (CharacterId, CharacterId) {
@@ -3914,7 +2293,7 @@ fn setup_god_and_target_with_military_ppd(
 }
 
 #[test]
-fn god_milinfo_command_reports_self_defaults_and_named_target_state() {
+pub(crate) fn god_milinfo_command_reports_self_defaults_and_named_target_state() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, target_id) = setup_god_and_target_with_military_ppd(&mut world, &mut runtime);
@@ -4022,7 +2401,7 @@ fn god_milinfo_command_reports_self_defaults_and_named_target_state() {
 }
 
 #[test]
-fn god_milpref_command_sets_preferences_and_replicates_missing_diff_quirk() {
+pub(crate) fn god_milpref_command_sets_preferences_and_replicates_missing_diff_quirk() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, _target_id) = setup_god_and_target_with_military_ppd(&mut world, &mut runtime);
@@ -4078,7 +2457,7 @@ fn god_milpref_command_sets_preferences_and_replicates_missing_diff_quirk() {
 }
 
 #[test]
-fn milpref_is_god_only_and_reports_missing_target() {
+pub(crate) fn milpref_is_god_only_and_reports_missing_target() {
     let mut world = World::default();
     let character_id = CharacterId(7);
     world.add_character(login_character(
@@ -4120,7 +2499,7 @@ fn milpref_is_god_only_and_reports_missing_target() {
 }
 
 #[test]
-fn god_milreset_command_clears_all_cooldowns_including_advisors() {
+pub(crate) fn god_milreset_command_clears_all_cooldowns_including_advisors() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, target_id) = setup_god_and_target_with_military_ppd(&mut world, &mut runtime);
@@ -4155,7 +2534,7 @@ fn god_milreset_command_clears_all_cooldowns_including_advisors() {
 }
 
 #[test]
-fn god_milpoints_command_grants_points_and_promotes_with_broadcast() {
+pub(crate) fn god_milpoints_command_grants_points_and_promotes_with_broadcast() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, target_id) = setup_god_and_target_with_military_ppd(&mut world, &mut runtime);
@@ -4195,7 +2574,7 @@ fn god_milpoints_command_grants_points_and_promotes_with_broadcast() {
 }
 
 #[test]
-fn milpoints_is_god_only_and_requires_name_and_nonzero_points() {
+pub(crate) fn milpoints_is_god_only_and_requires_name_and_nonzero_points() {
     let mut world = World::default();
     let character_id = CharacterId(7);
     world.add_character(login_character(
@@ -4245,7 +2624,7 @@ fn milpoints_is_god_only_and_requires_name_and_nonzero_points() {
 }
 
 #[test]
-fn god_milrec_command_grants_recommendation_points() {
+pub(crate) fn god_milrec_command_grants_recommendation_points() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, target_id) = setup_god_and_target_with_military_ppd(&mut world, &mut runtime);
@@ -4275,7 +2654,7 @@ fn god_milrec_command_grants_recommendation_points() {
 }
 
 #[test]
-fn milrec_is_god_only_requires_name_and_nonzero_points() {
+pub(crate) fn milrec_is_god_only_requires_name_and_nonzero_points() {
     let mut world = World::default();
     let character_id = CharacterId(7);
     world.add_character(login_character(
@@ -4308,7 +2687,7 @@ fn milrec_is_god_only_requires_name_and_nonzero_points() {
 }
 
 #[test]
-fn god_milstats_command_reports_missing_military_master_npc() {
+pub(crate) fn god_milstats_command_reports_missing_military_master_npc() {
     let mut world = World::default();
     let god_id = CharacterId(7);
     let mut god = login_character(god_id, &login_block("Godmode"), 1, 10, 10);
@@ -4322,7 +2701,7 @@ fn god_milstats_command_reports_missing_military_master_npc() {
 }
 
 #[test]
-fn milstats_is_god_only() {
+pub(crate) fn milstats_is_god_only() {
     let mut world = World::default();
     let character_id = CharacterId(7);
     world.add_character(login_character(
@@ -4341,7 +2720,7 @@ fn milstats_is_god_only() {
 }
 
 #[test]
-fn god_milsolve_command_completes_mission_promotes_and_announces() {
+pub(crate) fn god_milsolve_command_completes_mission_promotes_and_announces() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, target_id) = setup_god_and_target_with_military_ppd(&mut world, &mut runtime);
@@ -4403,7 +2782,7 @@ fn god_milsolve_command_completes_mission_promotes_and_announces() {
 }
 
 #[test]
-fn milsolve_is_god_only_and_reports_missing_target() {
+pub(crate) fn milsolve_is_god_only_and_reports_missing_target() {
     let mut world = World::default();
     let character_id = CharacterId(7);
     world.add_character(login_character(
@@ -4441,193 +2820,7 @@ fn milsolve_is_god_only_and_reports_missing_target() {
 }
 
 #[test]
-fn itemmod_is_god_only_requires_cursor_and_checks_bounds() {
-    let mut world = World::default();
-    let character_id = CharacterId(7);
-    world.add_character(login_character(
-        character_id,
-        &login_block("Tester"),
-        1,
-        10,
-        10,
-    ));
-    let mut runtime = ServerRuntime::default();
-
-    assert!(apply_admin_character_command(
-        &mut world,
-        &mut runtime,
-        character_id,
-        "/itemmod 0 sword 1",
-        1,
-    )
-    .is_none());
-
-    world
-        .characters
-        .get_mut(&character_id)
-        .unwrap()
-        .flags
-        .insert(CharacterFlags::GOD);
-    let missing = apply_admin_character_command(
-        &mut world,
-        &mut runtime,
-        character_id,
-        "/itemmod 0 sword 1",
-        1,
-    )
-    .expect("god itemmod should handle missing cursor");
-    assert_eq!(missing.messages, vec!["Need citem."]);
-
-    world.characters.get_mut(&character_id).unwrap().cursor_item = Some(ItemId(99));
-    assert_eq!(
-        apply_admin_character_command(
-            &mut world,
-            &mut runtime,
-            character_id,
-            "/itemmod 5 sword 1",
-            1,
-        )
-        .unwrap()
-        .messages,
-        vec!["Pos out of bounds."]
-    );
-    assert_eq!(
-        apply_admin_character_command(
-            &mut world,
-            &mut runtime,
-            character_id,
-            "/itemmod 0 43 1",
-            1,
-        )
-        .unwrap()
-        .messages,
-        vec!["Nr out of bounds."]
-    );
-    assert_eq!(
-        apply_admin_character_command(
-            &mut world,
-            &mut runtime,
-            character_id,
-            "/itemmod 0 sword 22",
-            1,
-        )
-        .unwrap()
-        .messages,
-        vec!["Val out of bounds."]
-    );
-}
-
-#[test]
-fn god_setskill_mutates_online_target_and_recalculates_exp_used() {
-    let mut world = World::default();
-    let god_id = CharacterId(7);
-    let target_id = CharacterId(8);
-    let mut god = login_character(god_id, &login_block("Godmode"), 1, 10, 10);
-    god.flags.insert(CharacterFlags::GOD);
-    world.add_character(god);
-    let mut target = login_character(target_id, &login_block("Target"), 1, 11, 10);
-    target.flags.insert(CharacterFlags::PLAYER);
-    target.values[1][CharacterValue::Sword as usize] = 1;
-    target.exp_used = legacy_calc_exp_used(&target);
-    let old_exp_used = target.exp_used;
-    world.add_character(target);
-    let mut runtime = ServerRuntime::default();
-
-    let result = apply_admin_character_command(
-        &mut world,
-        &mut runtime,
-        god_id,
-        "/setskill target sword 3",
-        1,
-    )
-    .expect("god setskill should be recognized");
-    assert_eq!(
-        result.messages,
-        vec!["Skill: Sword (pos 15), Old value: 1, New value: 3, exp used changed by 55."]
-    );
-    let target = world.characters.get(&target_id).unwrap();
-    assert_eq!(target.values[1][CharacterValue::Sword as usize], 3);
-    assert_eq!(target.exp_used, old_exp_used + 55);
-    assert!(target.flags.contains(CharacterFlags::UPDATE));
-    assert!(result.inventory_changed);
-}
-
-#[test]
-fn setskill_is_god_only_and_checks_target_position_and_value() {
-    let mut world = World::default();
-    let caller_id = CharacterId(7);
-    let target_id = CharacterId(8);
-    world.add_character(login_character(
-        caller_id,
-        &login_block("Tester"),
-        1,
-        10,
-        10,
-    ));
-    world.add_character(login_character(
-        target_id,
-        &login_block("Target"),
-        1,
-        11,
-        10,
-    ));
-    let mut runtime = ServerRuntime::default();
-
-    assert!(apply_admin_character_command(
-        &mut world,
-        &mut runtime,
-        caller_id,
-        "/setskill Target sword 3",
-        1,
-    )
-    .is_none());
-
-    world
-        .characters
-        .get_mut(&caller_id)
-        .unwrap()
-        .flags
-        .insert(CharacterFlags::GOD);
-    assert_eq!(
-        apply_admin_character_command(
-            &mut world,
-            &mut runtime,
-            caller_id,
-            "/setskill Missing sword 3",
-            1,
-        )
-        .unwrap()
-        .messages,
-        vec!["Sorry, no one by the name Missing around."]
-    );
-    assert_eq!(
-        apply_admin_character_command(
-            &mut world,
-            &mut runtime,
-            caller_id,
-            "/setskill Target 43 3",
-            1,
-        )
-        .unwrap()
-        .messages,
-        vec!["Position out of bounds."]
-    );
-    assert_eq!(
-        apply_admin_character_command(
-            &mut world,
-            &mut runtime,
-            caller_id,
-            "/setskill Target sword 256",
-            1,
-        )
-        .unwrap()
-        .messages,
-        vec!["Value out of bounds."]
-    );
-}
-
-#[test]
-fn setlevel_is_god_only_and_requires_full_command() {
+pub(crate) fn setlevel_is_god_only_and_requires_full_command() {
     let mut world = World::default();
     let character_id = CharacterId(7);
     world.add_character(login_character(
@@ -4665,173 +2858,7 @@ fn setlevel_is_god_only_and_requires_full_command() {
 }
 
 #[test]
-fn noexp_and_nolevel_toggle_legacy_flags_and_feedback() {
-    let mut world = World::default();
-    let character_id = CharacterId(7);
-    world.add_character(login_character(
-        character_id,
-        &login_block("Tester"),
-        1,
-        10,
-        10,
-    ));
-    let mut runtime = ServerRuntime::default();
-
-    let noexp_on =
-        apply_admin_character_command(&mut world, &mut runtime, character_id, "/noexp", 1)
-            .expect("noexp should be recognized");
-    assert_eq!(noexp_on.messages, vec!["Turned NoExp mode on."]);
-    assert!(noexp_on.inventory_changed);
-    assert!(world
-        .characters
-        .get(&character_id)
-        .unwrap()
-        .flags
-        .contains(CharacterFlags::NOEXP));
-
-    let noexp_off =
-        apply_admin_character_command(&mut world, &mut runtime, character_id, "/noexp", 1)
-            .expect("noexp should toggle off");
-    assert_eq!(noexp_off.messages, vec!["Turned NoExp mode off."]);
-    assert!(!world
-        .characters
-        .get(&character_id)
-        .unwrap()
-        .flags
-        .contains(CharacterFlags::NOEXP));
-
-    let nolevel_on =
-        apply_admin_character_command(&mut world, &mut runtime, character_id, "/nolevel", 1)
-            .expect("nolevel should be recognized");
-    assert_eq!(
-        nolevel_on.messages,
-        vec!["NoLevel mode enabled. You will not level up until you disable this mode."]
-    );
-    assert!(nolevel_on.inventory_changed);
-    assert!(world
-        .characters
-        .get(&character_id)
-        .unwrap()
-        .flags
-        .contains(CharacterFlags::NOLEVEL));
-
-    let nolevel_off =
-        apply_admin_character_command(&mut world, &mut runtime, character_id, "/nolevel", 1)
-            .expect("nolevel should toggle off");
-    assert_eq!(
-        nolevel_off.messages,
-        vec!["NoLevel mode disabled. You will now gain levels normally."]
-    );
-    assert!(!world
-        .characters
-        .get(&character_id)
-        .unwrap()
-        .flags
-        .contains(CharacterFlags::NOLEVEL));
-
-    assert!(
-        apply_admin_character_command(&mut world, &mut runtime, character_id, "/noex", 1,)
-            .is_none()
-    );
-    assert!(
-        apply_admin_character_command(&mut world, &mut runtime, character_id, "/noleve", 1,)
-            .is_none()
-    );
-}
-
-#[test]
-fn noexp_and_nolevel_cannot_be_enabled_in_gatekeeper_room() {
-    let mut world = World::default();
-    let character_id = CharacterId(7);
-    let mut character = login_character(character_id, &login_block("Tester"), 1, 178, 196);
-    character.x = 178;
-    character.y = 196;
-    world.add_character(character);
-    let mut runtime = ServerRuntime::default();
-
-    let noexp = apply_admin_character_command(&mut world, &mut runtime, character_id, "/noexp", 3)
-        .expect("noexp should be recognized");
-    assert_eq!(
-        noexp.messages,
-        vec!["Cannot turn NoExp mode on while in Gatekeeper room."]
-    );
-    assert!(!noexp.inventory_changed);
-    assert!(!world
-        .characters
-        .get(&character_id)
-        .unwrap()
-        .flags
-        .contains(CharacterFlags::NOEXP));
-
-    let nolevel =
-        apply_admin_character_command(&mut world, &mut runtime, character_id, "/nolevel", 3)
-            .expect("nolevel should be recognized");
-    assert_eq!(
-        nolevel.messages,
-        vec!["Cannot turn NoLevel mode on while in Gatekeeper room."]
-    );
-    assert!(!nolevel.inventory_changed);
-    assert!(!world
-        .characters
-        .get(&character_id)
-        .unwrap()
-        .flags
-        .contains(CharacterFlags::NOLEVEL));
-
-    let character = world.characters.get_mut(&character_id).unwrap();
-    character
-        .flags
-        .insert(CharacterFlags::NOEXP | CharacterFlags::NOLEVEL);
-
-    let noexp_off =
-        apply_admin_character_command(&mut world, &mut runtime, character_id, "/noexp", 3)
-            .expect("enabled noexp can be disabled in gatekeeper room");
-    assert_eq!(noexp_off.messages, vec!["Turned NoExp mode off."]);
-    assert!(!world
-        .characters
-        .get(&character_id)
-        .unwrap()
-        .flags
-        .contains(CharacterFlags::NOEXP));
-
-    let nolevel_off =
-        apply_admin_character_command(&mut world, &mut runtime, character_id, "/nolevel", 3)
-            .expect("enabled nolevel can be disabled in gatekeeper room");
-    assert_eq!(
-        nolevel_off.messages,
-        vec!["NoLevel mode disabled. You will now gain levels normally."]
-    );
-    assert!(!world
-        .characters
-        .get(&character_id)
-        .unwrap()
-        .flags
-        .contains(CharacterFlags::NOLEVEL));
-}
-
-#[test]
-fn noexp_gatekeeper_room_guard_is_area_specific() {
-    let mut world = World::default();
-    let character_id = CharacterId(7);
-    let mut character = login_character(character_id, &login_block("Tester"), 1, 178, 196);
-    character.x = 178;
-    character.y = 196;
-    world.add_character(character);
-    let mut runtime = ServerRuntime::default();
-
-    let result = apply_admin_character_command(&mut world, &mut runtime, character_id, "/noexp", 1)
-        .expect("noexp outside area 3 should be recognized");
-    assert_eq!(result.messages, vec!["Turned NoExp mode on."]);
-    assert!(world
-        .characters
-        .get(&character_id)
-        .unwrap()
-        .flags
-        .contains(CharacterFlags::NOEXP));
-}
-
-#[test]
-fn join_chat_command_gates_staff_and_god_channels() {
+pub(crate) fn join_chat_command_gates_staff_and_god_channels() {
     let mut player = PlayerRuntime::connected(1, 0);
 
     let staff_denied =
@@ -4869,7 +2896,7 @@ fn join_chat_command_gates_staff_and_god_channels() {
 }
 
 #[test]
-fn weather_command_reports_god_debug_info() {
+pub(crate) fn weather_command_reports_god_debug_info() {
     let mut world = World::default();
     world.tick = ugaris_core::Tick(24);
     let character_id = CharacterId(7);
@@ -4915,7 +2942,7 @@ fn weather_command_reports_god_debug_info() {
 }
 
 #[test]
-fn weather_admin_commands_mutate_runtime_state_with_legacy_feedback() {
+pub(crate) fn weather_admin_commands_mutate_runtime_state_with_legacy_feedback() {
     let mut world = World::default();
     world.tick = ugaris_core::Tick(48);
     let character_id = CharacterId(7);
@@ -4963,7 +2990,7 @@ fn weather_admin_commands_mutate_runtime_state_with_legacy_feedback() {
 }
 
 #[test]
-fn weather_admin_commands_preserve_legacy_gates_and_validation() {
+pub(crate) fn weather_admin_commands_preserve_legacy_gates_and_validation() {
     let mut world = World::default();
     let character_id = CharacterId(7);
     world.add_character(login_character(
@@ -5023,7 +3050,7 @@ fn weather_admin_commands_preserve_legacy_gates_and_validation() {
 }
 
 #[test]
-fn tell_command_forwards_to_spying_god_even_when_recipient_blocks() {
+pub(crate) fn tell_command_forwards_to_spying_god_even_when_recipient_blocks() {
     let sender_id = CharacterId(7);
     let target_id = CharacterId(8);
     let spy_id = CharacterId(9);
@@ -5066,7 +3093,7 @@ fn tell_command_forwards_to_spying_god_even_when_recipient_blocks() {
 }
 
 #[test]
-fn admin_subhelp_commands_match_legacy_privilege_gates_and_text() {
+pub(crate) fn admin_subhelp_commands_match_legacy_privilege_gates_and_text() {
     assert!(apply_help_command("#achelp", CharacterFlags::empty(), 1).is_none());
     let ac = apply_help_command("#achelp", CharacterFlags::STAFF, 1)
         .expect("staff anti-cheat help should be recognized");
@@ -5118,7 +3145,7 @@ fn admin_subhelp_commands_match_legacy_privilege_gates_and_text() {
         .contains(&"/penthelp - Show this help".to_string()));
 }
 
-fn goto_test_world() -> World {
+pub(crate) fn goto_test_world() -> World {
     let mut world = World::default();
     world.map = ugaris_core::map::MapGrid::new(300, 300);
     // Past the `/jump` busy window (`ticker - ch[cn].regen_ticker < TICKS *
@@ -5129,7 +3156,7 @@ fn goto_test_world() -> World {
 }
 
 #[test]
-fn goto_command_requires_lqmaster_permission() {
+pub(crate) fn goto_command_requires_lqmaster_permission() {
     let mut world = goto_test_world();
     let character_id = CharacterId(1);
     assert!(world.spawn_character(
@@ -5166,7 +3193,7 @@ fn goto_command_requires_lqmaster_permission() {
 }
 
 #[test]
-fn goto_command_numeric_coordinates_teleport_same_area() {
+pub(crate) fn goto_command_numeric_coordinates_teleport_same_area() {
     let mut world = goto_test_world();
     let character_id = CharacterId(1);
     let mut character = login_character(character_id, &login_block("Ralph"), 1, 10, 10);
@@ -5184,7 +3211,7 @@ fn goto_command_numeric_coordinates_teleport_same_area() {
 }
 
 #[test]
-fn goto_command_named_location_normalizes_to_same_area() {
+pub(crate) fn goto_command_named_location_normalizes_to_same_area() {
     let mut world = goto_test_world();
     let character_id = CharacterId(1);
     let mut character = login_character(character_id, &login_block("Ralph"), 1, 10, 10);
@@ -5204,7 +3231,7 @@ fn goto_command_named_location_normalizes_to_same_area() {
 }
 
 #[test]
-fn goto_command_named_location_cross_area_requests_transfer() {
+pub(crate) fn goto_command_named_location_cross_area_requests_transfer() {
     let mut world = goto_test_world();
     let character_id = CharacterId(1);
     let mut character = login_character(character_id, &login_block("Ralph"), 1, 10, 10);
@@ -5227,7 +3254,7 @@ fn goto_command_named_location_cross_area_requests_transfer() {
 }
 
 #[test]
-fn goto_command_non_god_lqmaster_ignores_cross_area_and_uses_local_coords() {
+pub(crate) fn goto_command_non_god_lqmaster_ignores_cross_area_and_uses_local_coords() {
     let mut world = goto_test_world();
     let character_id = CharacterId(1);
     let mut character = login_character(character_id, &login_block("Ralph"), 1, 10, 10);
@@ -5248,7 +3275,7 @@ fn goto_command_non_god_lqmaster_ignores_cross_area_and_uses_local_coords() {
 }
 
 #[test]
-fn goto_command_looks_up_online_character_by_name() {
+pub(crate) fn goto_command_looks_up_online_character_by_name() {
     let mut world = goto_test_world();
     let caller_id = CharacterId(1);
     let mut caller = login_character(caller_id, &login_block("Ralph"), 1, 10, 10);
@@ -5276,7 +3303,7 @@ fn goto_command_looks_up_online_character_by_name() {
 }
 
 #[test]
-fn goto_command_direction_shorthand_offsets_from_caller_position() {
+pub(crate) fn goto_command_direction_shorthand_offsets_from_caller_position() {
     let mut world = goto_test_world();
     let character_id = CharacterId(1);
     let mut character = login_character(character_id, &login_block("Ralph"), 1, 100, 100);
@@ -5293,7 +3320,7 @@ fn goto_command_direction_shorthand_offsets_from_caller_position() {
 }
 
 #[test]
-fn goto_command_mirror_argument_always_forces_cross_area_handoff() {
+pub(crate) fn goto_command_mirror_argument_always_forces_cross_area_handoff() {
     let mut world = goto_test_world();
     let character_id = CharacterId(1);
     let mut character = login_character(character_id, &login_block("Ralph"), 1, 10, 10);
@@ -5320,7 +3347,7 @@ fn goto_command_mirror_argument_always_forces_cross_area_handoff() {
 }
 
 #[test]
-fn jump_command_requires_staff_or_god() {
+pub(crate) fn jump_command_requires_staff_or_god() {
     let mut world = goto_test_world();
     let character_id = CharacterId(1);
     assert!(world.spawn_character(
@@ -5337,7 +3364,7 @@ fn jump_command_requires_staff_or_god() {
 }
 
 #[test]
-fn jump_command_refuses_while_busy() {
+pub(crate) fn jump_command_refuses_while_busy() {
     let mut world = goto_test_world();
     let character_id = CharacterId(1);
     let mut character = login_character(character_id, &login_block("Ralph"), 1, 10, 10);
@@ -5355,7 +3382,7 @@ fn jump_command_refuses_while_busy() {
 }
 
 #[test]
-fn jump_command_moves_staff_to_gotolist_entry_in_same_area() {
+pub(crate) fn jump_command_moves_staff_to_gotolist_entry_in_same_area() {
     let mut world = goto_test_world();
     let character_id = CharacterId(1);
     let mut character = login_character(character_id, &login_block("Ralph"), 1, 10, 10);
@@ -5372,7 +3399,7 @@ fn jump_command_moves_staff_to_gotolist_entry_in_same_area() {
 }
 
 #[test]
-fn jump_command_cross_area_is_not_restricted_to_god() {
+pub(crate) fn jump_command_cross_area_is_not_restricted_to_god() {
     let mut world = goto_test_world();
     let character_id = CharacterId(1);
     let mut character = login_character(character_id, &login_block("Ralph"), 1, 10, 10);
@@ -5395,7 +3422,7 @@ fn jump_command_cross_area_is_not_restricted_to_god() {
 }
 
 #[test]
-fn jump_command_unknown_location_reports_hu() {
+pub(crate) fn jump_command_unknown_location_reports_hu() {
     let mut world = goto_test_world();
     let character_id = CharacterId(1);
     let mut character = login_character(character_id, &login_block("Ralph"), 1, 10, 10);
@@ -5410,7 +3437,7 @@ fn jump_command_unknown_location_reports_hu() {
 }
 
 #[test]
-fn gotolist_command_is_god_only_and_lists_every_shortcut() {
+pub(crate) fn gotolist_command_is_god_only_and_lists_every_shortcut() {
     let mut world = goto_test_world();
     let character_id = CharacterId(1);
     assert!(world.spawn_character(
@@ -5445,7 +3472,7 @@ fn gotolist_command_is_god_only_and_lists_every_shortcut() {
 }
 
 #[test]
-fn gotosearch_command_is_case_sensitive_like_c_strstr() {
+pub(crate) fn gotosearch_command_is_case_sensitive_like_c_strstr() {
     let mut world = goto_test_world();
     let character_id = CharacterId(1);
     let mut character = login_character(character_id, &login_block("Ralph"), 1, 10, 10);
@@ -5488,7 +3515,7 @@ fn gotosearch_command_is_case_sensitive_like_c_strstr() {
 }
 
 #[test]
-fn summon_command_requires_god() {
+pub(crate) fn summon_command_requires_god() {
     let mut world = goto_test_world();
     let caller_id = CharacterId(1);
     assert!(world.spawn_character(
@@ -5512,7 +3539,7 @@ fn summon_command_requires_god() {
 }
 
 #[test]
-fn summon_command_teleports_named_character_next_to_caller() {
+pub(crate) fn summon_command_teleports_named_character_next_to_caller() {
     let mut world = goto_test_world();
     let caller_id = CharacterId(1);
     let mut caller = login_character(caller_id, &login_block("Ralph"), 1, 10, 10);
@@ -5535,7 +3562,7 @@ fn summon_command_teleports_named_character_next_to_caller() {
 }
 
 #[test]
-fn summon_command_unknown_name_is_a_silent_no_op() {
+pub(crate) fn summon_command_unknown_name_is_a_silent_no_op() {
     let mut world = goto_test_world();
     let caller_id = CharacterId(1);
     let mut caller = login_character(caller_id, &login_block("Ralph"), 1, 10, 10);
@@ -5550,7 +3577,7 @@ fn summon_command_unknown_name_is_a_silent_no_op() {
 }
 
 #[test]
-fn kick_command_requires_staff_or_god() {
+pub(crate) fn kick_command_requires_staff_or_god() {
     let mut world = goto_test_world();
     let caller_id = CharacterId(1);
     assert!(world.spawn_character(
@@ -5574,7 +3601,7 @@ fn kick_command_requires_staff_or_god() {
 }
 
 #[test]
-fn kick_command_signals_target_teardown_for_staff() {
+pub(crate) fn kick_command_signals_target_teardown_for_staff() {
     let mut world = goto_test_world();
     let caller_id = CharacterId(1);
     let mut caller = login_character(caller_id, &login_block("Ralph"), 1, 10, 10);
@@ -5600,7 +3627,7 @@ fn kick_command_signals_target_teardown_for_staff() {
 }
 
 #[test]
-fn kick_command_ignores_npcs_by_name() {
+pub(crate) fn kick_command_ignores_npcs_by_name() {
     let mut world = goto_test_world();
     let caller_id = CharacterId(1);
     let mut caller = login_character(caller_id, &login_block("Ralph"), 1, 10, 10);
@@ -5624,7 +3651,7 @@ fn kick_command_ignores_npcs_by_name() {
 }
 
 #[test]
-fn kick_command_unknown_name_reports_not_found() {
+pub(crate) fn kick_command_unknown_name_reports_not_found() {
     let mut world = goto_test_world();
     let caller_id = CharacterId(1);
     let mut caller = login_character(caller_id, &login_block("Ralph"), 1, 10, 10);
@@ -5642,7 +3669,7 @@ fn kick_command_unknown_name_reports_not_found() {
 }
 
 #[test]
-fn summonall_command_requires_god() {
+pub(crate) fn summonall_command_requires_god() {
     let mut world = goto_test_world();
     let caller_id = CharacterId(1);
     assert!(world.spawn_character(
@@ -5666,7 +3693,7 @@ fn summonall_command_requires_god() {
 }
 
 #[test]
-fn summonall_command_teleports_every_player_next_to_caller() {
+pub(crate) fn summonall_command_teleports_every_player_next_to_caller() {
     let mut world = goto_test_world();
     let caller_id = CharacterId(1);
     let mut caller = login_character(caller_id, &login_block("Ralph"), 1, 10, 10);
@@ -5700,7 +3727,7 @@ fn summonall_command_teleports_every_player_next_to_caller() {
 }
 
 #[test]
-fn summonall_command_does_not_teleport_npcs() {
+pub(crate) fn summonall_command_does_not_teleport_npcs() {
     let mut world = goto_test_world();
     let caller_id = CharacterId(1);
     let mut caller = login_character(caller_id, &login_block("Ralph"), 1, 10, 10);
@@ -5721,7 +3748,7 @@ fn summonall_command_does_not_teleport_npcs() {
 }
 
 #[test]
-fn office_command_requires_god() {
+pub(crate) fn office_command_requires_god() {
     let mut world = goto_test_world();
     let caller_id = CharacterId(1);
     assert!(world.spawn_character(
@@ -5738,7 +3765,7 @@ fn office_command_requires_god() {
 }
 
 #[test]
-fn office_command_teleports_within_aston() {
+pub(crate) fn office_command_teleports_within_aston() {
     let mut world = goto_test_world();
     let caller_id = CharacterId(1);
     let mut caller = login_character(caller_id, &login_block("Ralph"), 3, 10, 10);
@@ -5754,7 +3781,7 @@ fn office_command_teleports_within_aston() {
 }
 
 #[test]
-fn office_command_from_another_area_requests_cross_area_transfer() {
+pub(crate) fn office_command_from_another_area_requests_cross_area_transfer() {
     let mut world = goto_test_world();
     let caller_id = CharacterId(1);
     let mut caller = login_character(caller_id, &login_block("Ralph"), 1, 10, 10);
@@ -5777,7 +3804,7 @@ fn office_command_from_another_area_requests_cross_area_transfer() {
 }
 
 #[test]
-fn office_command_abbreviation_is_not_recognized() {
+pub(crate) fn office_command_abbreviation_is_not_recognized() {
     // C `cmdcmp(ptr, "office", 6)` requires the full six-letter word;
     // there is no shorter valid abbreviation.
     let mut world = goto_test_world();
@@ -5802,7 +3829,7 @@ fn office_command_abbreviation_is_not_recognized() {
 // immediately.
 
 #[test]
-fn jail_command_requires_staff_or_god() {
+pub(crate) fn jail_command_requires_staff_or_god() {
     let mut world = goto_test_world();
     let caller_id = CharacterId(1);
     assert!(world.spawn_character(
@@ -5820,46 +3847,7 @@ fn jail_command_requires_staff_or_god() {
 }
 
 #[test]
-fn jail_command_queues_a_lookup_for_a_valid_name() {
-    let mut world = goto_test_world();
-    let caller_id = CharacterId(1);
-    let mut caller = login_character(caller_id, &login_block("Ralph"), 3, 10, 10);
-    caller.flags.insert(CharacterFlags::STAFF);
-    assert!(world.spawn_character(caller, 10, 10));
-    let mut runtime = ServerRuntime::default();
-
-    let result =
-        apply_admin_character_command(&mut world, &mut runtime, caller_id, "/jail Baddie", 3)
-            .expect("staff jail command should be recognized");
-    assert!(result.messages.is_empty());
-    let queued = world.drain_pending_jail_lookups();
-    assert_eq!(queued.len(), 1);
-    assert_eq!(queued[0].caller_id, caller_id);
-    assert_eq!(queued[0].target_name, "Baddie");
-    assert_eq!(queued[0].action, ugaris_core::world::JailAction::Jail);
-}
-
-#[test]
-fn unjail_command_queues_a_lookup_with_the_unjail_action() {
-    let mut world = goto_test_world();
-    let caller_id = CharacterId(1);
-    let mut caller = login_character(caller_id, &login_block("Ralph"), 3, 10, 10);
-    caller.flags.insert(CharacterFlags::GOD);
-    assert!(world.spawn_character(caller, 10, 10));
-    let mut runtime = ServerRuntime::default();
-
-    let result =
-        apply_admin_character_command(&mut world, &mut runtime, caller_id, "/unjail Baddie", 3)
-            .expect("god unjail command should be recognized");
-    assert!(result.messages.is_empty());
-    let queued = world.drain_pending_jail_lookups();
-    assert_eq!(queued.len(), 1);
-    assert_eq!(queued[0].target_name, "Baddie");
-    assert_eq!(queued[0].action, ugaris_core::world::JailAction::Unjail);
-}
-
-#[test]
-fn jail_command_with_an_invalid_name_is_rejected_immediately() {
+pub(crate) fn jail_command_with_an_invalid_name_is_rejected_immediately() {
     let mut world = goto_test_world();
     let caller_id = CharacterId(1);
     let mut caller = login_character(caller_id, &login_block("Ralph"), 3, 10, 10);
@@ -5879,7 +3867,7 @@ fn jail_command_with_an_invalid_name_is_rejected_immediately() {
 }
 
 #[test]
-fn jail_command_abbreviation_is_not_recognized() {
+pub(crate) fn jail_command_abbreviation_is_not_recognized() {
     // C `cmdcmp(ptr, "jail", 4)` requires the full four-letter word.
     let mut world = goto_test_world();
     let caller_id = CharacterId(1);
@@ -5895,7 +3883,7 @@ fn jail_command_abbreviation_is_not_recognized() {
 }
 
 #[test]
-fn unjail_command_abbreviation_is_not_recognized() {
+pub(crate) fn unjail_command_abbreviation_is_not_recognized() {
     // C `cmdcmp(ptr, "unjail", 6)` requires the full six-letter word.
     let mut world = goto_test_world();
     let caller_id = CharacterId(1);
@@ -5914,7 +3902,7 @@ fn unjail_command_abbreviation_is_not_recognized() {
 // `command.c:2006-2019`), `CF_GOD`-gated, full-word only.
 
 #[test]
-fn rmdeath_command_requires_god() {
+pub(crate) fn rmdeath_command_requires_god() {
     let mut world = goto_test_world();
     let caller_id = CharacterId(1);
     let mut caller = login_character(caller_id, &login_block("Ralph"), 3, 10, 10);
@@ -5934,26 +3922,7 @@ fn rmdeath_command_requires_god() {
 }
 
 #[test]
-fn rmdeath_command_queues_a_lookup_for_a_valid_name() {
-    let mut world = goto_test_world();
-    let caller_id = CharacterId(1);
-    let mut caller = login_character(caller_id, &login_block("Ralph"), 3, 10, 10);
-    caller.flags.insert(CharacterFlags::GOD);
-    assert!(world.spawn_character(caller, 10, 10));
-    let mut runtime = ServerRuntime::default();
-
-    let result =
-        apply_admin_character_command(&mut world, &mut runtime, caller_id, "/rmdeath Baddie", 3)
-            .expect("god rmdeath command should be recognized");
-    assert!(result.messages.is_empty());
-    let queued = world.drain_pending_rmdeath_lookups();
-    assert_eq!(queued.len(), 1);
-    assert_eq!(queued[0].caller_id, caller_id);
-    assert_eq!(queued[0].target_name, "Baddie");
-}
-
-#[test]
-fn rmdeath_command_with_an_invalid_name_is_rejected_immediately() {
+pub(crate) fn rmdeath_command_with_an_invalid_name_is_rejected_immediately() {
     let mut world = goto_test_world();
     let caller_id = CharacterId(1);
     let mut caller = login_character(caller_id, &login_block("Ralph"), 3, 10, 10);
@@ -5974,7 +3943,7 @@ fn rmdeath_command_with_an_invalid_name_is_rejected_immediately() {
 }
 
 #[test]
-fn rmdeath_command_abbreviation_is_not_recognized() {
+pub(crate) fn rmdeath_command_abbreviation_is_not_recognized() {
     // C `cmdcmp(ptr, "rmdeath", 7)` requires the full seven-letter word.
     let mut world = goto_test_world();
     let caller_id = CharacterId(1);
@@ -5997,7 +3966,7 @@ fn rmdeath_command_abbreviation_is_not_recognized() {
 // `command.c:2657-2676`), `CF_GOD`-gated, full-word only.
 
 #[test]
-fn rename_command_requires_god() {
+pub(crate) fn rename_command_requires_god() {
     let mut world = goto_test_world();
     let caller_id = CharacterId(1);
     let mut caller = login_character(caller_id, &login_block("Ralph"), 3, 10, 10);
@@ -6017,7 +3986,7 @@ fn rename_command_requires_god() {
 }
 
 #[test]
-fn rename_command_queues_both_names() {
+pub(crate) fn rename_command_queues_both_names() {
     let mut world = goto_test_world();
     let caller_id = CharacterId(1);
     let mut caller = login_character(caller_id, &login_block("Ralph"), 3, 10, 10);
@@ -6042,7 +4011,7 @@ fn rename_command_queues_both_names() {
 }
 
 #[test]
-fn rename_command_with_an_illegal_to_name_is_rejected_immediately() {
+pub(crate) fn rename_command_with_an_illegal_to_name_is_rejected_immediately() {
     let mut world = goto_test_world();
     let caller_id = CharacterId(1);
     let mut caller = login_character(caller_id, &login_block("Ralph"), 3, 10, 10);
@@ -6062,7 +4031,7 @@ fn rename_command_with_an_illegal_to_name_is_rejected_immediately() {
 }
 
 #[test]
-fn rename_command_abbreviation_is_not_recognized() {
+pub(crate) fn rename_command_abbreviation_is_not_recognized() {
     // C `cmdcmp(ptr, "rename", 6)` requires the full six-letter word.
     let mut world = goto_test_world();
     let caller_id = CharacterId(1);
@@ -6086,7 +4055,7 @@ fn rename_command_abbreviation_is_not_recognized() {
 // both `CF_GOD`-gated, full-word only.
 
 #[test]
-fn lockname_command_requires_god() {
+pub(crate) fn lockname_command_requires_god() {
     let mut world = goto_test_world();
     let caller_id = CharacterId(1);
     let mut caller = login_character(caller_id, &login_block("Ralph"), 3, 10, 10);
@@ -6106,7 +4075,7 @@ fn lockname_command_requires_god() {
 }
 
 #[test]
-fn lockname_command_queues_the_lowercased_name() {
+pub(crate) fn lockname_command_queues_the_lowercased_name() {
     let mut world = goto_test_world();
     let caller_id = CharacterId(1);
     let mut caller = login_character(caller_id, &login_block("Ralph"), 3, 10, 10);
@@ -6126,7 +4095,7 @@ fn lockname_command_queues_the_lowercased_name() {
 }
 
 #[test]
-fn unlockname_command_queues_the_lowercased_name() {
+pub(crate) fn unlockname_command_queues_the_lowercased_name() {
     let mut world = goto_test_world();
     let caller_id = CharacterId(1);
     let mut caller = login_character(caller_id, &login_block("Ralph"), 3, 10, 10);
@@ -6145,7 +4114,7 @@ fn unlockname_command_queues_the_lowercased_name() {
 }
 
 #[test]
-fn lockname_command_with_a_too_short_name_is_rejected_immediately() {
+pub(crate) fn lockname_command_with_a_too_short_name_is_rejected_immediately() {
     let mut world = goto_test_world();
     let caller_id = CharacterId(1);
     let mut caller = login_character(caller_id, &login_block("Ralph"), 3, 10, 10);
@@ -6165,7 +4134,7 @@ fn lockname_command_with_a_too_short_name_is_rejected_immediately() {
 }
 
 #[test]
-fn lockname_command_abbreviation_is_not_recognized() {
+pub(crate) fn lockname_command_abbreviation_is_not_recognized() {
     // C `cmdcmp(ptr, "lockname", 8)` requires the full eight-letter word.
     let mut world = goto_test_world();
     let caller_id = CharacterId(1);
@@ -6185,7 +4154,7 @@ fn lockname_command_abbreviation_is_not_recognized() {
 }
 
 #[test]
-fn unlockname_command_abbreviation_is_not_recognized() {
+pub(crate) fn unlockname_command_abbreviation_is_not_recognized() {
     // C `cmdcmp(ptr, "unlockname", 10)` requires the full ten-letter word.
     let mut world = goto_test_world();
     let caller_id = CharacterId(1);
@@ -6209,7 +4178,7 @@ fn unlockname_command_abbreviation_is_not_recognized() {
 // (`command.c:9257-9337`).
 
 #[test]
-fn god_command_requires_god_permission() {
+pub(crate) fn god_command_requires_god_permission() {
     let mut world = goto_test_world();
     let caller_id = CharacterId(1);
     assert!(world.spawn_character(
@@ -6226,7 +4195,7 @@ fn god_command_requires_god_permission() {
 }
 
 #[test]
-fn god_command_toggles_a_named_online_character_and_names_the_flag() {
+pub(crate) fn god_command_toggles_a_named_online_character_and_names_the_flag() {
     let mut world = goto_test_world();
     let caller_id = CharacterId(1);
     let mut caller = login_character(caller_id, &login_block("Caller"), 1, 10, 10);
@@ -6259,7 +4228,7 @@ fn god_command_toggles_a_named_online_character_and_names_the_flag() {
 }
 
 #[test]
-fn god_command_with_invalid_shape_name_reports_no_player_immediately() {
+pub(crate) fn god_command_with_invalid_shape_name_reports_no_player_immediately() {
     let mut world = goto_test_world();
     let caller_id = CharacterId(1);
     let mut caller = login_character(caller_id, &login_block("Caller"), 1, 10, 10);
@@ -6279,7 +4248,7 @@ fn god_command_with_invalid_shape_name_reports_no_player_immediately() {
 }
 
 #[test]
-fn god_command_with_validly_shaped_unmatched_name_is_queued_with_no_immediate_message() {
+pub(crate) fn god_command_with_validly_shaped_unmatched_name_is_queued_with_no_immediate_message() {
     let mut world = goto_test_world();
     let caller_id = CharacterId(1);
     let mut caller = login_character(caller_id, &login_block("Caller"), 1, 10, 10);
@@ -6299,7 +4268,7 @@ fn god_command_with_validly_shaped_unmatched_name_is_queued_with_no_immediate_me
 }
 
 #[test]
-fn setsir_command_toggles_won_and_reports_sir_lady_flag_name() {
+pub(crate) fn setsir_command_toggles_won_and_reports_sir_lady_flag_name() {
     let mut world = goto_test_world();
     let caller_id = CharacterId(1);
     let mut caller = login_character(caller_id, &login_block("Caller"), 1, 10, 10);
@@ -6326,7 +4295,7 @@ fn setsir_command_toggles_won_and_reports_sir_lady_flag_name() {
 }
 
 #[test]
-fn staff_emaster_devel_hardcore_qmaster_toggle_their_own_flags() {
+pub(crate) fn staff_emaster_devel_hardcore_qmaster_toggle_their_own_flags() {
     let mut world = goto_test_world();
     let caller_id = CharacterId(1);
     let mut caller = login_character(caller_id, &login_block("Caller"), 1, 10, 10);
@@ -6367,7 +4336,7 @@ fn staff_emaster_devel_hardcore_qmaster_toggle_their_own_flags() {
 }
 
 #[test]
-fn god_command_abbreviation_is_not_recognized() {
+pub(crate) fn god_command_abbreviation_is_not_recognized() {
     // C `cmdcmp(ptr, "god", 3)` requires the full three-letter word.
     let mut world = goto_test_world();
     let caller_id = CharacterId(1);
@@ -6383,7 +4352,7 @@ fn god_command_abbreviation_is_not_recognized() {
 }
 
 #[test]
-fn god_global_command_dumps_every_setting_like_c() {
+pub(crate) fn god_global_command_dumps_every_setting_like_c() {
     // C `/global` (`command.c:8226-8322`), `cmdcmp(ptr, "global", 2)`,
     // `CF_GOD`-gated.
     let mut world = World::default();
@@ -6454,7 +4423,7 @@ fn god_global_command_dumps_every_setting_like_c() {
 }
 
 #[test]
-fn showflags_requires_god_and_full_word() {
+pub(crate) fn showflags_requires_god_and_full_word() {
     // C `cmdcmp(ptr, "showflags", 9)`: `minlen == "showflags".len()`, so
     // no abbreviation is accepted.
     let mut world = World::default();
@@ -6492,7 +4461,7 @@ fn showflags_requires_god_and_full_word() {
 }
 
 #[test]
-fn showflags_reports_no_one_by_that_name_for_an_unloaded_character() {
+pub(crate) fn showflags_reports_no_one_by_that_name_for_an_unloaded_character() {
     let mut world = World::default();
     let god_id = CharacterId(1);
     let mut god = login_character(god_id, &login_block("Godmode"), 1, 10, 10);
@@ -6510,7 +4479,7 @@ fn showflags_reports_no_one_by_that_name_for_an_unloaded_character() {
 }
 
 #[test]
-fn showflags_lists_every_set_flag_in_legacy_declaration_order() {
+pub(crate) fn showflags_lists_every_set_flag_in_legacy_declaration_order() {
     let mut world = World::default();
     let god_id = CharacterId(1);
     let mut god = login_character(god_id, &login_block("Godmode"), 1, 10, 10);
@@ -6549,7 +4518,7 @@ fn showflags_lists_every_set_flag_in_legacy_declaration_order() {
 }
 
 #[test]
-fn toggleflag_requires_god_and_full_word() {
+pub(crate) fn toggleflag_requires_god_and_full_word() {
     let mut world = World::default();
     let caller_id = CharacterId(1);
     let caller = login_character(caller_id, &login_block("Caller"), 1, 10, 10);
@@ -6575,7 +4544,7 @@ fn toggleflag_requires_god_and_full_word() {
 }
 
 #[test]
-fn toggleflag_reports_no_one_by_that_name_for_an_unloaded_character() {
+pub(crate) fn toggleflag_reports_no_one_by_that_name_for_an_unloaded_character() {
     let mut world = World::default();
     let god_id = CharacterId(1);
     let mut god = login_character(god_id, &login_block("Godmode"), 1, 10, 10);
@@ -6598,7 +4567,7 @@ fn toggleflag_reports_no_one_by_that_name_for_an_unloaded_character() {
 }
 
 #[test]
-fn toggleflag_reports_unknown_flag_and_leaves_flags_untouched() {
+pub(crate) fn toggleflag_reports_unknown_flag_and_leaves_flags_untouched() {
     let mut world = World::default();
     let god_id = CharacterId(1);
     let mut god = login_character(god_id, &login_block("Godmode"), 1, 10, 10);
@@ -6634,7 +4603,7 @@ fn toggleflag_reports_unknown_flag_and_leaves_flags_untouched() {
 }
 
 #[test]
-fn toggleflag_toggles_named_flag_on_then_off_case_insensitively() {
+pub(crate) fn toggleflag_toggles_named_flag_on_then_off_case_insensitively() {
     let mut world = World::default();
     let god_id = CharacterId(1);
     let mut god = login_character(god_id, &login_block("Godmode"), 1, 10, 10);
@@ -6683,7 +4652,7 @@ fn toggleflag_toggles_named_flag_on_then_off_case_insensitively() {
 /// `setup_god_and_target_with_military_ppd`, since `/setrd`/`/clearrd`/
 /// `/solverd` resend the quest log to the ACTING character's own session
 /// (`sendquestlog(cn, ch[cn].player)` in C - see the port's doc comment).
-fn setup_god_and_target_with_shrine_ppd(
+pub(crate) fn setup_god_and_target_with_shrine_ppd(
     world: &mut World,
     runtime: &mut ServerRuntime,
 ) -> (CharacterId, CharacterId) {
@@ -6709,7 +4678,7 @@ fn setup_god_and_target_with_shrine_ppd(
 }
 
 #[test]
-fn god_setrd_command_sets_continuity_on_self_and_resends_questlog_to_caller() {
+pub(crate) fn god_setrd_command_sets_continuity_on_self_and_resends_questlog_to_caller() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, _target_id) = setup_god_and_target_with_shrine_ppd(&mut world, &mut runtime);
@@ -6740,7 +4709,7 @@ fn god_setrd_command_sets_continuity_on_self_and_resends_questlog_to_caller() {
 }
 
 #[test]
-fn god_setrd_command_sets_continuity_on_named_target() {
+pub(crate) fn god_setrd_command_sets_continuity_on_named_target() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, target_id) = setup_god_and_target_with_shrine_ppd(&mut world, &mut runtime);
@@ -6770,7 +4739,7 @@ fn god_setrd_command_sets_continuity_on_named_target() {
 }
 
 #[test]
-fn setrd_rejects_rd_number_out_of_10_to_99_range() {
+pub(crate) fn setrd_rejects_rd_number_out_of_10_to_99_range() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, _target_id) = setup_god_and_target_with_shrine_ppd(&mut world, &mut runtime);
@@ -6786,7 +4755,7 @@ fn setrd_rejects_rd_number_out_of_10_to_99_range() {
 }
 
 #[test]
-fn setrd_reports_unknown_name() {
+pub(crate) fn setrd_reports_unknown_name() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, _target_id) = setup_god_and_target_with_shrine_ppd(&mut world, &mut runtime);
@@ -6801,7 +4770,7 @@ fn setrd_reports_unknown_name() {
 }
 
 #[test]
-fn setrd_reports_failed_player_data_when_target_has_no_live_session() {
+pub(crate) fn setrd_reports_failed_player_data_when_target_has_no_live_session() {
     let mut world = World::default();
     let god_id = CharacterId(7);
     let mut god = login_character(god_id, &login_block("Godmode"), 1, 10, 10);
@@ -6827,7 +4796,7 @@ fn setrd_reports_failed_player_data_when_target_has_no_live_session() {
 }
 
 #[test]
-fn setrd_is_god_only() {
+pub(crate) fn setrd_is_god_only() {
     let mut world = World::default();
     let character_id = CharacterId(7);
     world.add_character(login_character(
@@ -6846,7 +4815,7 @@ fn setrd_is_god_only() {
 }
 
 #[test]
-fn god_clearrd_command_clears_all_ten_shrines_for_the_rd_level() {
+pub(crate) fn god_clearrd_command_clears_all_ten_shrines_for_the_rd_level() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, target_id) = setup_god_and_target_with_shrine_ppd(&mut world, &mut runtime);
@@ -6877,7 +4846,7 @@ fn god_clearrd_command_clears_all_ten_shrines_for_the_rd_level() {
 }
 
 #[test]
-fn god_solverd_command_marks_all_but_the_continuity_shrine_used() {
+pub(crate) fn god_solverd_command_marks_all_but_the_continuity_shrine_used() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, target_id) = setup_god_and_target_with_shrine_ppd(&mut world, &mut runtime);
@@ -6900,7 +4869,7 @@ fn god_solverd_command_marks_all_but_the_continuity_shrine_used() {
 }
 
 #[test]
-fn god_changetunnel_command_sets_named_target_clevel_and_notifies_them() {
+pub(crate) fn god_changetunnel_command_sets_named_target_clevel_and_notifies_them() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, target_id) = setup_god_and_target_with_shrine_ppd(&mut world, &mut runtime);
@@ -6939,7 +4908,7 @@ fn god_changetunnel_command_sets_named_target_clevel_and_notifies_them() {
 }
 
 #[test]
-fn changetunnel_rejects_out_of_range_level_and_unknown_name() {
+pub(crate) fn changetunnel_rejects_out_of_range_level_and_unknown_name() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, _target_id) = setup_god_and_target_with_shrine_ppd(&mut world, &mut runtime);
@@ -6968,7 +4937,7 @@ fn changetunnel_rejects_out_of_range_level_and_unknown_name() {
 }
 
 #[test]
-fn changetunnel_is_god_only() {
+pub(crate) fn changetunnel_is_god_only() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (_god_id, target_id) = setup_god_and_target_with_shrine_ppd(&mut world, &mut runtime);
@@ -6984,7 +4953,7 @@ fn changetunnel_is_god_only() {
 }
 
 #[test]
-fn god_settunnel_command_sets_completed_amount_for_level() {
+pub(crate) fn god_settunnel_command_sets_completed_amount_for_level() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, target_id) = setup_god_and_target_with_shrine_ppd(&mut world, &mut runtime);
@@ -7018,7 +4987,7 @@ fn god_settunnel_command_sets_completed_amount_for_level() {
 }
 
 #[test]
-fn god_cleartunnel_command_clears_completed_amount_for_level() {
+pub(crate) fn god_cleartunnel_command_clears_completed_amount_for_level() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, target_id) = setup_god_and_target_with_shrine_ppd(&mut world, &mut runtime);
@@ -7056,7 +5025,7 @@ fn god_cleartunnel_command_clears_completed_amount_for_level() {
 }
 
 #[test]
-fn changetunnel_command_on_self_sends_no_other_message() {
+pub(crate) fn changetunnel_command_on_self_sends_no_other_message() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, _target_id) = setup_god_and_target_with_shrine_ppd(&mut world, &mut runtime);
@@ -7074,7 +5043,7 @@ fn changetunnel_command_on_self_sends_no_other_message() {
 }
 
 #[test]
-fn god_solvetunnel_command_reports_reward_kind_without_mutating_state() {
+pub(crate) fn god_solvetunnel_command_reports_reward_kind_without_mutating_state() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, _target_id) = setup_god_and_target_with_shrine_ppd(&mut world, &mut runtime);
@@ -7103,7 +5072,7 @@ fn god_solvetunnel_command_reports_reward_kind_without_mutating_state() {
 }
 
 #[test]
-fn solvetunnel_is_god_only() {
+pub(crate) fn solvetunnel_is_god_only() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (_god_id, target_id) = setup_god_and_target_with_shrine_ppd(&mut world, &mut runtime);
@@ -7118,7 +5087,7 @@ fn solvetunnel_is_god_only() {
     .is_none());
 }
 
-fn setup_god_and_online_target(
+pub(crate) fn setup_god_and_online_target(
     world: &mut World,
     runtime: &mut ServerRuntime,
 ) -> (CharacterId, CharacterId) {
@@ -7146,7 +5115,7 @@ fn setup_god_and_online_target(
 // debug`).
 
 #[test]
-fn pent_debug_commands_are_god_only() {
+pub(crate) fn pent_debug_commands_are_god_only() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (_god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -7167,7 +5136,7 @@ fn pent_debug_commands_are_god_only() {
 }
 
 #[test]
-fn pentinfo_requires_a_player_name_and_reports_unknown_players() {
+pub(crate) fn pentinfo_requires_a_player_name_and_reports_unknown_players() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -7183,7 +5152,7 @@ fn pentinfo_requires_a_player_name_and_reports_unknown_players() {
 }
 
 #[test]
-fn pentinfo_shows_empty_data_then_active_pentagrams_after_mutation() {
+pub(crate) fn pentinfo_shows_empty_data_then_active_pentagrams_after_mutation() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -7234,68 +5203,7 @@ fn pentinfo_shows_empty_data_then_active_pentagrams_after_mutation() {
 }
 
 #[test]
-fn setpentcount_setpentstatus_setpentbonus_mutate_the_named_targets_data() {
-    let mut world = World::default();
-    let mut runtime = ServerRuntime::default();
-    let (god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
-
-    let count = apply_admin_character_command(
-        &mut world,
-        &mut runtime,
-        god_id,
-        "/setpentcount Target 3",
-        1,
-    )
-    .expect("god setpentcount should be recognized");
-    assert_eq!(count.messages, vec!["Set pent_cnt for Target: 0 -> 3"]);
-    assert_eq!(
-        runtime
-            .player_for_character(target_id)
-            .unwrap()
-            .pentagram_debug
-            .pent_cnt,
-        3
-    );
-
-    let status = apply_admin_character_command(
-        &mut world,
-        &mut runtime,
-        god_id,
-        "/setpentstatus Target 1",
-        1,
-    )
-    .expect("god setpentstatus should be recognized");
-    assert_eq!(status.messages, vec!["Set pent status for Target: 0 -> 1"]);
-    assert_eq!(
-        runtime
-            .player_for_character(target_id)
-            .unwrap()
-            .pentagram_debug
-            .status,
-        1
-    );
-
-    let bonus = apply_admin_character_command(
-        &mut world,
-        &mut runtime,
-        god_id,
-        "/setpentbonus Target -50",
-        1,
-    )
-    .expect("god setpentbonus should be recognized");
-    assert_eq!(bonus.messages, vec!["Set pent bonus for Target: 0 -> -50"]);
-    assert_eq!(
-        runtime
-            .player_for_character(target_id)
-            .unwrap()
-            .pentagram_debug
-            .bonus,
-        -50
-    );
-}
-
-#[test]
-fn setpentcount_requires_both_a_name_and_an_integer_value() {
+pub(crate) fn setpentcount_requires_both_a_name_and_an_integer_value() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -7326,7 +5234,7 @@ fn setpentcount_requires_both_a_name_and_an_integer_value() {
 }
 
 #[test]
-fn resetpent_requires_a_name_and_zeroes_every_field() {
+pub(crate) fn resetpent_requires_a_name_and_zeroes_every_field() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -7362,7 +5270,7 @@ fn resetpent_requires_a_name_and_zeroes_every_field() {
 }
 
 #[test]
-fn pent_debug_commands_report_missing_runtime_for_online_character() {
+pub(crate) fn pent_debug_commands_report_missing_runtime_for_online_character() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let god_id = CharacterId(7);
@@ -7394,7 +5302,7 @@ fn pent_debug_commands_report_missing_runtime_for_online_character() {
 // `DRD_MACRO_PPD` persistent struct (`PlayerRuntime::macro_ppd`).
 
 #[test]
-fn macro_god_only_commands_require_god_not_just_staff() {
+pub(crate) fn macro_god_only_commands_require_god_not_just_staff() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (_god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -7417,7 +5325,7 @@ fn macro_god_only_commands_require_god_not_just_staff() {
 }
 
 #[test]
-fn macro_staff_or_god_commands_accept_staff_without_god() {
+pub(crate) fn macro_staff_or_god_commands_accept_staff_without_god() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let god_id = CharacterId(7);
@@ -7453,7 +5361,7 @@ fn macro_staff_or_god_commands_accept_staff_without_god() {
 }
 
 #[test]
-fn macrostats_requires_a_name_and_reports_unknown_players() {
+pub(crate) fn macrostats_requires_a_name_and_reports_unknown_players() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -7469,7 +5377,7 @@ fn macrostats_requires_a_name_and_reports_unknown_players() {
 }
 
 #[test]
-fn macrostats_shows_fresh_state_then_every_conditional_line() {
+pub(crate) fn macrostats_shows_fresh_state_then_every_conditional_line() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -7525,7 +5433,7 @@ fn macrostats_shows_fresh_state_then_every_conditional_line() {
 }
 
 #[test]
-fn macrohistory_requires_a_name_and_reports_empty_then_populated_history() {
+pub(crate) fn macrohistory_requires_a_name_and_reports_empty_then_populated_history() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -7588,7 +5496,7 @@ fn macrohistory_requires_a_name_and_reports_empty_then_populated_history() {
 }
 
 #[test]
-fn summonmacro_requires_a_name_and_sets_force_summon() {
+pub(crate) fn summonmacro_requires_a_name_and_sets_force_summon() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -7615,7 +5523,7 @@ fn summonmacro_requires_a_name_and_sets_force_summon() {
 }
 
 #[test]
-fn macroimmune_grants_and_removes_immunity() {
+pub(crate) fn macroimmune_grants_and_removes_immunity() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -7680,7 +5588,7 @@ fn macroimmune_grants_and_removes_immunity() {
 }
 
 #[test]
-fn macrosuspicion_adjusts_and_clamps_between_0_and_100() {
+pub(crate) fn macrosuspicion_adjusts_and_clamps_between_0_and_100() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -7738,7 +5646,7 @@ fn macrosuspicion_adjusts_and_clamps_between_0_and_100() {
 }
 
 #[test]
-fn macrokarma_sets_and_clamps_between_0_and_100() {
+pub(crate) fn macrokarma_sets_and_clamps_between_0_and_100() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -7776,7 +5684,7 @@ fn macrokarma_sets_and_clamps_between_0_and_100() {
 }
 
 #[test]
-fn macrofailures_sets_and_floors_at_0() {
+pub(crate) fn macrofailures_sets_and_floors_at_0() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -7814,7 +5722,7 @@ fn macrofailures_sets_and_floors_at_0() {
 }
 
 #[test]
-fn macroreset_requires_a_name_and_only_resets_the_documented_fields() {
+pub(crate) fn macroreset_requires_a_name_and_only_resets_the_documented_fields() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -7866,63 +5774,8 @@ fn macroreset_requires_a_name_and_only_resets_the_documented_fields() {
 }
 
 #[test]
-fn macrolist_formats_every_status_and_sorts_by_character_id() {
-    let mut world = World::default();
-    let mut runtime = ServerRuntime::default();
-    let god_id = CharacterId(7);
-    let mut god = login_character(god_id, &login_block("Godmode"), 1, 10, 10);
-    god.flags.insert(CharacterFlags::GOD);
-    world.add_character(god);
-
-    let names = ["Zed", "Amy", "Mel", "Ida"];
-    let mut ids = Vec::new();
-    for (offset, name) in names.iter().enumerate() {
-        let id = CharacterId(20 + offset as u32);
-        world.add_character(login_character(id, &login_block(name), 1, 11, 10));
-        let mut player = PlayerRuntime::connected(100 + offset as u64, 0);
-        player.character_id = Some(id);
-        runtime.players.insert(100 + offset as u64, player);
-        ids.push(id);
-    }
-    // ids[0]="Zed": default OK status.
-    // ids[1]="Amy": in challenge room -> CHALLENGED (highest priority).
-    // ids[2]="Mel": immune -> IMMUNE.
-    // ids[3]="Ida": suspicion >= 50 -> SUSPICIOUS.
-    runtime
-        .player_for_character_mut(ids[1])
-        .unwrap()
-        .macro_ppd
-        .in_challenge_room = true;
-    {
-        let ppd = &mut runtime.player_for_character_mut(ids[2]).unwrap().macro_ppd;
-        ppd.immune_until = i64::MAX;
-    }
-    runtime
-        .player_for_character_mut(ids[3])
-        .unwrap()
-        .macro_ppd
-        .suspicion = 50;
-
-    let result = apply_admin_character_command(&mut world, &mut runtime, god_id, "/macrolist", 1)
-        .expect("god macrolist should be recognized");
-    assert_eq!(
-        result.messages,
-        vec![
-            "=== Online Players - Macro Status ===".to_string(),
-            "Name                 Karma  Susp  Pass/Fail  Status".to_string(),
-            "---------------------------------------------------".to_string(),
-            "Zed                      0     0     0/0     OK".to_string(),
-            "Amy                      0     0     0/0     CHALLENGED".to_string(),
-            "Mel                      0     0     0/0     IMMUNE".to_string(),
-            "Ida                      0    50     0/0     SUSPICIOUS".to_string(),
-            "---------------------------------------------------".to_string(),
-            "Total: 4 players".to_string(),
-        ]
-    );
-}
-
-#[test]
-fn macro_debug_commands_report_missing_runtime_for_online_character_without_connecting() {
+pub(crate) fn macro_debug_commands_report_missing_runtime_for_online_character_without_connecting()
+{
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let god_id = CharacterId(7);
@@ -7947,21 +5800,11 @@ fn macro_debug_commands_report_missing_runtime_for_online_character_without_conn
     );
 }
 
-#[test]
-fn macro_ppd_default_matches_fresh_reset_expectations() {
-    let ppd = MacroPpd::default();
-    assert_eq!(ppd.karma, 0);
-    assert_eq!(ppd.suspicion, 0);
-    assert_eq!(ppd.history_count, 0);
-    assert!(!ppd.force_summon);
-    assert!(!ppd.in_challenge_room);
-}
-
 // C `command.c:9049-9057`/`3163-3192` (`/noarch`) and `command.c:9226-9235`
 // (`/noprof`).
 
 #[test]
-fn noarch_and_noprof_are_god_only() {
+pub(crate) fn noarch_and_noprof_are_god_only() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (_god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -7976,7 +5819,7 @@ fn noarch_and_noprof_are_god_only() {
 }
 
 #[test]
-fn noarch_reports_no_one_by_that_name_and_sends_no_other_message() {
+pub(crate) fn noarch_reports_no_one_by_that_name_and_sends_no_other_message() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -7999,7 +5842,7 @@ fn noarch_reports_no_one_by_that_name_and_sends_no_other_message() {
 }
 
 #[test]
-fn noarch_caps_values_up_to_immunity_and_clears_arch_flag_with_no_confirmation() {
+pub(crate) fn noarch_caps_values_up_to_immunity_and_clears_arch_flag_with_no_confirmation() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -8034,7 +5877,7 @@ fn noarch_caps_values_up_to_immunity_and_clears_arch_flag_with_no_confirmation()
 }
 
 #[test]
-fn noarch_does_not_lower_values_already_at_or_below_the_cap() {
+pub(crate) fn noarch_does_not_lower_values_already_at_or_below_the_cap() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -8052,7 +5895,7 @@ fn noarch_does_not_lower_values_already_at_or_below_the_cap() {
 }
 
 #[test]
-fn noprof_zeroes_the_callers_own_professions_only_with_no_confirmation() {
+pub(crate) fn noprof_zeroes_the_callers_own_professions_only_with_no_confirmation() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -8085,7 +5928,7 @@ fn noprof_zeroes_the_callers_own_professions_only_with_no_confirmation() {
 }
 
 #[test]
-fn noprof_ignores_any_trailing_argument_text() {
+pub(crate) fn noprof_ignores_any_trailing_argument_text() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -8107,7 +5950,7 @@ fn noprof_ignores_any_trailing_argument_text() {
 // 9075`/`3221-3251` (`/questfix`).
 
 #[test]
-fn fixit_and_questfix_are_god_only() {
+pub(crate) fn fixit_and_questfix_are_god_only() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (_god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -8122,7 +5965,7 @@ fn fixit_and_questfix_are_god_only() {
 }
 
 #[test]
-fn fixit_reports_no_one_by_that_name_when_target_is_offline() {
+pub(crate) fn fixit_reports_no_one_by_that_name_when_target_is_offline() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -8137,7 +5980,7 @@ fn fixit_reports_no_one_by_that_name_when_target_is_offline() {
 }
 
 #[test]
-fn fixit_wipes_and_reinitializes_the_targets_own_quest_log_with_no_confirmation() {
+pub(crate) fn fixit_wipes_and_reinitializes_the_targets_own_quest_log_with_no_confirmation() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -8165,7 +6008,7 @@ fn fixit_wipes_and_reinitializes_the_targets_own_quest_log_with_no_confirmation(
 }
 
 #[test]
-fn questfix_reports_no_one_by_that_name_when_target_is_offline() {
+pub(crate) fn questfix_reports_no_one_by_that_name_when_target_is_offline() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -8180,7 +6023,8 @@ fn questfix_reports_no_one_by_that_name_when_target_is_offline() {
 }
 
 #[test]
-fn questfix_clears_the_callers_own_sentinel_and_leaves_the_named_targets_log_untouched() {
+pub(crate) fn questfix_clears_the_callers_own_sentinel_and_leaves_the_named_targets_log_untouched()
+{
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -8221,7 +6065,7 @@ fn questfix_clears_the_callers_own_sentinel_and_leaves_the_named_targets_log_unt
 // `CF_GOD | CF_STAFF`-gated; `cmd_clearppd`, `command.c:4214-4288`).
 
 #[test]
-fn clearppd_requires_god_or_staff() {
+pub(crate) fn clearppd_requires_god_or_staff() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (_god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -8239,14 +6083,18 @@ fn clearppd_requires_god_or_staff() {
 /// Registers a connected `PlayerRuntime` for `character_id` on a fresh
 /// session, so self-target `/clearppd` calls (whose caller is also the
 /// target) have somewhere to read/write PPD fields.
-fn insert_runtime_for(runtime: &mut ServerRuntime, session_id: u64, character_id: CharacterId) {
+pub(crate) fn insert_runtime_for(
+    runtime: &mut ServerRuntime,
+    session_id: u64,
+    character_id: CharacterId,
+) {
     let mut player = PlayerRuntime::connected(session_id, 0);
     player.character_id = Some(character_id);
     runtime.players.insert(session_id, player);
 }
 
 #[test]
-fn clearppd_staff_without_god_is_accepted() {
+pub(crate) fn clearppd_staff_without_god_is_accepted() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -8267,7 +6115,7 @@ fn clearppd_staff_without_god_is_accepted() {
 }
 
 #[test]
-fn clearppd_with_no_arguments_shows_usage() {
+pub(crate) fn clearppd_with_no_arguments_shows_usage() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -8284,7 +6132,7 @@ fn clearppd_with_no_arguments_shows_usage() {
 }
 
 #[test]
-fn clearppd_rejects_unknown_ppd_name() {
+pub(crate) fn clearppd_rejects_unknown_ppd_name() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -8302,7 +6150,7 @@ fn clearppd_rejects_unknown_ppd_name() {
 }
 
 #[test]
-fn clearppd_reports_player_not_found_with_its_own_distinct_message() {
+pub(crate) fn clearppd_reports_player_not_found_with_its_own_distinct_message() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -8321,7 +6169,7 @@ fn clearppd_reports_player_not_found_with_its_own_distinct_message() {
 }
 
 #[test]
-fn clearppd_keyring_reports_not_found_when_already_empty_and_clears_when_populated() {
+pub(crate) fn clearppd_keyring_reports_not_found_when_already_empty_and_clears_when_populated() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -8360,7 +6208,7 @@ fn clearppd_keyring_reports_not_found_when_already_empty_and_clears_when_populat
 }
 
 #[test]
-fn clearppd_targets_a_named_player_and_notifies_both_sides() {
+pub(crate) fn clearppd_targets_a_named_player_and_notifies_both_sides() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -8399,7 +6247,7 @@ fn clearppd_targets_a_named_player_and_notifies_both_sides() {
 }
 
 #[test]
-fn clearppd_self_target_sends_no_other_message() {
+pub(crate) fn clearppd_self_target_sends_no_other_message() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -8421,7 +6269,7 @@ fn clearppd_self_target_sends_no_other_message() {
 }
 
 #[test]
-fn clearppd_questlog_clears_and_reports_success() {
+pub(crate) fn clearppd_questlog_clears_and_reports_success() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -8444,7 +6292,7 @@ fn clearppd_questlog_clears_and_reports_success() {
 }
 
 #[test]
-fn clearppd_only_matches_online_player_flagged_characters() {
+pub(crate) fn clearppd_only_matches_online_player_flagged_characters() {
     // A non-CF_PLAYER character sharing the target name must not match
     // (C's search loop skips any `co` without `CF_PLAYER`).
     let mut world = World::default();
@@ -8475,7 +6323,7 @@ fn clearppd_only_matches_online_player_flagged_characters() {
 /// `send_to_session` actually queues onto `runtime.tick_out`, matching the
 /// `achievement.rs` test precedent for asserting exact packet bytes reach
 /// a target different from the caller.
-fn connected_god_and_target(
+pub(crate) fn connected_god_and_target(
     world: &mut World,
     runtime: &mut ServerRuntime,
 ) -> (CharacterId, CharacterId) {
@@ -8501,7 +6349,7 @@ fn connected_god_and_target(
 }
 
 #[test]
-fn ls_and_cat_are_god_only() {
+pub(crate) fn ls_and_cat_are_god_only() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (_god_id, target_id) = connected_god_and_target(&mut world, &mut runtime);
@@ -8525,7 +6373,7 @@ fn ls_and_cat_are_god_only() {
 }
 
 #[test]
-fn ls_reports_no_one_by_that_name_when_target_is_offline() {
+pub(crate) fn ls_reports_no_one_by_that_name_when_target_is_offline() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, _target_id) = connected_god_and_target(&mut world, &mut runtime);
@@ -8541,7 +6389,7 @@ fn ls_reports_no_one_by_that_name_when_target_is_offline() {
 }
 
 #[test]
-fn ls_sends_raw_sv_ls_packet_to_the_target_session_and_confirms_to_the_caller() {
+pub(crate) fn ls_sends_raw_sv_ls_packet_to_the_target_session_and_confirms_to_the_caller() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, _target_id) = connected_god_and_target(&mut world, &mut runtime);
@@ -8563,7 +6411,7 @@ fn ls_sends_raw_sv_ls_packet_to_the_target_session_and_confirms_to_the_caller() 
 }
 
 #[test]
-fn cat_sends_raw_sv_cat_packet_to_the_target_session_and_confirms_to_the_caller() {
+pub(crate) fn cat_sends_raw_sv_cat_packet_to_the_target_session_and_confirms_to_the_caller() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, _target_id) = connected_god_and_target(&mut world, &mut runtime);
@@ -8593,7 +6441,7 @@ fn cat_sends_raw_sv_cat_packet_to_the_target_session_and_confirms_to_the_caller(
 }
 
 #[test]
-fn ls_confirms_to_caller_even_when_target_has_no_live_session() {
+pub(crate) fn ls_confirms_to_caller_even_when_target_has_no_live_session() {
     // Matches C's unconditional `log_char(cn, ..., "ls %s scheduled on
     // %s.", ...)` after `plr_ls` - the confirmation is sent regardless of
     // whether the target actually has a connection to receive the packet
@@ -8626,7 +6474,7 @@ fn ls_confirms_to_caller_even_when_target_has_no_live_session() {
 }
 
 #[test]
-fn ls_produces_no_packet_when_dir_exceeds_two_hundred_bytes_but_still_confirms() {
+pub(crate) fn ls_produces_no_packet_when_dir_exceeds_two_hundred_bytes_but_still_confirms() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, _target_id) = connected_god_and_target(&mut world, &mut runtime);
@@ -8652,7 +6500,7 @@ fn ls_produces_no_packet_when_dir_exceeds_two_hundred_bytes_but_still_confirms()
 // `CF_GOD|CF_STAFF`-gated.
 
 #[test]
-fn achelp_is_god_or_staff_only() {
+pub(crate) fn achelp_is_god_or_staff_only() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (_god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -8663,7 +6511,7 @@ fn achelp_is_god_or_staff_only() {
 }
 
 #[test]
-fn achelp_lists_every_c_subcommand_verbatim() {
+pub(crate) fn achelp_lists_every_c_subcommand_verbatim() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -8680,7 +6528,7 @@ fn achelp_lists_every_c_subcommand_verbatim() {
 }
 
 #[test]
-fn achelp_is_available_to_staff_without_god() {
+pub(crate) fn achelp_is_available_to_staff_without_god() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let staff_id = CharacterId(9);
@@ -8694,90 +6542,7 @@ fn achelp_is_available_to_staff_without_god() {
 }
 
 #[test]
-fn acstatus_is_god_or_staff_only() {
-    let mut world = World::default();
-    let mut runtime = ServerRuntime::default();
-    let (_god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
-
-    assert!(apply_admin_character_command(
-        &mut world,
-        &mut runtime,
-        target_id,
-        "#acstatus Target",
-        1
-    )
-    .is_none());
-}
-
-#[test]
-fn acstatus_without_a_name_shows_usage() {
-    let mut world = World::default();
-    let mut runtime = ServerRuntime::default();
-    let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
-
-    let result = apply_admin_character_command(&mut world, &mut runtime, god_id, "#acstatus", 1)
-        .expect("god acstatus should be recognized");
-    assert_eq!(result.messages, vec!["Usage: #acstatus <player>"]);
-}
-
-#[test]
-fn acstatus_reports_not_found_online_for_an_unknown_name() {
-    let mut world = World::default();
-    let mut runtime = ServerRuntime::default();
-    let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
-
-    let result =
-        apply_admin_character_command(&mut world, &mut runtime, god_id, "#acstatus Nobody", 1)
-            .expect("god acstatus should be recognized");
-    assert_eq!(result.messages, vec!["Player 'Nobody' not found online."]);
-}
-
-#[test]
-fn acstatus_reports_no_connection_data_when_target_has_no_anticheat_session() {
-    let mut world = World::default();
-    let mut runtime = ServerRuntime::default();
-    let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
-    // `setup_god_and_online_target` registers the target's `PlayerRuntime`
-    // with `anticheat_session_id: None` (the default) - matching C's
-    // `!nr || !player[nr]` branch, just for a different underlying reason
-    // (no anti-cheat session ever got created rather than no connection
-    // at all).
-
-    let result =
-        apply_admin_character_command(&mut world, &mut runtime, god_id, "#acstatus Target", 1)
-            .expect("god acstatus should be recognized");
-    assert_eq!(
-        result.messages,
-        vec!["Player 'Target' has no connection data."]
-    );
-    assert!(world.drain_pending_ac_status_lookups().is_empty());
-}
-
-#[test]
-fn acstatus_queues_a_lookup_using_the_targets_anticheat_session_id() {
-    let mut world = World::default();
-    let mut runtime = ServerRuntime::default();
-    let (god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
-    for player in runtime.players.values_mut() {
-        if player.character_id == Some(target_id) {
-            player.anticheat_session_id = Some(1234);
-        }
-    }
-
-    let result =
-        apply_admin_character_command(&mut world, &mut runtime, god_id, "#acstatus target", 1)
-            .expect("god acstatus should be recognized");
-    assert_eq!(result.messages, Vec::<String>::new());
-
-    let queued = world.drain_pending_ac_status_lookups();
-    assert_eq!(queued.len(), 1);
-    assert_eq!(queued[0].caller_id, god_id);
-    assert_eq!(queued[0].target_name, "Target");
-    assert_eq!(queued[0].session_id, 1234);
-}
-
-#[test]
-fn acstats_and_aclist_are_god_or_staff_only() {
+pub(crate) fn acstats_and_aclist_are_god_or_staff_only() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (_god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -8795,7 +6560,7 @@ fn acstats_and_aclist_are_god_or_staff_only() {
 }
 
 #[test]
-fn acstats_and_aclist_only_gather_online_players_with_a_known_anticheat_session() {
+pub(crate) fn acstats_and_aclist_only_gather_online_players_with_a_known_anticheat_session() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -8853,7 +6618,7 @@ fn acstats_and_aclist_only_gather_online_players_with_a_known_anticheat_session(
 }
 
 #[test]
-fn accleanup_is_god_only_unlike_its_staff_accessible_siblings() {
+pub(crate) fn accleanup_is_god_only_unlike_its_staff_accessible_siblings() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (_god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -8876,7 +6641,7 @@ fn accleanup_is_god_only_unlike_its_staff_accessible_siblings() {
 }
 
 #[test]
-fn accleanup_without_a_days_argument_shows_usage() {
+pub(crate) fn accleanup_without_a_days_argument_shows_usage() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -8894,7 +6659,7 @@ fn accleanup_without_a_days_argument_shows_usage() {
 }
 
 #[test]
-fn accleanup_below_the_seven_day_minimum_is_rejected() {
+pub(crate) fn accleanup_below_the_seven_day_minimum_is_rejected() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -8914,55 +6679,7 @@ fn accleanup_below_the_seven_day_minimum_is_rejected() {
 }
 
 #[test]
-fn accleanup_at_or_above_the_minimum_queues_the_lookup_and_confirms() {
-    let mut world = World::default();
-    let mut runtime = ServerRuntime::default();
-    let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
-
-    let result = apply_admin_character_command(&mut world, &mut runtime, god_id, "#accleanup 7", 1)
-        .expect("god accleanup should be recognized");
-    assert_eq!(
-        result.messages,
-        vec!["Cleaning up records older than 7 days..."]
-    );
-    let queued = world.drain_pending_ac_cleanup_lookups();
-    assert_eq!(queued.len(), 1);
-    assert_eq!(queued[0].caller_id, god_id);
-    assert_eq!(queued[0].days, 7);
-}
-
-#[test]
-fn acsiglist_is_god_only_unlike_its_staff_accessible_siblings_and_queues_the_lookup() {
-    let mut world = World::default();
-    let mut runtime = ServerRuntime::default();
-    let (god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
-    let mut staff = login_character(CharacterId(20), &login_block("Staffer"), 1, 12, 10);
-    staff.flags.insert(CharacterFlags::STAFF);
-    world.add_character(staff);
-
-    assert!(
-        apply_admin_character_command(&mut world, &mut runtime, target_id, "#acsiglist", 1)
-            .is_none()
-    );
-    assert!(apply_admin_character_command(
-        &mut world,
-        &mut runtime,
-        CharacterId(20),
-        "#acsiglist",
-        1
-    )
-    .is_none());
-
-    let result = apply_admin_character_command(&mut world, &mut runtime, god_id, "#acsiglist", 1)
-        .expect("god acsiglist should be recognized");
-    assert!(result.messages.is_empty());
-    let queued = world.drain_pending_ac_siglist_lookups();
-    assert_eq!(queued.len(), 1);
-    assert_eq!(queued[0].caller_id, god_id);
-}
-
-#[test]
-fn acsigadd_is_god_only_unlike_its_staff_accessible_siblings() {
+pub(crate) fn acsigadd_is_god_only_unlike_its_staff_accessible_siblings() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (_god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -8989,7 +6706,7 @@ fn acsigadd_is_god_only_unlike_its_staff_accessible_siblings() {
 }
 
 #[test]
-fn acsigadd_without_any_arguments_shows_usage_and_types() {
+pub(crate) fn acsigadd_without_any_arguments_shows_usage_and_types() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -9007,7 +6724,7 @@ fn acsigadd_without_any_arguments_shows_usage_and_types() {
 }
 
 #[test]
-fn acsigadd_with_fewer_than_three_tokens_shows_the_short_usage_message() {
+pub(crate) fn acsigadd_with_fewer_than_three_tokens_shows_the_short_usage_message() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -9030,7 +6747,7 @@ fn acsigadd_with_fewer_than_three_tokens_shows_the_short_usage_message() {
 }
 
 #[test]
-fn acsigadd_rejects_a_type_outside_the_fixed_allow_list() {
+pub(crate) fn acsigadd_rejects_a_type_outside_the_fixed_allow_list() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -9051,31 +6768,7 @@ fn acsigadd_rejects_a_type_outside_the_fixed_allow_list() {
 }
 
 #[test]
-fn acsigadd_with_a_valid_call_queues_the_lookup_with_a_multi_word_name() {
-    let mut world = World::default();
-    let mut runtime = ServerRuntime::default();
-    let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
-
-    let result = apply_admin_character_command(
-        &mut world,
-        &mut runtime,
-        god_id,
-        "#acsigadd hardware_hash deadbeef Known Cheat Tool",
-        1,
-    )
-    .expect("god acsigadd should be recognized");
-    assert!(result.messages.is_empty());
-    let queued = world.drain_pending_ac_sigadd_lookups();
-    assert_eq!(queued.len(), 1);
-    assert_eq!(queued[0].caller_id, god_id);
-    assert_eq!(queued[0].sig_type, "hardware_hash");
-    assert_eq!(queued[0].sig_value, "deadbeef");
-    assert_eq!(queued[0].name, "Known Cheat Tool");
-    assert_eq!(queued[0].created_by, "Godmode");
-}
-
-#[test]
-fn acsigdel_is_god_only_unlike_its_staff_accessible_siblings() {
+pub(crate) fn acsigdel_is_god_only_unlike_its_staff_accessible_siblings() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (_god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -9098,7 +6791,7 @@ fn acsigdel_is_god_only_unlike_its_staff_accessible_siblings() {
 }
 
 #[test]
-fn acsigdel_without_an_id_shows_usage() {
+pub(crate) fn acsigdel_without_an_id_shows_usage() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -9110,7 +6803,7 @@ fn acsigdel_without_an_id_shows_usage() {
 }
 
 #[test]
-fn acsigdel_with_a_zero_or_non_numeric_id_is_rejected() {
+pub(crate) fn acsigdel_with_a_zero_or_non_numeric_id_is_rejected() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -9130,22 +6823,7 @@ fn acsigdel_with_a_zero_or_non_numeric_id_is_rejected() {
 }
 
 #[test]
-fn acsigdel_with_a_valid_id_queues_the_lookup() {
-    let mut world = World::default();
-    let mut runtime = ServerRuntime::default();
-    let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
-
-    let result = apply_admin_character_command(&mut world, &mut runtime, god_id, "#acsigdel 42", 1)
-        .expect("god acsigdel should be recognized");
-    assert!(result.messages.is_empty());
-    let queued = world.drain_pending_ac_sigdel_lookups();
-    assert_eq!(queued.len(), 1);
-    assert_eq!(queued[0].caller_id, god_id);
-    assert_eq!(queued[0].signature_id, 42);
-}
-
-#[test]
-fn acreset_is_god_only_unlike_its_staff_accessible_siblings() {
+pub(crate) fn acreset_is_god_only_unlike_its_staff_accessible_siblings() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (_god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -9172,7 +6850,7 @@ fn acreset_is_god_only_unlike_its_staff_accessible_siblings() {
 }
 
 #[test]
-fn acreset_without_a_name_shows_usage() {
+pub(crate) fn acreset_without_a_name_shows_usage() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -9183,7 +6861,7 @@ fn acreset_without_a_name_shows_usage() {
 }
 
 #[test]
-fn acreset_reports_not_found_online_for_an_unknown_name() {
+pub(crate) fn acreset_reports_not_found_online_for_an_unknown_name() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -9195,7 +6873,7 @@ fn acreset_reports_not_found_online_for_an_unknown_name() {
 }
 
 #[test]
-fn acreset_reports_no_connection_data_when_target_has_no_anticheat_session() {
+pub(crate) fn acreset_reports_no_connection_data_when_target_has_no_anticheat_session() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -9213,30 +6891,7 @@ fn acreset_reports_no_connection_data_when_target_has_no_anticheat_session() {
 }
 
 #[test]
-fn acreset_queues_a_lookup_using_the_targets_anticheat_session_id() {
-    let mut world = World::default();
-    let mut runtime = ServerRuntime::default();
-    let (god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
-    for player in runtime.players.values_mut() {
-        if player.character_id == Some(target_id) {
-            player.anticheat_session_id = Some(4321);
-        }
-    }
-
-    let result =
-        apply_admin_character_command(&mut world, &mut runtime, god_id, "#acreset target", 1)
-            .expect("god acreset should be recognized");
-    assert_eq!(result.messages, Vec::<String>::new());
-
-    let queued = world.drain_pending_ac_reset_lookups();
-    assert_eq!(queued.len(), 1);
-    assert_eq!(queued[0].caller_id, god_id);
-    assert_eq!(queued[0].target_name, "Target");
-    assert_eq!(queued[0].session_id, 4321);
-}
-
-#[test]
-fn acflag_is_god_or_staff_unlike_acreset_which_is_god_only() {
+pub(crate) fn acflag_is_god_or_staff_unlike_acreset_which_is_god_only() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (_god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -9273,7 +6928,7 @@ fn acflag_is_god_or_staff_unlike_acreset_which_is_god_only() {
 }
 
 #[test]
-fn acflag_without_a_name_shows_usage() {
+pub(crate) fn acflag_without_a_name_shows_usage() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -9284,7 +6939,7 @@ fn acflag_without_a_name_shows_usage() {
 }
 
 #[test]
-fn acflag_reports_not_found_online_for_an_unknown_name() {
+pub(crate) fn acflag_reports_not_found_online_for_an_unknown_name() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -9296,7 +6951,7 @@ fn acflag_reports_not_found_online_for_an_unknown_name() {
 }
 
 #[test]
-fn acflag_reports_no_connection_data_when_target_has_no_anticheat_session() {
+pub(crate) fn acflag_reports_no_connection_data_when_target_has_no_anticheat_session() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -9314,30 +6969,7 @@ fn acflag_reports_no_connection_data_when_target_has_no_anticheat_session() {
 }
 
 #[test]
-fn acflag_queues_a_lookup_using_the_targets_anticheat_session_id() {
-    let mut world = World::default();
-    let mut runtime = ServerRuntime::default();
-    let (god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
-    for player in runtime.players.values_mut() {
-        if player.character_id == Some(target_id) {
-            player.anticheat_session_id = Some(4321);
-        }
-    }
-
-    let result =
-        apply_admin_character_command(&mut world, &mut runtime, god_id, "#acflag target", 1)
-            .expect("god acflag should be recognized");
-    assert_eq!(result.messages, Vec::<String>::new());
-
-    let queued = world.drain_pending_ac_flag_lookups();
-    assert_eq!(queued.len(), 1);
-    assert_eq!(queued[0].caller_id, god_id);
-    assert_eq!(queued[0].target_name, "Target");
-    assert_eq!(queued[0].session_id, 4321);
-}
-
-#[test]
-fn acunflag_is_god_only_unlike_acflags_god_or_staff_gate() {
+pub(crate) fn acunflag_is_god_only_unlike_acflags_god_or_staff_gate() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (_god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -9364,7 +6996,7 @@ fn acunflag_is_god_only_unlike_acflags_god_or_staff_gate() {
 }
 
 #[test]
-fn acunflag_without_a_name_shows_usage() {
+pub(crate) fn acunflag_without_a_name_shows_usage() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -9375,7 +7007,7 @@ fn acunflag_without_a_name_shows_usage() {
 }
 
 #[test]
-fn acunflag_reports_not_found_online_for_an_unknown_name() {
+pub(crate) fn acunflag_reports_not_found_online_for_an_unknown_name() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -9387,7 +7019,7 @@ fn acunflag_reports_not_found_online_for_an_unknown_name() {
 }
 
 #[test]
-fn acunflag_reports_no_connection_data_when_target_has_no_anticheat_session() {
+pub(crate) fn acunflag_reports_no_connection_data_when_target_has_no_anticheat_session() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -9403,30 +7035,7 @@ fn acunflag_reports_no_connection_data_when_target_has_no_anticheat_session() {
 }
 
 #[test]
-fn acunflag_queues_a_lookup_using_the_targets_anticheat_session_id() {
-    let mut world = World::default();
-    let mut runtime = ServerRuntime::default();
-    let (god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
-    for player in runtime.players.values_mut() {
-        if player.character_id == Some(target_id) {
-            player.anticheat_session_id = Some(4321);
-        }
-    }
-
-    let result =
-        apply_admin_character_command(&mut world, &mut runtime, god_id, "#acunflag target", 1)
-            .expect("god acunflag should be recognized");
-    assert_eq!(result.messages, Vec::<String>::new());
-
-    let queued = world.drain_pending_ac_unflag_lookups();
-    assert_eq!(queued.len(), 1);
-    assert_eq!(queued[0].caller_id, god_id);
-    assert_eq!(queued[0].target_name, "Target");
-    assert_eq!(queued[0].session_id, 4321);
-}
-
-#[test]
-fn actrust_is_god_only() {
+pub(crate) fn actrust_is_god_only() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (_god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -9453,7 +7062,7 @@ fn actrust_is_god_only() {
 }
 
 #[test]
-fn actrust_without_a_name_shows_usage() {
+pub(crate) fn actrust_without_a_name_shows_usage() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -9464,7 +7073,7 @@ fn actrust_without_a_name_shows_usage() {
 }
 
 #[test]
-fn actrust_reports_not_found_online_for_an_unknown_name() {
+pub(crate) fn actrust_reports_not_found_online_for_an_unknown_name() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -9476,7 +7085,7 @@ fn actrust_reports_not_found_online_for_an_unknown_name() {
 }
 
 #[test]
-fn actrust_reports_no_connection_data_when_target_has_no_anticheat_session() {
+pub(crate) fn actrust_reports_no_connection_data_when_target_has_no_anticheat_session() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -9492,30 +7101,7 @@ fn actrust_reports_no_connection_data_when_target_has_no_anticheat_session() {
 }
 
 #[test]
-fn actrust_queues_a_lookup_using_the_targets_anticheat_session_id() {
-    let mut world = World::default();
-    let mut runtime = ServerRuntime::default();
-    let (god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
-    for player in runtime.players.values_mut() {
-        if player.character_id == Some(target_id) {
-            player.anticheat_session_id = Some(4321);
-        }
-    }
-
-    let result =
-        apply_admin_character_command(&mut world, &mut runtime, god_id, "#actrust target", 1)
-            .expect("god actrust should be recognized");
-    assert_eq!(result.messages, Vec::<String>::new());
-
-    let queued = world.drain_pending_ac_trust_lookups();
-    assert_eq!(queued.len(), 1);
-    assert_eq!(queued[0].caller_id, god_id);
-    assert_eq!(queued[0].target_name, "Target");
-    assert_eq!(queued[0].session_id, 4321);
-}
-
-#[test]
-fn acuntrust_is_god_only() {
+pub(crate) fn acuntrust_is_god_only() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (_god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -9542,7 +7128,7 @@ fn acuntrust_is_god_only() {
 }
 
 #[test]
-fn acuntrust_without_a_name_shows_usage() {
+pub(crate) fn acuntrust_without_a_name_shows_usage() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -9553,7 +7139,7 @@ fn acuntrust_without_a_name_shows_usage() {
 }
 
 #[test]
-fn acuntrust_reports_not_found_online_for_an_unknown_name() {
+pub(crate) fn acuntrust_reports_not_found_online_for_an_unknown_name() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -9565,7 +7151,7 @@ fn acuntrust_reports_not_found_online_for_an_unknown_name() {
 }
 
 #[test]
-fn acuntrust_reports_no_connection_data_when_target_has_no_anticheat_session() {
+pub(crate) fn acuntrust_reports_no_connection_data_when_target_has_no_anticheat_session() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -9581,30 +7167,7 @@ fn acuntrust_reports_no_connection_data_when_target_has_no_anticheat_session() {
 }
 
 #[test]
-fn acuntrust_queues_a_lookup_using_the_targets_anticheat_session_id() {
-    let mut world = World::default();
-    let mut runtime = ServerRuntime::default();
-    let (god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
-    for player in runtime.players.values_mut() {
-        if player.character_id == Some(target_id) {
-            player.anticheat_session_id = Some(4321);
-        }
-    }
-
-    let result =
-        apply_admin_character_command(&mut world, &mut runtime, god_id, "#acuntrust target", 1)
-            .expect("god acuntrust should be recognized");
-    assert_eq!(result.messages, Vec::<String>::new());
-
-    let queued = world.drain_pending_ac_untrust_lookups();
-    assert_eq!(queued.len(), 1);
-    assert_eq!(queued[0].caller_id, god_id);
-    assert_eq!(queued[0].target_name, "Target");
-    assert_eq!(queued[0].session_id, 4321);
-}
-
-#[test]
-fn acwatch_is_god_or_staff_only() {
+pub(crate) fn acwatch_is_god_or_staff_only() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (_god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -9620,7 +7183,7 @@ fn acwatch_is_god_or_staff_only() {
 }
 
 #[test]
-fn acwatch_without_a_name_shows_usage() {
+pub(crate) fn acwatch_without_a_name_shows_usage() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -9631,7 +7194,7 @@ fn acwatch_without_a_name_shows_usage() {
 }
 
 #[test]
-fn acwatch_reports_not_found_online_for_an_unknown_name() {
+pub(crate) fn acwatch_reports_not_found_online_for_an_unknown_name() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -9643,7 +7206,7 @@ fn acwatch_reports_not_found_online_for_an_unknown_name() {
 }
 
 #[test]
-fn acwatch_reports_no_connection_data_when_target_has_no_player_runtime() {
+pub(crate) fn acwatch_reports_no_connection_data_when_target_has_no_player_runtime() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -9671,7 +7234,7 @@ fn acwatch_reports_no_connection_data_when_target_has_no_player_runtime() {
 }
 
 #[test]
-fn acwatch_toggles_the_targets_watch_flag_and_confirms() {
+pub(crate) fn acwatch_toggles_the_targets_watch_flag_and_confirms() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -9712,7 +7275,7 @@ fn acwatch_toggles_the_targets_watch_flag_and_confirms() {
 // same gate as `#acflag`).
 
 #[test]
-fn acwarn_is_god_or_staff() {
+pub(crate) fn acwarn_is_god_or_staff() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (_god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -9749,7 +7312,7 @@ fn acwarn_is_god_or_staff() {
 }
 
 #[test]
-fn acwarn_without_a_name_shows_usage() {
+pub(crate) fn acwarn_without_a_name_shows_usage() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -9760,7 +7323,7 @@ fn acwarn_without_a_name_shows_usage() {
 }
 
 #[test]
-fn acwarn_reports_not_found_online_for_an_unknown_name() {
+pub(crate) fn acwarn_reports_not_found_online_for_an_unknown_name() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -9772,7 +7335,7 @@ fn acwarn_reports_not_found_online_for_an_unknown_name() {
 }
 
 #[test]
-fn acwarn_reports_no_connection_data_when_target_has_no_anticheat_session() {
+pub(crate) fn acwarn_reports_no_connection_data_when_target_has_no_anticheat_session() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -9787,63 +7350,12 @@ fn acwarn_reports_no_connection_data_when_target_has_no_anticheat_session() {
     assert!(world.drain_pending_ac_warn_lookups().is_empty());
 }
 
-#[test]
-fn acwarn_queues_a_lookup_with_the_default_reason_when_omitted() {
-    let mut world = World::default();
-    let mut runtime = ServerRuntime::default();
-    let (god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
-    for player in runtime.players.values_mut() {
-        if player.character_id == Some(target_id) {
-            player.anticheat_session_id = Some(4321);
-        }
-    }
-
-    let result =
-        apply_admin_character_command(&mut world, &mut runtime, god_id, "#acwarn target", 1)
-            .expect("god acwarn should be recognized");
-    assert_eq!(result.messages, Vec::<String>::new());
-
-    let queued = world.drain_pending_ac_warn_lookups();
-    assert_eq!(queued.len(), 1);
-    assert_eq!(queued[0].caller_id, god_id);
-    assert_eq!(queued[0].target_id, target_id);
-    assert_eq!(queued[0].target_name, "Target");
-    assert_eq!(queued[0].session_id, 4321);
-    assert_eq!(queued[0].reason, "Anti-cheat warning");
-}
-
-#[test]
-fn acwarn_queues_a_lookup_with_the_given_reason() {
-    let mut world = World::default();
-    let mut runtime = ServerRuntime::default();
-    let (god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
-    for player in runtime.players.values_mut() {
-        if player.character_id == Some(target_id) {
-            player.anticheat_session_id = Some(4321);
-        }
-    }
-
-    let result = apply_admin_character_command(
-        &mut world,
-        &mut runtime,
-        god_id,
-        "#acwarn target Speedhacking detected in area 3",
-        1,
-    )
-    .expect("god acwarn should be recognized");
-    assert_eq!(result.messages, Vec::<String>::new());
-
-    let queued = world.drain_pending_ac_warn_lookups();
-    assert_eq!(queued.len(), 1);
-    assert_eq!(queued[0].reason, "Speedhacking detected in area 3");
-}
-
 // C `/showppd <name> <ppd>` (`command.c:8790-8837` dispatch,
 // `cmd_showppd` `command.c:275-346`), `CF_GOD`-gated, online-only (not
 // `lookup_name`-backed).
 
 #[test]
-fn showppd_is_god_only() {
+pub(crate) fn showppd_is_god_only() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (_god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -9859,7 +7371,7 @@ fn showppd_is_god_only() {
 }
 
 #[test]
-fn showppd_reports_offline_or_unknown_player_before_checking_the_ppd_name() {
+pub(crate) fn showppd_reports_offline_or_unknown_player_before_checking_the_ppd_name() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -9874,7 +7386,7 @@ fn showppd_reports_offline_or_unknown_player_before_checking_the_ppd_name() {
 }
 
 #[test]
-fn showppd_reports_which_ppd_when_no_ppd_name_is_given() {
+pub(crate) fn showppd_reports_which_ppd_when_no_ppd_name_is_given() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -9886,7 +7398,7 @@ fn showppd_reports_which_ppd_when_no_ppd_name_is_given() {
 }
 
 #[test]
-fn showppd_reports_unknown_ppd_names() {
+pub(crate) fn showppd_reports_unknown_ppd_names() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, _target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -9898,7 +7410,7 @@ fn showppd_reports_unknown_ppd_names() {
 }
 
 #[test]
-fn showppd_area1_dumps_every_field_matching_the_c_format_strings() {
+pub(crate) fn showppd_area1_dumps_every_field_matching_the_c_format_strings() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -9971,7 +7483,7 @@ fn showppd_area1_dumps_every_field_matching_the_c_format_strings() {
 }
 
 #[test]
-fn showppd_area3_reports_only_kassim_state() {
+pub(crate) fn showppd_area3_reports_only_kassim_state() {
     let mut world = World::default();
     let mut runtime = ServerRuntime::default();
     let (god_id, target_id) = setup_god_and_online_target(&mut world, &mut runtime);
@@ -9999,7 +7511,7 @@ fn showppd_area3_reports_only_kassim_state() {
 // only.
 
 #[test]
-fn punish_command_requires_god_or_staff() {
+pub(crate) fn punish_command_requires_god_or_staff() {
     let mut world = goto_test_world();
     let caller_id = CharacterId(1);
     let caller = login_character(caller_id, &login_block("Ralph"), 3, 10, 10);
@@ -10017,7 +7529,7 @@ fn punish_command_requires_god_or_staff() {
 }
 
 #[test]
-fn punish_command_accepts_staff_alone() {
+pub(crate) fn punish_command_accepts_staff_alone() {
     let mut world = goto_test_world();
     let caller_id = CharacterId(1);
     let mut caller = login_character(caller_id, &login_block("Ralph"), 3, 10, 10);
@@ -10042,7 +7554,7 @@ fn punish_command_accepts_staff_alone() {
 }
 
 #[test]
-fn punish_command_rejects_invalid_name_immediately() {
+pub(crate) fn punish_command_rejects_invalid_name_immediately() {
     let mut world = goto_test_world();
     let caller_id = CharacterId(1);
     let mut caller = login_character(caller_id, &login_block("Ralph"), 3, 10, 10);
@@ -10063,7 +7575,7 @@ fn punish_command_rejects_invalid_name_immediately() {
 }
 
 #[test]
-fn punish_command_rejects_short_reason() {
+pub(crate) fn punish_command_rejects_short_reason() {
     let mut world = goto_test_world();
     let caller_id = CharacterId(1);
     let mut caller = login_character(caller_id, &login_block("Ralph"), 3, 10, 10);
@@ -10084,7 +7596,7 @@ fn punish_command_rejects_short_reason() {
 }
 
 #[test]
-fn punish_command_rejects_out_of_bounds_level() {
+pub(crate) fn punish_command_rejects_out_of_bounds_level() {
     let mut world = goto_test_world();
     let caller_id = CharacterId(1);
     let mut caller = login_character(caller_id, &login_block("Ralph"), 3, 10, 10);
@@ -10108,7 +7620,7 @@ fn punish_command_rejects_out_of_bounds_level() {
 }
 
 #[test]
-fn punish_command_abbreviation_is_not_recognized() {
+pub(crate) fn punish_command_abbreviation_is_not_recognized() {
     // C `cmdcmp(ptr, "punish", 6)` requires the full six-letter word.
     let mut world = goto_test_world();
     let caller_id = CharacterId(1);
@@ -10132,7 +7644,7 @@ fn punish_command_abbreviation_is_not_recognized() {
 // only.
 
 #[test]
-fn unpunish_command_requires_god_not_just_staff() {
+pub(crate) fn unpunish_command_requires_god_not_just_staff() {
     let mut world = goto_test_world();
     let caller_id = CharacterId(1);
     let mut caller = login_character(caller_id, &login_block("Ralph"), 3, 10, 10);
@@ -10151,7 +7663,7 @@ fn unpunish_command_requires_god_not_just_staff() {
 }
 
 #[test]
-fn unpunish_command_queues_a_valid_request_with_no_immediate_reply() {
+pub(crate) fn unpunish_command_queues_a_valid_request_with_no_immediate_reply() {
     let mut world = goto_test_world();
     let caller_id = CharacterId(1);
     let mut caller = login_character(caller_id, &login_block("Ralph"), 3, 10, 10);
@@ -10175,7 +7687,7 @@ fn unpunish_command_queues_a_valid_request_with_no_immediate_reply() {
 }
 
 #[test]
-fn unpunish_command_abbreviation_is_not_recognized() {
+pub(crate) fn unpunish_command_abbreviation_is_not_recognized() {
     // C `cmdcmp(ptr, "unpunish", 8)` requires the full eight-letter word.
     let mut world = goto_test_world();
     let caller_id = CharacterId(1);
@@ -10199,7 +7711,7 @@ fn unpunish_command_abbreviation_is_not_recognized() {
 // full-word only.
 
 #[test]
-fn exterminate_command_requires_god_or_staff() {
+pub(crate) fn exterminate_command_requires_god_or_staff() {
     let mut world = goto_test_world();
     let caller_id = CharacterId(1);
     let caller = login_character(caller_id, &login_block("Ralph"), 3, 10, 10);
@@ -10218,7 +7730,7 @@ fn exterminate_command_requires_god_or_staff() {
 }
 
 #[test]
-fn exterminate_command_accepts_staff_alone_and_queues_the_parsed_name() {
+pub(crate) fn exterminate_command_accepts_staff_alone_and_queues_the_parsed_name() {
     let mut world = goto_test_world();
     let caller_id = CharacterId(1);
     let mut caller = login_character(caller_id, &login_block("Ralph"), 3, 10, 10);
@@ -10242,7 +7754,7 @@ fn exterminate_command_accepts_staff_alone_and_queues_the_parsed_name() {
 }
 
 #[test]
-fn exterminate_command_accepts_god_alone() {
+pub(crate) fn exterminate_command_accepts_god_alone() {
     let mut world = goto_test_world();
     let caller_id = CharacterId(1);
     let mut caller = login_character(caller_id, &login_block("Ralph"), 3, 10, 10);
@@ -10263,7 +7775,7 @@ fn exterminate_command_accepts_god_alone() {
 }
 
 #[test]
-fn exterminate_command_abbreviation_is_not_recognized() {
+pub(crate) fn exterminate_command_abbreviation_is_not_recognized() {
     // C `cmdcmp(ptr, "exterminate", 11)` requires the full eleven-letter
     // word.
     let mut world = goto_test_world();
@@ -10284,7 +7796,7 @@ fn exterminate_command_abbreviation_is_not_recognized() {
 }
 
 #[test]
-fn exterminate_command_truncates_the_name_at_the_first_non_alpha_character() {
+pub(crate) fn exterminate_command_truncates_the_name_at_the_first_non_alpha_character() {
     let mut world = goto_test_world();
     let caller_id = CharacterId(1);
     let mut caller = login_character(caller_id, &login_block("Ralph"), 3, 10, 10);
@@ -10309,7 +7821,7 @@ fn exterminate_command_truncates_the_name_at_the_first_non_alpha_character() {
 // full-word only.
 
 #[test]
-fn look_command_requires_god_or_staff() {
+pub(crate) fn look_command_requires_god_or_staff() {
     let mut world = goto_test_world();
     let caller_id = CharacterId(1);
     let caller = login_character(caller_id, &login_block("Ralph"), 3, 10, 10);
@@ -10323,7 +7835,7 @@ fn look_command_requires_god_or_staff() {
 }
 
 #[test]
-fn look_command_accepts_staff_alone_and_queues_a_request() {
+pub(crate) fn look_command_accepts_staff_alone_and_queues_a_request() {
     let mut world = goto_test_world();
     let caller_id = CharacterId(1);
     let mut caller = login_character(caller_id, &login_block("Ralph"), 3, 10, 10);
@@ -10341,7 +7853,7 @@ fn look_command_accepts_staff_alone_and_queues_a_request() {
 }
 
 #[test]
-fn look_command_empty_argument_replies_immediately_without_queuing() {
+pub(crate) fn look_command_empty_argument_replies_immediately_without_queuing() {
     let mut world = goto_test_world();
     let caller_id = CharacterId(1);
     let mut caller = login_character(caller_id, &login_block("Ralph"), 3, 10, 10);
@@ -10358,7 +7870,7 @@ fn look_command_empty_argument_replies_immediately_without_queuing() {
 }
 
 #[test]
-fn look_command_abbreviation_is_not_recognized() {
+pub(crate) fn look_command_abbreviation_is_not_recognized() {
     // C `cmdcmp(ptr, "look", 4)` requires the full four-letter word.
     let mut world = goto_test_world();
     let caller_id = CharacterId(1);
@@ -10377,7 +7889,7 @@ fn look_command_abbreviation_is_not_recognized() {
 // gated, full-word only, no argument.
 
 #[test]
-fn klog_command_requires_god_or_staff() {
+pub(crate) fn klog_command_requires_god_or_staff() {
     let mut world = goto_test_world();
     let caller_id = CharacterId(1);
     let caller = login_character(caller_id, &login_block("Ralph"), 3, 10, 10);
@@ -10390,7 +7902,7 @@ fn klog_command_requires_god_or_staff() {
 }
 
 #[test]
-fn klog_command_accepts_staff_alone_and_queues_a_request() {
+pub(crate) fn klog_command_accepts_staff_alone_and_queues_a_request() {
     let mut world = goto_test_world();
     let caller_id = CharacterId(1);
     let mut caller = login_character(caller_id, &login_block("Ralph"), 3, 10, 10);
@@ -10406,7 +7918,7 @@ fn klog_command_accepts_staff_alone_and_queues_a_request() {
 }
 
 #[test]
-fn klog_command_abbreviation_is_not_recognized() {
+pub(crate) fn klog_command_abbreviation_is_not_recognized() {
     // C `cmdcmp(ptr, "klog", 4)` requires the full four-letter word.
     let mut world = goto_test_world();
     let caller_id = CharacterId(1);
