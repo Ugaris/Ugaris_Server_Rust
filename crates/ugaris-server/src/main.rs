@@ -45,6 +45,7 @@ mod stacks;
 mod tick_client_actions;
 mod tick_item_use_chests;
 mod tick_item_use_dungeon;
+mod tick_item_use_edemon_fdemon;
 mod tick_item_use_ice;
 mod tick_item_use_skelraise;
 mod tick_item_use_teufel;
@@ -2254,217 +2255,34 @@ async fn main() -> anyhow::Result<()> {
                                             }
                                             executed += 1;
                                         }
-                                        ugaris_core::item_driver::ItemDriverOutcome::EdemonSwitchStuck {
-                                            character_id,
-                                            ..
-                                        } => {
-                                            feedback.push((
-                                                character_id,
-                                                "The lever seems stuck.".to_string(),
-                                            ));
-                                            blocked += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::EdemonDoorLocked {
-                                            character_id,
-                                            ..
-                                        } => {
-                                            feedback.push((
-                                                character_id,
-                                                "You need a key to use this door.".to_string(),
-                                            ));
-                                            blocked += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::EdemonDoorLifeless {
-                                            character_id,
-                                            ..
-                                        } => {
-                                            feedback.push((
-                                                character_id,
-                                                "The door won't move. It seems somehow lifeless.".to_string(),
-                                            ));
-                                            blocked += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::EdemonBlockBlocked {
-                                            character_id,
-                                            ..
-                                        } => {
-                                            feedback.push((character_id, "It won't move.".to_string()));
-                                            blocked += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::EdemonBlockMove {
-                                            ..
-                                        } => {
-                                            executed += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::EdemonTubePulse {
-                                            ..
-                                        } => {
-                                            executed += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::FdemonLoaderBlocked {
-                                            character_id,
-                                            reason,
-                                            ..
-                                        } => {
-                                            let text = match reason {
-                                                ugaris_core::item_driver::FdemonLoaderBlockReason::CrystalAlreadyPresent => "There is already a crystal, you cannot add another item.",
-                                                ugaris_core::item_driver::FdemonLoaderBlockReason::CrystalStuck => "The crystal is stuck.",
-                                                ugaris_core::item_driver::FdemonLoaderBlockReason::NeedsCrystal => "Nothing happens.",
-                                                ugaris_core::item_driver::FdemonLoaderBlockReason::WrongCrystal => "That doesn't fit.",
-                                            };
-                                            feedback.push((character_id, text.to_string()));
-                                            blocked += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::FdemonCannonLifeless {
-                                            character_id,
-                                            ..
-                                        } => {
-                                            feedback.push((
-                                                character_id,
-                                                "It seems lifeless.".to_string(),
-                                            ));
-                                            blocked += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::EdemonLoaderBlocked {
-                                            character_id,
-                                            reason,
-                                            ..
-                                        } => {
-                                            let text = match reason {
-                                                ugaris_core::item_driver::EdemonLoaderBlockReason::CrystalAlreadyPresent => "There is already a crystal, you cannot add another item.",
-                                                ugaris_core::item_driver::EdemonLoaderBlockReason::CrystalStuck => "The crystal is stuck.",
-                                                ugaris_core::item_driver::EdemonLoaderBlockReason::NeedsCrystal => "Nothing happens.",
-                                                ugaris_core::item_driver::EdemonLoaderBlockReason::WrongCrystal => "That doesn't fit.",
-                                            };
-                                            feedback.push((character_id, text.to_string()));
-                                            blocked += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::FdemonFarmHarvest {
-                                            character_id,
-                                            template,
-                                            ..
-                                        } => {
-                                            if grant_template_item_to_cursor(
+                                        outcome @ (ugaris_core::item_driver::ItemDriverOutcome::EdemonSwitchStuck { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::EdemonDoorLocked { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::EdemonDoorLifeless { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::EdemonBlockBlocked { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::EdemonBlockMove { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::EdemonTubePulse { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::FdemonLoaderBlocked { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::FdemonCannonLifeless { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::EdemonLoaderBlocked { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::FdemonFarmHarvest { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::FdemonFarmCursorOccupied { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::FdemonFarmNotReady { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::FdemonFarmBug { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::FdemonBloodBlocked { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::FdemonBloodDestroyedFlask { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::FdemonBloodFilled { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::FdemonLavaBlocked { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::FdemonLavaActivated { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::EdemonDoorToggle { .. }) => {
+                                            tick_item_use_edemon_fdemon::dispatch_edemon_fdemon_outcome(
                                                 &mut world,
                                                 &mut zone_loader,
-                                                character_id,
-                                                template.as_str(),
-                                            )
-                                            .is_some()
-                                            {
-                                                executed += 1;
-                                            } else {
-                                                feedback.push((
-                                                    character_id,
-                                                    format!(
-                                                        "BUG # 31992 mark {}",
-                                                        template.legacy_number()
-                                                    ),
-                                                ));
-                                                blocked += 1;
-                                            }
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::FdemonFarmCursorOccupied {
-                                            character_id,
-                                            ..
-                                        } => {
-                                            feedback.push((
-                                                character_id,
-                                                "Please empty your hand (mouse cursor) first."
-                                                    .to_string(),
-                                            ));
-                                            blocked += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::FdemonFarmNotReady {
-                                            character_id,
-                                            current,
-                                            required,
-                                            ..
-                                        } => {
-                                            feedback.push((
-                                                character_id,
-                                                format!(
-                                                    "There's nothing to take yet ({} of {}).",
-                                                    current, required
-                                                ),
-                                            ));
-                                            blocked += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::FdemonFarmBug {
-                                            character_id,
-                                            crystal_number,
-                                            ..
-                                        } => {
-                                            feedback.push((
-                                                character_id,
-                                                format!("BUG # 31992 mark {}", crystal_number),
-                                            ));
-                                            blocked += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::FdemonBloodBlocked {
-                                            character_id,
-                                            reason,
-                                            ..
-                                        } => {
-                                            let text = match reason {
-                                                ugaris_core::item_driver::FdemonBloodBlockReason::BareHands => "You do not want to touch the liquid with your bare hands.",
-                                                ugaris_core::item_driver::FdemonBloodBlockReason::WrongItem => "Hu?",
-                                                ugaris_core::item_driver::FdemonBloodBlockReason::ContainerFull => "The container is full already.",
-                                            };
-                                            feedback.push((character_id, text.to_string()));
-                                            blocked += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::FdemonBloodDestroyedFlask {
-                                            character_id,
-                                            ..
-                                        } => {
-                                            feedback.push((
-                                                character_id,
-                                                "The liquid burns through the flask and shatters it."
-                                                    .to_string(),
-                                            ));
-                                            executed += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::FdemonBloodFilled {
-                                            character_id,
-                                            ..
-                                        } => {
-                                            if let Some(player) = runtime.player_for_character_mut(character_id) {
-                                                if player.advance_farmy_blood_stage() {
-                                                    feedback.push((
-                                                        character_id,
-                                                        "That's it. Now report to the commander.".to_string(),
-                                                    ));
-                                                }
-                                            }
-                                            executed += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::FdemonLavaBlocked {
-                                            character_id,
-                                            reason,
-                                            ..
-                                        } => {
-                                            let text = match reason {
-                                                ugaris_core::item_driver::FdemonLavaBlockReason::BareHands => "You do not want to touch burning lava with your bare hands, do you?",
-                                                ugaris_core::item_driver::FdemonLavaBlockReason::WrongItem => "Hu?",
-                                                ugaris_core::item_driver::FdemonLavaBlockReason::EmptyContainer => "The container is empty, and it cannot hold lava.",
-                                            };
-                                            feedback.push((character_id, text.to_string()));
-                                            blocked += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::FdemonLavaActivated {
-                                            character_id,
-                                            ..
-                                        } => {
-                                            if let Some(player) = runtime.player_for_character_mut(character_id) {
-                                                if player.advance_farmy_lava_stage() {
-                                                    feedback.push((
-                                                        character_id,
-                                                        "You got it. Now report to the commander.".to_string(),
-                                                    ));
-                                                }
-                                            }
-                                            executed += 1;
+                                                &mut runtime,
+                                                outcome,
+                                                &mut feedback,
+                                                &mut executed,
+                                                &mut blocked,
+                                            );
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::PotionDrunk {
                                             character_id,
@@ -2474,20 +2292,6 @@ async fn main() -> anyhow::Result<()> {
                                                 character_id,
                                                 potion_area_message(&world, character_id),
                                                 10,
-                                            ));
-                                            executed += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::EdemonDoorToggle {
-                                            character_id,
-                                            key_name: Some(key_name),
-                                            locking,
-                                            ..
-                                        } => {
-                                            let action = if locking { "lock" } else { "unlock" };
-                                            let key_name = outcome_item_name_text(&key_name);
-                                            feedback.push((
-                                                character_id,
-                                                format!("You use {key_name} to {action} the door."),
                                             ));
                                             executed += 1;
                                         }
@@ -2557,7 +2361,6 @@ async fn main() -> anyhow::Result<()> {
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::FoodEaten { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::DoorToggle { .. }
-                                        | ugaris_core::item_driver::ItemDriverOutcome::EdemonDoorToggle { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::DoubleDoorToggle { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::FreakDoorUse { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::Teleport { .. }

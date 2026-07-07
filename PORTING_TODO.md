@@ -186,9 +186,25 @@ order.
   `tick_item_use_skelraise::dispatch_skelraise_outcome`
   (`crates/ugaris-server/src/tick_item_use_skelraise.rs`, 68 lines;
   `main.rs` down to 4,556).
+  Seventh family slice done: the Edemon/Fdemon boss-machinery family
+  (19 variants - `EdemonSwitchStuck`/`EdemonDoorLocked`/
+  `EdemonDoorLifeless`/`EdemonBlockBlocked`/`EdemonBlockMove`/
+  `EdemonTubePulse`/`FdemonLoaderBlocked`/`FdemonCannonLifeless`/
+  `EdemonLoaderBlocked`/`FdemonFarmHarvest`/`FdemonFarmCursorOccupied`/
+  `FdemonFarmNotReady`/`FdemonFarmBug`/`FdemonBloodBlocked`/
+  `FdemonBloodDestroyedFlask`/`FdemonBloodFilled`/`FdemonLavaBlocked`/
+  `FdemonLavaActivated`/`EdemonDoorToggle`) is extracted into
+  `tick_item_use_edemon_fdemon::dispatch_edemon_fdemon_outcome`
+  (`crates/ugaris-server/src/tick_item_use_edemon_fdemon.rs`, 225
+  lines; `main.rs` down to 4,359). `EdemonDoorToggle` needed care: it
+  originally appeared twice in the match (once with a `key_name:
+  Some(..)` field guard producing feedback text, once bare inside the
+  large no-op catch-all further down for the `key_name: None` case) -
+  both arms are now inside the extracted dispatcher in the same
+  relative order, and both original main.rs occurrences were removed.
   Still inline in `main.rs`: every other outcome family (
   transport, clan-spawn, lq, arena, shrines, xmas,
-  swamp, edemon/fdemon, burndown, key-assembly, and the
+  swamp, burndown, key-assembly, and the
   large no-op catch-all) - continue slicing one family per iteration
   following this file's pattern (`use super::*;`, take
   `world`/`zone_loader`/`runtime`/`achievement_repository`/`config` or
@@ -552,4 +568,8 @@ notes live in `PROGRESS_ARCHIVE.md`.
   midnight-meeting forest patrol NPC's nine-waypoint walk, ladder/hole
   use-triggers, torch upkeep, and single-victim self-defense. 2415
   core + 1091 server tests pass, clean build/boot-smoke.
+- 2026-07-07: P0.5 main() decomposition: sliced the seventh completed-
+  action-outcome family (Edemon/Fdemon boss machinery, 19 variants)
+  into `tick_item_use_edemon_fdemon::dispatch_edemon_fdemon_outcome`
+  (`main.rs` down to 4,359). 1091 server tests unchanged, clean build/boot-smoke.
 
