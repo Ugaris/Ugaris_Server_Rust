@@ -180,8 +180,14 @@ order.
   `tick_item_use_teufel::dispatch_teufel_outcome`
   (`crates/ugaris-server/src/tick_item_use_teufel.rs`, 141 lines;
   `main.rs` down to 4,569).
+  Sixth family slice done: the skeleton-raise family (4 contiguous
+  variants - `SkelRaiseDust`/`SkelRaiseTouch`/`SkelRaiseRaise`/
+  `SkelRaiseTimer`) is extracted into
+  `tick_item_use_skelraise::dispatch_skelraise_outcome`
+  (`crates/ugaris-server/src/tick_item_use_skelraise.rs`, 68 lines;
+  `main.rs` down to 4,556).
   Still inline in `main.rs`: every other outcome family (
-  skel-raise, transport, clan-spawn, lq, arena, shrines, xmas,
+  transport, clan-spawn, lq, arena, shrines, xmas,
   swamp, edemon/fdemon, burndown, key-assembly, and the
   large no-op catch-all) - continue slicing one family per iteration
   following this file's pattern (`use super::*;`, take
@@ -535,4 +541,8 @@ notes live in `PROGRESS_ARCHIVE.md`.
   action-outcome family (Teufel, 16 contiguous variants) into
   `tick_item_use_teufel::dispatch_teufel_outcome` (`main.rs` down to
   4,569). 1091 server tests unchanged, clean build/boot-smoke.
+- 2026-07-07: P0.5 main() decomposition: sliced the sixth completed-
+  action-outcome family (skel-raise, 4 contiguous variants) into
+  `tick_item_use_skelraise::dispatch_skelraise_outcome` (`main.rs`
+  down to 4,556). 1091 server tests unchanged, clean build/boot-smoke.
 

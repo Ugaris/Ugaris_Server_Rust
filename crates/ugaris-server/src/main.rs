@@ -46,6 +46,7 @@ mod tick_client_actions;
 mod tick_item_use_chests;
 mod tick_item_use_dungeon;
 mod tick_item_use_ice;
+mod tick_item_use_skelraise;
 mod tick_item_use_teufel;
 mod tick_item_use_warp;
 mod tick_npc;
@@ -1463,33 +1464,19 @@ async fn main() -> anyhow::Result<()> {
                                                 &mut failed,
                                             );
                                         }
-                                        ugaris_core::item_driver::ItemDriverOutcome::SkelRaiseDust { item_id, character_id } => {
-                                            world.apply_skelraise_dust(item_id);
-                                            feedback.push((character_id, "The skeleton crumbles to dust as you touch it.".to_string()));
-                                            executed += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::SkelRaiseTouch { character_id, .. } => {
-                                            feedback.push((character_id, "You touch the chair.".to_string()));
-                                            executed += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::SkelRaiseRaise { item_id, character_id, cursor_item_id, template } => {
-                                            if raise_skeleton_from_template(
+                                        outcome @ (ugaris_core::item_driver::ItemDriverOutcome::SkelRaiseDust { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::SkelRaiseTouch { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::SkelRaiseRaise { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::SkelRaiseTimer { .. }) => {
+                                            tick_item_use_skelraise::dispatch_skelraise_outcome(
                                                 &mut world,
                                                 &mut zone_loader,
                                                 &mut runtime,
-                                                item_id,
-                                                character_id,
-                                                cursor_item_id,
-                                                template,
-                                            ) {
-                                                feedback.push((character_id, "The skeleton comes to life as you pour the blood over it.".to_string()));
-                                                executed += 1;
-                                            } else {
-                                                failed += 1;
-                                            }
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::SkelRaiseTimer { .. } => {
-                                            executed += 1;
+                                                outcome,
+                                                &mut feedback,
+                                                &mut executed,
+                                                &mut failed,
+                                            );
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::ColorTile { character_id, row, color, .. } => {
                                             let matched = if let Some(player) = runtime.player_for_character_mut(character_id) {

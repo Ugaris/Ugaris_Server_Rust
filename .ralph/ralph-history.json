@@ -350,15 +350,44 @@
         "test world::tests::dungeon_master::attack_command_failure_says_error_and_never_charges_or_queues ... ok",
         "test result: ok. 1091 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.09s"
       ]
+    },
+    {
+      "iteration": 12,
+      "startedAt": "2026-07-07T13:32:51.018Z",
+      "endedAt": "2026-07-07T13:37:56.575Z",
+      "durationMs": 304667,
+      "agent": "opencode",
+      "model": "anthropic/claude-sonnet-5",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "PORTING_TODO.md",
+        "crates/ugaris-server/src/main.rs",
+        "crates/ugaris-server/src/tick_item_use_skelraise.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "Build is healthy. Let me check the full test summary counts to confirm no failures, then continue the P0.5 main() decomposition task (next family slice).",
+        "- Health check passed: `cargo test --workspace` was green (2406 core + 78 db + 3 net + 45 protocol + 1091 server tests, 0 failures) before I started.",
+        "- Verified: `cargo fmt --all` clean, `cargo test --workspace` unchanged pass counts (zero failures, zero warnings), `cargo build -p ugaris-server` clean, and a 10s boot-smoke confirmed \"legacy TCP lis",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "\u001b[0m$ \u001b[0mcargo test --workspace 2>&1 | grep -E \"FAILED|error\\[|test result:\"",
+        "test result: ok. 2406 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.19s",
+        "test result: ok. 78 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 45 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+      ]
     }
   ],
-  "totalDurationMs": 8673067,
+  "totalDurationMs": 8977734,
   "struggleIndicators": {
     "repeatedErrors": {
       "Everything builds cleanly, all tests pass (2380 core + 1091 server, zero failures, zero warnings), f": 1,
       "Verification: `cargo fmt --all`, `cargo test --workspace` (2380 ugaris-core + 1091 ugaris-server, al": 1,
       "test result: ok. 1089 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.09s": 1,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 11,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 12,
       "The arguments provided to the tool are invalid: Invalid input for tool read: JSON parsing failed: Te": 1,
       "Error message: JSON Parse error: Property name must be a string literal": 1,
       "error: could not compile `ugaris-core` (lib) due to 4 previous errors": 1,
@@ -373,12 +402,12 @@
       "test error::tests::out_of_range_errors_use_c_fallback_string ... ok": 3,
       "test world::tests::dungeon_master::attack_command_failure_says_error_and_never_charges_or_queues ...": 3,
       "test result: ok. 2380 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.19s": 3,
-      "test result: ok. 78 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 7,
+      "test result: ok. 78 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 8,
       "test result: ok. 1091 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.09s": 5,
       "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&": 4,
-      "test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s": 6,
-      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 6,
-      "test result: ok. 45 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 6,
+      "test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s": 7,
+      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 7,
+      "test result: ok. 45 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 7,
       "error: could not compile `ugaris-core` (lib) due to 1 previous error; 1 warning emitted": 1,
       "test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 2380 filtered out; finished in 0.00s": 1,
       "test result: ok. 2393 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.20s": 4,
@@ -407,7 +436,12 @@
       "4. **Verification**: `cargo fmt --all`, `cargo test --workspace` (2406 core + 1091 server, all green": 1,
       "Good, tests pass. Let's check full output for failures and read the task list.": 1,
       "Good, no actual failures/warnings there (those are test names containing \"error\"). Workspace is heal": 1,
-      "4. Verified: `cargo fmt --all`, `cargo test --workspace` (2406 core + 78 db + 3 net + 45 protocol + ": 1
+      "4. Verified: `cargo fmt --all`, `cargo test --workspace` (2406 core + 78 db + 3 net + 45 protocol + ": 1,
+      "Build is healthy. Let me check the full test summary counts to confirm no failures, then continue th": 1,
+      "- Health check passed: `cargo test --workspace` was green (2406 core + 78 db + 3 net + 45 protocol +": 1,
+      "- Verified: `cargo fmt --all` clean, `cargo test --workspace` unchanged pass counts (zero failures, ": 1,
+      "\u001b[0m$ \u001b[0mcargo test --workspace 2>&1 | grep -E \"FAILED|error\\[|test result:\"": 1,
+      "test result: ok. 2406 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.19s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0
