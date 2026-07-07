@@ -304,9 +304,19 @@ Ordered by player progression; the C file is the oracle.
   BRITHILDIE_STATE_NOMORETALES_QOPEN` can complete `QLOG_BRITHILDIE` on
   a `CDR_BIGBADSPIDER` kill. yoakin's and gwendylon's
   `destroy_item_byID` sweeps still do not reach the account depot
-  (unrelated, separate gap). Every other NPC in this file is still
-  unported: `james_driver` (`:2901-3179`), `nook_
-  driver` (`:3180-3457`), `lydia_driver` (`:3458-3703`),
+  (unrelated, separate gap). `nook_driver` (`CDR_NOOK`, the identity-
+  crisis judge/knight/jester NPC's greeting/hint chain plus its
+  stolen-cap side quest, `:3180-3457`) is now also ported - see
+  `crates/ugaris-core/src/world/npc/area1/nook.rs`'s own module doc
+  comment for its one structural gap (this NPC has no `seen_timer`
+  reminder gate anywhere in its C source at all, unlike every other
+  area-1 NPC ported so far - confirmed, not a missed port). Every other
+  NPC in this file is still unported: `james_driver` (`:2901-3179`,
+  gated on the large unported `james_raisehint`/`can_raise`/
+  `get_fight_skill_skill` helpers, `:5235-6003` - ~770 lines total,
+  budget a dedicated iteration or a deliberately reduced first slice
+  rather than treating it like the quick NPC ports above),
+  `lydia_driver` (`:3458-3703`),
   `balltrap_skelly_driver` (`:3712-3774`, a fight-driver archer that
   needs the generic multi-enemy `DRD_FIGHTDRIVER` system this codebase
   currently only exposes via the `CDR_SIMPLEBADDY`-specific
@@ -439,4 +449,8 @@ notes live in `PROGRESS_ARCHIVE.md`.
   `tick_client_actions::process_queued_client_actions` (`main.rs` down
   to 5,262). Only completed-action-outcome handling (~3.7K lines)
   remains inline. 1091 tests unchanged, clean build/boot-smoke.
+- 2026-07-07: Area 1 `nook_driver` (`CDR_NOOK`) ported: the identity-
+  crisis judge/knight/jester's greeting chain plus the stolen-cap
+  side quest (`QLOG_NOOK`) and its idle mutterings. 2393 core + 1091
+  server tests pass, clean build/boot-smoke.
 

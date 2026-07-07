@@ -105,6 +105,10 @@ pub const CDR_BRITHILDIE: u16 = 126;
 /// as `CDR_RIVERBEAST`/`CDR_BREDEL`/`CDR_CAMERON_FORESTMONSTER` above. See
 /// `ugaris-server::world_events::apply_bigbadspider_death_from_hurt_event`.
 pub const CDR_BIGBADSPIDER: u16 = 153;
+/// C `#define CDR_NOOK 15` (`src/system/drvlib.h`): "specific NPC in
+/// area1, knight castle" - the identity-crisis jester/judge/knight NPC
+/// (`src/area/1/gwendylon.c::nook_driver`).
+pub const CDR_NOOK: u16 = 15;
 /// C `#define CDR_GATE_WELCOME 39` (`src/system/drvlib.h`): the stationary
 /// gatekeeper-welcome NPC (`gate_welcome` template,
 /// `src/system/gatekeeper.c::gate_welcome_driver`).
@@ -250,6 +254,7 @@ pub enum CharacterDriverState {
     Jiu(JiuDriverData),
     ForestRanger(ForestRangerDriverData),
     Brithildie(BrithildieDriverData),
+    Nook(NookDriverData),
 }
 /// C `bank_driver_parse` from `src/module/bank.c`. The C driver defaults
 /// opening hours to 6..23 before parsing (`bank_driver` lines 304-309).
@@ -925,7 +930,8 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::Jessica(_)
             | CharacterDriverState::Jiu(_)
             | CharacterDriverState::ForestRanger(_)
-            | CharacterDriverState::Brithildie(_),
+            | CharacterDriverState::Brithildie(_)
+            | CharacterDriverState::Nook(_),
         ) => SimpleBaddyDriverData::default(),
         None => SimpleBaddyDriverData::default(),
     };
@@ -3248,6 +3254,7 @@ pub use crate::world::npc::area1::greeter::GreeterDriverData;
 pub use crate::world::npc::area1::gwendylon::{GwendylonDriverData, GWENDYLON_QA};
 pub use crate::world::npc::area1::jessica::JessicaDriverData;
 pub use crate::world::npc::area1::jiu::JiuDriverData;
+pub use crate::world::npc::area1::nook::NookDriverData;
 pub use crate::world::npc::area1::terion::TerionDriverData;
 pub use crate::world::npc::area1::yoakin::YoakinDriverData;
 pub use crate::world::npc::area13::dungeon_master::{

@@ -9,7 +9,8 @@
 //! `CDR_FOREST_RANGER`/`ugaris_core::world::forest_ranger::
 //! process_forest_ranger_actions`,
 //! `CDR_BRITHILDIE`/`ugaris_core::world::brithildie::
-//! process_brithildie_actions`).
+//! process_brithildie_actions`,
+//! `CDR_NOOK`/`ugaris_core::world::nook::process_nook_actions`).
 //!
 //! Mirrors the `World`/`PlayerRuntime` split already established for
 //! `world::gatekeeper`'s `GateWelcomePlayerFacts`/`GateWelcomeOutcomeEvent`
@@ -47,7 +48,10 @@
 //! `world_events::death_hooks`, since it is `bigbadspider_dead`, not
 //! `brithildie_driver` itself, that completes the quest - same split as
 //! `world::jiu`'s `riverbeast_dead`), so [`apply_brithildie_events`] needs
-//! no `QuestDone`/achievement handling either.
+//! no `QuestDone`/achievement handling either. Nook's own quest (the
+//! stolen-cap side quest) carries no gold reward either (`nook_driver`'s
+//! own turn-in line says so explicitly), so [`apply_nook_events`] needs no
+//! achievement wiring, same as Jessica/Jiu.
 
 use super::*;
 use ugaris_core::quest::{
@@ -57,8 +61,8 @@ use ugaris_core::world::{
     BrithildieOutcomeEvent, BrithildiePlayerFacts, CamhermitOutcomeEvent, CamhermitPlayerFacts,
     ForestRangerOutcomeEvent, ForestRangerPlayerFacts, GreeterOutcomeEvent, GreeterPlayerFacts,
     GwendylonOutcomeEvent, GwendylonPlayerFacts, JessicaOutcomeEvent, JessicaPlayerFacts,
-    JiuOutcomeEvent, JiuPlayerFacts, TerionOutcomeEvent, TerionPlayerFacts, YoakinOutcomeEvent,
-    YoakinPlayerFacts,
+    JiuOutcomeEvent, JiuPlayerFacts, NookOutcomeEvent, NookPlayerFacts, TerionOutcomeEvent,
+    TerionPlayerFacts, YoakinOutcomeEvent, YoakinPlayerFacts,
 };
 
 pub(crate) fn camhermit_player_facts(
@@ -837,6 +841,88 @@ pub(crate) fn apply_brithildie_events(
                     runtime.send_to_session(session_id, payload.clone());
                 }
                 applied += 1;
+            }
+        }
+    }
+    applied
+}
+
+pub(crate) fn nook_player_facts(runtime: &ServerRuntime) -> HashMap<CharacterId, NookPlayerFacts> {
+    runtime
+        .players
+        .values()
+        .filter_map(|player| {
+            let character_id = player.character_id?;
+            Some((
+                character_id,
+                NookPlayerFacts {
+                    state: player.area1_nook_state(),
+                    gwendy_state: player.area1_gwendy_state(),
+                },
+            ))
+        })
+        .collect()
+}
+
+/// Applies each [`NookOutcomeEvent`] queued by `World::process_nook_actions`.
+/// See the module doc comment.
+pub(crate) fn apply_nook_events(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    events: Vec<NookOutcomeEvent>,
+) -> usize {
+    let mut applied = 0;
+    for event in events {
+        match event {
+            NookOutcomeEvent::UpdateState {
+                player_id,
+                new_state,
+            } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.set_area1_nook_state(new_state);
+                applied += 1;
+            }
+            // C `questlog_open(co, QLOG_NOOK)` (`src/system/questlog.c:204-
+            // 217`): sets the flag and unconditionally resends the
+            // questlog.
+            NookOutcomeEvent::QuestOpen { player_id } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.quest_log.open(QLOG_NOOK);
+                let payload = legacy_questlog_payload(player);
+                for (session_id, _) in runtime.sessions_for_character(player_id) {
+                    runtime.send_to_session(session_id, payload.clone());
+                }
+                applied += 1;
+            }
+            // C `questlog_done(co, QLOG_NOOK)` (`src/system/questlog.c:267-
+            // 305`): full exp-reward port via `QuestLog::complete_legacy`,
+            // applied through `World::give_exp` (matching every other
+            // quest-completion exp grant in this codebase), plus the
+            // unconditional questlog resend. Nook's own quest carries no
+            // gold reward, so no achievement wiring is needed here.
+            NookOutcomeEvent::QuestDone { player_id } => {
+                let Some(level) = world.characters.get(&player_id).map(|c| c.level) else {
+                    continue;
+                };
+                let level_val = level_value(level);
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                if let Some(completion) = player
+                    .quest_log
+                    .complete_legacy(QLOG_NOOK, level, level_val)
+                {
+                    let payload = legacy_questlog_payload(player);
+                    world.give_exp(player_id, completion.granted_exp, u32::from(world.area_id));
+                    for (session_id, _) in runtime.sessions_for_character(player_id) {
+                        runtime.send_to_session(session_id, payload.clone());
+                    }
+                    applied += 1;
+                }
             }
         }
     }

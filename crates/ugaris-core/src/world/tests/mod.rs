@@ -50,6 +50,7 @@ mod lq;
 mod macro_npc;
 mod merchant;
 mod military;
+mod nook;
 mod npc_fight;
 mod npc_idle;
 mod npc_messages;

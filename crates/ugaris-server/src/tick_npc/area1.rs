@@ -429,3 +429,37 @@ pub(crate) async fn brithildie_driver_62(
         );
     }
 }
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn nook_driver_63(
+    mut world: &mut World,
+    mut runtime: &mut ServerRuntime,
+    _zone_loader: &mut ZoneLoader,
+    config: &ServerConfig,
+    _args: &Args,
+    _completed_actions: &[WorldActionCompletion],
+    _achievement_repository: &Option<ugaris_db::PgAchievementRepository>,
+    _character_repository: &Option<ugaris_db::PgCharacterRepository>,
+    _area_repository: &Option<ugaris_db::PgAreaRepository>,
+    _clan_repository: &Option<ugaris_db::PgClanRegistryRepository>,
+    _clan_log_repository: &Option<ugaris_db::PgClanLogRepository>,
+    _merchant_repository: &Option<ugaris_db::PgMerchantRepository>,
+    _military_master_storage_repository: &Option<ugaris_db::PgMilitaryMasterStorageRepository>,
+    _military_advisor_storage_repository: &Option<ugaris_db::PgMilitaryAdvisorStorageRepository>,
+    _notes_repository: &Option<ugaris_db::PgNotesRepository>,
+    _anticheat_repository: &Option<ugaris_db::PgAntiCheatRepository>,
+    _auction_repository: &Option<ugaris_db::PgAuctionRepository>,
+) {
+    // C `nook_driver`: area 1's identity-crisis judge/knight/jester NPC
+    // (`src/area/1/gwendylon.c`).
+    let nook_facts = nook_player_facts(&runtime);
+    let nook_events = world.process_nook_actions(&nook_facts, config.area_id);
+    let nook_events_applied = apply_nook_events(&mut world, &mut runtime, nook_events);
+    if nook_events_applied != 0 {
+        info!(
+            nook_events_applied,
+            tick = world.tick.0,
+            "applied nook dialogue events"
+        );
+    }
+}
