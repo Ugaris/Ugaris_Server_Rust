@@ -294,6 +294,18 @@ order.
   `tick_item_use_books_potions::dispatch_books_potions_outcome`
   (`crates/ugaris-server/src/tick_item_use_books_potions.rs`, 199 lines;
   `main.rs` down to 3,072).
+  Nineteenth family slice done: the keyring/assemble/gathering/alchemy-
+  flask family (22 contiguous variants - `KeyringShow`/`Extinguish`/
+  `KeyedDoorToggle`/`KeyringAddCursorItem`/`AssembleItem`/
+  `AssembleNeedsCursor`/`AssembleDoesNotFit`/`AssembleUnknownItem`/
+  `ParkShrine`/`ParkShrineBug`/`PickBerry`/`PickBerryCursorOccupied`/
+  `PickAlchemyFlower`/`PickAlchemyFlowerCursorOccupied`/
+  `FlaskIngredientAdded`/`FlaskWrongCursor`/`FlaskFull`/
+  `FlaskFinishedNoMoreIngredients`/`FlaskEmptyShaken`/
+  `FlaskIngredientBug`/`FlaskMixed`/`FlaskRuined`) is extracted into
+  `tick_item_use_crafting::dispatch_crafting_outcome`
+  (`crates/ugaris-server/src/tick_item_use_crafting.rs`, 368 lines;
+  `main.rs` down to 2,848).
   Still inline in `main.rs`: every other outcome family (the large
   no-op catch-all) - continue slicing one family per iteration
   following this file's pattern (`use super::*;`, take
@@ -714,4 +726,9 @@ notes live in `PROGRESS_ARCHIVE.md`.
   `tick_item_use_books_potions::dispatch_books_potions_outcome`
   (`main.rs` down to 3,072). 1091 server + 2415 core tests unchanged,
   clean build/boot-smoke.
+- 2026-07-07: P0.5 main() decomposition: sliced the nineteenth completed-
+  action-outcome family (keyring/assemble/gathering/alchemy-flask, 22
+  contiguous variants) into
+  `tick_item_use_crafting::dispatch_crafting_outcome` (`main.rs` down to
+  2,848). 1091 server + 2415 core tests unchanged, clean build/boot-smoke.
 
