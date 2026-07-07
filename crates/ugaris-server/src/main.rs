@@ -43,6 +43,7 @@ mod snapshots;
 mod spawns;
 mod stacks;
 mod tick_npc;
+mod tick_sync;
 mod tick_world;
 mod transport;
 mod weather;
@@ -6174,70 +6175,12 @@ async fn main() -> anyhow::Result<()> {
                 // by area); `run_all` keeps the original order.
                 tick_npc::run_all(&mut world, &mut runtime, &mut zone_loader, &config, &args, &completed_actions, &achievement_repository, &character_repository, &area_repository, &clan_repository, &clan_log_repository, &merchant_repository, &military_master_storage_repository, &military_advisor_storage_repository, &notes_repository, &anticheat_repository, &auction_repository).await;
 
-                let realtime_seconds = world.tick.0 / TICKS_PER_SECOND;
-                let pk_hate_updates = apply_pk_hate_from_hurt_events(
-                    &mut runtime,
-                    &mut world,
-                    realtime_seconds,
-                    &zone_loader,
-                );
-                if pk_hate_updates != 0 {
-                    info!(pk_hate_updates, tick = world.tick.0, "applied PK hate updates from hurt events");
-                }
-
-                // C `monitor_20s_task`'s `shutdown_warn()` call
-                // (`server.c:216-222`), same ~20s cadence.
-                let shutdown_due = if world.tick.0 % (TICKS_PER_SECOND * 20) == 0 {
-                    tick_shutdown_scheduler(&mut world, &mut runtime)
-                } else {
-                    false
-                };
-
-                let area_text_sessions = send_pending_world_area_texts(&mut runtime, &mut world);
-                if area_text_sessions != 0 {
-                    info!(area_text_sessions, tick = world.tick.0, "queued world area text feedback");
-                }
-
-                let world_text_sessions = send_pending_world_system_texts(&mut runtime, &mut world);
-                if world_text_sessions != 0 {
-                    info!(world_text_sessions, tick = world.tick.0, "queued world system text feedback");
-                }
-
-                let world_text_bytes_sessions =
-                    send_pending_world_system_text_bytes(&mut runtime, &mut world);
-                if world_text_bytes_sessions != 0 {
-                    info!(world_text_bytes_sessions, tick = world.tick.0, "queued world system text byte feedback");
-                }
-
-                let channel_broadcast_sessions =
-                    send_pending_world_channel_broadcasts(&mut runtime, &mut world);
-                if channel_broadcast_sessions != 0 {
-                    info!(channel_broadcast_sessions, tick = world.tick.0, "queued world channel broadcast feedback");
-                }
-
-                let resource_sync_sessions = queue_resource_sync_frames(&mut runtime, &mut world);
-                if resource_sync_sessions != 0 {
-                    info!(resource_sync_sessions, tick = world.tick.0, "queued resource/value sync frames");
-                }
-
-                let (periodic_diff_sessions, periodic_empty_frames) =
-                    queue_periodic_player_frames(&mut runtime, &world);
-                if periodic_diff_sessions != 0 {
-                    info!(periodic_diff_sessions, tick = world.tick.0, "queued periodic map/action diffs");
-                }
-                if periodic_empty_frames != 0 {
-                    tracing::trace!(periodic_empty_frames, tick = world.tick.0, "queued empty legacy tick frames");
-                }
-                // Exactly one legacy tick frame per session per tick: the
-                // lockstep client advances its clock per received frame.
-                runtime.flush_tick_frames(true);
-
-                // C `while (!quit)` (`server.c:612`): `shutdown_warn`
-                // setting the global `quit = 1` once the scheduled time
-                // arrives (`system/tool.c:3148`) ends the C main loop the
-                // same way `ctrl_c` does below.
-                if shutdown_due {
-                    info!("scheduled shutdown time reached");
+                // Per-tick sync phase (PK hate updates, shutdown scheduler,
+                // pending text/channel broadcast drains, resource sync,
+                // periodic map/action diffs, final frame flush) lives in
+                // `tick_sync::sync_phase`; it returns whether the scheduled
+                // shutdown time was reached this tick.
+                if tick_sync::sync_phase(&mut world, &mut runtime, &zone_loader) {
                     break;
                 }
             }
