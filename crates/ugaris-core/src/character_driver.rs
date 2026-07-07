@@ -130,6 +130,10 @@ pub const CDR_ROBBER: u16 = 17;
 /// in area1, city"): the ambient twelve-waypoint city walker
 /// (`src/area/1/gwendylon.c::sanoa_driver`), no dialogue at all.
 pub const CDR_SANOA: u16 = 18;
+/// C `#define CDR_BALLTRAP 10` (`src/system/drvlib.h`, "specific enemy,
+/// area1, wood"): the stationary ball-trap-mechanism guard skeleton
+/// (`src/area/1/gwendylon.c::balltrap_skelly_driver`).
+pub const CDR_BALLTRAP: u16 = 10;
 /// C `#define CDR_ASTURIN 19` (`src/system/drvlib.h`, "specific NPC
 /// (enemy) in area1, city"): the private-quarters guard NPC
 /// (`src/area/1/gwendylon.c::asturin_driver`).
@@ -292,6 +296,7 @@ pub enum CharacterDriverState {
     Reskin(ReskinDriverData),
     Guiwynn(GuiwynnDriverData),
     James(JamesDriverData),
+    Balltrap(BalltrapDriverData),
 }
 /// C `bank_driver_parse` from `src/module/bank.c`. The C driver defaults
 /// opening hours to 6..23 before parsing (`bank_driver` lines 304-309).
@@ -975,7 +980,8 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::Asturin(_)
             | CharacterDriverState::Reskin(_)
             | CharacterDriverState::Guiwynn(_)
-            | CharacterDriverState::James(_),
+            | CharacterDriverState::James(_)
+            | CharacterDriverState::Balltrap(_),
         ) => SimpleBaddyDriverData::default(),
         None => SimpleBaddyDriverData::default(),
     };
@@ -3292,6 +3298,7 @@ mod tests {
 // stable while each NPC owns its file under `world::npc`.
 pub use crate::world::npc::aclerk::{parse_aclerk_driver_args, AclerkDriverData};
 pub use crate::world::npc::area1::asturin::AsturinDriverData;
+pub use crate::world::npc::area1::balltrap::BalltrapDriverData;
 pub use crate::world::npc::area1::brithildie::BrithildieDriverData;
 pub use crate::world::npc::area1::camhermit::CamhermitDriverData;
 pub use crate::world::npc::area1::forest_ranger::ForestRangerDriverData;

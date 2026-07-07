@@ -1,6 +1,7 @@
 //! Area 1 NPCs, one file per NPC.
 
 pub mod asturin;
+pub mod balltrap;
 pub mod brithildie;
 pub mod camhermit;
 pub mod forest_ranger;

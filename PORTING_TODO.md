@@ -537,12 +537,17 @@ Ordered by player progression; the C file is the oracle.
     `crates/ugaris-core/src/world/npc/area1/james.rs`'s own module doc
     comment for its documented gaps (the `CF_GOD`-only "raise me" debug
     command and its equipment-grant tail are deliberately not ported; not
-    reachable by any real player). Still unported:
-    `balltrap_skelly_driver` (`:3712-3774`, a fight-driver archer needing
-    the generic multi-enemy `DRD_FIGHTDRIVER` system), `logain_driver` and
-    the rest through `ch_driver`'s dispatch table (`:6076-6155`), plus
-    `balltrap_skelly_dead`'s no-op and the remaining `gwendylon_dead`
-    shared death-hook branches (`:6180-6222`).
+     reachable by any real player). `balltrap_skelly_driver`
+     (`CDR_BALLTRAP`, `:3712-3767`, the stationary ball-trap-mechanism
+     guard skeleton) is now also ported - see
+     `crates/ugaris-core/src/world/npc/area1/balltrap.rs`'s own module doc
+     comment for its documented gap (same single-victim self-defense
+     simplification as `CDR_ROBBER`/`CDR_SANOA`). Still unported:
+     `logain_driver` (`CDR_LOGAIN`, `:4893-5195`, the retired knight-
+     trainer's mystery-quest dialogue chain - the last driver in
+     `ch_driver`'s dispatch table, `:6076-6155`), plus `balltrap_skelly_
+     dead`'s no-op and the remaining `gwendylon_dead` shared death-hook
+     branches (`:6180-6222`).
 - [ ] **Area 2 - `src/area/2/area2.c`** - remaining character drivers
   (zombie lord, priests). Item drivers done.
 - [ ] **Area 3 - `src/area/3/area3.c`** - palace story NPCs, lamp ghost
@@ -792,4 +797,9 @@ notes live in `PROGRESS_ARCHIVE.md`.
   advice-only weighted priority computation; the `CF_GOD`-only "raise
   me"/equipment-grant tail is a documented, deliberate gap. 1091 server +
   2488 core tests pass, clean build/boot-smoke.
+- 2026-07-07: Area 1 `balltrap_skelly_driver` (`CDR_BALLTRAP`) ported: the
+  stationary ball-trap guard skeleton's self-defense cascade plus its
+  3-second-gated `do_use(DX_LEFT, 0)` trap trigger. Only `logain_driver`
+  remains unported in this file. 1091 server + 2494 core tests pass, clean
+  build/boot-smoke.
 
