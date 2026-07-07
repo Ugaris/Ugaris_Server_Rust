@@ -168,11 +168,12 @@ pub enum CharacterSaveMode {
 pub struct CharacterSaveRequest {
     pub character: Character,
     pub items: Vec<Item>,
-    pub ppd_blob: Vec<u8>,
-    pub subscriber_blob: Vec<u8>,
-    /// Typed serde state document (see migration 0020): the authoritative
-    /// per-player persistence going forward. The legacy blobs above remain
-    /// only as a read fallback for pre-0020 rows.
+    /// Typed serde state document (see migration 0020): the sole
+    /// per-player persistence write target now. The `ppd_blob`/
+    /// `subscriber_blob` columns are frozen (no longer written by any save
+    /// path - see the "Retire legacy blob writes" `PORTING_TODO.md` task);
+    /// [`CharacterSnapshot`] still reads them as a fallback for rows saved
+    /// before migration 0020 existed.
     pub player_state_json: Option<serde_json::Value>,
     pub mode: CharacterSaveMode,
 }
@@ -596,6 +597,11 @@ const FIND_PAID_UNTIL_INFO_SQL: &str = "select extract(epoch from a.paid_until):
 extract(epoch from a.created_at)::bigint \
 from characters c join accounts a on a.id = c.account_id where c.id = $1";
 
+// C: ppd_blob/subscriber_blob are intentionally absent from this SET list -
+// migration 0020's player_state_json is the sole write target now (see the
+// "Retire legacy blob writes" PORTING_TODO.md task); the columns are frozen
+// at whatever value they held before the retirement and remain readable as
+// a fallback (LOAD_CHARACTER_SNAPSHOT_SQL) for rows saved before 0020.
 const SAVE_CHARACTER_BACKUP_SQL: &str = "update characters set \
 name = $1, description = $2, flags_bits = $3, speed_mode = $4, \
 x = $5, y = $6, rest_area = $7, rest_x = $8, rest_y = $9, tox = $10, toy = $11, \
@@ -603,9 +609,9 @@ dir = $12, action = $13, duration = $14, step = $15, act1 = $16, act2 = $17, \
 hp = $18, mana = $19, endurance = $20, lifeshield = $21, level = $22, exp = $23, \
 exp_used = $24, gold = $25, cursor_item_id = $26, current_container_item_id = $27, \
 values_json = $28, professions_json = $29, inventory_json = $30, \
-character_json = $31, ppd_blob = $32, subscriber_blob = $33, player_state_json = coalesce($34, player_state_json), \
-mirror = $35, updated_at = now() \
-where id = $36 and current_area = $37 and current_mirror = $38";
+character_json = $31, player_state_json = coalesce($32, player_state_json), \
+mirror = $33, updated_at = now() \
+where id = $34 and current_area = $35 and current_mirror = $36";
 
 const SAVE_CHARACTER_LOGOUT_SQL: &str = "update characters set \
 name = $1, description = $2, flags_bits = $3, speed_mode = $4, \
@@ -614,10 +620,10 @@ dir = $12, action = $13, duration = $14, step = $15, act1 = $16, act2 = $17, \
 hp = $18, mana = $19, endurance = $20, lifeshield = $21, level = $22, exp = $23, \
 exp_used = $24, gold = $25, cursor_item_id = $26, current_container_item_id = $27, \
 values_json = $28, professions_json = $29, inventory_json = $30, \
-character_json = $31, ppd_blob = $32, subscriber_blob = $33, player_state_json = coalesce($34, player_state_json), \
-mirror = $35, \
-current_area = 0, current_mirror = 0, allowed_area = $36, logout_time = now(), updated_at = now() \
-where id = $37 and current_area = $38 and current_mirror = $39";
+character_json = $31, player_state_json = coalesce($32, player_state_json), \
+mirror = $33, \
+current_area = 0, current_mirror = 0, allowed_area = $34, logout_time = now(), updated_at = now() \
+where id = $35 and current_area = $36 and current_mirror = $37";
 
 const INSERT_CHARACTER_ITEM_SQL: &str = "insert into character_items(\
 character_id, item_id, inventory_slot, is_cursor, item_json, name, description, flags_bits, \
@@ -719,8 +725,6 @@ fn bind_character_snapshot<'q>(
         .bind(Json(character.professions.clone()))
         .bind(Json(character.inventory.clone()))
         .bind(Json(character.clone()))
-        .bind(request.ppd_blob.clone())
-        .bind(request.subscriber_blob.clone())
         .bind(request.player_state_json.clone()))
 }
 
@@ -1137,19 +1141,24 @@ mod tests {
 
     #[test]
     fn save_queries_keep_legacy_area_guard_shape() {
-        assert!(SAVE_CHARACTER_BACKUP_SQL.contains("ppd_blob = $32"));
-        assert!(SAVE_CHARACTER_BACKUP_SQL.contains("subscriber_blob = $33"));
+        // ppd_blob/subscriber_blob are no longer in the SET list (see the
+        // "Retire legacy blob writes" PORTING_TODO.md task) - the columns
+        // are frozen, not written by any save path anymore.
+        assert!(!SAVE_CHARACTER_BACKUP_SQL.contains("ppd_blob"));
+        assert!(!SAVE_CHARACTER_BACKUP_SQL.contains("subscriber_blob"));
         assert!(SAVE_CHARACTER_BACKUP_SQL
-            .contains("player_state_json = coalesce($34, player_state_json)"));
+            .contains("player_state_json = coalesce($32, player_state_json)"));
         assert!(SAVE_CHARACTER_BACKUP_SQL
-            .contains("where id = $36 and current_area = $37 and current_mirror = $38"));
+            .contains("where id = $34 and current_area = $35 and current_mirror = $36"));
 
+        assert!(!SAVE_CHARACTER_LOGOUT_SQL.contains("ppd_blob"));
+        assert!(!SAVE_CHARACTER_LOGOUT_SQL.contains("subscriber_blob"));
         assert!(SAVE_CHARACTER_LOGOUT_SQL
-            .contains("player_state_json = coalesce($34, player_state_json)"));
-        assert!(SAVE_CHARACTER_LOGOUT_SQL.contains("allowed_area = $36"));
+            .contains("player_state_json = coalesce($32, player_state_json)"));
+        assert!(SAVE_CHARACTER_LOGOUT_SQL.contains("allowed_area = $34"));
         assert!(SAVE_CHARACTER_LOGOUT_SQL.contains("logout_time = now()"));
         assert!(SAVE_CHARACTER_LOGOUT_SQL
-            .contains("where id = $37 and current_area = $38 and current_mirror = $39"));
+            .contains("where id = $35 and current_area = $36 and current_mirror = $37"));
     }
 
     #[test]

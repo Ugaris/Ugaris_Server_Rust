@@ -40,6 +40,11 @@ pub(crate) fn apply_character_snapshot(
         }
     });
 
+    // These decoders are `#[deprecated]` (migration 0020's `player_state_json`
+    // is authoritative now) but remain the only path that can hydrate a
+    // pre-0020 row that has never been backfilled - see the "Retire legacy
+    // blob writes" `PORTING_TODO.md` task.
+    #[allow(deprecated)]
     let account_depot = if let Some(account_depot) = restored_from_json {
         account_depot
     } else {
@@ -264,17 +269,6 @@ pub(crate) fn character_save_request(
         character: snapshot_character,
         items: snapshot_items,
         player_state_json: persisted_player_state_json(player, account_depot),
-        ppd_blob: player.encode_legacy_ppd_blob(&player.ppd_blob),
-        subscriber_blob: encode_legacy_achievement_stats_subscriber_blob(
-            &encode_legacy_achievement_data_subscriber_blob(
-                &encode_legacy_account_depot_subscriber_blob(
-                    &player.subscriber_blob,
-                    account_depot,
-                ),
-                &player.achievement_data,
-            ),
-            &player.achievement_stats,
-        ),
         mode: CharacterSaveMode::Logout {
             expected_current_area: i32::from(area_id),
             expected_current_mirror: i32::from(mirror_id),
@@ -319,17 +313,6 @@ pub(crate) fn character_area_transfer_save_request(
         character: snapshot_character,
         items: snapshot_items,
         player_state_json: persisted_player_state_json(player, account_depot),
-        ppd_blob: player.encode_legacy_ppd_blob(&player.ppd_blob),
-        subscriber_blob: encode_legacy_achievement_stats_subscriber_blob(
-            &encode_legacy_achievement_data_subscriber_blob(
-                &encode_legacy_account_depot_subscriber_blob(
-                    &player.subscriber_blob,
-                    account_depot,
-                ),
-                &player.achievement_data,
-            ),
-            &player.achievement_stats,
-        ),
         mode: CharacterSaveMode::Logout {
             expected_current_area: i32::from(area_id),
             expected_current_mirror: i32::from(mirror_id),
@@ -363,17 +346,6 @@ pub(crate) fn character_backup_save_request(
         character: character.clone(),
         items: character_snapshot_items(world, character),
         player_state_json: persisted_player_state_json(player, account_depot),
-        ppd_blob: player.encode_legacy_ppd_blob(&player.ppd_blob),
-        subscriber_blob: encode_legacy_achievement_stats_subscriber_blob(
-            &encode_legacy_achievement_data_subscriber_blob(
-                &encode_legacy_account_depot_subscriber_blob(
-                    &player.subscriber_blob,
-                    account_depot,
-                ),
-                &player.achievement_data,
-            ),
-            &player.achievement_stats,
-        ),
         mode: CharacterSaveMode::Backup {
             expected_current_area: i32::from(area_id),
             expected_current_mirror: i32::from(mirror_id),

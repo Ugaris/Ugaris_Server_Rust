@@ -79,6 +79,12 @@ const STATS_LAST_LOGIN_DAY_OFFSET: usize = 144;
 const LEGACY_ACHIEVEMENT_STATS_SIZE: usize = 176;
 const PENT_AREA_COUNT: usize = ugaris_core::achievement::PENT_AREA_COUNT;
 
+// C: only used by the retired `encode_legacy_achievement_*_subscriber_blob`
+// encoders below and their round-trip test coverage now (migration 0020's
+// `player_state_json` is the sole write target - see the "Retire legacy
+// blob writes" PORTING_TODO.md task), hence `#[allow(dead_code)]` in
+// non-test builds.
+#[allow(dead_code)]
 pub(crate) fn encode_legacy_achievement_data(data: &AccountAchievements) -> Vec<u8> {
     let mut bytes = vec![0u8; LEGACY_ACHIEVEMENT_DATA_SIZE];
     bytes[ACHIEVEMENT_DATA_VERSION_OFFSET..ACHIEVEMENT_DATA_VERSION_OFFSET + 4]
@@ -132,6 +138,7 @@ pub(crate) fn decode_legacy_achievement_data(bytes: &[u8]) -> Option<AccountAchi
     Some(data)
 }
 
+#[allow(dead_code)]
 pub(crate) fn encode_legacy_achievement_stats(stats: &AchievementStats) -> Vec<u8> {
     let mut bytes = vec![0u8; LEGACY_ACHIEVEMENT_STATS_SIZE];
     let write_u32 = |bytes: &mut [u8], offset: usize, value: u32| {
@@ -270,6 +277,11 @@ pub(crate) fn decode_legacy_achievement_stats(bytes: &[u8]) -> Option<Achievemen
 /// Reads the `DRD_ACHIEVEMENT_DATA` block out of the subscriber blob, if
 /// present. `None` covers both "block absent" (never awarded anything) and
 /// a corrupt/short block.
+/// Read fallback only (migration 0020's `player_state_json` is
+/// authoritative now; `ugaris-server`'s `snapshots.rs` no longer writes
+/// `subscriber_blob`). Kept for pre-0020 rows that haven't been backfilled
+/// yet - see the "Retire legacy blob writes" `PORTING_TODO.md` task.
+#[deprecated(note = "read-fallback for pre-migration-0020 rows only")]
 pub(crate) fn decode_legacy_achievement_data_subscriber_blob(
     bytes: &[u8],
 ) -> Option<AccountAchievements> {
@@ -281,6 +293,11 @@ pub(crate) fn decode_legacy_achievement_data_subscriber_blob(
 
 /// Reads the `DRD_ACHIEVEMENT_STATS` block out of the subscriber blob, if
 /// present.
+/// Read fallback only (migration 0020's `player_state_json` is
+/// authoritative now; `ugaris-server`'s `snapshots.rs` no longer writes
+/// `subscriber_blob`). Kept for pre-0020 rows that haven't been backfilled
+/// yet - see the "Retire legacy blob writes" `PORTING_TODO.md` task.
+#[deprecated(note = "read-fallback for pre-migration-0020 rows only")]
 pub(crate) fn decode_legacy_achievement_stats_subscriber_blob(
     bytes: &[u8],
 ) -> Option<AchievementStats> {
@@ -295,6 +312,12 @@ pub(crate) fn decode_legacy_achievement_stats_subscriber_blob(
 /// byte untouched, mirroring `encode_legacy_account_depot_subscriber_blob`.
 /// The block is omitted entirely when `data` is the untouched default, so
 /// players who never unlock anything don't grow the blob.
+///
+/// No longer called from any save path (migration 0020's
+/// `player_state_json` is authoritative - see the "Retire legacy blob
+/// writes" `PORTING_TODO.md` task); kept for round-trip test coverage of
+/// [`decode_legacy_achievement_data_subscriber_blob`]'s byte layout.
+#[allow(dead_code)]
 pub(crate) fn encode_legacy_achievement_data_subscriber_blob(
     existing: &[u8],
     data: &AccountAchievements,
@@ -330,7 +353,9 @@ pub(crate) fn encode_legacy_achievement_data_subscriber_blob(
 }
 
 /// Rewrites the `DRD_ACHIEVEMENT_STATS` block in the subscriber blob; see
-/// `encode_legacy_achievement_data_subscriber_blob` for the pattern.
+/// `encode_legacy_achievement_data_subscriber_blob` for the pattern
+/// (including the "no longer called from any save path" note).
+#[allow(dead_code)]
 pub(crate) fn encode_legacy_achievement_stats_subscriber_blob(
     existing: &[u8],
     stats: &AchievementStats,

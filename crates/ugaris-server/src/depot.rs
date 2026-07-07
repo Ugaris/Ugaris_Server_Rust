@@ -197,16 +197,28 @@ pub(crate) fn parse_legacy_subscriber_blocks(
     Some(blocks)
 }
 
+// C: only used by the retired `encode_legacy_*_subscriber_blob` encoders
+// below and their round-trip test coverage now (migration 0020's
+// `player_state_json` is the sole write target - see the "Retire legacy
+// blob writes" PORTING_TODO.md task), hence `#[allow(dead_code)]` in
+// non-test builds.
+#[allow(dead_code)]
 pub(crate) fn write_legacy_subscriber_block(bytes: &mut Vec<u8>, id: u32, data: &[u8]) {
     bytes.extend_from_slice(&id.to_le_bytes());
     bytes.extend_from_slice(&(data.len() as u32).to_le_bytes());
     bytes.extend_from_slice(data);
 }
 
+#[allow(dead_code)]
 pub(crate) fn account_depot_has_items(depot: &AccountDepotState) -> bool {
     depot.slots.iter().any(Option::is_some)
 }
 
+/// Read fallback only (migration 0020's `player_state_json` is
+/// authoritative now; `ugaris-server`'s `snapshots.rs` no longer writes
+/// `subscriber_blob`). Kept for pre-0020 rows that haven't been backfilled
+/// yet - see the "Retire legacy blob writes" `PORTING_TODO.md` task.
+#[deprecated(note = "read-fallback for pre-migration-0020 rows only")]
 pub(crate) fn decode_legacy_account_depot_subscriber_blob(
     bytes: &[u8],
 ) -> Option<AccountDepotState> {
@@ -216,6 +228,11 @@ pub(crate) fn decode_legacy_account_depot_subscriber_blob(
         .map(|block| decode_legacy_account_depot_blob(block.data))
 }
 
+/// No longer called from any save path (migration 0020's
+/// `player_state_json` is authoritative - see the "Retire legacy blob
+/// writes" `PORTING_TODO.md` task); kept for round-trip test coverage of
+/// [`decode_legacy_account_depot_subscriber_blob`]'s byte layout.
+#[allow(dead_code)]
 pub(crate) fn encode_legacy_account_depot_subscriber_blob(
     existing: &[u8],
     depot: Option<&AccountDepotState>,

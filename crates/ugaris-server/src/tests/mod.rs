@@ -1,3 +1,9 @@
+// Legacy PPD/subscriber-blob decoders are `#[deprecated]` (migration 0020's
+// `player_state_json` is authoritative now) but several tests exercise them
+// directly to lock down the pre-0020 read-fallback byte layout - see the
+// "Retire legacy blob writes" PORTING_TODO.md task.
+#![allow(deprecated)]
+
 use super::*;
 
 mod achievement;

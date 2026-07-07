@@ -771,6 +771,11 @@ impl PlayerRuntime {
         vec![None; MAXDEPOT]
     }
 
+    /// Read fallback only (migration 0020's `player_state_json` is
+    /// authoritative now; `ugaris-server`'s `snapshots.rs` no longer writes
+    /// `ppd_blob`). Kept for pre-0020 rows that haven't been backfilled yet
+    /// - see the "Retire legacy blob writes" `PORTING_TODO.md` task.
+    #[deprecated(note = "read-fallback for pre-migration-0020 rows only")]
     pub fn decode_legacy_ppd_blob(&mut self, bytes: &[u8]) -> bool {
         for block in LegacyPpdBlocks::parse(bytes) {
             let Some(block) = block else {

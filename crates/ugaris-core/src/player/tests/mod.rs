@@ -1,3 +1,9 @@
+// `decode_legacy_ppd_blob`/`encode_legacy_ppd_blob` are `#[deprecated]`
+// (migration 0020's `player_state_json` is authoritative now) but many
+// tests here exercise them directly to lock down the pre-0020 read-fallback
+// byte layout - see the "Retire legacy blob writes" PORTING_TODO.md task.
+#![allow(deprecated)]
+
 mod actions;
 mod area1;
 mod area3;

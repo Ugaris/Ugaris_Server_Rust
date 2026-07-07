@@ -120,8 +120,6 @@ async fn character_snapshot_round_trips_player_state_json() -> anyhow::Result<()
         .save_character_snapshot(CharacterSaveRequest {
             character: minimal_character(42, "RoundTrip"),
             items: Vec::new(),
-            ppd_blob: Vec::new(),
-            subscriber_blob: Vec::new(),
             player_state_json: Some(state.clone()),
             mode: CharacterSaveMode::Logout {
                 expected_current_area: 1,
@@ -148,8 +146,6 @@ async fn character_snapshot_round_trips_player_state_json() -> anyhow::Result<()
         .save_character_snapshot(CharacterSaveRequest {
             character: minimal_character(42, "RoundTrip"),
             items: Vec::new(),
-            ppd_blob: Vec::new(),
-            subscriber_blob: Vec::new(),
             player_state_json: None,
             mode: CharacterSaveMode::Backup {
                 expected_current_area: 1,

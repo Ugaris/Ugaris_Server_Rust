@@ -503,8 +503,6 @@ pub(crate) async fn apply_admin_flag_events(
             items: snapshot.items,
             // Offline mutation: None preserves the stored JSON via coalesce.
             player_state_json: None,
-            ppd_blob: snapshot.ppd_blob,
-            subscriber_blob: snapshot.subscriber_blob,
             mode: ugaris_db::CharacterSaveMode::Backup {
                 expected_current_area: snapshot.current_area,
                 expected_current_mirror: snapshot.current_mirror,
@@ -690,8 +688,6 @@ pub(crate) async fn apply_punish_events(
             items: snapshot.items,
             // Offline mutation: None preserves the stored JSON via coalesce.
             player_state_json: None,
-            ppd_blob: snapshot.ppd_blob,
-            subscriber_blob: snapshot.subscriber_blob,
             mode: ugaris_db::CharacterSaveMode::Backup {
                 expected_current_area: snapshot.current_area,
                 expected_current_mirror: snapshot.current_mirror,
@@ -852,8 +848,6 @@ pub(crate) async fn apply_unpunish_events(
             items: snapshot.items,
             // Offline mutation: None preserves the stored JSON via coalesce.
             player_state_json: None,
-            ppd_blob: snapshot.ppd_blob,
-            subscriber_blob: snapshot.subscriber_blob,
             mode: ugaris_db::CharacterSaveMode::Backup {
                 expected_current_area: snapshot.current_area,
                 expected_current_mirror: snapshot.current_mirror,

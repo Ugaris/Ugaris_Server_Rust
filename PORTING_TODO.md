@@ -330,13 +330,24 @@ order.
   the C markers in the QA tables that had them. *(done - all 13
   originally-listed deviation sites restored, `area32/military.rs` closed
   last; details in PORTING_LEDGER.md)*
-- [ ] **Retire legacy blob writes** - after a few clean iterations with
+- [~] **Retire legacy blob writes** - after a few clean iterations with
   `player_state_json` (migration 0020): stop populating
   `ppd_blob`/`subscriber_blob` in the three `snapshots.rs` builders, add a
   backfill migration converting remaining blob-only rows through the
   legacy decoders, then mark the decoders `#[deprecated]`. Keep the raw
   `PlayerRuntime::ppd_blob` field (it preserves unknown legacy blocks
   inside the JSON document).
+  REMAINING: the backfill migration itself. `ppd_blob`/`subscriber_blob`
+  decoding needs full `PlayerRuntime`/`AccountAchievements`/
+  `AccountDepotState` Rust logic (dozens of typed block layouts), which a
+  plain `.sql` file under `migrations/` cannot express (`sqlx::migrate!`
+  only runs raw SQL) - this needs a one-off Rust startup routine (e.g. in
+  `main.rs` after `run_migrations()`) that selects `characters` rows where
+  `player_state_json is null and (ppd_blob != '' or subscriber_blob !=
+  '')`, decodes them with the (now `#[deprecated]`, still-functional)
+  legacy decoders, and writes back `player_state_json`. Not started this
+  iteration; see `PORTING_LEDGER.md` for the write-path closure that *is*
+  done.
 - [ ] **`military.rs` (3.2K) split** - `world/npc/area32/military.rs`
   holds two NPCs plus shared mission logic; split into
   `military_master.rs`, `military_advisor.rs`, and `missions.rs`.
@@ -712,4 +723,11 @@ notes live in `PROGRESS_ARCHIVE.md`.
   across mission-offer/accept/hear/reroll/greet text and both Advisor
   favor flows) via `COL_STR_*` sentinels + `_bytes` siblings. 1098
   server + 2534 core tests pass, clean build/boot-smoke.
+- 2026-07-08: P0.5 "Retire legacy blob writes" write-path slice: the three
+  `snapshots.rs` save builders and `SAVE_CHARACTER_*_SQL` no longer write
+  `ppd_blob`/`subscriber_blob` (columns now frozen); legacy decoders marked
+  `#[deprecated]`, now-test-only encoders `#[allow(dead_code)]`. Backfill
+  migration (needs Rust decode logic, not plain SQL) not yet started - `[~]`.
+  2534 core + 1098 server tests pass, live DB suite green, clean build/
+  boot-smoke.
 

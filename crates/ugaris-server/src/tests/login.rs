@@ -158,7 +158,12 @@ fn runtime_login_allocates_character_and_disconnect_returns_it() {
 }
 
 #[test]
-fn character_save_request_encodes_runtime_ppd_and_carried_items() {
+fn character_save_request_encodes_runtime_state_and_carried_items() {
+    // C: legacy ppd_blob/subscriber_blob columns are frozen (no longer
+    // written - see the "Retire legacy blob writes" PORTING_TODO.md task);
+    // migration 0020's player_state_json is the sole write target now, so
+    // this test asserts against the typed JSON document instead of the
+    // retired blob encoders.
     let login = login_block("Tester");
     let mut character = login_character(CharacterId(7), &login, 1, 10, 10);
     character.inventory[30] = Some(ItemId(101));
@@ -193,13 +198,13 @@ fn character_save_request_encodes_runtime_ppd_and_carried_items() {
         request.mode,
         ugaris_db::character::CharacterSaveMode::Logout { mirror: 2, .. }
     ));
-    let mut decoded = PlayerRuntime::connected(6, 0);
-    assert!(decoded.decode_legacy_ppd_blob(&request.ppd_blob));
-    assert_eq!(decoded.keyring.len(), 1);
-    assert_eq!(decoded.chest_last_access_seconds(9), 1234);
-    let decoded_depot = decode_legacy_account_depot_subscriber_blob(&request.subscriber_blob)
-        .expect("account depot subscriber block");
-    assert_eq!(decoded_depot.slots[0].as_ref().unwrap().name, "Depot Relic");
+    let persisted: PersistedPlayerState =
+        serde_json::from_value(request.player_state_json.expect("state document"))
+            .expect("state document deserializes");
+    assert_eq!(persisted.player.keyring.len(), 1);
+    assert_eq!(persisted.player.chest_last_access_seconds(9), 1234);
+    let decoded_depot = persisted.account_depot.expect("account depot");
+    assert_eq!(decoded_depot.slots[4].as_ref().unwrap().name, "Depot Relic");
 }
 
 #[test]
