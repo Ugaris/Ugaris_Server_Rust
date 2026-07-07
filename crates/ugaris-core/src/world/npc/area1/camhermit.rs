@@ -24,12 +24,10 @@
 //!   branch will only ever take its "not enough kills yet" reminder path.
 //! - The `CAMHERMIT_STATE_QUEST1DO`/`QUEST2DO` reminder line's C source
 //!   wraps the word "repeat" in `COL_LIGHT_BLUE`/`COL_RESET` markers
-//!   (`gwendylon.c:806-808,895-897`). `World::npc_quiet_say` broadcasts a
-//!   plain UTF-8 `String` (`WorldAreaText`), which cannot represent the
-//!   raw non-UTF8 color-marker byte, so the styling is dropped here (same
-//!   simplification already documented on `BANK_QA`'s "account"/"explain
-//!   deposit"/etc. entries) - the wording is otherwise byte-for-byte
-//!   identical.
+//!   (`gwendylon.c:806-808,895-897`); ported byte-for-byte via
+//!   `crate::text::COL_STR_LIGHT_BLUE`/`COL_STR_RESET` sentinels and
+//!   `World::npc_quiet_say_bytes` (see `PORTING_TODO.md`'s "Area-text
+//!   color markers" task for the general mechanism).
 //! - `give_char_item_smart`'s `IF_MONEY` branch achievement tracking
 //!   (`achievement_add_gold_earned`) needs `PlayerRuntime`/DB access
 //!   `World` doesn't have - see [`CamhermitOutcomeEvent::GoldEarned`] and
@@ -49,6 +47,7 @@ use crate::quest::{
     CAMHERMIT_STATE_QUEST2_3, CAMHERMIT_STATE_QUEST2_4, CAMHERMIT_STATE_QUEST2_REOPEN,
     QLOG_HERMIT_QUEST1, QLOG_HERMIT_QUEST2,
 };
+use crate::text::{COL_STR_LIGHT_BLUE, COL_STR_RESET};
 use crate::world::*;
 
 /// C `char_dist(cn, co) > 10` (`gwendylon.c:751`): the `NT_CHAR` greeting
@@ -318,8 +317,11 @@ impl World {
 
         let mut didsay = false;
         let mut new_state = facts.state;
+        // C: `"Hail, %s! Didst thou understand? Or dost thou want me to "
+        // COL_LIGHT_BLUE "repeat" COL_RESET " mine words?"`
+        // (`gwendylon.c:806-808,895-897`).
         let reminder = format!(
-            "Hail, {}! Didst thou understand? Or dost thou want me to repeat mine words?",
+            "Hail, {}! Didst thou understand? Or dost thou want me to {COL_STR_LIGHT_BLUE}repeat{COL_STR_RESET} mine words?",
             player.name
         );
 
@@ -372,7 +374,7 @@ impl World {
                 });
                 new_state = CAMHERMIT_STATE_QUEST2WAIT;
             } else if now.saturating_sub(facts.seen_timer) > CAMHERMIT_SEEN_REMINDER_SECONDS {
-                self.npc_quiet_say(camhermit_id, &reminder);
+                self.npc_quiet_say_bytes(camhermit_id, &reminder);
                 didsay = true;
             }
         } else if facts.state == CAMHERMIT_STATE_QUEST2WAIT
@@ -457,7 +459,7 @@ impl World {
                     new_state = CAMHERMIT_STATE_QUEST2WAIT;
                 }
             } else {
-                self.npc_quiet_say(camhermit_id, &reminder);
+                self.npc_quiet_say_bytes(camhermit_id, &reminder);
                 new_state = CAMHERMIT_STATE_QUEST2DO_WAIT;
                 didsay = true;
             }

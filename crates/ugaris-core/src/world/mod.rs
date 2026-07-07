@@ -342,6 +342,7 @@ pub struct World {
     pending_system_texts: Vec<WorldSystemText>,
     pending_system_text_bytes: Vec<WorldSystemTextBytes>,
     pending_area_texts: Vec<WorldAreaText>,
+    pending_area_text_bytes: Vec<WorldAreaTextBytes>,
     pending_channel_broadcasts: Vec<WorldChannelBroadcast>,
     pending_hurt_events: Vec<LegacyHurtEvent>,
     /// `CharacterId`s that took nonzero hp damage this call while

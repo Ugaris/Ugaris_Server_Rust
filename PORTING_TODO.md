@@ -324,10 +324,19 @@ order.
   keyword using `tools/rust_split/splitter.py` with a spec like the ones
   described in the ledger; keep shared helpers in the tests `mod.rs`.
   *(done - details in PORTING_LEDGER.md)*
-- [ ] **Area-text color markers** - `WorldAreaText.message: String` drops
+- [~] **Area-text color markers** - `WorldAreaText.message: String` drops
   legacy `COL_*` byte markers from every NPC line (documented deviation in
   several `world/npc/**` module docs). Carry bytes end-to-end and restore
   the C markers in the QA tables that had them.
+  REMAINING: mechanism is built and one NPC is fully restored as the
+  worked example (see PORTING_LEDGER.md for the full design writeup);
+  still need to restore actual colors in the other ~12+ documented/
+  undocumented deviation sites: `gwendylon.rs`, `greeter.rs`, `yoakin.rs`,
+  `jessica.rs`, `reskin.rs`, `lydia.rs`, `james.rs`, `guiwynn.rs`,
+  `logain.rs`, `brithildie.rs`, `npc/trader.rs`, `npc/bank.rs`'s
+  `BANK_QA`, and `area32/military.rs` - each needs its `npc_say`/
+  `npc_quiet_say`/etc. call sites switched to the `_bytes` sibling with
+  `COL_STR_*` sentinels, same pattern as `camhermit.rs`.
 - [ ] **Retire legacy blob writes** - after a few clean iterations with
   `player_state_json` (migration 0020): stop populating
   `ppd_blob`/`subscriber_blob` in the three `snapshots.rs` builders, add a
@@ -694,4 +703,9 @@ notes live in `PROGRESS_ARCHIVE.md`.
   ported: all 17 newbie hint branches wired into the tick loop, closing
   Area 1's last gap. 1098 server + 2531 core tests pass, clean
   build/boot-smoke.
+- 2026-07-07: P0.5 area-text color markers: built the `COL_STR_*` sentinel
+  + `expand_color_sentinels` + `WorldAreaTextBytes`/`npc_quiet_say_bytes`
+  mechanism and restored it end-to-end on `camhermit.rs`'s reminder line
+  (the worked example). ~12+ other deviation sites remain (see checkbox
+  note). 1098 server + 2534 core tests pass, clean build/boot-smoke.
 

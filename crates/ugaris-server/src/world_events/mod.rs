@@ -221,6 +221,36 @@ pub(crate) fn send_pending_world_area_texts(
     sent
 }
 
+/// Byte-payload sibling of [`send_pending_world_area_texts`] - see
+/// `WorldAreaTextBytes`.
+pub(crate) fn send_pending_world_area_text_bytes(
+    runtime: &mut ServerRuntime,
+    world: &mut World,
+) -> usize {
+    let mut sent = 0;
+    for event in world.drain_pending_area_text_bytes() {
+        let payload = ugaris_protocol::packet::system_text_bytes(&event.message);
+        let max_distance = i32::from(event.max_distance);
+        let recipients: Vec<_> = world
+            .characters
+            .iter()
+            .filter_map(|(&character_id, character)| {
+                ((i32::from(character.x) - i32::from(event.x)).abs() <= max_distance
+                    && (i32::from(character.y) - i32::from(event.y)).abs() <= max_distance)
+                    .then_some(character_id)
+            })
+            .collect();
+        for character_id in recipients {
+            for (session_id, _) in runtime.sessions_for_character(character_id) {
+                if runtime.send_to_session(session_id, payload.clone()) {
+                    sent += 1;
+                }
+            }
+        }
+    }
+    sent
+}
+
 /// C `server_chat(channel, text)` (`src/system/chat/chat.c:827-834`),
 /// consumer half: drains `World::drain_pending_channel_broadcasts` and fans
 /// each message out to every connected player who has joined that channel,

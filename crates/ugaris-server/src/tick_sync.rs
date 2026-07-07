@@ -44,6 +44,15 @@ pub(crate) fn sync_phase(
         );
     }
 
+    let area_text_bytes_sessions = send_pending_world_area_text_bytes(runtime, world);
+    if area_text_bytes_sessions != 0 {
+        info!(
+            area_text_bytes_sessions,
+            tick = world.tick.0,
+            "queued world area text byte feedback"
+        );
+    }
+
     let world_text_sessions = send_pending_world_system_texts(runtime, world);
     if world_text_sessions != 0 {
         info!(

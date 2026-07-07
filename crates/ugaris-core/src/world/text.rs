@@ -43,6 +43,22 @@ pub struct WorldAreaText {
     pub message: String,
 }
 
+/// Byte-payload sibling of [`WorldAreaText`] for NPC dialogue whose C
+/// source embeds a raw `COLOR_MARKER` (`\xb0`) byte around a keyword (e.g.
+/// `COL_LIGHT_BLUE "repeat" COL_RESET`), which is not valid as a
+/// standalone byte in UTF-8 and so cannot round-trip through a Rust
+/// `String`/`WorldAreaText` (same rationale as [`WorldSystemTextBytes`]).
+/// Produced by [`World::npc_say_bytes`]/[`World::npc_quiet_say_bytes`]/etc.
+/// - the byte-native counterparts of `npc_say`/`npc_quiet_say`/etc. - for
+/// dialogue lines that use [`crate::text::COL_STR_RESET`]-family sentinels.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorldAreaTextBytes {
+    pub x: u16,
+    pub y: u16,
+    pub max_distance: u16,
+    pub message: Vec<u8>,
+}
+
 /// C `server_chat(channel, text)` (`src/system/chat/chat.c:827-834`): a
 /// message fanned out to every connected player who has joined `channel`
 /// (bit `1 << (channel - 1)` of `PlayerRuntime::chat_channels`), the same
@@ -186,6 +202,27 @@ impl World {
             y: character.y,
             max_distance: self.settings.quietsay_dist.max(0) as u16,
             message: String::from_utf8_lossy(&message).into_owned(),
+        });
+        true
+    }
+
+    /// Byte-native sibling of [`Self::npc_quiet_say`] - see
+    /// [`WorldAreaTextBytes`]. Use this instead of `npc_quiet_say` when
+    /// `text` embeds `crate::text::COL_STR_RESET`-family color sentinels
+    /// that must reach the client as raw `COLOR_MARKER` bytes instead of
+    /// being lossily stripped.
+    pub fn npc_quiet_say_bytes(&mut self, character_id: CharacterId, text: &str) -> bool {
+        let Some(character) = self.characters.get(&character_id) else {
+            return false;
+        };
+        let Some(message) = quiet_say_message(&character.name, text) else {
+            return false;
+        };
+        self.pending_area_text_bytes.push(WorldAreaTextBytes {
+            x: character.x,
+            y: character.y,
+            max_distance: self.settings.quietsay_dist.max(0) as u16,
+            message,
         });
         true
     }
@@ -421,6 +458,12 @@ impl World {
 
     pub fn drain_pending_area_texts(&mut self) -> Vec<WorldAreaText> {
         self.pending_area_texts.drain(..).collect()
+    }
+
+    /// Byte-payload sibling of [`Self::drain_pending_area_texts`] - see
+    /// [`WorldAreaTextBytes`].
+    pub fn drain_pending_area_text_bytes(&mut self) -> Vec<WorldAreaTextBytes> {
+        self.pending_area_text_bytes.drain(..).collect()
     }
 
     /// C `server_chat(channel, text)` (`src/system/chat/chat.c:827-834`).

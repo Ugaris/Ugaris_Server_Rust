@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::text::expand_color_sentinels;
+
 pub const LOG_SYSTEM: u8 = 0;
 pub const LOG_TALK: u8 = 1;
 pub const LOG_SHOUT: u8 = 2;
@@ -73,42 +75,47 @@ pub fn append_scrollback(
     }
 }
 
+/// Expands any [`crate::text::COL_STR_RESET`]-family sentinels in `message`
+/// (see that constant's doc comment) and sanitizes the resulting bytes.
+/// `message` is formatted first as a plain `&str` (sentinels round-trip
+/// through `format!`/`Display` fine, since they're ordinary - if unusual -
+/// `char`s), then expanded to raw legacy marker bytes right before
+/// sanitizing, matching every other message helper's byte-boundary.
+fn sanitize_formatted(text: &str) -> Vec<u8> {
+    sanitize_log_bytes(&expand_color_sentinels(text))
+}
+
 pub fn say_message(name: &str, message: &str) -> Vec<u8> {
-    sanitize_log_bytes(format!("{name} says: \"{message}\"").as_bytes())
+    sanitize_formatted(&format!("{name} says: \"{message}\""))
 }
 
 pub fn shout_message(name: &str, message: &str) -> Option<Vec<u8>> {
-    (!message.contains('"'))
-        .then(|| sanitize_log_bytes(format!("{name} shouts: \"{message}\"").as_bytes()))
+    (!message.contains('"')).then(|| sanitize_formatted(&format!("{name} shouts: \"{message}\"")))
 }
 
 pub fn holler_message(name: &str, message: &str) -> Option<Vec<u8>> {
-    (!message.contains('"'))
-        .then(|| sanitize_log_bytes(format!("{name} hollers: \"{message}\"").as_bytes()))
+    (!message.contains('"')).then(|| sanitize_formatted(&format!("{name} hollers: \"{message}\"")))
 }
 
 pub fn emote_message(name: &str, message: &str) -> Option<Vec<u8>> {
-    (!message.contains('"')).then(|| sanitize_log_bytes(format!("{name} {message}.").as_bytes()))
+    (!message.contains('"')).then(|| sanitize_formatted(&format!("{name} {message}.")))
 }
 
 pub fn whisper_message(name: &str, message: &str) -> Option<Vec<u8>> {
-    (!message.contains('"'))
-        .then(|| sanitize_log_bytes(format!("{name} whispers: \"{message}\"").as_bytes()))
+    (!message.contains('"')).then(|| sanitize_formatted(&format!("{name} whispers: \"{message}\"")))
 }
 
 /// C `murmur` (`src/system/talk.c:315`): `"%s murmurs: \"%s\""`, same
 /// quote-rejection as `whisper`/`emote`/`quiet_say` (`strchr(buf, '"')`).
 pub fn murmur_message(name: &str, message: &str) -> Option<Vec<u8>> {
-    (!message.contains('"'))
-        .then(|| sanitize_log_bytes(format!("{name} murmurs: \"{message}\"").as_bytes()))
+    (!message.contains('"')).then(|| sanitize_formatted(&format!("{name} murmurs: \"{message}\"")))
 }
 
 /// C `quiet_say` (`src/system/talk.c:271`): identical wire text to `say`
 /// (`"%s says: \"%s\""`), but rejects text containing a `"` (`say` itself
 /// has that check commented out - see `say_message`).
 pub fn quiet_say_message(name: &str, message: &str) -> Option<Vec<u8>> {
-    (!message.contains('"'))
-        .then(|| sanitize_log_bytes(format!("{name} says: \"{message}\"").as_bytes()))
+    (!message.contains('"')).then(|| sanitize_formatted(&format!("{name} says: \"{message}\"")))
 }
 
 #[cfg(test)]
@@ -162,6 +169,17 @@ mod tests {
             b"Bob whispers: \"Hi\"".to_vec()
         );
         assert!(shout_message("Bob", "bad\"quote").is_none());
+    }
+
+    #[test]
+    fn quiet_say_message_expands_color_sentinels_to_legacy_marker_bytes() {
+        use crate::text::{COL_STR_LIGHT_BLUE, COL_STR_RESET};
+
+        let message = format!("dost thou want me to {COL_STR_LIGHT_BLUE}repeat{COL_STR_RESET} it?");
+        assert_eq!(
+            quiet_say_message("Bob", &message).unwrap(),
+            b"Bob says: \"dost thou want me to \xb0c4repeat\xb0c0 it?\"".to_vec()
+        );
     }
 
     #[test]
