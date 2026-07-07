@@ -215,8 +215,19 @@ order.
   into `tick_item_use_clan_lq_arena::dispatch_clan_lq_arena_outcome`
   (`crates/ugaris-server/src/tick_item_use_clan_lq_arena.rs`, 203 lines;
   `main.rs` down to 4,220).
+  Tenth family slice done: the shrine family (8 contiguous variants -
+  `ZombieShrine`/`ZombieShrineNeedsOffering`/`RandomShrineNeedsKey`/
+  `RandomShrineAlreadyUsed`/`RandomShrineBug`/`RandomShrineUse`/
+  `SpecialShrine`/`DemonShrine`) is extracted into
+  `tick_item_use_shrines::dispatch_shrine_outcome`
+  (`crates/ugaris-server/src/tick_item_use_shrines.rs`, 380 lines;
+  `main.rs` down to 3,889). Several nested `RandomShrineUse` sub-arms used
+  `continue` to skip to the next queued action in the enclosing
+  `for completion in &completed_actions` loop; since the function is now
+  called once per outcome these became `return`, the equivalent
+  "stop processing this outcome" behavior at function scope.
   Still inline in `main.rs`: every other outcome family (
-  shrines, xmas,
+  xmas,
   swamp, burndown, key-assembly, and the
   large no-op catch-all) - continue slicing one family per iteration
   following this file's pattern (`use super::*;`, take
@@ -593,4 +604,8 @@ notes live in `PROGRESS_ARCHIVE.md`.
   action-outcome family (clan-spawn/LQ/arena, 13 contiguous variants)
   into `tick_item_use_clan_lq_arena::dispatch_clan_lq_arena_outcome`
   (`main.rs` down to 4,220). 1091 server tests unchanged, clean build/boot-smoke.
+- 2026-07-07: P0.5 main() decomposition: sliced the tenth completed-
+  action-outcome family (shrines, 8 contiguous variants) into
+  `tick_item_use_shrines::dispatch_shrine_outcome` (`main.rs` down to
+  3,889). 1091 server tests unchanged, clean build/boot-smoke.
 
