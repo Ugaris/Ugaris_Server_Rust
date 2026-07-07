@@ -391,3 +391,41 @@ pub(crate) async fn gate_welcome_driver_50(
         );
     }
 }
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn brithildie_driver_62(
+    world: &mut World,
+    mut runtime: &mut ServerRuntime,
+    _zone_loader: &mut ZoneLoader,
+    config: &ServerConfig,
+    _args: &Args,
+    _completed_actions: &[WorldActionCompletion],
+    _achievement_repository: &Option<ugaris_db::PgAchievementRepository>,
+    _character_repository: &Option<ugaris_db::PgCharacterRepository>,
+    _area_repository: &Option<ugaris_db::PgAreaRepository>,
+    _clan_repository: &Option<ugaris_db::PgClanRegistryRepository>,
+    _clan_log_repository: &Option<ugaris_db::PgClanLogRepository>,
+    _merchant_repository: &Option<ugaris_db::PgMerchantRepository>,
+    _military_master_storage_repository: &Option<ugaris_db::PgMilitaryMasterStorageRepository>,
+    _military_advisor_storage_repository: &Option<ugaris_db::PgMilitaryAdvisorStorageRepository>,
+    _notes_repository: &Option<ugaris_db::PgNotesRepository>,
+    _anticheat_repository: &Option<ugaris_db::PgAntiCheatRepository>,
+    _auction_repository: &Option<ugaris_db::PgAuctionRepository>,
+) {
+    // C `brithildie_driver`: area 1's Governor's-mother ambient lore
+    // NPC (`src/area/1/gwendylon.c`).
+    let brithildie_facts = brithildie_player_facts(&runtime);
+    let brithildie_events = world.process_brithildie_actions(
+        &brithildie_facts,
+        current_unix_time() as i32,
+        config.area_id,
+    );
+    let brithildie_events_applied = apply_brithildie_events(&mut runtime, brithildie_events);
+    if brithildie_events_applied != 0 {
+        info!(
+            brithildie_events_applied,
+            tick = world.tick.0,
+            "applied brithildie dialogue events"
+        );
+    }
+}

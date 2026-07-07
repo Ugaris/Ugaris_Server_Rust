@@ -7,20 +7,24 @@
 //! `CDR_JESSICA`/`ugaris_core::world::jessica::process_jessica_actions`,
 //! `CDR_JIU`/`ugaris_core::world::jiu::process_jiu_actions`,
 //! `CDR_FOREST_RANGER`/`ugaris_core::world::forest_ranger::
-//! process_forest_ranger_actions`).
+//! process_forest_ranger_actions`,
+//! `CDR_BRITHILDIE`/`ugaris_core::world::brithildie::
+//! process_brithildie_actions`).
 //!
 //! Mirrors the `World`/`PlayerRuntime` split already established for
 //! `world::gatekeeper`'s `GateWelcomePlayerFacts`/`GateWelcomeOutcomeEvent`
 //! (see `world::camhermit`'s module doc comment): [`camhermit_player_facts`]/
 //! [`yoakin_player_facts`]/[`terion_player_facts`]/[`greeter_player_facts`]/
-//! [`jessica_player_facts`]/[`jiu_player_facts`]/[`forest_ranger_player_facts`]
+//! [`jessica_player_facts`]/[`jiu_player_facts`]/[`forest_ranger_player_facts`]/
+//! [`brithildie_player_facts`]
 //! snapshot the per-player `area1_ppd`/`quest_log` facts each NPC's
 //! dialogue needs before the tick, and
 //! [`apply_camhermit_events`]/[`apply_yoakin_events`]/[`apply_terion_events`]/
 //! [`apply_greeter_events`]/[`apply_jessica_events`]/[`apply_jiu_events`]/
-//! [`apply_forest_ranger_events`]
+//! [`apply_forest_ranger_events`]/[`apply_brithildie_events`]
 //! apply the returned events afterward, including the
-//! `QLOG_HERMIT_QUEST1/2`/`QLOG_YOAKIN`/`QLOG_JESSICA_*`/`QLOG_JIU`
+//! `QLOG_HERMIT_QUEST1/2`/`QLOG_YOAKIN`/`QLOG_JESSICA_*`/`QLOG_JIU`/
+//! `QLOG_BRITHILDIE`
 //! `questlog_open`/`questlog_done`/`questlog_reopen` calls C's own drivers
 //! make (each of which unconditionally resends the legacy questlog packet,
 //! matching `apply_military_mission_kill_check`'s precedent) and each
@@ -37,15 +41,24 @@
 //! gap this NPC's quest completion depends on. The forest ranger has no
 //! quest log at all (a pure ambient warning NPC, like Terion), so
 //! [`apply_forest_ranger_events`] only ever writes the two plain
-//! `area1_ppd` fields.
+//! `area1_ppd` fields. Brithildie only ever *opens* `QLOG_BRITHILDIE`
+//! (`questlog_done` fires from a separate death hook,
+//! `apply_bigbadspider_death_from_hurt_event` in
+//! `world_events::death_hooks`, since it is `bigbadspider_dead`, not
+//! `brithildie_driver` itself, that completes the quest - same split as
+//! `world::jiu`'s `riverbeast_dead`), so [`apply_brithildie_events`] needs
+//! no `QuestDone`/achievement handling either.
 
 use super::*;
-use ugaris_core::quest::{QLOG_HERMIT_QUEST2, QLOG_JIU, QLOG_LYDIA, QLOG_NOOK, QLOG_YOAKIN};
+use ugaris_core::quest::{
+    QLOG_BRITHILDIE, QLOG_HERMIT_QUEST2, QLOG_JIU, QLOG_LYDIA, QLOG_NOOK, QLOG_YOAKIN,
+};
 use ugaris_core::world::{
-    CamhermitOutcomeEvent, CamhermitPlayerFacts, ForestRangerOutcomeEvent, ForestRangerPlayerFacts,
-    GreeterOutcomeEvent, GreeterPlayerFacts, GwendylonOutcomeEvent, GwendylonPlayerFacts,
-    JessicaOutcomeEvent, JessicaPlayerFacts, JiuOutcomeEvent, JiuPlayerFacts, TerionOutcomeEvent,
-    TerionPlayerFacts, YoakinOutcomeEvent, YoakinPlayerFacts,
+    BrithildieOutcomeEvent, BrithildiePlayerFacts, CamhermitOutcomeEvent, CamhermitPlayerFacts,
+    ForestRangerOutcomeEvent, ForestRangerPlayerFacts, GreeterOutcomeEvent, GreeterPlayerFacts,
+    GwendylonOutcomeEvent, GwendylonPlayerFacts, JessicaOutcomeEvent, JessicaPlayerFacts,
+    JiuOutcomeEvent, JiuPlayerFacts, TerionOutcomeEvent, TerionPlayerFacts, YoakinOutcomeEvent,
+    YoakinPlayerFacts,
 };
 
 pub(crate) fn camhermit_player_facts(
@@ -759,6 +772,70 @@ pub(crate) fn apply_forest_ranger_events(
                     continue;
                 };
                 player.set_area1_forest_ranger_seen_timer(value);
+                applied += 1;
+            }
+        }
+    }
+    applied
+}
+
+pub(crate) fn brithildie_player_facts(
+    runtime: &ServerRuntime,
+) -> HashMap<CharacterId, BrithildiePlayerFacts> {
+    runtime
+        .players
+        .values()
+        .filter_map(|player| {
+            let character_id = player.character_id?;
+            Some((
+                character_id,
+                BrithildiePlayerFacts {
+                    state: player.area1_brithildie_state(),
+                    seen_timer: player.area1_brithildie_seen_timer(),
+                },
+            ))
+        })
+        .collect()
+}
+
+/// Applies each [`BrithildieOutcomeEvent`] queued by
+/// `World::process_brithildie_actions`. See the module doc comment.
+pub(crate) fn apply_brithildie_events(
+    runtime: &mut ServerRuntime,
+    events: Vec<BrithildieOutcomeEvent>,
+) -> usize {
+    let mut applied = 0;
+    for event in events {
+        match event {
+            BrithildieOutcomeEvent::UpdateState {
+                player_id,
+                new_state,
+            } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.set_area1_brithildie_state(new_state);
+                applied += 1;
+            }
+            BrithildieOutcomeEvent::UpdateSeenTimer { player_id, value } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.set_area1_brithildie_seen_timer(value);
+                applied += 1;
+            }
+            // C `questlog_open(co, QLOG_BRITHILDIE)` (`src/system/
+            // questlog.c:204-217`): sets the flag and unconditionally
+            // resends the questlog.
+            BrithildieOutcomeEvent::QuestOpen { player_id } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.quest_log.open(QLOG_BRITHILDIE);
+                let payload = legacy_questlog_payload(player);
+                for (session_id, _) in runtime.sessions_for_character(player_id) {
+                    runtime.send_to_session(session_id, payload.clone());
+                }
                 applied += 1;
             }
         }

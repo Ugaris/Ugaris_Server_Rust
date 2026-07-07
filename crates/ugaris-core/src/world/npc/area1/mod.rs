@@ -1,5 +1,6 @@
 //! Area 1 NPCs, one file per NPC.
 
+pub mod brithildie;
 pub mod camhermit;
 pub mod forest_ranger;
 pub mod greeter;
@@ -9,6 +10,8 @@ pub mod jiu;
 pub mod terion;
 pub mod yoakin;
 
+#[allow(unused_imports)]
+pub use brithildie::*;
 #[allow(unused_imports)]
 pub use camhermit::*;
 #[allow(unused_imports)]

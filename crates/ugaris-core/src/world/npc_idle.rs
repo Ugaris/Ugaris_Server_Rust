@@ -487,7 +487,8 @@ impl World {
                 | CharacterDriverState::Greeter(_)
                 | CharacterDriverState::Jessica(_)
                 | CharacterDriverState::Jiu(_)
-                | CharacterDriverState::ForestRanger(_) => None,
+                | CharacterDriverState::ForestRanger(_)
+                | CharacterDriverState::Brithildie(_) => None,
             });
         let Some(target_id) = target_id else {
             return false;

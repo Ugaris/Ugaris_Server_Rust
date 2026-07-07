@@ -637,6 +637,93 @@ fn lethal_bredel_hurt_advances_jessica_state_to_quest2_finish() {
 }
 
 #[test]
+fn lethal_bigbadspider_hurt_completes_brithildie_quest_and_advances_state() {
+    let mut world = World::default();
+    let mut bigbadspider = login_character(CharacterId(1), &login_block("Spider"), 1, 10, 10);
+    bigbadspider.flags.remove(CharacterFlags::PLAYER);
+    bigbadspider.driver = CDR_BIGBADSPIDER;
+    bigbadspider.hp = POWERSCALE;
+    let killer = login_character(CharacterId(2), &login_block("Killer"), 1, 11, 10);
+    world.add_character(bigbadspider);
+    world.add_character(killer);
+
+    let mut runtime = ServerRuntime::default();
+    let mut player = PlayerRuntime::connected(1, 0);
+    player.character_id = Some(CharacterId(2));
+    // C `BRITHILDIE_STATE_NOMORETALES_QOPEN 20` (`npc_states.h:71`).
+    player.set_area1_brithildie_state(20);
+    runtime.players.insert(1, player);
+
+    world.apply_legacy_hurt(
+        CharacterId(1),
+        Some(CharacterId(2)),
+        POWERSCALE * 2,
+        1,
+        0,
+        0,
+    );
+    apply_pk_hate_from_hurt_events(&mut runtime, &mut world, 0, &ZoneLoader::new());
+
+    // C `BRITHILDIE_STATE_NOMORETALES_QDONE 21` (`npc_states.h:72`).
+    assert_eq!(
+        runtime
+            .player_for_character(CharacterId(2))
+            .unwrap()
+            .area1_brithildie_state(),
+        21
+    );
+    assert!(runtime
+        .player_for_character(CharacterId(2))
+        .unwrap()
+        .quest_log
+        .is_done(QLOG_BRITHILDIE));
+    let texts = world.drain_pending_system_texts();
+    assert!(texts.iter().any(|text| {
+        text.character_id == CharacterId(2)
+            && text.message == "Well done. Thou hast killed the big bad spider."
+    }));
+}
+
+#[test]
+fn lethal_bigbadspider_hurt_ignores_players_not_awaiting_the_reward() {
+    let mut world = World::default();
+    let mut bigbadspider = login_character(CharacterId(1), &login_block("Spider"), 1, 10, 10);
+    bigbadspider.flags.remove(CharacterFlags::PLAYER);
+    bigbadspider.driver = CDR_BIGBADSPIDER;
+    bigbadspider.hp = POWERSCALE;
+    let killer = login_character(CharacterId(2), &login_block("Killer"), 1, 11, 10);
+    world.add_character(bigbadspider);
+    world.add_character(killer);
+
+    let mut runtime = ServerRuntime::default();
+    let mut player = PlayerRuntime::connected(1, 0);
+    player.character_id = Some(CharacterId(2));
+    // C `BRITHILDIE_STATE_ENTRY 0` (`npc_states.h:51`) - never took the
+    // quest.
+    player.set_area1_brithildie_state(0);
+    runtime.players.insert(1, player);
+
+    world.apply_legacy_hurt(
+        CharacterId(1),
+        Some(CharacterId(2)),
+        POWERSCALE * 2,
+        1,
+        0,
+        0,
+    );
+    apply_pk_hate_from_hurt_events(&mut runtime, &mut world, 0, &ZoneLoader::new());
+
+    assert_eq!(
+        runtime
+            .player_for_character(CharacterId(2))
+            .unwrap()
+            .area1_brithildie_state(),
+        0
+    );
+    assert!(world.drain_pending_system_texts().is_empty());
+}
+
+#[test]
 fn lethal_forest_monster_hurt_counts_camhermit_kills_and_reports_at_ten() {
     let mut world = World::default();
     let killer = login_character(CharacterId(99), &login_block("Killer"), 1, 20, 60);

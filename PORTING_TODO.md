@@ -249,40 +249,48 @@ Ordered by player progression; the C file is the oracle.
   "repeat" text-command rewind branches, `:1485-1798`), `jessica_driver`
   (`CDR_JESSICA`, the robber-operations two-quest chain, `:1809-2065`),
   `jiu_driver` (`CDR_JIU`, the forest sanctuary pilgrim's riverbeast-
-  kill quest, `:2074-2247`), and `forest_ranger_driver` (`CDR_FOREST_
+  kill quest, `:2074-2247`), `forest_ranger_driver` (`CDR_FOREST_
   RANGER`, the bear-attack warning sentry near the stone circle,
-  `:2284-2473`) are ported so far - see the Progress Log entries below
+  `:2284-2473`), and `brithildie_driver` (`CDR_BRITHILDIE`, the
+  Governor's-mother ambient lore NPC unlocking `QLOG_BRITHILDIE`,
+  `:2474-2823`) are ported so far - see the Progress Log entries below
   and `crates/ugaris-core/src/world/camhermit.rs`/`world/yoakin.rs`/
   `world/terion.rs`/`world/gwendylon.rs`/`world/greeter.rs`/
-  `world/jessica.rs`/`world/jiu.rs`/`world/forest_ranger.rs`'s own module
-  doc comments for their documented gaps (forest_ranger's own gap: the
-  `WN_LHAND` torch-relight idle upkeep is not ported, a cosmetic
-  light-radius detail - see its module doc comment). The shared area-1
-  `monster_dead`/
-  `bredel_dead`/`riverbeast_dead` death-hook trio (`:2255-2272`, `:2825-
-  2842`, `:5201-5231`) that camhermit/jessica/jiu's own doc comments
-  called out as their remaining blocker is now ported: `CDR_RIVERBEAST`/
-  `CDR_BREDEL`/`CDR_CAMERON_FORESTMONSTER` driver IDs
+  `world/jessica.rs`/`world/jiu.rs`/`world/forest_ranger.rs`/
+  `world/brithildie.rs`'s own module doc comments for their documented
+  gaps (forest_ranger's own gap: the `WN_LHAND` torch-relight idle
+  upkeep is not ported, a cosmetic light-radius detail - see its module
+  doc comment; brithildie's own gap: `BRITHILDIE_STATE_STORY_3_1/3_2/
+  3_3` are unreachable dead states in the C source itself, preserved as
+  such rather than "fixed" - see its module doc comment). The shared
+  area-1 `monster_dead`/
+  `bredel_dead`/`riverbeast_dead`/`bigbadspider_dead` death-hook
+  quartet (`:2255-2272`, `:2825-2842`, `:5201-5231`, `:2850-2870`) that
+  camhermit/jessica/jiu/brithildie's own doc comments called out as
+  their remaining blocker is now ported: `CDR_RIVERBEAST`/`CDR_BREDEL`/
+  `CDR_CAMERON_FORESTMONSTER`/`CDR_BIGBADSPIDER` driver IDs
   (`crates/ugaris-core/src/character_driver.rs`),
   `World::apply_area1_monster_death_driver` (the weapon-glow half,
-  `crates/ugaris-core/src/world/hurt.rs`), and three new
+  `crates/ugaris-core/src/world/hurt.rs`), and four
   `apply_*_death_from_hurt_event` hooks wired into
   `apply_pk_hate_from_hurt_events`'s per-hurt-event dispatch
-  (`crates/ugaris-server/src/world_events.rs`) that read/write
-  `PlayerRuntime`'s `area1_camhermit_kills`/`area1_jessica_state`/
-  `area1_jiu_state` and queue the exact C `log_char` reward/reminder
-  text. `camhermit_state == CAMHERMIT_STATE_QUEST1DO` can now reach 10
-  kills and see the reward line; `jessica_state == JESSICA_STATE_QUEST2_
-  DO` can now advance to `QUEST2_FINISH` on a `CDR_BREDEL` kill; `jiu_
-  state == JIU_STATE_WAIT_FOR_KILL` can now advance to `_BEAST_KILLED`
-  on a `CDR_RIVERBEAST` kill - so all three quest chains can finally
-  complete end-to-end on a live server. yoakin's and gwendylon's
+  (`crates/ugaris-server/src/world_events/death_hooks.rs`) that
+  read/write `PlayerRuntime`'s `area1_camhermit_kills`/
+  `area1_jessica_state`/`area1_jiu_state`/`area1_brithildie_state` and
+  queue the exact C `log_char` reward/reminder text (brithildie's own
+  hook also drives a full `questlog_done`, unlike its siblings). Every
+  quest chain reachable through the eight ported NPCs above can now
+  complete end-to-end on a live server: `camhermit_state ==
+  CAMHERMIT_STATE_QUEST1DO` can reach 10 kills and see the reward line;
+  `jessica_state == JESSICA_STATE_QUEST2_DO` can advance to
+  `QUEST2_FINISH` on a `CDR_BREDEL` kill; `jiu_state ==
+  JIU_STATE_WAIT_FOR_KILL` can advance to `_BEAST_KILLED` on a
+  `CDR_RIVERBEAST` kill; `brithildie_state ==
+  BRITHILDIE_STATE_NOMORETALES_QOPEN` can complete `QLOG_BRITHILDIE` on
+  a `CDR_BIGBADSPIDER` kill. yoakin's and gwendylon's
   `destroy_item_byID` sweeps still do not reach the account depot
   (unrelated, separate gap). Every other NPC in this file is still
-  unported: `brithildie_driver` (`:2474-2826`, including its own
-  `bigbadspider_dead` death hook,
-  `:2848-2867`, still unported since `brithildie_state` has no
-  `PlayerRuntime` wiring yet), `james_driver` (`:2901-3179`), `nook_
+  unported: `james_driver` (`:2901-3179`), `nook_
   driver` (`:3180-3457`), `lydia_driver` (`:3458-3703`),
   `balltrap_skelly_driver` (`:3712-3774`, a fight-driver archer that
   needs the generic multi-enemy `DRD_FIGHTDRIVER` system this codebase
@@ -398,4 +406,9 @@ Ordered by player progression; the C file is the oracle.
 Keep entries to at most three lines: date, task, one-line result.
 Anything longer belongs in `PORTING_LEDGER.md`; historical verbose
 notes live in `PROGRESS_ARCHIVE.md`.
+
+- 2026-07-07: Area 1 `brithildie_driver` (`CDR_BRITHILDIE`) ported:
+  ambient lore NPC unlocking `QLOG_BRITHILDIE`, plus its
+  `bigbadspider_dead` death hook (`CDR_BIGBADSPIDER`) completing the
+  quest. 1091 tests pass, clean build/boot-smoke.
 

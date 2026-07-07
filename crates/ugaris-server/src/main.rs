@@ -116,7 +116,7 @@ use ugaris_core::{
     area_section::{section_at, section_look_text, section_name_by_id},
     area_sound::area_sound_special,
     character_driver::{
-        needs_next_lab, CharacterDriverState, CDR_BREDEL, CDR_CALIGARSKELLY,
+        needs_next_lab, CharacterDriverState, CDR_BIGBADSPIDER, CDR_BREDEL, CDR_CALIGARSKELLY,
         CDR_CAMERON_FORESTMONSTER, CDR_DUNGEONMASTER, CDR_GATE_FIGHT, CDR_GATE_WELCOME,
         CDR_LAB2UNDEAD, CDR_LOSTCON, CDR_LQNPC, CDR_MERCHANT, CDR_PALACEISLENA, CDR_RIVERBEAST,
         CDR_SIMPLEBADDY, CDR_SWAMPMONSTER, CDR_TEUFELRAT, NTID_GATEKEEPER, NT_NPC,
@@ -166,7 +166,7 @@ use ugaris_core::{
         MAX_TUNNEL_LEVEL, MAX_TUNNEL_USES, MILITARY_PPD_MAXADVISOR, MIN_TUNNEL_LEVEL,
         SWEAR_SENTENCE_COUNT, SWEAR_SENTENCE_LEN,
     },
-    quest::{QuestLog, QuestReopenResult, QF_OPEN},
+    quest::{QuestLog, QuestReopenResult, QF_OPEN, QLOG_BRITHILDIE},
     spell::{
         is_one_carry_driver, EF_BALL, EF_BLESS, EF_BUBBLE, EF_BURN, EF_CAP, EF_CURSE, EF_EARTHMUD,
         EF_EARTHRAIN, EF_EDEMONBALL, EF_EXPLODE, EF_FIREBALL, EF_FIRERING, EF_FLASH, EF_FREEZE,

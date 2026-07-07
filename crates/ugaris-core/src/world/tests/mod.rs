@@ -9,6 +9,7 @@ mod area_mech;
 mod arena;
 mod assembly;
 mod bank;
+mod brithildie;
 mod camhermit;
 mod character_values;
 mod clanclerk;

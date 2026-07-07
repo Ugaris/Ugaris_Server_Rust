@@ -236,6 +236,67 @@ pub(crate) fn apply_riverbeast_death_from_hurt_event(
     true
 }
 
+/// C `ch_died_driver`/`CDR_BIGBADSPIDER` dispatch (`gwendylon.c:6218-6220`)
+/// -> `bigbadspider_dead` (`:2850-2870`): killing the spider completes
+/// `CDR_BRITHILDIE`'s `QLOG_BRITHILDIE` quest, advancing
+/// `BRITHILDIE_STATE_NOMORETALES_QOPEN` (`20`) to `_QDONE` (`21`) via a
+/// full `questlog_done` (exp reward + resend), see `world::brithildie`'s
+/// module doc comment for the previously-documented gap this closes.
+pub(crate) fn apply_bigbadspider_death_from_hurt_event(
+    runtime: &mut ServerRuntime,
+    world: &mut World,
+    event: LegacyHurtEvent,
+) -> bool {
+    if !event.outcome.killed {
+        return false;
+    }
+    let is_bigbadspider_kill = world
+        .characters
+        .get(&event.target_id)
+        .zip(world.characters.get(&event.cause_id))
+        .is_some_and(|(target, killer)| {
+            target.driver == CDR_BIGBADSPIDER && killer.flags.contains(CharacterFlags::PLAYER)
+        });
+    if !is_bigbadspider_kill {
+        return false;
+    }
+
+    let Some(level) = world.characters.get(&event.cause_id).map(|c| c.level) else {
+        return false;
+    };
+    let level_val = level_value(level);
+    let Some(player) = runtime.player_for_character_mut(event.cause_id) else {
+        return false;
+    };
+    // C `BRITHILDIE_STATE_NOMORETALES_QOPEN 20` (`npc_states.h:71`).
+    if player.area1_brithildie_state() != 20 {
+        return false;
+    }
+    world.queue_system_text(
+        event.cause_id,
+        "Well done. Thou hast killed the big bad spider.",
+    );
+    if let Some(completion) = player
+        .quest_log
+        .complete_legacy(QLOG_BRITHILDIE, level, level_val)
+    {
+        let payload = legacy_questlog_payload(player);
+        world.give_exp(
+            event.cause_id,
+            completion.granted_exp,
+            u32::from(world.area_id),
+        );
+        for (session_id, _) in runtime.sessions_for_character(event.cause_id) {
+            runtime.send_to_session(session_id, payload.clone());
+        }
+    }
+    // C `BRITHILDIE_STATE_NOMORETALES_QDONE 21` (`npc_states.h:72`).
+    if let Some(player) = runtime.player_for_character_mut(event.cause_id) {
+        player.set_area1_brithildie_state(21);
+    }
+    true
+}
+
 pub(crate) fn apply_teufel_rat_death_from_hurt_event(
     runtime: &mut ServerRuntime,
     world: &mut World,

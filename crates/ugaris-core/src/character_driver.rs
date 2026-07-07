@@ -91,6 +91,20 @@ pub const CDR_BREDEL: u16 = 154;
 /// bear-attack-warning sentry near area 1's stone circle
 /// (`src/area/1/gwendylon.c::forest_ranger_driver`).
 pub const CDR_FOREST_RANGER: u16 = 155;
+/// C `#define CDR_BRITHILDIE 126` (`src/system/drvlib.h`, "Cameron:
+/// Brithildie"): the Governor's-mother ambient lore NPC
+/// (`src/area/1/gwendylon.c::brithildie_driver`) who unlocks
+/// `QLOG_BRITHILDIE`.
+pub const CDR_BRITHILDIE: u16 = 126;
+/// C `#define CDR_BIGBADSPIDER 153` (`src/system/drvlib.h`, "Cameron:
+/// BigBadSpider driver"): the killable spider whose death
+/// (`src/area/1/gwendylon.c::bigbadspider_dead`, `:2850-2870`) completes
+/// `CDR_BRITHILDIE`'s `QLOG_BRITHILDIE` quest, advancing
+/// `BRITHILDIE_STATE_NOMORETALES_QOPEN` to `_QDONE`. Dispatched through
+/// `CDR_SIMPLEBADDY` for its own combat driver (`gwendylon.c:6138`), same
+/// as `CDR_RIVERBEAST`/`CDR_BREDEL`/`CDR_CAMERON_FORESTMONSTER` above. See
+/// `ugaris-server::world_events::apply_bigbadspider_death_from_hurt_event`.
+pub const CDR_BIGBADSPIDER: u16 = 153;
 /// C `#define CDR_GATE_WELCOME 39` (`src/system/drvlib.h`): the stationary
 /// gatekeeper-welcome NPC (`gate_welcome` template,
 /// `src/system/gatekeeper.c::gate_welcome_driver`).
@@ -235,6 +249,7 @@ pub enum CharacterDriverState {
     Jessica(JessicaDriverData),
     Jiu(JiuDriverData),
     ForestRanger(ForestRangerDriverData),
+    Brithildie(BrithildieDriverData),
 }
 /// C `bank_driver_parse` from `src/module/bank.c`. The C driver defaults
 /// opening hours to 6..23 before parsing (`bank_driver` lines 304-309).
@@ -909,7 +924,8 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::Greeter(_)
             | CharacterDriverState::Jessica(_)
             | CharacterDriverState::Jiu(_)
-            | CharacterDriverState::ForestRanger(_),
+            | CharacterDriverState::ForestRanger(_)
+            | CharacterDriverState::Brithildie(_),
         ) => SimpleBaddyDriverData::default(),
         None => SimpleBaddyDriverData::default(),
     };
@@ -3225,6 +3241,7 @@ mod tests {
 // Re-exports keep the historical `crate::character_driver::X` paths
 // stable while each NPC owns its file under `world::npc`.
 pub use crate::world::npc::aclerk::{parse_aclerk_driver_args, AclerkDriverData};
+pub use crate::world::npc::area1::brithildie::BrithildieDriverData;
 pub use crate::world::npc::area1::camhermit::CamhermitDriverData;
 pub use crate::world::npc::area1::forest_ranger::ForestRangerDriverData;
 pub use crate::world::npc::area1::greeter::GreeterDriverData;
