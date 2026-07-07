@@ -277,6 +277,14 @@ order.
   `tick_item_use_minewall::dispatch_minewall_outcome`
   (`crates/ugaris-server/src/tick_item_use_minewall.rs`, 68 lines;
   `main.rs` down to 3,317).
+  Seventeenth family slice done: the forest-spade/junkpile/pick-door
+  digging-and-lockpicking family (8 contiguous variants -
+  `ForestSpadeFind`/`ForestSpadeCollapse`/`ForestSpadeNothing`/
+  `ForestSpadeCursorOccupied`/`JunkpileSearch`/`JunkpileCursorOccupied`/
+  `PickDoorToggle`/`PickDoorLocked`) is extracted into
+  `tick_item_use_dig_pick::dispatch_dig_pick_outcome`
+  (`crates/ugaris-server/src/tick_item_use_dig_pick.rs`, 186 lines;
+  `main.rs` down to 3,245).
   Still inline in `main.rs`: every other outcome family (the large
   no-op catch-all) - continue slicing one family per iteration
   following this file's pattern (`use super::*;`, take
@@ -686,4 +694,9 @@ notes live in `PROGRESS_ARCHIVE.md`.
   action-outcome family (mine-wall digging, 5 contiguous variants) into
   `tick_item_use_minewall::dispatch_minewall_outcome` (`main.rs` down to
   3,317). 1091 server + 2415 core tests unchanged, clean build/boot-smoke.
+- 2026-07-07: P0.5 main() decomposition: sliced the seventeenth completed-
+  action-outcome family (forest-spade/junkpile/pick-door, 8 contiguous
+  variants) into `tick_item_use_dig_pick::dispatch_dig_pick_outcome`
+  (`main.rs` down to 3,245). 1091 server + 2415 core tests unchanged,
+  clean build/boot-smoke.
 

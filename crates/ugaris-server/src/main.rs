@@ -47,6 +47,7 @@ mod tick_item_use_burndown;
 mod tick_item_use_caligar;
 mod tick_item_use_chests;
 mod tick_item_use_clan_lq_arena;
+mod tick_item_use_dig_pick;
 mod tick_item_use_dungeon;
 mod tick_item_use_edemon_fdemon;
 mod tick_item_use_ice;
@@ -1332,98 +1333,25 @@ async fn main() -> anyhow::Result<()> {
                                             )
                                             .await;
                                         }
-                                        ugaris_core::item_driver::ItemDriverOutcome::ForestSpadeFind { item_id, character_id, find } => {
-                                            let random_seed = world.tick.0
-                                                ^ (u64::from(item_id.0) << 16)
-                                                ^ u64::from(character_id.0);
-                                            match apply_forest_spade_find(
+                                        outcome @ (ugaris_core::item_driver::ItemDriverOutcome::ForestSpadeFind { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::ForestSpadeCollapse { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::ForestSpadeNothing { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::ForestSpadeCursorOccupied { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::JunkpileSearch { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::JunkpileCursorOccupied { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::PickDoorToggle { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::PickDoorLocked { .. }) => {
+                                            tick_item_use_dig_pick::dispatch_dig_pick_outcome(
                                                 &mut world,
                                                 &mut zone_loader,
-                                                runtime.player_for_character_mut(character_id),
-                                                character_id,
-                                                find,
+                                                &mut runtime,
                                                 realtime_seconds,
-                                                random_seed,
-                                            ) {
-                                                ForestSpadeApplyResult::Found { item_name } => {
-                                                    feedback.push((character_id, format!("You found a {item_name}.")));
-                                                    executed += 1;
-                                                }
-                                                ForestSpadeApplyResult::FoundMoney { amount } => {
-                                                    feedback.push((character_id, format!("You found a Money ({:.2}G).", f64::from(amount) / 100.0)));
-                                                    executed += 1;
-                                                }
-                                                ForestSpadeApplyResult::AlreadyDug => {
-                                                    feedback.push((character_id, "You've already dug here. The treasure hasn't regrown yet.".to_string()));
-                                                    blocked += 1;
-                                                }
-                                                ForestSpadeApplyResult::Nothing => {
-                                                    feedback.push((character_id, "You dug a nice deep hole but you didn't find anything. Embarrassed you stop digging and fill the hole again.".to_string()));
-                                                    blocked += 1;
-                                                }
-                                                ForestSpadeApplyResult::CursorOccupied => {
-                                                    feedback.push((character_id, "Please empty your hand (mouse cursor) first.".to_string()));
-                                                    blocked += 1;
-                                                }
-                                                ForestSpadeApplyResult::MissingPlayer => {
-                                                    failed += 1;
-                                                }
-                                            }
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::ForestSpadeCollapse { character_id, .. } => {
-                                            feedback.push((character_id, "The floor collapses below your feet and you fall...".to_string()));
-                                            executed += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::ForestSpadeNothing { character_id, .. } => {
-                                            feedback.push((character_id, "You dug a nice deep hole but you didn't find anything. Embarrassed you stop digging and fill the hole again.".to_string()));
-                                            blocked += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::ForestSpadeCursorOccupied { character_id, .. } => {
-                                            feedback.push((character_id, "Please empty your hand (mouse cursor) first.".to_string()));
-                                            blocked += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::JunkpileSearch { item_id, character_id, level } => {
-                                            let random_seed = world.tick.0
-                                                ^ (u64::from(item_id.0) << 16)
-                                                ^ u64::from(character_id.0);
-                                            match apply_junkpile_search(
-                                                &mut world,
-                                                &mut zone_loader,
-                                                item_id,
-                                                character_id,
-                                                level,
-                                                random_seed,
-                                            ) {
-                                                JunkpileApplyResult::Found { .. }
-                                                | JunkpileApplyResult::FoundMoney { .. } => {
-                                                    feedback.push((character_id, "You found something between all that junk.".to_string()));
-                                                    executed += 1;
-                                                }
-                                                JunkpileApplyResult::Nothing => {
-                                                    executed += 1;
-                                                }
-                                                JunkpileApplyResult::CursorOccupied => {
-                                                    feedback.push((character_id, "Please empty your hand (mouse cursor) first.".to_string()));
-                                                    blocked += 1;
-                                                }
-                                                JunkpileApplyResult::MissingPlayer => {
-                                                    failed += 1;
-                                                }
-                                            }
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::JunkpileCursorOccupied { character_id, .. } => {
-                                            feedback.push((character_id, "Please empty your hand (mouse cursor) first.".to_string()));
-                                            blocked += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::PickDoorToggle { character_id, picked_lock, .. } => {
-                                            if picked_lock {
-                                                feedback.push((character_id, "You pick the lock.".to_string()));
-                                            }
-                                            executed += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::PickDoorLocked { character_id, .. } => {
-                                            feedback.push((character_id, "The door is locked and you don't have the right key.".to_string()));
-                                            blocked += 1;
+                                                outcome,
+                                                &mut feedback,
+                                                &mut executed,
+                                                &mut blocked,
+                                                &mut failed,
+                                            );
                                         }
                                         outcome @ (ugaris_core::item_driver::ItemDriverOutcome::BurndownTooHot { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::BurndownAlreadyBurned { .. }
