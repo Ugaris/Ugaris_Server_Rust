@@ -38,6 +38,7 @@ mod hurt;
 mod item_outcomes;
 mod items;
 mod jail;
+mod james;
 mod janitor;
 mod jessica;
 mod jiu;

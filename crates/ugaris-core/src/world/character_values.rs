@@ -336,7 +336,7 @@ fn recompute_character_sprite(character: &mut Character, items: &HashMap<ItemId,
 /// averaged (then divided by 5) to seed a raisable value's total. Powers,
 /// attributes, Armor/Weapon/Light, Cold and Profession have no base
 /// (`-1,-1,-1`) and are handled by their callers instead.
-fn skill_base_attributes(
+pub(crate) fn skill_base_attributes(
     value: CharacterValue,
 ) -> Option<(CharacterValue, CharacterValue, CharacterValue)> {
     use CharacterValue::*;

@@ -78,10 +78,10 @@ use ugaris_core::world::{
     AsturinOutcomeEvent, AsturinPlayerFacts, BrithildieOutcomeEvent, BrithildiePlayerFacts,
     CamhermitOutcomeEvent, CamhermitPlayerFacts, ForestRangerOutcomeEvent, ForestRangerPlayerFacts,
     GreeterOutcomeEvent, GreeterPlayerFacts, GuiwynnOutcomeEvent, GuiwynnPlayerFacts,
-    GwendylonOutcomeEvent, GwendylonPlayerFacts, JessicaOutcomeEvent, JessicaPlayerFacts,
-    JiuOutcomeEvent, JiuPlayerFacts, LydiaOutcomeEvent, LydiaPlayerFacts, NookOutcomeEvent,
-    NookPlayerFacts, ReskinOutcomeEvent, ReskinPlayerFacts, TerionOutcomeEvent, TerionPlayerFacts,
-    YoakinOutcomeEvent, YoakinPlayerFacts,
+    GwendylonOutcomeEvent, GwendylonPlayerFacts, JamesOutcomeEvent, JamesPlayerFacts,
+    JessicaOutcomeEvent, JessicaPlayerFacts, JiuOutcomeEvent, JiuPlayerFacts, LydiaOutcomeEvent,
+    LydiaPlayerFacts, NookOutcomeEvent, NookPlayerFacts, ReskinOutcomeEvent, ReskinPlayerFacts,
+    TerionOutcomeEvent, TerionPlayerFacts, YoakinOutcomeEvent, YoakinPlayerFacts,
 };
 
 pub(crate) fn camhermit_player_facts(
@@ -1400,6 +1400,76 @@ pub(crate) async fn apply_guiwynn_events(
                     }
                     applied += 1;
                 }
+            }
+        }
+    }
+    applied
+}
+
+pub(crate) fn james_player_facts(
+    runtime: &ServerRuntime,
+) -> HashMap<CharacterId, JamesPlayerFacts> {
+    runtime
+        .players
+        .values()
+        .filter_map(|player| {
+            let character_id = player.character_id?;
+            Some((
+                character_id,
+                JamesPlayerFacts {
+                    james_state: player.area1_james_state(),
+                    lydia_state: player.area1_lydia_state(),
+                    area1_flags: player.area1_flags(),
+                },
+            ))
+        })
+        .collect()
+}
+
+/// Applies each [`JamesOutcomeEvent`] queued by
+/// `World::process_james_actions`. See `world::james`'s module doc
+/// comment - James never touches `ZoneLoader` or achievements, unlike
+/// Lydia/Guiwynn above.
+pub(crate) fn apply_james_events(
+    runtime: &mut ServerRuntime,
+    events: Vec<JamesOutcomeEvent>,
+) -> usize {
+    let mut applied = 0;
+    for event in events {
+        match event {
+            JamesOutcomeEvent::UpdateState {
+                player_id,
+                new_state,
+            } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.set_area1_james_state(new_state);
+                applied += 1;
+            }
+            JamesOutcomeEvent::SetStorageHint { player_id } => {
+                // C `#define AF1_STORAGE_HINT (1u << 1)` (`src/area/1/
+                // area1.h:21`).
+                const AF1_STORAGE_HINT: i32 = 1 << 1;
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.set_area1_flags(player.area1_flags() | AF1_STORAGE_HINT);
+                applied += 1;
+            }
+            // C `questlog_open(co, QLOG_LYDIA)` (`src/system/
+            // questlog.c:204-217`): sets the flag and unconditionally
+            // resends the questlog.
+            JamesOutcomeEvent::QuestOpen { player_id } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.quest_log.open(QLOG_LYDIA);
+                let payload = legacy_questlog_payload(player);
+                for (session_id, _) in runtime.sessions_for_character(player_id) {
+                    runtime.send_to_session(session_id, payload.clone());
+                }
+                applied += 1;
             }
         }
     }

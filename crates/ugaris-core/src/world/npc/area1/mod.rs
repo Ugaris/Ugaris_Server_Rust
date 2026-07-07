@@ -7,6 +7,7 @@ pub mod forest_ranger;
 pub mod greeter;
 pub mod guiwynn;
 pub mod gwendylon;
+pub mod james;
 pub mod jessica;
 pub mod jiu;
 pub mod lydia;
@@ -31,6 +32,8 @@ pub use greeter::*;
 pub use guiwynn::*;
 #[allow(unused_imports)]
 pub use gwendylon::*;
+#[allow(unused_imports)]
+pub use james::*;
 #[allow(unused_imports)]
 pub use jessica::*;
 #[allow(unused_imports)]

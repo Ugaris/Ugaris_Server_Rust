@@ -120,7 +120,7 @@ impl World {
 /// actually shows (`V_WARCRY`'s C name is "Warcry", one word;
 /// `CHARACTER_VALUE_NAMES[20]` is "War Cry", two words) - this local
 /// table is the letter-for-letter source of truth for this command.
-fn skill_display_name(value: CharacterValue) -> &'static str {
+pub(crate) fn skill_display_name(value: CharacterValue) -> &'static str {
     match value {
         CharacterValue::Hp => "Hitpoints",
         CharacterValue::Endurance => "Endurance",

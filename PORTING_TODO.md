@@ -529,9 +529,15 @@ Ordered by player progression; the C file is the oracle.
     comment for its documented gaps (the money reward stays a literal
     carried "money" item via plain `give_char_item`, not converted to gold
     like `CDR_GWENDYLON`'s skull rewards - a genuine C behavioral
-    difference, not a simplification). Still unported: `james_driver`
-    (`:2901-3179`, gated on the large unported `james_raisehint`/
-    `can_raise`/`get_fight_skill_skill` helpers, `:5235-6003`),
+    difference, not a simplification). `james_driver` (`CDR_JAMES`, the
+    town drunkard's Lydia-quest hand-off/hardcore-recruiter/paid-advice
+    NPC, `:2901-3179`) is now also ported, including `can_raise`/
+    `get_fight_skill_skill`/the `james_raisehint` advice-only weighted
+    priority computation (`:5235-5962`) - see
+    `crates/ugaris-core/src/world/npc/area1/james.rs`'s own module doc
+    comment for its documented gaps (the `CF_GOD`-only "raise me" debug
+    command and its equipment-grant tail are deliberately not ported; not
+    reachable by any real player). Still unported:
     `balltrap_skelly_driver` (`:3712-3774`, a fight-driver archer needing
     the generic multi-enemy `DRD_FIGHTDRIVER` system), `logain_driver` and
     the rest through `ch_driver`'s dispatch table (`:6076-6155`), plus
@@ -781,4 +787,9 @@ notes live in `PROGRESS_ARCHIVE.md`.
   town-mage's two-part "Order of Mages" quest chain (`QLOG` 7-8), money
   reward kept as a literal carried item (not gold), matching C. 1091
   server + 2470 core tests pass, clean build/boot-smoke.
+- 2026-07-07: Area 1 `james_driver` (`CDR_JAMES`) ported: Lydia-quest
+  hand-off/hardcore-recruiter dialogue plus the full `james_raisehint`
+  advice-only weighted priority computation; the `CF_GOD`-only "raise
+  me"/equipment-grant tail is a documented, deliberate gap. 1091 server +
+  2488 core tests pass, clean build/boot-smoke.
 

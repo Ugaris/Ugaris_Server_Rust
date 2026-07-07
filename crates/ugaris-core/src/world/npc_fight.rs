@@ -593,7 +593,8 @@ impl World {
             | CharacterDriverState::Sanoa(_)
             | CharacterDriverState::Asturin(_)
             | CharacterDriverState::Reskin(_)
-            | CharacterDriverState::Guiwynn(_) => None,
+            | CharacterDriverState::Guiwynn(_)
+            | CharacterDriverState::James(_) => None,
         }
     }
 

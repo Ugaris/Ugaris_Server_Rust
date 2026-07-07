@@ -105,6 +105,11 @@ pub const CDR_BRITHILDIE: u16 = 126;
 /// as `CDR_RIVERBEAST`/`CDR_BREDEL`/`CDR_CAMERON_FORESTMONSTER` above. See
 /// `ugaris-server::world_events::apply_bigbadspider_death_from_hurt_event`.
 pub const CDR_BIGBADSPIDER: u16 = 153;
+/// C `#define CDR_JAMES 12` (`src/system/drvlib.h`): "specific NPC in
+/// area1, knight castle" - the town drunkard's Lydia-quest hand-off/
+/// hardcore-recruiter/paid-advice NPC (`src/area/1/gwendylon.c::
+/// james_driver`).
+pub const CDR_JAMES: u16 = 12;
 /// C `#define CDR_NOOK 15` (`src/system/drvlib.h`): "specific NPC in
 /// area1, knight castle" - the identity-crisis jester/judge/knight NPC
 /// (`src/area/1/gwendylon.c::nook_driver`).
@@ -286,6 +291,7 @@ pub enum CharacterDriverState {
     Asturin(AsturinDriverData),
     Reskin(ReskinDriverData),
     Guiwynn(GuiwynnDriverData),
+    James(JamesDriverData),
 }
 /// C `bank_driver_parse` from `src/module/bank.c`. The C driver defaults
 /// opening hours to 6..23 before parsing (`bank_driver` lines 304-309).
@@ -968,7 +974,8 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::Sanoa(_)
             | CharacterDriverState::Asturin(_)
             | CharacterDriverState::Reskin(_)
-            | CharacterDriverState::Guiwynn(_),
+            | CharacterDriverState::Guiwynn(_)
+            | CharacterDriverState::James(_),
         ) => SimpleBaddyDriverData::default(),
         None => SimpleBaddyDriverData::default(),
     };
@@ -3291,6 +3298,7 @@ pub use crate::world::npc::area1::forest_ranger::ForestRangerDriverData;
 pub use crate::world::npc::area1::greeter::GreeterDriverData;
 pub use crate::world::npc::area1::guiwynn::GuiwynnDriverData;
 pub use crate::world::npc::area1::gwendylon::{GwendylonDriverData, GWENDYLON_QA};
+pub use crate::world::npc::area1::james::JamesDriverData;
 pub use crate::world::npc::area1::jessica::JessicaDriverData;
 pub use crate::world::npc::area1::jiu::JiuDriverData;
 pub use crate::world::npc::area1::lydia::LydiaDriverData;

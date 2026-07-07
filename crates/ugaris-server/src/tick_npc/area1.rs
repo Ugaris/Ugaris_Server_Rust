@@ -667,3 +667,37 @@ pub(crate) async fn guiwynn_driver_69(
         );
     }
 }
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn james_driver_70(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    _zone_loader: &mut ZoneLoader,
+    config: &ServerConfig,
+    _args: &Args,
+    _completed_actions: &[WorldActionCompletion],
+    _achievement_repository: &Option<ugaris_db::PgAchievementRepository>,
+    _character_repository: &Option<ugaris_db::PgCharacterRepository>,
+    _area_repository: &Option<ugaris_db::PgAreaRepository>,
+    _clan_repository: &Option<ugaris_db::PgClanRegistryRepository>,
+    _clan_log_repository: &Option<ugaris_db::PgClanLogRepository>,
+    _merchant_repository: &Option<ugaris_db::PgMerchantRepository>,
+    _military_master_storage_repository: &Option<ugaris_db::PgMilitaryMasterStorageRepository>,
+    _military_advisor_storage_repository: &Option<ugaris_db::PgMilitaryAdvisorStorageRepository>,
+    _notes_repository: &Option<ugaris_db::PgNotesRepository>,
+    _anticheat_repository: &Option<ugaris_db::PgAntiCheatRepository>,
+    _auction_repository: &Option<ugaris_db::PgAuctionRepository>,
+) {
+    // C `james_driver`: area 1's town-drunkard Lydia-quest hand-off/
+    // hardcore-recruiter/paid-advice NPC (`src/area/1/gwendylon.c`).
+    let james_facts = james_player_facts(runtime);
+    let james_events = world.process_james_actions(&james_facts, config.area_id);
+    let james_events_applied = apply_james_events(runtime, james_events);
+    if james_events_applied != 0 {
+        info!(
+            james_events_applied,
+            tick = world.tick.0,
+            "applied james dialogue events"
+        );
+    }
+}
