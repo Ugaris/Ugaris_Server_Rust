@@ -123,10 +123,20 @@ order.
 
 ## P0.5 - Structural Maintenance (do these before new area content)
 
-- [ ] **Finish main() phase decomposition** - `main.rs` is ~7.1K lines; the
+- [~] **Finish main() phase decomposition** - `main.rs` is ~7.1K lines; the
   remaining tick-branch phases (world stepping, client command loop, sync)
   should extract into phase functions like `tick_npc::run_all` did for NPC
   passes. Verbatim moves with superset params; keep execution order.
+  REMAINING: the "world stepping" phase (tick.tick() arm's prologue before
+  queued client actions are drained - date/regen/weather/lostcon-expiry/
+  effects/timers/spawn-outcomes/kill-hook drains) is now extracted into
+  `tick_world::world_step` (`crates/ugaris-server/src/tick_world.rs`,
+  ~6.7K lines cut from `main.rs`, down to ~6.7K itself). Still inline in
+  `main.rs`: the huge queued-client-action match (the "client command
+  loop", still ~5.1K lines between `tick_world::world_step`'s call site
+  and `tick_npc::run_all`'s) and the post-NPC-pass "sync" phase
+  (map/effects/resource broadcast after `tick_npc::run_all`, before the
+  `events_rx` branch).
 - [ ] **Split `tests/commands_admin/character.rs` (~8K)** by command
   keyword using `tools/rust_split/splitter.py` with a spec like the ones
   described in the ledger; keep shared helpers in the tests `mod.rs`.
@@ -411,4 +421,8 @@ notes live in `PROGRESS_ARCHIVE.md`.
   ambient lore NPC unlocking `QLOG_BRITHILDIE`, plus its
   `bigbadspider_dead` death hook (`CDR_BIGBADSPIDER`) completing the
   quest. 1091 tests pass, clean build/boot-smoke.
+- 2026-07-07: P0.5 main() decomposition: extracted the tick loop's
+  "world stepping" phase into `tick_world::world_step` (461 lines cut
+  from `main.rs`, now 6,689). Client-command-loop/sync phases remain.
+  1091 tests unchanged, clean build/boot-smoke.
 
