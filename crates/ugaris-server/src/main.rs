@@ -46,6 +46,7 @@ mod tick_client_actions;
 mod tick_item_use_chests;
 mod tick_item_use_dungeon;
 mod tick_item_use_ice;
+mod tick_item_use_teufel;
 mod tick_item_use_warp;
 mod tick_npc;
 mod tick_sync;
@@ -1434,75 +1435,33 @@ async fn main() -> anyhow::Result<()> {
                                         ugaris_core::item_driver::ItemDriverOutcome::BurndownTimerTick { .. } => {
                                             executed += 1;
                                         }
-                                        ugaris_core::item_driver::ItemDriverOutcome::TeufelArena { .. }
-                                        | ugaris_core::item_driver::ItemDriverOutcome::TeufelArenaExit { .. } => {
-                                            executed += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::TeufelArenaNeedsSuit { character_id, .. } => {
-                                            feedback.push((character_id, "You need to wear an earth demon suit.".to_string()));
-                                            blocked += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::TeufelArenaLevelTooHigh { character_id, .. } => {
-                                            feedback.push((character_id, "Max Level 38, sorry.".to_string()));
-                                            blocked += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::TeufelArenaEquipmentEnhanced { .. }
-                                        | ugaris_core::item_driver::ItemDriverOutcome::TeufelArenaEquipmentBound { .. } => {
-                                            blocked += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::TeufelArenaBusy { character_id, .. } => {
-                                            feedback.push((character_id, "Please try again soon. Target is busy.".to_string()));
-                                            blocked += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::TeufelArenaExitLowHealth { character_id, .. } => {
-                                            feedback.push((character_id, "You cannot leave with less than full health.".to_string()));
-                                            blocked += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::TeufelDoor { .. } => {
-                                            executed += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::TeufelDoorNoHumans { character_id, .. } => {
-                                            feedback.push((character_id, "A demon looks through the view-hole in the door and shouts: \"No humans allowed!\"".to_string()));
-                                            blocked += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::TeufelDoorNoBeggars { character_id, .. } => {
-                                            feedback.push((character_id, "A demon looks through the view-hole in the door and shouts: \"No beggars allowed!\"".to_string()));
-                                            blocked += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::TeufelDoorOnlyNobles { character_id, .. } => {
-                                            feedback.push((character_id, "A demon looks through the view-hole in the door and shouts: \"Only nobles allowed!\"".to_string()));
-                                            blocked += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::TeufelDoorBusy { character_id, .. } => {
-                                            feedback.push((character_id, "Please try again soon. Target is busy.".to_string()));
-                                            blocked += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::TeufelDoorBug { character_id, x, y, .. } => {
-                                            feedback.push((character_id, format!("You touch a teleport object but nothing happens - BUG ({x},{y}).")));
-                                            blocked += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::TeufelRatNestSpawn { item_id, level, template, schedule_after_ticks, .. } => {
-                                            world.schedule_item_driver_timer(item_id, CharacterId(0), schedule_after_ticks);
-                                            if spawn_teufel_ratnest_character(
+                                        outcome @ (ugaris_core::item_driver::ItemDriverOutcome::TeufelArena { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::TeufelArenaExit { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::TeufelArenaNeedsSuit { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::TeufelArenaLevelTooHigh { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::TeufelArenaEquipmentEnhanced { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::TeufelArenaEquipmentBound { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::TeufelArenaBusy { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::TeufelArenaExitLowHealth { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::TeufelDoor { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::TeufelDoorNoHumans { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::TeufelDoorNoBeggars { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::TeufelDoorOnlyNobles { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::TeufelDoorBusy { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::TeufelDoorBug { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::TeufelRatNestSpawn { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::TeufelRatNestDestroyed { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::TeufelRatNestGuarded { .. }) => {
+                                            tick_item_use_teufel::dispatch_teufel_outcome(
                                                 &mut world,
                                                 &mut zone_loader,
                                                 &mut runtime,
-                                                item_id,
-                                                level,
-                                                template,
-                                            ) {
-                                                executed += 1;
-                                            } else {
-                                                failed += 1;
-                                            }
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::TeufelRatNestDestroyed { character_id, .. } => {
-                                            feedback.push((character_id, "You destroy the rat nest.".to_string()));
-                                            executed += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::TeufelRatNestGuarded { character_id, .. } => {
-                                            feedback.push((character_id, "You need a moment of peace to destroy the nest. There is still a guard left, distracting you.".to_string()));
-                                            blocked += 1;
+                                                outcome,
+                                                &mut feedback,
+                                                &mut executed,
+                                                &mut blocked,
+                                                &mut failed,
+                                            );
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::SkelRaiseDust { item_id, character_id } => {
                                             world.apply_skelraise_dust(item_id);

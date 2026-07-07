@@ -169,8 +169,19 @@ order.
   extracted into `tick_item_use_ice::dispatch_ice_outcome`
   (`crates/ugaris-server/src/tick_item_use_ice.rs`, 149 lines; `main.rs`
   down to 4,610).
+  Fifth family slice done: the Teufel family (16 contiguous variants -
+  `TeufelArena`/`TeufelArenaExit`/`TeufelArenaNeedsSuit`/
+  `TeufelArenaLevelTooHigh`/`TeufelArenaEquipmentEnhanced`/
+  `TeufelArenaEquipmentBound`/`TeufelArenaBusy`/
+  `TeufelArenaExitLowHealth`/`TeufelDoor`/`TeufelDoorNoHumans`/
+  `TeufelDoorNoBeggars`/`TeufelDoorOnlyNobles`/`TeufelDoorBusy`/
+  `TeufelDoorBug`/`TeufelRatNestSpawn`/`TeufelRatNestDestroyed`/
+  `TeufelRatNestGuarded`) is extracted into
+  `tick_item_use_teufel::dispatch_teufel_outcome`
+  (`crates/ugaris-server/src/tick_item_use_teufel.rs`, 141 lines;
+  `main.rs` down to 4,569).
   Still inline in `main.rs`: every other outcome family (
-  teufel, skel-raise, transport, clan-spawn, lq, arena, shrines, xmas,
+  skel-raise, transport, clan-spawn, lq, arena, shrines, xmas,
   swamp, edemon/fdemon, burndown, key-assembly, and the
   large no-op catch-all) - continue slicing one family per iteration
   following this file's pattern (`use super::*;`, take
@@ -520,4 +531,8 @@ notes live in `PROGRESS_ARCHIVE.md`.
   daughter hangover-potion quest chain (`QLOG_LYDIA`), reward-potion
   grant deferred to `ugaris-server`. 2406 core + 1091 server tests pass,
   clean build/boot-smoke.
+- 2026-07-07: P0.5 main() decomposition: sliced the fifth completed-
+  action-outcome family (Teufel, 16 contiguous variants) into
+  `tick_item_use_teufel::dispatch_teufel_outcome` (`main.rs` down to
+  4,569). 1091 server tests unchanged, clean build/boot-smoke.
 
