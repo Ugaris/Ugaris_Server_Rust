@@ -259,9 +259,20 @@ order.
   `main.rs` down to 3,451). `SaltmineSaltbagUse`'s original `continue`
   (valid inside the enclosing `for completion in &completed_actions` loop)
   became `return`, same precedent as the shrines slice.
-  Still inline in `main.rs`: every other outcome family (
-  lab2/lab3, and the large no-op catch-all) - continue slicing one
-  family per iteration
+  Fifteenth family slice done: the labyrinth family (18 contiguous
+  variants - `BranningtonUnderwaterBerry`/`Lab3YellowBerry`/
+  `Lab3WhiteBerry`/`Lab3WhiteBerryLightTick`/`Lab3BrownBerry`/
+  `Lab2WaterWell`/`Lab2WaterAltar`/`Lab2WaterDrink`/
+  `Lab2WaterCursorOccupied`/`Lab2StepActionClear`/
+  `Lab2StepActionDaemonCheck`/`Lab2StepActionDaemonWarning`/
+  `Lab2GraveClueBook`/`Lab2GraveClose`/`Lab2GraveCheckOpen`/
+  `Lab2GraveOpen`/`LabEntranceSolvedAll`/`LabEntranceTooLow`/
+  `LabExitWrongOwner`) is extracted into
+  `tick_item_use_lab::dispatch_lab_outcome`
+  (`crates/ugaris-server/src/tick_item_use_lab.rs`, 230 lines; `main.rs`
+  down to 3,345).
+  Still inline in `main.rs`: every other outcome family (the large
+  no-op catch-all) - continue slicing one family per iteration
   following this file's pattern (`use super::*;`, take
   `world`/`zone_loader`/`runtime`/`achievement_repository`/`config` or
   `args` by the same reference kinds already used inside the match body,
@@ -660,4 +671,9 @@ notes live in `PROGRESS_ARCHIVE.md`.
   `tick_item_use_keyassembly::dispatch_keyassembly_outcome` (`main.rs`
   down to 3,451). 1091 server + 2415 core tests unchanged, clean
   build/boot-smoke.
+- 2026-07-07: P0.5 main() decomposition: sliced the fifteenth completed-
+  action-outcome family (labyrinth: Lab2/Lab3/Brannington berries +
+  lab-entrance/exit, 18 contiguous variants) into
+  `tick_item_use_lab::dispatch_lab_outcome` (`main.rs` down to 3,345).
+  1091 server + 2415 core tests unchanged, clean build/boot-smoke.
 

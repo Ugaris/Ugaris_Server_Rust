@@ -51,6 +51,7 @@ mod tick_item_use_dungeon;
 mod tick_item_use_edemon_fdemon;
 mod tick_item_use_ice;
 mod tick_item_use_keyassembly;
+mod tick_item_use_lab;
 mod tick_item_use_shrines;
 mod tick_item_use_skelraise;
 mod tick_item_use_teufel;
@@ -2462,142 +2463,35 @@ async fn main() -> anyhow::Result<()> {
                                             feedback.push((character_id, "You shake the bottle and create a stinking liquid which you throw away.".to_string()));
                                             executed += 1;
                                         }
-                                        ugaris_core::item_driver::ItemDriverOutcome::BranningtonUnderwaterBerry { installed, .. } => {
-                                            if installed {
-                                                executed += 1;
-                                            } else {
-                                                blocked += 1;
-                                            }
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::Lab3YellowBerry { character_id, installed, .. } => {
-                                            if installed {
-                                                executed += 1;
-                                            } else {
-                                                feedback.push((character_id, "Due to some strange reasons thou canst not eat those berries now.".to_string()));
-                                                blocked += 1;
-                                            }
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::Lab3WhiteBerry { character_id, installed, .. } => {
-                                            if installed {
-                                                executed += 1;
-                                            } else {
-                                                feedback.push((character_id, "Due to some strange reasons thou canst not eat those berries now.".to_string()));
-                                                blocked += 1;
-                                            }
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::Lab3WhiteBerryLightTick { .. } => {
-                                            executed += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::Lab3BrownBerry { character_id, installed, .. } => {
-                                            if installed {
-                                                executed += 1;
-                                            } else {
-                                                feedback.push((character_id, "Thou art still chewing a brown berry.".to_string()));
-                                                blocked += 1;
-                                            }
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::Lab2WaterWell { character_id, .. } => {
-                                            if let Some(item_name) = grant_template_item_to_cursor(
+                                        outcome @ (ugaris_core::item_driver::ItemDriverOutcome::BranningtonUnderwaterBerry { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::Lab3YellowBerry { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::Lab3WhiteBerry { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::Lab3WhiteBerryLightTick { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::Lab3BrownBerry { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::Lab2WaterWell { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::Lab2WaterAltar { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::Lab2WaterDrink { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::Lab2WaterCursorOccupied { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::Lab2StepActionClear { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::Lab2StepActionDaemonCheck { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::Lab2StepActionDaemonWarning { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::Lab2GraveClueBook { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::Lab2GraveClose { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::Lab2GraveCheckOpen { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::Lab2GraveOpen { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::LabEntranceSolvedAll { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::LabEntranceTooLow { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::LabExitWrongOwner { .. }) => {
+                                            tick_item_use_lab::dispatch_lab_outcome(
                                                 &mut world,
                                                 &mut zone_loader,
-                                                character_id,
-                                                "lab2_waterbowl",
-                                            ) {
-                                                feedback.push((character_id, format!("You received a {item_name}.")));
-                                                executed += 1;
-                                            } else {
-                                                failed += 1;
-                                            }
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::Lab2WaterAltar { character_id, .. } => {
-                                            match apply_lab2_water_altar(&mut world, &mut zone_loader, character_id) {
-                                                Lab2WaterApplyResult::Converted(0) => {
-                                                    feedback.push((character_id, "You feel the holyness of the Altar. Water would be holy now, if you had some.".to_string()));
-                                                    blocked += 1;
-                                                }
-                                                Lab2WaterApplyResult::Converted(1) => {
-                                                    feedback.push((character_id, "The water inside your bowl is holy now.".to_string()));
-                                                    executed += 1;
-                                                }
-                                                Lab2WaterApplyResult::Converted(count) => {
-                                                    feedback.push((character_id, format!("The water inside your {count} bowls is holy now.")));
-                                                    executed += 1;
-                                                }
-                                                Lab2WaterApplyResult::MissingPlayer | Lab2WaterApplyResult::TemplateMissing => {
-                                                    failed += 1;
-                                                }
-                                            }
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::Lab2WaterDrink { character_id, .. } => {
-                                            feedback.push((character_id, "Skoll!".to_string()));
-                                            executed += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::Lab2WaterCursorOccupied { character_id, .. } => {
-                                            feedback.push((character_id, "You won't throw this into the water, will you?".to_string()));
-                                            blocked += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::Lab2StepActionClear { .. }
-                                        | ugaris_core::item_driver::ItemDriverOutcome::Lab2StepActionDaemonCheck { .. } => {
-                                            executed += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::Lab2StepActionDaemonWarning { x, y, .. } => {
-                                            let character_id = runtime.allocate_character_id();
-                                            match zone_loader.instantiate_character_template("lab2_daemon", character_id) {
-                                                Ok((daemon, inventory_items)) => {
-                                                    if world.spawn_character(daemon, usize::from(x), usize::from(y)) {
-                                                        for item in inventory_items {
-                                                            world.items.insert(item.id, item);
-                                                        }
-                                                        executed += 1;
-                                                    } else {
-                                                        failed += 1;
-                                                    }
-                                                }
-                                                _ => {
-                                                    failed += 1;
-                                                }
-                                            }
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::Lab2GraveClueBook { character_id, book, .. } => {
-                                            let text = lab2_grave_clue_text(&mut runtime, character_id, book);
-                                            feedback.push((character_id, text));
-                                            executed += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::Lab2GraveClose { .. }
-                                        | ugaris_core::item_driver::ItemDriverOutcome::Lab2GraveCheckOpen { .. } => {
-                                            executed += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::Lab2GraveOpen { item_id, character_id, fixed_item } => {
-                                            if apply_lab2_grave_open(
-                                                &mut world,
                                                 &mut runtime,
-                                                &mut zone_loader,
-                                                item_id,
-                                                character_id,
-                                                fixed_item,
-                                            ) {
-                                                executed += 1;
-                                            } else {
-                                                failed += 1;
-                                            }
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::LabEntranceSolvedAll { character_id, .. } => {
-                                            feedback.push((
-                                                character_id,
-                                                "You have solved all existing labyrinths already. You can now fight the gatekeeper.".to_string(),
-                                            ));
-                                            blocked += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::LabEntranceTooLow { character_id, required_level, .. } => {
-                                            feedback.push((
-                                                character_id,
-                                                format!("You may not enter before reaching level {required_level}."),
-                                            ));
-                                            blocked += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::LabExitWrongOwner { character_id, .. } => {
-                                            feedback.push((character_id, "This gate has not been created for you. You cannot use it.".to_string()));
-                                            blocked += 1;
+                                                outcome,
+                                                &mut feedback,
+                                                &mut executed,
+                                                &mut blocked,
+                                                &mut failed,
+                                            );
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::EmptyPotionTemplateNeeded {
                                             item_id,
