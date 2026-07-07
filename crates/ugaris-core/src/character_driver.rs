@@ -9,13 +9,11 @@ use crate::{
     ids::{CharacterId, ItemId},
     item_driver::IDR_POTION,
 };
-
 pub const CDT_DRIVER: u16 = 0;
 pub const CDT_ITEM: u16 = 1;
 pub const CDT_DEAD: u16 = 2;
 pub const CDT_RESPAWN: u16 = 3;
 pub const CDT_SPECIAL: u16 = 4;
-
 /// C `#define CDR_ACLERK 4` (`src/system/drvlib.h`): the arena clerk in
 /// Cameron (`src/module/merchants/merchant.c::aclerk_driver`).
 pub const CDR_ACLERK: u16 = 4;
@@ -153,12 +151,10 @@ pub const CDR_DUNGEONMASTER: u16 = 51;
 /// module doc comment lists what's still REMAINING (the SimpleBaddy-AI
 /// tail call and `fighter_dead`).
 pub const CDR_DUNGEONFIGHTER: u16 = 52;
-
 pub const DRD_SIMPLEBADDYDRIVER: u32 = 0x0100_0013;
 pub const DRD_CLARADRIVER: u32 = 0x0100_0059;
 pub const DRD_SKELLYDRIVER: u32 = 0x0100_006a;
 pub const DRD_LAB2_UNDEAD: u32 = 0x0200_0001;
-
 pub const NT_CHAR: i32 = 1;
 pub const NT_ITEM: i32 = 2;
 pub const NT_GOTHIT: i32 = 3;
@@ -170,7 +166,6 @@ pub const NT_GIVE: i32 = 8;
 pub const NT_CREATE: i32 = 9;
 pub const NT_TEXT: i32 = 200;
 pub const NT_NPC: i32 = 300;
-
 pub const NTID_MERCHANT: i32 = 1;
 pub const NTID_TERION: i32 = 2;
 pub const NTID_ASTURIN: i32 = 3;
@@ -188,9 +183,7 @@ pub const NTID_LAB2_DEAMONCHECK: i32 = 14;
 pub const NTID_SALTMINE_USEITEM: i32 = 15;
 pub const NTID_GLADIATOR: i32 = 16;
 pub const NTID_FDEMON: i32 = 17;
-
 pub const FDEMON_MSG_WAYPOINT: i32 = 1;
-
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct CharacterDriverMessage {
     pub message_type: i32,
@@ -200,7 +193,6 @@ pub struct CharacterDriverMessage {
     #[serde(default)]
     pub text: Option<String>,
 }
-
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum CharacterDriverState {
     SimpleBaddy(SimpleBaddyDriverData),
@@ -244,184 +236,6 @@ pub enum CharacterDriverState {
     Jiu(JiuDriverData),
     ForestRanger(ForestRangerDriverData),
 }
-
-/// C `struct lostcon_driver_data` (`src/module/lostcon.c`): the linger-timer
-/// half of the `CDR_LOSTCON` driver. `deadline` is the absolute tick
-/// (mirroring C's `dat->timeout = ticker + lagout_time`) at which the
-/// character is saved and despawned if still unclaimed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct LostconDriverData {
-    pub deadline: u64,
-}
-
-/// C `struct merchant_driver_data` from `src/module/merchants/merchant.c`
-/// plus the driver memory used for greeting throttling.
-#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct MerchantDriverData {
-    pub dir: i32,
-    pub dayx: i32,
-    pub dayy: i32,
-    pub daydir: i32,
-    pub nightx: i32,
-    pub nighty: i32,
-    pub nightdir: i32,
-    pub doorx: i32,
-    pub doory: i32,
-    pub storefx: i32,
-    pub storefy: i32,
-    pub storetx: i32,
-    pub storety: i32,
-    pub open: i32,
-    pub close: i32,
-    pub ignore: i32,
-    pub special: i32,
-    pub pricemulti: i32,
-    #[serde(default)]
-    pub last_talk: u64,
-    #[serde(default)]
-    pub last_special_add: u64,
-    #[serde(default)]
-    pub memory_clear_tick: u64,
-    #[serde(default)]
-    pub store_created: bool,
-}
-
-/// C `merchant_driver_parse` from `src/module/merchants/merchant.c`. The C
-/// driver defaults opening hours to 6..23 before parsing.
-pub fn parse_merchant_driver_args(args: &str) -> MerchantDriverData {
-    let mut data = MerchantDriverData {
-        open: 6,
-        close: 23,
-        ..MerchantDriverData::default()
-    };
-    let mut rest = args;
-    while let Some((name, value, next)) = next_legacy_name_value(rest) {
-        let parsed = value.parse::<i32>().unwrap_or(0);
-        match name {
-            "dir" => data.dir = parsed,
-            "dayx" => data.dayx = parsed,
-            "dayy" => data.dayy = parsed,
-            "daydir" => data.daydir = parsed,
-            "nightx" => data.nightx = parsed,
-            "nighty" => data.nighty = parsed,
-            "nightdir" => data.nightdir = parsed,
-            "ignore" => data.ignore = parsed,
-            "storefx" => data.storefx = parsed,
-            "storefy" => data.storefy = parsed,
-            "storetx" => data.storetx = parsed,
-            "storety" => data.storety = parsed,
-            "doorx" => data.doorx = parsed,
-            "doory" => data.doory = parsed,
-            "open" => data.open = parsed,
-            "close" => data.close = parsed,
-            "special" => data.special = parsed,
-            "pricemulti" => data.pricemulti = parsed,
-            _ => {}
-        }
-        rest = next;
-    }
-    data
-}
-
-/// C `struct aclerk_driver_data` from `src/module/merchants/merchant.c`
-/// (`CDR_ACLERK`, the arena clerk in Cameron). Field-for-field identical to
-/// `MerchantDriverData` - C copy-pastes the same struct shape for both
-/// drivers - kept as its own type so `CharacterDriverState` stays a plain
-/// enum over driver-specific data.
-#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct AclerkDriverData {
-    pub dir: i32,
-    pub dayx: i32,
-    pub dayy: i32,
-    pub daydir: i32,
-    pub nightx: i32,
-    pub nighty: i32,
-    pub nightdir: i32,
-    pub doorx: i32,
-    pub doory: i32,
-    pub storefx: i32,
-    pub storefy: i32,
-    pub storetx: i32,
-    pub storety: i32,
-    pub open: i32,
-    pub close: i32,
-    pub ignore: i32,
-    pub special: i32,
-    pub pricemulti: i32,
-    #[serde(default)]
-    pub last_talk: u64,
-    #[serde(default)]
-    pub last_special_add: u64,
-    #[serde(default)]
-    pub memory_clear_tick: u64,
-    #[serde(default)]
-    pub store_created: bool,
-}
-
-/// C `aclerk_driver_parse` from `src/module/merchants/merchant.c`. Defaults
-/// opening hours to 6..23 before parsing, identical to
-/// `merchant_driver_parse`.
-pub fn parse_aclerk_driver_args(args: &str) -> AclerkDriverData {
-    let mut data = AclerkDriverData {
-        open: 6,
-        close: 23,
-        ..AclerkDriverData::default()
-    };
-    let mut rest = args;
-    while let Some((name, value, next)) = next_legacy_name_value(rest) {
-        let parsed = value.parse::<i32>().unwrap_or(0);
-        match name {
-            "dir" => data.dir = parsed,
-            "dayx" => data.dayx = parsed,
-            "dayy" => data.dayy = parsed,
-            "daydir" => data.daydir = parsed,
-            "nightx" => data.nightx = parsed,
-            "nighty" => data.nighty = parsed,
-            "nightdir" => data.nightdir = parsed,
-            "ignore" => data.ignore = parsed,
-            "storefx" => data.storefx = parsed,
-            "storefy" => data.storefy = parsed,
-            "storetx" => data.storetx = parsed,
-            "storety" => data.storety = parsed,
-            "doorx" => data.doorx = parsed,
-            "doory" => data.doory = parsed,
-            "open" => data.open = parsed,
-            "close" => data.close = parsed,
-            "special" => data.special = parsed,
-            "pricemulti" => data.pricemulti = parsed,
-            _ => {}
-        }
-        rest = next;
-    }
-    data
-}
-
-/// C `struct bank_driver_data` from `src/module/bank.c`, plus the driver
-/// memory used for greeting throttling (shared 8-slot `DriverMemory`, same
-/// as `MerchantDriverData`).
-#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct BankDriverData {
-    pub dir: i32,
-    pub dayx: i32,
-    pub dayy: i32,
-    pub daydir: i32,
-    pub nightx: i32,
-    pub nighty: i32,
-    pub nightdir: i32,
-    pub storefx: i32,
-    pub storefy: i32,
-    pub storetx: i32,
-    pub storety: i32,
-    pub doorx: i32,
-    pub doory: i32,
-    pub open: i32,
-    pub close: i32,
-    #[serde(default)]
-    pub last_talk: u64,
-    #[serde(default)]
-    pub memory_clear_tick: u64,
-}
-
 /// C `bank_driver_parse` from `src/module/bank.c`. The C driver defaults
 /// opening hours to 6..23 before parsing (`bank_driver` lines 304-309).
 pub fn parse_bank_driver_args(args: &str) -> BankDriverData {
@@ -455,329 +269,6 @@ pub fn parse_bank_driver_args(args: &str) -> BankDriverData {
     }
     data
 }
-
-/// C `clanmaster_driver_parse` (`src/area/30/clanmaster.c:290-298`): the
-/// zone-file `arg="dir=1;"` only ever sets `dir` (any other name is an
-/// `elog` warning in C, silently dropped here as elsewhere in this file).
-pub fn parse_clanmaster_driver_args(args: &str) -> ClanmasterDriverData {
-    let mut data = ClanmasterDriverData::default();
-    let mut rest = args;
-    while let Some((name, value, next)) = next_legacy_name_value(rest) {
-        if name == "dir" {
-            data.dir = value.parse::<i32>().unwrap_or(0);
-        }
-        rest = next;
-    }
-    data
-}
-
-/// C `struct trader_data` from `src/module/base.c`'s `trader_driver`
-/// (`CDR_TRADER`, the player-to-player trade middleman NPC). Unlike
-/// `MerchantDriverData`/`BankDriverData`, C never parses zone-file args
-/// into this struct (`set_data` zero-initializes it), so there is no
-/// `parse_trader_driver_args` counterpart - `Default` (all zero/empty)
-/// matches C's initial state exactly.
-///
-/// `c1_id`/`c2_id` mirror C's `dat->c1ID`/`c2ID` (`ch[co].ID`, the
-/// player's persistent ID) using the raw runtime `CharacterId` instead -
-/// the same simplification already established for driver-memory
-/// membership (see the module doc comment above `DriverMemory`) and the
-/// merchant/bank greet-tracking ports, since threading persistent player
-/// IDs through `World` is a bigger change than this driver's scope.
-#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct TraderDriverData {
-    /// C `dat->state`: `0` idle, `1` trade in progress, `2` one side has
-    /// said "accept trade" and is waiting on the other.
-    pub state: i32,
-    pub c1_id: Option<CharacterId>,
-    pub c2_id: Option<CharacterId>,
-    /// C `dat->c1itm[10]`/`c1cnt`: items `c1` has handed over, capped at
-    /// 10 (`MAX_TRADER_ITEMS` in `world/trader.rs`).
-    pub c1_items: Vec<ItemId>,
-    pub c2_items: Vec<ItemId>,
-    pub c1_ok: bool,
-    pub c2_ok: bool,
-    /// C `dat->timeout`: absolute tick the in-progress trade auto-cancels
-    /// at (`ticker + TICKS * 60 * 3`, three minutes).
-    #[serde(default)]
-    pub timeout: u64,
-    #[serde(default)]
-    pub memory_clear_tick: u64,
-    #[serde(default)]
-    pub last_talk: u64,
-}
-
-/// C `struct gate_welcome_driver_data` (`src/system/gatekeeper.c:411-415`):
-/// the gatekeeper-welcome NPC's own driver memory (`CDR_GATE_WELCOME`,
-/// distinct from the per-player `gate_ppd` in `crate::player::PlayerRuntime`
-/// - see `world::gatekeeper`'s module doc comment for the split).
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct GateWelcomeDriverData {
-    #[serde(default)]
-    pub last_talk: u64,
-    pub current_victim: Option<CharacterId>,
-    pub amgivingback: i32,
-}
-
-/// C `struct camhermit_driver_data` (`src/area/1/gwendylon.c:702-705`): the
-/// forest hermit NPC's own driver memory (`CDR_CAMHERMIT`, distinct from
-/// the per-player `camhermit_state`/`camhermit_seen_timer`/`camhermit_kills`
-/// fields in `crate::player::PlayerRuntime`'s `area1_ppd` - see
-/// `world::camhermit`'s module doc comment for the split).
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct CamhermitDriverData {
-    #[serde(default)]
-    pub last_talk: u64,
-    pub current_victim: Option<CharacterId>,
-}
-
-/// C `struct yoakin_driver_data` (`src/area/1/gwendylon.c:990-994`): the
-/// hunter NPC's own driver memory (`CDR_YOAKIN`, distinct from the
-/// per-player `yoakin_state`/`yoakin_seen_timer` fields in
-/// `crate::player::PlayerRuntime`'s `area1_ppd` - see `world::yoakin`'s
-/// module doc comment for the split). The C struct's third field,
-/// `nighttime`, is never read or written anywhere in `yoakin_driver`'s
-/// body - dead even in C - so it is not ported.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct YoakinDriverData {
-    #[serde(default)]
-    pub last_talk: u64,
-    pub current_victim: Option<CharacterId>,
-}
-
-/// C `struct terion_driver_data` (`src/area/1/gwendylon.c:1221-1226`): the
-/// ambient lore NPC's own driver memory (`CDR_TERION`, distinct from the
-/// per-player `terion_state` field in `crate::player::PlayerRuntime`'s
-/// `area1_ppd` - see `world::terion`'s module doc comment for the split).
-/// The C struct's `last_walk`/`pos` fields are never read or written
-/// anywhere in `terion_driver`'s body - dead even in C - so they are not
-/// ported.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct TerionDriverData {
-    #[serde(default)]
-    pub last_talk: u64,
-    pub current_victim: Option<CharacterId>,
-}
-
-/// C `struct greeter_driver_data` (`src/area/1/gwendylon.c`, just above
-/// `greeter_driver` at `:1485`): the town-greeter NPC's own driver memory
-/// (`CDR_GREETER`, distinct from the per-player `greeter_state`/
-/// `greeter_seen_timer` fields in `crate::player::PlayerRuntime`'s
-/// `area1_ppd` - see `world::greeter`'s module doc comment for the
-/// split).
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct GreeterDriverData {
-    #[serde(default)]
-    pub last_talk: u64,
-    pub current_victim: Option<CharacterId>,
-}
-
-/// C `struct gwendylon_driver_data` (`src/area/1/gwendylon.c:227-232`): the
-/// main quest-giver mage's own driver memory (`CDR_GWENDYLON`, distinct
-/// from the per-player `gwendy_state`/`gwendy_seen_timer` fields in
-/// `crate::player::PlayerRuntime`'s `area1_ppd` - see `world::gwendylon`'s
-/// module doc comment for the split). The C struct's `nighttime`/`giveto`
-/// fields are never read or written anywhere in `gwendylon_driver`'s body -
-/// dead even in C - so they are not ported.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct GwendylonDriverData {
-    #[serde(default)]
-    pub last_talk: u64,
-    pub current_victim: Option<CharacterId>,
-}
-
-/// C `struct jessica_driver_data` (`src/area/1/gwendylon.c:1802-1805`): the
-/// robber-quest NPC's own driver memory (`CDR_JESSICA`, distinct from the
-/// per-player `jessica_state`/`jessica_seen_timer` fields in
-/// `crate::player::PlayerRuntime`'s `area1_ppd` - see `world::jessica`'s
-/// module doc comment for the split).
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct JessicaDriverData {
-    #[serde(default)]
-    pub last_talk: u64,
-    pub current_victim: Option<CharacterId>,
-}
-
-/// C `struct jiu_driver_data` (`src/area/1/gwendylon.c:2069-2072`): the
-/// riverbeast-quest pilgrim NPC's own driver memory (`CDR_JIU`, distinct
-/// from the per-player `jiu_state`/`jiu_seen_timer` fields in
-/// `crate::player::PlayerRuntime`'s `area1_ppd` - see `world::jiu`'s
-/// module doc comment for the split).
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct JiuDriverData {
-    #[serde(default)]
-    pub last_talk: u64,
-    pub current_victim: Option<CharacterId>,
-}
-
-/// C `struct forest_ranger_driver_data` (`src/area/1/gwendylon.c:2275-
-/// 2278`): the bear-attack-warning sentry NPC's own driver memory
-/// (`CDR_FOREST_RANGER`, distinct from the per-player
-/// `forest_ranger_state`/`forest_ranger_seen_timer` fields in
-/// `crate::player::PlayerRuntime`'s `area1_ppd` - see
-/// `world::forest_ranger`'s module doc comment for the split).
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct ForestRangerDriverData {
-    #[serde(default)]
-    pub last_talk: u64,
-    pub current_victim: Option<CharacterId>,
-}
-
-/// C `struct gate_fight_driver_data` (`src/system/gatekeeper.c:636-639`):
-/// the private-room opponent's own driver memory (`CDR_GATE_FIGHT`). Unlike
-/// C's generic `struct fight_driver_data`/`DRD_FIGHTDRIVER` (a 10-slot enemy
-/// list this driver never actually populates, since it only ever fights the
-/// single `victim` set via the `NT_NPC`/`NTID_GATEKEEPER` message - see
-/// `world::gate_fight`'s module doc comment), this only tracks that one
-/// opponent plus its last-known position/visibility.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct GateFightDriverData {
-    pub creation_time: u64,
-    pub victim: Option<CharacterId>,
-    pub victim_last_x: u16,
-    pub victim_last_y: u16,
-    pub victim_visible: bool,
-}
-
-/// C `struct clanmaster_driver_data` (`src/area/30/clanmaster.c:278-289`):
-/// the clan foundations NPC's own driver memory (`CDR_CLANMASTER`). The
-/// leader-invites-member handshake (`accept:`/`join:`) lives here, on the
-/// *NPC's* driver data, distinct from the per-player founding state in
-/// [`ClanFoundData`].
-#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct ClanmasterDriverData {
-    #[serde(default)]
-    pub last_talk: u64,
-    pub dir: i32,
-    /// C `dat->accept[80]`: the name of the player a clan leader has
-    /// invited (`accept: <name>`).
-    pub accept: String,
-    pub accept_clan: u16,
-    /// C `dat->accept_cn`: set by the `accept:` handler but never read
-    /// again anywhere in `clanmaster.c` - kept for fidelity even though it
-    /// is dead state in C too.
-    pub accept_cn: Option<CharacterId>,
-    /// C `dat->join[80]`: the inviting leader's own name, echoed back by
-    /// the invitee via `join: <leader name>` to confirm the invite.
-    pub join: String,
-    pub give_try: i32,
-    #[serde(default)]
-    pub memcleartimer: u64,
-}
-
-/// C `struct clanclerk_driver_data` (`src/area/30/clanmaster.c:659-661`):
-/// the clan administration/treasury NPC's own driver memory
-/// (`CDR_CLANCLERK`). Unlike [`ClanmasterDriverData`], this is just the
-/// single clan number the clerk administers - set once from the zone-file
-/// arg (`dat->clan = atoi(ch[cn].arg)`, `clanclerk_driver`'s first lines).
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct ClanclerkDriverData {
-    pub clan: u16,
-}
-
-/// C `clanclerk_driver`'s `if (ch[cn].arg) { dat->clan = atoi(ch[cn].arg);
-/// ch[cn].arg = NULL; }` (`clanmaster.c:670-673`). Unlike
-/// [`parse_clanmaster_driver_args`]'s `name=value;` pairs, the zone-file
-/// arg here is a bare clan-number literal (e.g. `arg="5"`), so this is
-/// just an `atoi` of the whole string rather than a name/value walk
-/// (matching this file's existing `value.parse::<i32>().unwrap_or(0)`
-/// convention for zone-file numeric literals).
-pub fn parse_clanclerk_driver_args(args: &str) -> ClanclerkDriverData {
-    ClanclerkDriverData {
-        clan: args.trim().parse::<i32>().unwrap_or(0).max(0) as u16,
-    }
-}
-
-/// C `struct clubmaster_driver_data` (`src/system/clubmaster.c:198-213`):
-/// the club foundations/administration NPC's own driver memory
-/// (`CDR_CLUBMASTER`). Unlike [`ClanmasterDriverData`], club founding
-/// (`found:`) is a single-step gold payment - there is no per-player
-/// "name chosen, waiting for a Clan Jewel" state, so there is no club
-/// counterpart to [`ClanFoundData`]. C's own `new_name[80]`/`new_co`/
-/// `new_ID`/`new_timeout` fields are declared but never read *or* written
-/// anywhere in `clubmaster_driver` (genuinely dead struct members, unlike
-/// `ClanmasterDriverData::accept_cn`, which is at least written once) -
-/// dropped here rather than kept for fidelity, since there is nothing to
-/// be faithful to.
-#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct ClubmasterDriverData {
-    #[serde(default)]
-    pub last_talk: u64,
-    pub dir: i32,
-    /// C `dat->accept[80]`: the name of the player a club leader has
-    /// invited (`accept: <name>`).
-    pub accept: String,
-    pub accept_clan: u16,
-    /// C `dat->accept_cn`: set by the `accept:` handler but never read
-    /// again anywhere in `clubmaster.c` either - kept for the same
-    /// fidelity reason `ClanmasterDriverData::accept_cn` documents.
-    pub accept_cn: Option<CharacterId>,
-    /// C `dat->join[80]`: the inviting leader's own name, echoed back by
-    /// the invitee via `join: <leader name>` to confirm the invite.
-    pub join: String,
-    #[serde(default)]
-    pub memcleartimer: u64,
-}
-
-/// C `clubmaster_driver_parse` (`src/system/clubmaster.c:215-225`): same
-/// `dir=N;` zone-file arg shape as [`parse_clanmaster_driver_args`].
-pub fn parse_clubmaster_driver_args(args: &str) -> ClubmasterDriverData {
-    let mut data = ClubmasterDriverData::default();
-    let mut rest = args;
-    while let Some((name, value, next)) = next_legacy_name_value(rest) {
-        if name == "dir" {
-            data.dir = value.parse::<i32>().unwrap_or(0);
-        }
-        rest = next;
-    }
-    data
-}
-
-/// C `struct contender` (`src/system/arena.c:215-220`): one tournament
-/// registrant. `character_id` merges C's `ID` (the persistent-player
-/// identity used to invalidate a stale slot) and `cn` (the live character
-/// slot) into a single `CharacterId` - the same simplification already
-/// established by `TraderDriverData::c1_id`/`c2_id` (see that struct's
-/// doc comment), since a logged-out/reconnected character gets a fresh
-/// `CharacterId` in this codebase, making the separate C `ID` field
-/// redundant here. `score` is the registrant's arena rating captured at
-/// registration time (`ppd->score`, read once and never refreshed while
-/// queued, matching C exactly) and `reg_time` is the tick the slot was
-/// filled (`arena.c:279`, used by `find_contender`'s wait-time bonus).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct ArenaContender {
-    pub character_id: CharacterId,
-    pub score: i32,
-    pub reg_time: u64,
-}
-
-/// C `struct master_data` (`src/system/arena.c:236-253`), minus the
-/// `storage_state`/`storage_version`/`storage_ID`/`lastsave` storage-blob
-/// bookkeeping fields: this codebase has no generic storage-blob
-/// persistence primitive yet (same architectural gap noted by the "Arena
-/// rankings" task in `PORTING_TODO.md` for the ranking table itself), so
-/// the tournament tick always runs as if `storage_state > 3` (C's own
-/// "storage is ready" gate) - the eventual real-world behavior, just
-/// without the one-time load delay, matching the precedent already
-/// established for `/killclan`'s immediate-delete simplification.
-/// `MAXCONTENDER` (50, `arena.c:213`) is enforced by
-/// [`crate::world::World::arena_add_contender`] rather than a fixed-size
-/// array field.
-#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct ArenaMasterDriverData {
-    #[serde(default)]
-    pub last_talk: u64,
-    pub amgivingback: i32,
-    /// C `dat->state`: `0` = [`MS_PAIR`], `1` = [`MS_IN`], `2` =
-    /// [`MS_FIGHT`].
-    pub state: u8,
-    pub fight1: Option<CharacterId>,
-    pub fight2: Option<CharacterId>,
-    #[serde(default)]
-    pub timeout: u64,
-    pub contenders: Vec<ArenaContender>,
-}
-
 /// C `#define MS_PAIR 0` (`arena.c:222`): searching for a contender pair.
 pub const MS_PAIR: u8 = 0;
 /// C `#define MS_IN 1` (`arena.c:223`): waiting for both fighters to step
@@ -785,10 +276,6 @@ pub const MS_PAIR: u8 = 0;
 pub const MS_IN: u8 = 1;
 /// C `#define MS_FIGHT 2` (`arena.c:224`): fight in progress.
 pub const MS_FIGHT: u8 = 2;
-
-/// C `#define MAXCONTENDER 50` (`arena.c:213`).
-pub const ARENA_MAX_CONTENDER: usize = 50;
-
 /// C `#define FS_LEISURE 0` ... `#define FS_FIGHT 6` (`arena.c:790-796`):
 /// `fighter_driver`'s (`CDR_ARENAFIGHTER`) autonomous tournament
 /// practice-bot state machine.
@@ -799,417 +286,6 @@ pub const FS_WAIT: u8 = 3;
 pub const FS_ENTER: u8 = 4;
 pub const FS_WAIT2: u8 = 5;
 pub const FS_FIGHT: u8 = 6;
-
-/// C `#define MASTER_POSX 236` / `#define MASTER_POSY 145`
-/// (`arena.c:798-799`): the tile `fighter_driver`'s `FS_START` state walks
-/// toward to register for the tournament.
-pub const ARENA_FIGHTER_MASTER_POS: (u16, u16) = (236, 145);
-
-/// C `fighter_driver`'s `NT_CREATE` handler hardcoding `ch[cn].restx =
-/// 247; ch[cn].resty = 148;` (`arena.c:850-851`) regardless of the NPC's
-/// actual zone-file spawn tile.
-pub const ARENA_FIGHTER_REST_POS: (u16, u16) = (247, 148);
-
-/// C `struct fighter_data` (`arena.c:800-812`), minus the generic
-/// `storage_state`/`storage_version`/`storage_ID`/`lastsave` storage-blob
-/// state machine (no storage-blob primitive exists yet - same
-/// simplification as [`ArenaMasterDriverData`], see `world/arena.rs`'s
-/// module doc comment) and its `struct fighter_storage { struct
-/// arena_ppd ppd; }` payload, which is instead tracked directly as plain
-/// fields here (`score`/`fights`/`wins`/`losses`) since this bot has no
-/// `PlayerRuntime` to own a real `arena_ppd` - resets on respawn/server
-/// restart, a real (if minor) gap from C's persistent per-bot win/loss
-/// record, documented at the "Arena rankings" `PORTING_TODO.md` task.
-/// `lastact` is signed (unlike every tick-stamp elsewhere in this
-/// codebase) specifically to reproduce C's `dat->lastact = -TICKS*60*6`
-/// on creation (`arena.c:854`), which forces the very first `FS_LEISURE`
-/// tick to already read as "long enough ago" without an initial
-/// multi-minute idle delay.
-#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct ArenaFighterDriverData {
-    pub state: u8,
-    pub enemy: Option<CharacterId>,
-    /// Narrowed single-enemy stand-in for C's `struct fight_driver_data`'s
-    /// per-slot `visible`/`lastx`/`lasty` (`drvlib.c:2170-2220`) - see
-    /// `world/arena.rs::arena_fighter_update_enemy_visibility`'s doc
-    /// comment for why the generic 10-slot list was never ported.
-    pub enemy_visible: bool,
-    pub enemy_last_x: u16,
-    pub enemy_last_y: u16,
-    pub last_act: i64,
-    pub score: i32,
-    pub fights: i32,
-    pub wins: i32,
-    pub losses: i32,
-}
-
-/// C `struct manager_data` (`src/system/arena.c:1080-1093`), minus the
-/// dead `timeout` field: C writes `dat->timeout` on `NT_CREATE` (reset to
-/// `-TICKS*60*5`) and again on a successful `rent` (`ticker + TICKS*60*5`)
-/// but never reads it anywhere in `manager_driver` (verified by grep -
-/// every other `dat->timeout` reference in `arena.c` belongs to the
-/// unrelated `struct master_data`), so it has no observable effect and is
-/// not ported, matching the precedent already set for the arena master's
-/// own dead top-of-tick `citem` safety net (see `world/arena.rs`'s module
-/// doc comment). `renter` merges C's bare `ch[].ID`-style `int` into
-/// `Option<CharacterId>` (`0` -> `None`), the same simplification as
-/// `ArenaContender::character_id`. `invite` is C's `char invite[80]`
-/// (79 usable bytes plus the nul terminator) as an owned `String`.
-#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct ArenaManagerDriverData {
-    #[serde(default)]
-    pub last_talk: u64,
-    pub amgivingback: i32,
-    pub renter: Option<CharacterId>,
-    #[serde(default)]
-    pub invite: String,
-    pub arena_x: u16,
-    pub arena_y: u16,
-    pub arena_fx: u16,
-    pub arena_fy: u16,
-    pub arena_tx: u16,
-    pub arena_ty: u16,
-}
-
-/// C `manager_parse` (`arena.c:1091-1109`): reads the six `arenax`/
-/// `arenay`/`arenafx`/`arenafy`/`arenatx`/`arenaty` zone-file args (e.g.
-/// `arg="arenax=233;arenay=122;arenafx=230;arenafy=119;arenatx=242;
-/// arenaty=125;"` in `ugaris_data/zones/3/above3_generic.chr`); any other
-/// name is C's `elog("unknown arg for %s (%d): %s", ...)` warning,
-/// silently dropped here as elsewhere in this file.
-pub fn parse_arena_manager_driver_args(args: &str) -> ArenaManagerDriverData {
-    let mut data = ArenaManagerDriverData::default();
-    let mut rest = args;
-    while let Some((name, value, next)) = next_legacy_name_value(rest) {
-        let parsed = value.parse::<u16>().unwrap_or(0);
-        match name {
-            "arenax" => data.arena_x = parsed,
-            "arenay" => data.arena_y = parsed,
-            "arenafx" => data.arena_fx = parsed,
-            "arenafy" => data.arena_fy = parsed,
-            "arenatx" => data.arena_tx = parsed,
-            "arenaty" => data.arena_ty = parsed,
-            _ => {}
-        }
-        rest = next;
-    }
-    data
-}
-
-/// C's fixed catacomb-grid size (`src/area/13/dungeon.c` implicitly
-/// assumes 9 81x81 catacomb slots laid out 3x3 across the area-13 map).
-pub const DUNGEON_SLOT_COUNT: usize = 9;
-
-/// C `struct master_data` (`src/area/13/dungeon.c:1366-1375`): the
-/// `CDR_DUNGEONMASTER` driver's per-slot catacomb-tracking arrays.
-#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct DungeonmasterDriverData {
-    /// C `target[9]`: the defending clan number for each occupied slot
-    /// (`0` = empty).
-    pub target: [u16; DUNGEON_SLOT_COUNT],
-    /// C `level[9]`: the guard level the catacomb was built at
-    /// (`56 + score_to_level(clan_get_training_score(target))`).
-    pub level: [i32; DUNGEON_SLOT_COUNT],
-    /// C `created[9]`: the tick the catacomb was created (`0` = empty).
-    pub created: [u64; DUNGEON_SLOT_COUNT],
-    /// C `warning[9]`: the next `warn_dungeon` threshold, in ticks-since-
-    /// creation.
-    pub warning: [u64; DUNGEON_SLOT_COUNT],
-    /// C `owner[9]`: the raider's `ch[].ID` (here, `CharacterId.0`) that
-    /// created the catacomb.
-    pub owner: [u32; DUNGEON_SLOT_COUNT],
-    /// C `created_by_clan[9]`: the raiding clan number.
-    pub created_by_clan: [u16; DUNGEON_SLOT_COUNT],
-    /// C `memcleartimer`.
-    pub memcleartimer: u64,
-}
-
-/// C `struct dungeonfighter_data` (`dungeon.c:2027-2032`): the
-/// `CDR_DUNGEONFIGHTER` driver's per-NPC damage/potion-budget counters.
-/// Unlike C's `set_data`, which stores this independently of whatever
-/// `struct simplebaddy_data` the same character might also carry, this
-/// occupies the character's one `driver_state` slot outright (see
-/// `world/dungeon_fighter.rs`'s module doc comment for the resulting
-/// SimpleBaddy-AI gap). C never resets any of these four counters, so
-/// they accumulate for the NPC's entire lifetime (matched here).
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct DungeonfighterDriverData {
-    /// C `damage_done`.
-    pub damage_done: i32,
-    /// C `damage_taken`.
-    pub damage_taken: i32,
-    /// C `simple_pots_taken`.
-    pub simple_pots_taken: i32,
-    /// C `alc_pots_taken`.
-    pub alc_pots_taken: i32,
-}
-
-/// C `MACRO_STATE_*` (`base.c:263-268`): the `CDR_MACRO` "Macro Daemon"
-/// anti-bot NPC's own state machine, driving [`MacroDriverData`].
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub enum MacroDriverState {
-    /// `MACRO_STATE_IDLE` (`0`): looking for a victim.
-    #[default]
-    Idle,
-    /// `MACRO_STATE_FOUND` (`1`): found a victim, preparing.
-    Found,
-    /// `MACRO_STATE_TELEPORTED` (`2`): teleported to the victim.
-    Teleported,
-    /// `MACRO_STATE_CHALLENGING` (`3`): asking the challenge.
-    Challenging,
-    /// `MACRO_STATE_TIMEOUT` (`4`): time ran out.
-    Timeout,
-}
-
-/// C `struct macro_data` (`base.c:242-254`): the `CDR_MACRO` NPC's own
-/// per-victim state. C's `victim`/`v_ID` pair (a `cn` array index plus its
-/// `ch[].ID` generation check, guarding against the slot being recycled by
-/// a different character between ticks) collapses to a single
-/// [`CharacterId`] here, since this codebase's `CharacterId` is already
-/// the stable, non-recycled identity every other ported NPC driver
-/// compares directly (see e.g. `World::dungeonmaster_handle_char_message`'s
-/// `speaker_id == dungeonmaster_id` check) - a stale `victim` simply stops
-/// resolving via `World::characters.get`, which every consumer already
-/// treats as "victim is gone, advance". C's six loose challenge fields
-/// (`challenge_type`/`val1`/`val2`/`challenge_word`/`expected_answer`/
-/// `choice_answer`) fold into a single [`crate::macro_daemon::
-/// MacroChallenge`] (already ported whole, see that module).
-#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct MacroDriverData {
-    pub state: MacroDriverState,
-    pub victim: Option<CharacterId>,
-    /// C `dat->victim`'s *other* role: while `state ==
-    /// MacroDriverState::Idle`, the next victim search resumes from this
-    /// `CharacterId.0` value (C's `for (co = dat->victim; ...)`
-    /// continuation) - split into its own field since Rust's `victim`
-    /// above is `None` exactly when there is no *current* target, whereas
-    /// C's single `int victim` always holds a meaningful value in both
-    /// roles at once.
-    pub search_cursor: u32,
-    /// C `start` (`ticker` when the current challenge began).
-    pub start: u64,
-    /// C `last` (`ticker` of the last time the challenge was (re-)asked).
-    pub last: u64,
-    pub challenge: Option<crate::macro_daemon::MacroChallenge>,
-    pub teleported_to_jail: bool,
-}
-
-/// C `struct qa qa[]` (`src/area/13/dungeon.c:91-99`): `dungeonmaster`'s
-/// own small-talk table. Unlike `CLANMASTER_QA`, C's own caller *does*
-/// read `analyse_text_driver`'s return value here (`case 2:`/`case 3:`,
-/// `dungeon.c:1636-1645`), so codes `2` ("help") and `3` ("list") are
-/// both real, reachable outcomes - see
-/// `World::dungeonmaster_handle_text_message`.
-pub const DUNGEONMASTER_QA: &[TextQaEntry] = &[
-    TextQaEntry {
-        words: &["how", "are", "you"],
-        answer: Some("I'm fine!"),
-        answer_code: 0,
-    },
-    TextQaEntry {
-        words: &["hello"],
-        answer: Some("Hello, %s!"),
-        answer_code: 0,
-    },
-    TextQaEntry {
-        words: &["hi"],
-        answer: Some("Hi, %s!"),
-        answer_code: 0,
-    },
-    TextQaEntry {
-        words: &["greetings"],
-        answer: Some("Greetings, %s!"),
-        answer_code: 0,
-    },
-    TextQaEntry {
-        words: &["hail"],
-        answer: Some("And hail to you, %s!"),
-        answer_code: 0,
-    },
-    TextQaEntry {
-        words: &["what's", "up"],
-        answer: Some("Everything that isn't nailed down."),
-        answer_code: 0,
-    },
-    TextQaEntry {
-        words: &["what", "is", "up"],
-        answer: Some("Everything that isn't nailed down."),
-        answer_code: 0,
-    },
-    TextQaEntry {
-        words: &["help"],
-        answer: None,
-        answer_code: 2,
-    },
-    TextQaEntry {
-        words: &["list"],
-        answer: None,
-        answer_code: 3,
-    },
-];
-
-/// C `struct qa qa[]` (`src/system/arena.c:83-97`), shared verbatim by
-/// `master_driver`'s and `manager_driver`'s `analyse_text_driver` calls.
-/// `master_driver` only ever switches on codes `3`/`4`/`5` (register/
-/// enter/leave, see `World::arena_handle_text_message`); `manager_driver`
-/// only ever switches on codes `4`/`5`/`6` (enter/leave/rent, see
-/// `World::arena_manager_handle_text_message`) - each driver's own unused
-/// codes from the other's command set are harmless no-ops, matching C
-/// exactly (neither driver's `switch` has a matching `case` for them).
-/// Codes `2` ("repeat"/"restart") are dead in both C drivers
-/// (`answer_code == 2` is never switched on by either), matching the
-/// equally-dead `TextAnalysisOutcome::Matched(2)` case already
-/// established by `CLANMASTER_QA`.
-pub const ARENA_QA: &[TextQaEntry] = &[
-    TextQaEntry {
-        words: &["how", "are", "you"],
-        answer: Some("I'm fine!"),
-        answer_code: 0,
-    },
-    TextQaEntry {
-        words: &["hello"],
-        answer: Some("Hello, %s!"),
-        answer_code: 0,
-    },
-    TextQaEntry {
-        words: &["hi"],
-        answer: Some("Hi, %s!"),
-        answer_code: 0,
-    },
-    TextQaEntry {
-        words: &["greetings"],
-        answer: Some("Greetings, %s!"),
-        answer_code: 0,
-    },
-    TextQaEntry {
-        words: &["hail"],
-        answer: Some("And hail to you, %s!"),
-        answer_code: 0,
-    },
-    TextQaEntry {
-        words: &["what's", "up"],
-        answer: Some("Everything that isn't nailed down."),
-        answer_code: 0,
-    },
-    TextQaEntry {
-        words: &["what", "is", "up"],
-        answer: Some("Everything that isn't nailed down."),
-        answer_code: 0,
-    },
-    TextQaEntry {
-        words: &["repeat"],
-        answer: None,
-        answer_code: 2,
-    },
-    TextQaEntry {
-        words: &["restart"],
-        answer: None,
-        answer_code: 2,
-    },
-    TextQaEntry {
-        words: &["please", "repeat"],
-        answer: None,
-        answer_code: 2,
-    },
-    TextQaEntry {
-        words: &["please", "restart"],
-        answer: None,
-        answer_code: 2,
-    },
-    TextQaEntry {
-        words: &["register"],
-        answer: None,
-        answer_code: 3,
-    },
-    TextQaEntry {
-        words: &["enter"],
-        answer: None,
-        answer_code: 4,
-    },
-    TextQaEntry {
-        words: &["leave"],
-        answer: None,
-        answer_code: 5,
-    },
-    TextQaEntry {
-        words: &["rent"],
-        answer: None,
-        answer_code: 6,
-    },
-];
-
-/// C `struct military_master_data`'s zone-file-parsed half
-/// (`src/module/military.c:355-364`), plus the two `dat`-scoped runtime
-/// fields C persists as part of the NPC's own memory image rather than
-/// through the `storage_data` subsystem: `last_clan_update` (the
-/// `update_clan_points` 60-second throttle timestamp, `military.c:357`)
-/// and `last_recom` (the character ID of the last player granted a clan
-/// recommendation, deduplicating repeat recommendations,
-/// `military.c:359`). Both default to `0` here (not zone-parsed); C
-/// instead stamps `last_clan_update = realtime` on `NT_CREATE`
-/// (`military.c:2126`) - Rust has no equivalent creation-time hook here,
-/// so [`crate::world::World::update_clan_points`] lazily treats a `0`
-/// timestamp as "just created" and stamps it to the current tick's time
-/// without granting a bonus yet, reproducing the same "no bonus for the
-/// first 60 seconds after spawn" behavior without needing a real-time
-/// value at zone-parse time.
-///
-/// The actual persisted `military_master_storage` counters (clan
-/// points/quests given/solved/exp/pts per difficulty,
-/// `struct military_master_storage`, `military.c:346-352`) live in
-/// [`crate::world::MilitaryMasterStorageRegistry`], keyed by
-/// `storage_id`, not on this struct - see that type's doc comment for
-/// the storage-blob architectural gap this still doesn't close (no DB
-/// persistence yet).
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct MilitaryMasterDriverData {
-    pub storage_id: i32,
-    #[serde(default)]
-    pub last_clan_update: i64,
-    #[serde(default)]
-    pub last_recom: u32,
-}
-
-/// C `military_master_parse` (`military.c:1634-1644`): the only zone-file
-/// arg this driver reads is `storage=N;`.
-pub fn parse_military_master_driver_args(args: &str) -> MilitaryMasterDriverData {
-    let mut data = MilitaryMasterDriverData::default();
-    let mut rest = args;
-    while let Some((name, value, next)) = next_legacy_name_value(rest) {
-        if name == "storage" {
-            data.storage_id = value.parse::<i32>().unwrap_or(0);
-        }
-        rest = next;
-    }
-    data
-}
-
-/// C `struct military_advisor_data`'s zone-file-parsed half
-/// (`src/module/military.c:369-375`) - just the `storage_ID` used by
-/// [`crate::world::calculate_advisor_index`] and `adv_introduction`'s
-/// `storage_ID % 4` greeting-variant selector. The `struct cost_data
-/// storage_data[5]` sales-economy counters are out of scope for this
-/// slice - see the "Military ranks" task in `PORTING_TODO.md`.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct MilitaryAdvisorDriverData {
-    pub storage_id: i32,
-}
-
-/// C `military_advisor_parse` (`military.c:2221-2230`): the only
-/// zone-file arg this driver reads is `storage=N;`, same shape as
-/// [`parse_military_master_driver_args`].
-pub fn parse_military_advisor_driver_args(args: &str) -> MilitaryAdvisorDriverData {
-    let mut data = MilitaryAdvisorDriverData::default();
-    let mut rest = args;
-    while let Some((name, value, next)) = next_legacy_name_value(rest) {
-        if name == "storage" {
-            data.storage_id = value.parse::<i32>().unwrap_or(0);
-        }
-        rest = next;
-    }
-    data
-}
-
 /// C `struct clan_found_data` (`src/area/30/clanmaster.c:288-292`), stored
 /// on the *player* who is in the middle of founding a clan (see
 /// [`CharacterDriverState::ClanFound`]'s doc comment for why this lives on
@@ -1224,28 +300,6 @@ pub struct ClanFoundData {
     pub nr: u16,
     pub name: String,
 }
-
-/// C `struct janitor_data` from `src/module/base.c`'s `janitor_driver`
-/// (`CDR_JANITOR`, the lamp-lighting/item-tidying NPC). Unlike C's
-/// `struct janitor_data` (which also carries `light[MAXLIGHT]`/
-/// `take[MAXTAKE]` - a persistent cache of item IDs discovered via
-/// `NT_ITEM` notify messages as the janitor patrols), `World::janitor.rs`
-/// recomputes the nearest matching light/take-item candidate directly
-/// from `World::items` every tick instead of maintaining that cache (the
-/// same class of simplification already established for the merchant/
-/// bank/trader greeting scans: a fresh nearest-match scan is behaviorally
-/// equivalent to C's steady-state "closest known item" selection without
-/// needing the extra per-character message-cache plumbing). `cnt` is the
-/// only field kept, since it is genuinely persistent narrative state (the
-/// "N lights I turned on in my life" murmur counter).
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct JanitorDriverData {
-    /// C `dat->cnt`: seeded to `25598` the first time murmur case `1`
-    /// rolls (`base.c:5153-5157`), then incremented on every subsequent
-    /// roll of that case.
-    pub cnt: u32,
-}
-
 //-----------------------
 // Generic NPC small-talk keyword matcher.
 //
@@ -1287,7 +341,6 @@ pub struct TextQaEntry {
     /// `None`, for area-specific dialogue branches to interpret.
     pub answer_code: i32,
 }
-
 /// Result of [`analyse_text_qa`], mirroring the two ways C
 /// `analyse_text_driver` reports a qa-table hit.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1302,7 +355,6 @@ pub enum TextAnalysisOutcome {
     /// an empty word list, matching C's `if (w) { ... }` guard).
     NoMatch,
 }
-
 /// Tokenizes spoken `text` into lowercase words the way every
 /// `analyse_text_driver` copy does: split on `' ' ',' ':' '?' '!' '"'
 /// '.'`, drop words equal to `own_name` (`strcasecmp`), cap at 20 words
@@ -1334,7 +386,6 @@ pub fn tokenize_text_words(text: &str, own_name: &str) -> Option<Vec<String>> {
     flush(&mut current, &mut words);
     Some(words)
 }
-
 /// Substitutes `%s` placeholders in a qa `answer` template: the first
 /// with `speaker_name`, the second with `own_name`, matching C's
 /// `quiet_say(cn, qa[q].answer, ch[co].name, ch[cn].name)`.
@@ -1352,7 +403,6 @@ fn format_qa_answer(template: &str, speaker_name: &str, own_name: &str) -> Strin
     }
     out
 }
-
 /// C `analyse_text_driver`'s shared tokenize-and-match core. Callers are
 /// responsible for the guard clauses that precede tokenization in C
 /// (ignore system/info log messages, ignore our own talk, ignore
@@ -1388,275 +438,6 @@ pub fn analyse_text_qa(
     }
     TextAnalysisOutcome::NoMatch
 }
-
-/// C `struct qa qa[]` from `src/module/merchants/merchant.c`, shared
-/// verbatim by `src/area/1/gwendylon.c`'s small-talk subset (the entries
-/// below the "repeat"/"advice"/quest lines are area-specific and stay
-/// out of this generic table).
-pub const MERCHANT_QA: &[TextQaEntry] = &[
-    TextQaEntry {
-        words: &["how", "are", "you"],
-        answer: Some("I'm fine!"),
-        answer_code: 0,
-    },
-    TextQaEntry {
-        words: &["hello"],
-        answer: Some("Hello, %s!"),
-        answer_code: 0,
-    },
-    TextQaEntry {
-        words: &["hi"],
-        answer: Some("Hi, %s!"),
-        answer_code: 0,
-    },
-    TextQaEntry {
-        words: &["greetings"],
-        answer: Some("Greetings, %s!"),
-        answer_code: 0,
-    },
-    TextQaEntry {
-        words: &["hail"],
-        answer: Some("And hail to you, %s!"),
-        answer_code: 0,
-    },
-    TextQaEntry {
-        words: &["help"],
-        answer: Some("Sorry, I'm just a merchant, %s!"),
-        answer_code: 0,
-    },
-    TextQaEntry {
-        words: &["what's", "up"],
-        answer: Some("Everything that isn't nailed down."),
-        answer_code: 0,
-    },
-    TextQaEntry {
-        words: &["what", "is", "up"],
-        answer: Some("Everything that isn't nailed down."),
-        answer_code: 0,
-    },
-    TextQaEntry {
-        words: &["buy"],
-        answer: Some("Hey %s, use 'trade %s'!"),
-        answer_code: 0,
-    },
-    TextQaEntry {
-        words: &["sell"],
-        answer: Some("Hey %s, use 'trade %s'!"),
-        answer_code: 0,
-    },
-    TextQaEntry {
-        words: &["what's", "your", "name"],
-        answer: None,
-        answer_code: 1,
-    },
-    TextQaEntry {
-        words: &["what", "is", "your", "name"],
-        answer: None,
-        answer_code: 1,
-    },
-    TextQaEntry {
-        words: &["who", "are", "you"],
-        answer: None,
-        answer_code: 1,
-    },
-];
-
-/// C `struct qa qa[]` from `src/module/bank.c`. Note `"help"`'s answer is a
-/// verbatim copy-paste of `merchant.c`'s line (`"Sorry, I'm just a
-/// merchant, %s!"`) even though this NPC is a banker - preserved as-is per
-/// the porting rule to copy quirks, not "fix" them. The `"account"`/
-/// `"explain deposit"`/`"explain withdraw"`/`"explain balance"` answers
-/// wrap the referenced keywords in `COL_LIGHT_BLUE`/`COL_RESET` in C; the
-/// shared [`analyse_text_qa`] pipeline works on plain `&str` (the legacy
-/// color marker is a raw non-UTF8 byte, see `crate::text::COL_LIGHT_BLUE`,
-/// and cannot be represented in a Rust string literal), so only the color
-/// styling is dropped here - the wording is byte-for-byte identical.
-pub const BANK_QA: &[TextQaEntry] = &[
-    TextQaEntry {
-        words: &["how", "are", "you"],
-        answer: Some("I'm fine!"),
-        answer_code: 0,
-    },
-    TextQaEntry {
-        words: &["hello"],
-        answer: Some("Hello, %s!"),
-        answer_code: 0,
-    },
-    TextQaEntry {
-        words: &["hi"],
-        answer: Some("Hi, %s!"),
-        answer_code: 0,
-    },
-    TextQaEntry {
-        words: &["greetings"],
-        answer: Some("Greetings, %s!"),
-        answer_code: 0,
-    },
-    TextQaEntry {
-        words: &["hail"],
-        answer: Some("And hail to you, %s!"),
-        answer_code: 0,
-    },
-    TextQaEntry {
-        words: &["help"],
-        answer: Some("Sorry, I'm just a merchant, %s!"),
-        answer_code: 0,
-    },
-    TextQaEntry {
-        words: &["what's", "up"],
-        answer: Some("Everything that isn't nailed down."),
-        answer_code: 0,
-    },
-    TextQaEntry {
-        words: &["what", "is", "up"],
-        answer: Some("Everything that isn't nailed down."),
-        answer_code: 0,
-    },
-    TextQaEntry {
-        words: &["what's", "your", "name"],
-        answer: None,
-        answer_code: 1,
-    },
-    TextQaEntry {
-        words: &["what", "is", "your", "name"],
-        answer: None,
-        answer_code: 1,
-    },
-    TextQaEntry {
-        words: &["who", "are", "you"],
-        answer: None,
-        answer_code: 1,
-    },
-    TextQaEntry {
-        words: &["account"],
-        answer: Some(
-            "If you want to open an account, you must first deposit (explain deposit) some \
-             money in it. After that, you can inquire for your balance (explain balance) or \
-             withdraw (explain withdraw) money.",
-        ),
-        answer_code: 0,
-    },
-    TextQaEntry {
-        words: &["explain", "deposit"],
-        answer: Some("To deposit 38 gold coins for example, just say: 'deposit 38'."),
-        answer_code: 0,
-    },
-    TextQaEntry {
-        words: &["explain", "withdraw"],
-        answer: Some("To withdraw 38 gold coins for example, just say: 'withdraw 38'."),
-        answer_code: 0,
-    },
-    TextQaEntry {
-        words: &["explain", "balance"],
-        answer: Some("To inquire about the balance of your account, just say: 'balance'"),
-        answer_code: 0,
-    },
-];
-
-/// C `struct qa qa[]` from `src/module/base.c` (shared by `trader_driver`
-/// and `janitor_driver`, both dispatched from that file). Unlike
-/// `merchant.c`/`bank.c`'s copies, this table has no `"hi"`-style
-/// standalone greeting duplication issues, but note `"help"`/`"repeat"`
-/// both carry a non-`NULL` `answer` *and* `answer_code: 1` in C - since
-/// `analyse_text_driver` only falls back to `answer_code` when `answer`
-/// is `NULL`, the code is dead for those two rows and dropped here (the
-/// `Some(answer)` already takes precedence in [`analyse_text_qa`]).
-pub const TRADER_QA: &[TextQaEntry] = &[
-    TextQaEntry {
-        words: &["how", "are", "you"],
-        answer: Some("I'm fine!"),
-        answer_code: 0,
-    },
-    TextQaEntry {
-        words: &["hello"],
-        answer: Some("Hello, %s!"),
-        answer_code: 0,
-    },
-    TextQaEntry {
-        words: &["hi"],
-        answer: Some("Hi, %s!"),
-        answer_code: 0,
-    },
-    TextQaEntry {
-        words: &["greetings"],
-        answer: Some("Greetings, %s!"),
-        answer_code: 0,
-    },
-    TextQaEntry {
-        words: &["hail"],
-        answer: Some("And hail to you, %s!"),
-        answer_code: 0,
-    },
-    TextQaEntry {
-        words: &["what's", "up"],
-        answer: Some("Everything that isn't nailed down."),
-        answer_code: 0,
-    },
-    TextQaEntry {
-        words: &["what", "is", "up"],
-        answer: Some("Everything that isn't nailed down."),
-        answer_code: 0,
-    },
-    TextQaEntry {
-        words: &["what's", "your", "name"],
-        answer: None,
-        answer_code: 1,
-    },
-    TextQaEntry {
-        words: &["what", "is", "your", "name"],
-        answer: None,
-        answer_code: 1,
-    },
-    TextQaEntry {
-        words: &["who", "are", "you"],
-        answer: None,
-        answer_code: 1,
-    },
-    TextQaEntry {
-        words: &["trade"],
-        answer: Some(
-            "I am not a normal merchant. Talk to Fred in Cameron or Jeremy in Aston instead.",
-        ),
-        answer_code: 0,
-    },
-    TextQaEntry {
-        words: &["buy"],
-        answer: Some(
-            "I am not a normal merchant. Talk to Fred in Cameron or Jeremy in Aston instead.",
-        ),
-        answer_code: 0,
-    },
-    TextQaEntry {
-        words: &["sell"],
-        answer: Some(
-            "I am not a normal merchant. Talk to Fred in Cameron or Jeremy in Aston instead.",
-        ),
-        answer_code: 0,
-    },
-    TextQaEntry {
-        words: &["help"],
-        answer: Some(
-            "To start trading with someone, say: 'trade with <name>'. Then you hand me the \
-             items you wish to exchange. You can stop the deal at any time by saying: 'stop \
-             trade'. To check what items I am holding, say: 'show trade'. When you are \
-             satisfied with the deal, say 'accept trade'. Both parties must accept the deal to \
-             make it take place.",
-        ),
-        answer_code: 1,
-    },
-    TextQaEntry {
-        words: &["repeat"],
-        answer: Some(
-            "To start trading with someone, say: 'trade with <name>'. Then you hand me the \
-             items you wish to exchange. You can stop the deal at any time by saying: 'stop \
-             trade'. To check what items I am holding, say: 'show trade'. When you are \
-             satisfied with the deal, say 'accept trade'. Both parties must accept the deal to \
-             make it take place.",
-        ),
-        answer_code: 1,
-    },
-];
-
 /// C `struct qa qa[]` from `src/system/gatekeeper.c:83-112`
 /// (`gate_welcome_driver`'s small-talk plus the class-choice answer
 /// codes). Unlike [`MERCHANT_QA`]/[`TRADER_QA`], every row past `"nay"`
@@ -1805,657 +586,6 @@ pub const GATEKEEPER_QA: &[TextQaEntry] = &[
         answer_code: 9,
     },
 ];
-
-/// C `struct qa qa[]` from `src/area/1/gwendylon.c:87-108` - the small-talk
-/// table `analyse_text_driver`'s own local copy in this file feeds every
-/// area-1 NPC driver that calls it (`gwendylon_driver`, `camhermit_driver`,
-/// `yoakin_driver`, etc.), not just one. Unlike [`MERCHANT_QA`]/
-/// [`GATEKEEPER_QA`], most of the non-canned-answer codes here
-/// (`3` advice, `4` buy advice, `9` promise/word/oath, `10` raiseme, `11`
-/// hardcore, `12` learn/accept-the-rules) are only meaningful to
-/// `gwendylon_driver` itself (Gwendylon is the tutorial/hardcore-mode NPC);
-/// every other area-1 driver's own `switch` only ever cases on `2`
-/// (repeat/restart) and, for `gwendylon_driver` alone, `13` (repeat all) -
-/// any other matched code just counts as `didsay` with no further effect,
-/// exactly like `GATEKEEPER_QA`'s `"aye"`/`"nay"` codes.
-pub const GWENDYLON_QA: &[TextQaEntry] = &[
-    TextQaEntry {
-        words: &["how", "are", "you"],
-        answer: Some("I'm fine!"),
-        answer_code: 0,
-    },
-    TextQaEntry {
-        words: &["hello"],
-        answer: Some("Hello, %s!"),
-        answer_code: 0,
-    },
-    TextQaEntry {
-        words: &["hi"],
-        answer: Some("Hi, %s!"),
-        answer_code: 0,
-    },
-    TextQaEntry {
-        words: &["greetings"],
-        answer: Some("Greetings, %s!"),
-        answer_code: 0,
-    },
-    TextQaEntry {
-        words: &["hail"],
-        answer: Some("And hail to you, %s!"),
-        answer_code: 0,
-    },
-    TextQaEntry {
-        words: &["what's", "up"],
-        answer: Some("Everything that isn't nailed down."),
-        answer_code: 0,
-    },
-    TextQaEntry {
-        words: &["what", "is", "up"],
-        answer: Some("Everything that isn't nailed down."),
-        answer_code: 0,
-    },
-    TextQaEntry {
-        words: &["repeat"],
-        answer: None,
-        answer_code: 2,
-    },
-    TextQaEntry {
-        words: &["repeat", "all"],
-        answer: None,
-        answer_code: 13,
-    },
-    TextQaEntry {
-        words: &["restart"],
-        answer: None,
-        answer_code: 2,
-    },
-    TextQaEntry {
-        words: &["please", "repeat"],
-        answer: None,
-        answer_code: 2,
-    },
-    TextQaEntry {
-        words: &["please", "restart"],
-        answer: None,
-        answer_code: 2,
-    },
-    TextQaEntry {
-        words: &["advice"],
-        answer: None,
-        answer_code: 3,
-    },
-    TextQaEntry {
-        words: &["buy", "advice"],
-        answer: None,
-        answer_code: 4,
-    },
-    TextQaEntry {
-        words: &["promise"],
-        answer: None,
-        answer_code: 9,
-    },
-    TextQaEntry {
-        words: &["word"],
-        answer: None,
-        answer_code: 9,
-    },
-    TextQaEntry {
-        words: &["oath"],
-        answer: None,
-        answer_code: 9,
-    },
-    TextQaEntry {
-        words: &["raiseme"],
-        answer: None,
-        answer_code: 10,
-    },
-    TextQaEntry {
-        words: &["hardcore"],
-        answer: None,
-        answer_code: 11,
-    },
-    TextQaEntry {
-        words: &[
-            "i",
-            "accept",
-            "the",
-            "rules",
-            "and",
-            "wish",
-            "to",
-            "become",
-            "a",
-            "hardcore",
-            "character",
-        ],
-        answer: None,
-        answer_code: 12,
-    },
-    TextQaEntry {
-        words: &["learn"],
-        answer: None,
-        answer_code: 12,
-    },
-];
-
-/// C `struct qa qa[]` from `src/area/30/clanmaster.c:126-146`. Unlike
-/// `MERCHANT_QA`/`BANK_QA`/`TRADER_QA`, C's own caller
-/// (`clanmaster_driver`) never even reads `analyse_text_driver`'s return
-/// value, so `answer_code` 2 ("jewels"), 3 ("repeat"), and 4 ("info") are
-/// genuinely dead in C - no observable side effect - and are kept here
-/// only for table fidelity; [`crate::world::World::clanmaster_qa_reply`]
-/// (the caller) intentionally treats every `Matched(_)` outcome as "no
-/// reply", matching that dead-code behavior exactly.
-pub const CLANMASTER_QA: &[TextQaEntry] = &[
-    TextQaEntry {
-        words: &["how", "are", "you"],
-        answer: Some("I'm fine!"),
-        answer_code: 0,
-    },
-    TextQaEntry {
-        words: &["hello"],
-        answer: Some("Hello, %s!"),
-        answer_code: 0,
-    },
-    TextQaEntry {
-        words: &["hi"],
-        answer: Some("Hi, %s!"),
-        answer_code: 0,
-    },
-    TextQaEntry {
-        words: &["greetings"],
-        answer: Some("Greetings, %s!"),
-        answer_code: 0,
-    },
-    TextQaEntry {
-        words: &["hail"],
-        answer: Some("And hail to you, %s!"),
-        answer_code: 0,
-    },
-    TextQaEntry {
-        words: &["help"],
-        answer: Some("Sorry, I'm just a merchant, %s!"),
-        answer_code: 0,
-    },
-    TextQaEntry {
-        words: &["what's", "up"],
-        answer: Some("Everything that isn't nailed down."),
-        answer_code: 0,
-    },
-    TextQaEntry {
-        words: &["what", "is", "up"],
-        answer: Some("Everything that isn't nailed down."),
-        answer_code: 0,
-    },
-    TextQaEntry {
-        words: &["what's", "your", "name"],
-        answer: None,
-        answer_code: 1,
-    },
-    TextQaEntry {
-        words: &["what", "is", "your", "name"],
-        answer: None,
-        answer_code: 1,
-    },
-    TextQaEntry {
-        words: &["who", "are", "you"],
-        answer: None,
-        answer_code: 1,
-    },
-    TextQaEntry {
-        words: &["clan"],
-        answer: Some(
-            "If you wish to found a clan, tell me the name you want that clan to have, and \
-             hand me a Clan Jewel. If you wish to tell me the name, use: 'name: <clan name>', \
-             that is, to name your clan 'Black Rose', use: 'name: Black Rose'. Be aware that \
-             the game will use the phrase 'The <clan name> clan', ie. 'The Black Rose Clan', so \
-             avoid 'The' and 'Clan' in the name.",
-        ),
-        answer_code: 0,
-    },
-    TextQaEntry {
-        words: &["jewels"],
-        answer: None,
-        answer_code: 2,
-    },
-    TextQaEntry {
-        words: &["repeat"],
-        answer: None,
-        answer_code: 3,
-    },
-    TextQaEntry {
-        words: &["raid"],
-        answer: Some(
-            "I will enter the clan you name, kill any guards I see and try to steal a clan \
-             jewel. If I succeed I will transfer that jewel to your clan vault. I can only \
-             attack a clan if you are at war with that clan. If you want me to attack clan 2, \
-             say 'attack 2'.",
-        ),
-        answer_code: 0,
-    },
-    TextQaEntry {
-        words: &["scout"],
-        answer: Some(
-            "On a scouting mission, I will just take a peek into the clan you name and give \
-             you a report about its guards. Say 'sneak 2' if you want me to scout clan number \
-             2.",
-        ),
-        answer_code: 0,
-    },
-    TextQaEntry {
-        words: &["info"],
-        answer: None,
-        answer_code: 4,
-    },
-];
-
-/// C `struct qa qa[]` from `src/system/clubmaster.c:70-83`. Like
-/// `CLANMASTER_QA`, C's own caller (`clubmaster_driver`) never reads
-/// `analyse_text_driver`'s return value either, so `answer_code == 1`
-/// ("what's your name"/"who are you") is the only observable special
-/// case, handled by `crate::world::World::clubmaster_qa_reply` the same
-/// way `clanmaster_qa_reply` handles it. Unlike `CLANMASTER_QA`, this
-/// table has no "jewels"/"repeat"/"raid"/"scout"/"info" entries at all -
-/// `clubmaster.c`'s own table genuinely stops after `"club"`.
-pub const CLUBMASTER_QA: &[TextQaEntry] = &[
-    TextQaEntry {
-        words: &["how", "are", "you"],
-        answer: Some("I'm fine!"),
-        answer_code: 0,
-    },
-    TextQaEntry {
-        words: &["hello"],
-        answer: Some("Hello, %s!"),
-        answer_code: 0,
-    },
-    TextQaEntry {
-        words: &["hi"],
-        answer: Some("Hi, %s!"),
-        answer_code: 0,
-    },
-    TextQaEntry {
-        words: &["greetings"],
-        answer: Some("Greetings, %s!"),
-        answer_code: 0,
-    },
-    TextQaEntry {
-        words: &["hail"],
-        answer: Some("And hail to you, %s!"),
-        answer_code: 0,
-    },
-    TextQaEntry {
-        words: &["help"],
-        answer: Some("Sorry, I'm just a merchant, %s!"),
-        answer_code: 0,
-    },
-    TextQaEntry {
-        words: &["what's", "up"],
-        answer: Some("Everything that isn't nailed down."),
-        answer_code: 0,
-    },
-    TextQaEntry {
-        words: &["what", "is", "up"],
-        answer: Some("Everything that isn't nailed down."),
-        answer_code: 0,
-    },
-    TextQaEntry {
-        words: &["club"],
-        answer: Some(
-            "Say 'found: <club name>' to found a club. The first weekly payment of 10000g is \
-             due immediately.",
-        ),
-        answer_code: 0,
-    },
-    TextQaEntry {
-        words: &["what's", "your", "name"],
-        answer: None,
-        answer_code: 1,
-    },
-    TextQaEntry {
-        words: &["what", "is", "your", "name"],
-        answer: None,
-        answer_code: 1,
-    },
-    TextQaEntry {
-        words: &["who", "are", "you"],
-        answer: None,
-        answer_code: 1,
-    },
-];
-
-/// C `struct qa qa[]` from `src/module/military.c:89-164`, shared verbatim
-/// by both `military_master_driver` and (once ported)
-/// `military_advisor_driver`. Note `"help"`'s answer is the same
-/// copy-pasted `"Sorry, I'm just a merchant, %s!"` line every other
-/// `qa[]` table carries, even though neither NPC is a merchant -
-/// preserved verbatim per the porting rule to copy quirks, not "fix"
-/// them. `COL_LIGHT_BLUE`/`COL_RESET` markers around a few keywords in
-/// C's own `say()` calls (not this table's `answer` strings, which carry
-/// none) are dropped at the call sites that render them, same as
-/// `BANK_QA`'s doc comment explains.
-pub const MILITARY_QA: &[TextQaEntry] = &[
-    TextQaEntry {
-        words: &["how", "are", "you"],
-        answer: Some("I'm fine!"),
-        answer_code: 0,
-    },
-    TextQaEntry {
-        words: &["hello"],
-        answer: Some("Hello, %s!"),
-        answer_code: 0,
-    },
-    TextQaEntry {
-        words: &["hi"],
-        answer: Some("Hi, %s!"),
-        answer_code: 0,
-    },
-    TextQaEntry {
-        words: &["greetings"],
-        answer: Some("Greetings, %s!"),
-        answer_code: 0,
-    },
-    TextQaEntry {
-        words: &["hail"],
-        answer: Some("And hail to you, %s!"),
-        answer_code: 0,
-    },
-    TextQaEntry {
-        words: &["help"],
-        answer: Some("Sorry, I'm just a merchant, %s!"),
-        answer_code: 0,
-    },
-    TextQaEntry {
-        words: &["what's", "up"],
-        answer: Some("Everything that isn't nailed down."),
-        answer_code: 0,
-    },
-    TextQaEntry {
-        words: &["what", "is", "up"],
-        answer: Some("Everything that isn't nailed down."),
-        answer_code: 0,
-    },
-    TextQaEntry {
-        words: &["what's", "your", "name"],
-        answer: None,
-        answer_code: 1,
-    },
-    TextQaEntry {
-        words: &["what", "is", "your", "name"],
-        answer: None,
-        answer_code: 1,
-    },
-    TextQaEntry {
-        words: &["who", "are", "you"],
-        answer: None,
-        answer_code: 1,
-    },
-    TextQaEntry {
-        words: &["repeat"],
-        answer: None,
-        answer_code: 2,
-    },
-    TextQaEntry {
-        words: &["favor"],
-        answer: None,
-        answer_code: 3,
-    },
-    TextQaEntry {
-        words: &["small"],
-        answer: None,
-        answer_code: 4,
-    },
-    TextQaEntry {
-        words: &["medium"],
-        answer: None,
-        answer_code: 5,
-    },
-    TextQaEntry {
-        words: &["big"],
-        answer: None,
-        answer_code: 6,
-    },
-    TextQaEntry {
-        words: &["huge"],
-        answer: None,
-        answer_code: 7,
-    },
-    TextQaEntry {
-        words: &["vast"],
-        answer: None,
-        answer_code: 8,
-    },
-    TextQaEntry {
-        words: &["pay"],
-        answer: None,
-        answer_code: 9,
-    },
-    TextQaEntry {
-        words: &["mission"],
-        answer: None,
-        answer_code: 10,
-    },
-    TextQaEntry {
-        words: &["easy"],
-        answer: None,
-        answer_code: 11,
-    },
-    TextQaEntry {
-        words: &["normal"],
-        answer: None,
-        answer_code: 12,
-    },
-    TextQaEntry {
-        words: &["hard"],
-        answer: None,
-        answer_code: 13,
-    },
-    TextQaEntry {
-        words: &["impossible"],
-        answer: None,
-        answer_code: 14,
-    },
-    TextQaEntry {
-        words: &["insane"],
-        answer: None,
-        answer_code: 15,
-    },
-    TextQaEntry {
-        words: &["failed"],
-        answer: None,
-        answer_code: 16,
-    },
-    TextQaEntry {
-        words: &["hear"],
-        answer: None,
-        answer_code: 17,
-    },
-    TextQaEntry {
-        words: &["info"],
-        answer: None,
-        answer_code: 18,
-    },
-    TextQaEntry {
-        words: &["reset"],
-        answer: None,
-        answer_code: 19,
-    },
-    TextQaEntry {
-        words: &["raise"],
-        answer: None,
-        answer_code: 20,
-    },
-    TextQaEntry {
-        words: &["promote"],
-        answer: None,
-        answer_code: 21,
-    },
-    TextQaEntry {
-        words: &["reroll"],
-        answer: None,
-        answer_code: 22,
-    },
-    TextQaEntry {
-        words: &["decline"],
-        answer: None,
-        answer_code: 22,
-    },
-    TextQaEntry {
-        words: &["new", "missions"],
-        answer: None,
-        answer_code: 22,
-    },
-    TextQaEntry {
-        words: &["easy", "demon"],
-        answer: None,
-        answer_code: 30,
-    },
-    TextQaEntry {
-        words: &["easy", "pentagram"],
-        answer: None,
-        answer_code: 30,
-    },
-    TextQaEntry {
-        words: &["normal", "demon"],
-        answer: None,
-        answer_code: 31,
-    },
-    TextQaEntry {
-        words: &["normal", "pentagram"],
-        answer: None,
-        answer_code: 31,
-    },
-    TextQaEntry {
-        words: &["hard", "demon"],
-        answer: None,
-        answer_code: 32,
-    },
-    TextQaEntry {
-        words: &["hard", "pentagram"],
-        answer: None,
-        answer_code: 32,
-    },
-    TextQaEntry {
-        words: &["impossible", "demon"],
-        answer: None,
-        answer_code: 33,
-    },
-    TextQaEntry {
-        words: &["impossible", "pentagram"],
-        answer: None,
-        answer_code: 33,
-    },
-    TextQaEntry {
-        words: &["insane", "demon"],
-        answer: None,
-        answer_code: 34,
-    },
-    TextQaEntry {
-        words: &["insane", "pentagram"],
-        answer: None,
-        answer_code: 34,
-    },
-    TextQaEntry {
-        words: &["easy", "ratling"],
-        answer: None,
-        answer_code: 35,
-    },
-    TextQaEntry {
-        words: &["easy", "rats"],
-        answer: None,
-        answer_code: 35,
-    },
-    TextQaEntry {
-        words: &["normal", "ratling"],
-        answer: None,
-        answer_code: 36,
-    },
-    TextQaEntry {
-        words: &["normal", "rats"],
-        answer: None,
-        answer_code: 36,
-    },
-    TextQaEntry {
-        words: &["hard", "ratling"],
-        answer: None,
-        answer_code: 37,
-    },
-    TextQaEntry {
-        words: &["hard", "rats"],
-        answer: None,
-        answer_code: 37,
-    },
-    TextQaEntry {
-        words: &["impossible", "ratling"],
-        answer: None,
-        answer_code: 38,
-    },
-    TextQaEntry {
-        words: &["impossible", "rats"],
-        answer: None,
-        answer_code: 38,
-    },
-    TextQaEntry {
-        words: &["insane", "ratling"],
-        answer: None,
-        answer_code: 39,
-    },
-    TextQaEntry {
-        words: &["insane", "rats"],
-        answer: None,
-        answer_code: 39,
-    },
-    TextQaEntry {
-        words: &["easy", "silver"],
-        answer: None,
-        answer_code: 40,
-    },
-    TextQaEntry {
-        words: &["easy", "mining"],
-        answer: None,
-        answer_code: 40,
-    },
-    TextQaEntry {
-        words: &["normal", "silver"],
-        answer: None,
-        answer_code: 41,
-    },
-    TextQaEntry {
-        words: &["normal", "mining"],
-        answer: None,
-        answer_code: 41,
-    },
-    TextQaEntry {
-        words: &["hard", "silver"],
-        answer: None,
-        answer_code: 42,
-    },
-    TextQaEntry {
-        words: &["hard", "mining"],
-        answer: None,
-        answer_code: 42,
-    },
-    TextQaEntry {
-        words: &["impossible", "silver"],
-        answer: None,
-        answer_code: 43,
-    },
-    TextQaEntry {
-        words: &["impossible", "mining"],
-        answer: None,
-        answer_code: 43,
-    },
-    TextQaEntry {
-        words: &["insane", "silver"],
-        answer: None,
-        answer_code: 44,
-    },
-    TextQaEntry {
-        words: &["insane", "mining"],
-        answer: None,
-        answer_code: 44,
-    },
-];
-
 //-----------------------
 // Generic per-character driver memory.
 //
@@ -2480,7 +610,6 @@ pub const MILITARY_QA: &[TextQaEntry] = &[
 /// C `mem_add_driver`/`mem_check_driver`/`mem_erase_driver`'s `nr` range
 /// (`if (nr < 0 || nr > 7) return 0;`).
 pub const DRIVER_MEMORY_SLOTS: usize = 8;
-
 /// C `struct char_mem_data`, stored per-character (one instance covering
 /// all 8 slots, mirroring how C addresses each slot via `DRD_CHARMEM +
 /// nr` off the same character's driver-data list).
@@ -2488,7 +617,6 @@ pub const DRIVER_MEMORY_SLOTS: usize = 8;
 pub struct DriverMemory {
     slots: [Vec<u32>; DRIVER_MEMORY_SLOTS],
 }
-
 impl Default for DriverMemory {
     fn default() -> Self {
         Self {
@@ -2496,7 +624,6 @@ impl Default for DriverMemory {
         }
     }
 }
-
 /// C `mem_add_driver(cn, co, nr)`: remembers `target` in memory slot
 /// `slot`. A no-op duplicate add still returns `true` (C: `if
 /// (dat->xID[n] == xID) return 1;`); an out-of-range slot returns `false`
@@ -2510,7 +637,6 @@ pub fn mem_add_driver(memory: &mut DriverMemory, slot: usize, target: u32) -> bo
     }
     true
 }
-
 /// C `mem_check_driver(cn, co, nr)`: `true` if `target` is remembered in
 /// memory slot `slot`.
 pub fn mem_check_driver(memory: &DriverMemory, slot: usize, target: u32) -> bool {
@@ -2519,7 +645,6 @@ pub fn mem_check_driver(memory: &DriverMemory, slot: usize, target: u32) -> bool
         .get(slot)
         .is_some_and(|bucket| bucket.contains(&target))
 }
-
 /// C `mem_erase_driver(cn, nr)`: clears memory slot `slot` (all other
 /// slots are left untouched, matching C only zeroing `dat->cnt` for the
 /// requested `nr`).
@@ -2528,60 +653,6 @@ pub fn mem_erase_driver(memory: &mut DriverMemory, slot: usize) {
         bucket.clear();
     }
 }
-
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct TwoSkellyDriverData {
-    pub last_talk_tick: i32,
-    pub current_victim: Option<CharacterId>,
-    pub alive_tick: i32,
-}
-
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct ClaraDriverData {
-    pub last_talk_tick: i32,
-    pub current_victim: Option<CharacterId>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct Lab2UndeadDriverData {
-    pub aggressive: i32,
-    pub helper: i32,
-    pub undead: i32,
-    pub patrol: i32,
-    pub pat: u8,
-    pub patstep: u8,
-    pub patx: [u8; 8],
-    pub paty: [u8; 8],
-    pub grave_item_id: Option<ItemId>,
-    pub regenerate_item_id: Option<ItemId>,
-    pub opened_by_character_id: Option<CharacterId>,
-    pub opened_by_serial: u32,
-    pub next_wait_tick: i32,
-    #[serde(default)]
-    pub enemies: Vec<SimpleBaddyEnemy>,
-}
-
-impl Default for Lab2UndeadDriverData {
-    fn default() -> Self {
-        Self {
-            aggressive: 0,
-            helper: 0,
-            undead: 0,
-            patrol: 0,
-            pat: 0,
-            patstep: 0,
-            patx: [0; 8],
-            paty: [0; 8],
-            grave_item_id: None,
-            regenerate_item_id: None,
-            opened_by_character_id: None,
-            opened_by_serial: 0,
-            next_wait_tick: 0,
-            enemies: Vec::new(),
-        }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct SimpleBaddyDriverData {
     pub startdist: i32,
@@ -2619,7 +690,6 @@ pub struct SimpleBaddyDriverData {
     #[serde(default)]
     pub enemies: Vec<SimpleBaddyEnemy>,
 }
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct SimpleBaddyEnemy {
     pub target_id: CharacterId,
@@ -2632,7 +702,6 @@ pub struct SimpleBaddyEnemy {
     #[serde(default)]
     pub last_y: u16,
 }
-
 /// C `struct fight_driver_data` (`src/common/fight.h:27-37`), stored via
 /// `set_data(cn, DRD_FIGHTDRIVER, ...)` - a slot independent of whichever
 /// `driver`/`driver_state` a character currently has (C's `set_data` lets
@@ -2673,7 +742,6 @@ pub struct FightDriverData {
     #[serde(default)]
     pub last_hit: i32,
 }
-
 impl Default for SimpleBaddyDriverData {
     fn default() -> Self {
         Self {
@@ -2709,19 +777,16 @@ impl Default for SimpleBaddyDriverData {
         }
     }
 }
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UnknownSimpleBaddyArgument {
     pub name: String,
     pub value: String,
 }
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SimpleBaddyParseResult {
     pub data: SimpleBaddyDriverData,
     pub unknown: Vec<UnknownSimpleBaddyArgument>,
 }
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SimpleBaddyMessageOutcome {
     UseInventoryPotion {
@@ -2761,13 +826,11 @@ pub enum SimpleBaddyMessageOutcome {
     },
     NoteHit,
 }
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PotionUseReason {
     LowHp,
     LowMana,
 }
-
 pub fn parse_simple_baddy_driver_args(args: &str) -> SimpleBaddyParseResult {
     let mut data = SimpleBaddyDriverData::default();
     let mut unknown = Vec::new();
@@ -2808,7 +871,6 @@ pub fn parse_simple_baddy_driver_args(args: &str) -> SimpleBaddyParseResult {
 
     SimpleBaddyParseResult { data, unknown }
 }
-
 pub fn apply_simple_baddy_create_message(
     character: &mut Character,
     args: Option<&str>,
@@ -2887,75 +949,6 @@ pub fn apply_simple_baddy_create_message(
 
     unknown
 }
-
-pub fn parse_lab2_undead_driver_args(
-    args: &str,
-) -> (Lab2UndeadDriverData, Vec<UnknownSimpleBaddyArgument>) {
-    let mut data = Lab2UndeadDriverData::default();
-    let mut unknown = Vec::new();
-    let mut rest = args;
-
-    while let Some((name, value, next)) = next_legacy_name_value(rest) {
-        let parsed = value.parse::<i32>().unwrap_or(0);
-        match name {
-            "aggressive" => data.aggressive = parsed,
-            "helper" => data.helper = parsed,
-            "patrol" => data.patrol = parsed,
-            "undead" => data.undead = parsed,
-            _ => unknown.push(UnknownSimpleBaddyArgument {
-                name: name.to_string(),
-                value: value.to_string(),
-            }),
-        }
-        rest = next;
-    }
-
-    (data, unknown)
-}
-
-pub fn apply_lab2_undead_create_message(
-    character: &mut Character,
-    args: Option<&str>,
-) -> Vec<UnknownSimpleBaddyArgument> {
-    let mut data = match character.driver_state.take() {
-        Some(CharacterDriverState::Lab2Undead(data)) => data,
-        _ => Lab2UndeadDriverData::default(),
-    };
-
-    let unknown = if let Some(args) = args.filter(|args| !args.is_empty()) {
-        let parsed = parse_lab2_undead_driver_args(args);
-        data = parsed.0;
-        parsed.1
-    } else {
-        Vec::new()
-    };
-
-    apply_lab2_undead_patrol_defaults(&mut data);
-    character.driver_state = Some(CharacterDriverState::Lab2Undead(data));
-    character
-        .driver_messages
-        .retain(|message| message.message_type != NT_CREATE);
-    unknown
-}
-
-fn apply_lab2_undead_patrol_defaults(data: &mut Lab2UndeadDriverData) {
-    match data.patrol {
-        1 => {
-            data.patx = [168, 168, 204, 204, 0, 0, 0, 0];
-            data.paty = [178, 218, 218, 178, 0, 0, 0, 0];
-            data.patstep = 4;
-            data.helper = 0;
-        }
-        2 => {
-            data.patx = [171, 138, 138, 165, 167, 138, 138, 171];
-            data.paty = [164, 164, 146, 146, 146, 146, 164, 164];
-            data.patstep = 8;
-            data.helper = 0;
-        }
-        _ => {}
-    }
-}
-
 pub fn process_simple_baddy_messages(
     character: &mut Character,
     carried_items: &[Item],
@@ -3091,7 +1084,6 @@ pub fn process_simple_baddy_messages(
 
     outcomes
 }
-
 pub fn add_simple_baddy_enemy(
     character: &mut Character,
     caller: &Character,
@@ -3104,7 +1096,6 @@ pub fn add_simple_baddy_enemy(
 
     add_simple_baddy_enemy_unchecked(character, target_id, 1, current_tick)
 }
-
 pub fn add_simple_baddy_enemy_unchecked(
     character: &mut Character,
     target_id: CharacterId,
@@ -3147,7 +1138,6 @@ pub fn add_simple_baddy_enemy_unchecked(
     }
     true
 }
-
 pub fn remove_simple_baddy_enemy(character: &mut Character, target_id: CharacterId) -> bool {
     // C `fight_driver_remove_enemy` (`drvlib.c:2144`): same
     // driver-independent `DRD_FIGHTDRIVER` slot as `add_simple_baddy_enemy_
@@ -3160,7 +1150,6 @@ pub fn remove_simple_baddy_enemy(character: &mut Character, target_id: Character
     data.enemies.retain(|enemy| enemy.target_id != target_id);
     data.enemies.len() != previous_len
 }
-
 fn find_simple_baddy_inventory_potion(
     character: &Character,
     carried_items: &[Item],
@@ -3202,7 +1191,6 @@ fn find_simple_baddy_inventory_potion(
         })
         .copied()
 }
-
 fn character_value(character: &Character, value: CharacterValue) -> i32 {
     character
         .values
@@ -3212,12 +1200,10 @@ fn character_value(character: &Character, value: CharacterValue) -> i32 {
         .unwrap_or_default()
         .into()
 }
-
 fn drdata(item: &Item, index: usize) -> u8 {
     item.driver_data.get(index).copied().unwrap_or_default()
 }
-
-fn next_legacy_name_value(input: &str) -> Option<(&str, &str, &str)> {
+pub(crate) fn next_legacy_name_value(input: &str) -> Option<(&str, &str, &str)> {
     let input = input.trim_start_matches(char::is_whitespace);
     let name_len = input
         .bytes()
@@ -3240,378 +1226,7 @@ fn next_legacy_name_value(input: &str) -> Option<(&str, &str, &str)> {
     let input = input[value_len..].strip_prefix(';')?;
     Some((name, value, input.trim_start_matches(char::is_whitespace)))
 }
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ClaraDialogueContext<'a> {
-    pub player_name: &'a str,
-    pub clara_name: &'a str,
-    pub army_rank: &'a str,
-    pub kelly_state: i32,
-    pub clara_state: i32,
-    pub has_hardkill_item: bool,
-    pub hardkill_ritual_progress: u8,
-    pub questlog_21_count: i32,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ClaraDialogueOutcome {
-    pub clara_state: i32,
-    pub text: Option<String>,
-    pub open_questlog: Option<u16>,
-    pub complete_questlog: Option<u16>,
-    pub military_points: i32,
-    pub military_exp: i32,
-}
-
 pub const EXP_AREA15_HARDKILL: i32 = 5_000;
-
-pub fn clara_dialogue_step(context: ClaraDialogueContext<'_>) -> ClaraDialogueOutcome {
-    let mut state = context.clara_state;
-    let mut open_questlog = None;
-    let mut complete_questlog = None;
-    let mut military_points = 0;
-    let mut military_exp = 0;
-    let text = match state {
-        0 => {
-            state += 1;
-            Some(format!(
-                "Greetings, {}! I am {}, First Sergeant of the Seyan'Du and commander of this outpost.",
-                context.player_name, context.clara_name
-            ))
-        }
-        1 if context.kelly_state >= 15 => {
-            state += 1;
-            clara_dialogue_step_text_after_fallthrough(&mut state, context)
-        }
-        1 => None,
-        2 => clara_dialogue_step_text_after_fallthrough(&mut state, context),
-        3 => {
-            state += 1;
-            Some(
-                "Under the current circumstances, I do not recommend sending reinforcements to secure the road. We cannot afford to bind our forces here. Now go back to Aston and deliver this report."
-                    .to_string(),
-            )
-        }
-        4 => {
-            state += 1;
-            Some(format!(
-                "Afterwards come back here, I have more work for thee. That will be all, {}. Dismissed!",
-                context.army_rank
-            ))
-        }
-        5 if context.kelly_state >= 18 => {
-            state += 1;
-            open_questlog = Some(21);
-            state += 1;
-            Some(format!(
-                "I have a difficult mission for thee, {}. The main reason we had to retreat to this camp was one huge swamp beast. It seemed to be immune to our attacks.",
-                context.player_name
-            ))
-        }
-        5 => None,
-        6 => {
-            open_questlog = Some(21);
-            state += 1;
-            Some(format!(
-                "I have a difficult mission for thee, {}. The main reason we had to retreat to this camp was one huge swamp beast. It seemed to be immune to our attacks.",
-                context.player_name
-            ))
-        }
-        7 => {
-            state += 1;
-            Some(
-                "I want thee to find a way to slay it. I have heard rumors about a man who used to live with the swamp beasts north-east of this camp. Mayhap he knows a way to injure this beast."
-                    .to_string(),
-            )
-        }
-        8 => {
-            state += 1;
-            Some(format!(
-                "Dismissed, {}. And good luck. Thou wilt need it.",
-                context.army_rank
-            ))
-        }
-        9 if context.has_hardkill_item => {
-            if context.questlog_21_count == 0 {
-                military_points = 4;
-                military_exp = EXP_AREA15_HARDKILL;
-            }
-            state += 1;
-            clara_hardkill_report_text(&mut state, context)
-        }
-        9 => None,
-        10 => clara_hardkill_report_text(&mut state, context),
-        11 if context.has_hardkill_item && context.hardkill_ritual_progress >= 36 => {
-            state += 1;
-            state += 1;
-            Some("Now that thou knowest how to kill that beast, please go and do it.".to_string())
-        }
-        11 => None,
-        12 => {
-            state += 1;
-            Some("Now that thou knowest how to kill that beast, please go and do it.".to_string())
-        }
-        13 => None,
-        14 => {
-            complete_questlog = Some(21);
-            if context.questlog_21_count == 1 {
-                military_points = 8;
-                military_exp = 1;
-            }
-            state += 1;
-            Some(format!("Well done indeed, {}!", context.player_name))
-        }
-        15 => {
-            state += 1;
-            Some(format!(
-                "The swamp will be safer now, but more dangers await thee on thy travels. May Ishtar be with thee, {}.",
-                context.player_name
-            ))
-        }
-        _ => None,
-    };
-
-    ClaraDialogueOutcome {
-        clara_state: state,
-        text,
-        open_questlog,
-        complete_questlog,
-        military_points,
-        military_exp,
-    }
-}
-
-fn clara_dialogue_step_text_after_fallthrough(
-    state: &mut i32,
-    context: ClaraDialogueContext<'_>,
-) -> Option<String> {
-    *state += 1;
-    Some(format!(
-        "I assume thou hast been sent from Aston, {}, to report on our status. The road through the swamp is no longer secure and we have been under attack from beasts emerging from the swamp.",
-        context.army_rank
-    ))
-}
-
-fn clara_hardkill_report_text(
-    state: &mut i32,
-    context: ClaraDialogueContext<'_>,
-) -> Option<String> {
-    *state += 1;
-    if context.has_hardkill_item && context.hardkill_ritual_progress < 36 {
-        Some(format!(
-            "So that is how one can kill them. Thou wilt need to find all three stone circles and perform the ritual in each one, then, {}.",
-            context.player_name
-        ))
-    } else {
-        Some("So that is how one can kill them.".to_string())
-    }
-}
-
-pub fn clara_replay_state_after_text_analysis(clara_state: i32, didsay: i32) -> i32 {
-    if didsay != 2 {
-        return clara_state;
-    }
-    match clara_state {
-        ..=5 => 0,
-        6..=9 => 6,
-        10..=11 => 10,
-        12..=13 => 12,
-        15..=16 => 15,
-        _ => clara_state,
-    }
-}
-
-pub fn clara_state_after_swamp_monster_death(
-    clara_state: i32,
-    killer_is_player: bool,
-    monster_is_hardkill: bool,
-) -> i32 {
-    if killer_is_player && monster_is_hardkill && (12..=13).contains(&clara_state) {
-        14
-    } else {
-        clara_state
-    }
-}
-
-//-----------------------
-// Gatekeeper welcome dialogue (`src/system/gatekeeper.c::gate_welcome_driver`,
-// `struct gate_ppd`'s `welcome_state` switch, lines 475-542).
-//
-// Pure state-machine port modeled on [`clara_dialogue_step`]: the caller
-// (not yet wired - see `PORTING_TODO.md`'s "Gatekeeper NPC" task) is
-// responsible for the message-loop plumbing (distance/visibility checks,
-// the every-10-seconds throttle, `notify_char`/`say`) and for resolving
-// `needs_lab` via `teleport_next_lab(co, 0)` before calling this.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct GateWelcomeContext<'a> {
-    pub player_name: &'a str,
-    pub welcome_state: i32,
-    /// C `teleport_next_lab(co, 0)` truthiness at the time of the call.
-    pub needs_lab: bool,
-    pub flags: CharacterFlags,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct GateWelcomeOutcome {
-    pub welcome_state: i32,
-    pub text: Option<String>,
-}
-
-/// C `case 3:` body (`gatekeeper.c:501-506`): `if (!teleport_next_lab(co,
-/// 0)) { welcome_state++; } else { break; }`. Returns `true` when C would
-/// `break` (stop, no fallthrough into case 4).
-fn gate_case3_stops(state: &mut i32, needs_lab: bool) -> bool {
-    if needs_lab {
-        true
-    } else {
-        *state += 1;
-        false
-    }
-}
-
-/// C `case 4:` body (`gatekeeper.c:508-533`). Mutates `state`/`text` the
-/// same way C mutates `ppd->welcome_state`/calls `say` - note the two
-/// non-arch branches do a plain `welcome_state++` off whatever value is
-/// already in `state` when this runs, which is *not* always the same
-/// number depending on whether case 4 was reached by falling through
-/// from case 2 (fast path, ends at `6`) or from a separate call that
-/// entered directly at case 3 after the labyrinth got solved later (slow
-/// path, ends at `5` - an extra `case 5` "name the class" message gets
-/// shown on the next call that the fast path skips entirely). This is a
-/// faithfully-preserved legacy quirk, not a Rust bug.
-fn gate_case4(
-    state: &mut i32,
-    needs_lab: bool,
-    flags: CharacterFlags,
-    player_name: &str,
-) -> Option<String> {
-    if needs_lab {
-        *state = 2;
-        return None;
-    }
-    if flags.contains(CharacterFlags::ARCH) {
-        let class_name = if flags.contains(CharacterFlags::WARRIOR) {
-            if flags.contains(CharacterFlags::MAGE) {
-                "Seyan'Du"
-            } else {
-                "Warrior"
-            }
-        } else {
-            "Mage"
-        };
-        *state = 6;
-        Some(format!(
-            "There is nothing I can do for thee, {player_name}, though, since thou art already an Arch-{class_name}."
-        ))
-    } else if flags.contains(CharacterFlags::MAGE) && flags.contains(CharacterFlags::WARRIOR) {
-        *state += 1;
-        Some(
-            "Since thou art already a Seyan'Du, thy only choice is to become Arch-Seyan'Du."
-                .to_string(),
-        )
-    } else {
-        let path = if flags.contains(CharacterFlags::WARRIOR) {
-            "Warrior"
-        } else {
-            "Mage"
-        };
-        *state += 1;
-        Some(format!(
-            "The choice is hard, and so is the test. If thou wishest to take the test, decide which path to follow. That of the Arch-{path}, or that of the Seyan'Du."
-        ))
-    }
-}
-
-/// C `gate_welcome_driver`'s `switch (ppd->welcome_state)` (`gatekeeper.c:
-/// 475-542`), states `0..=6`. Text is `None` for the terminal "waiting for
-/// answer" state (`6`) and for the labyrinth-still-needed wait (state `3`
-/// re-checked with `needs_lab` still true).
-pub fn gate_welcome_dialogue_step(context: GateWelcomeContext<'_>) -> GateWelcomeOutcome {
-    let mut state = context.welcome_state;
-    let text = match state {
-        0 => {
-            state = 1;
-            Some(format!(
-                "Be greeted, {}. These are the halls of Ishtar. Only the greatest fighters and magic users come here, to take the final test and fight the Gatekeeper.",
-                context.player_name
-            ))
-        }
-        1 => {
-            state = 2;
-            Some(
-                "Those who succeed in this test will be able to enhance their abilities further. They may either choose to learn more about their profession than any other mortal being, or to start again as one who can learn all arts."
-                    .to_string(),
-            )
-        }
-        2 => {
-            // C `case 2:` (`gatekeeper.c:491-500`) never `break`s, so it
-            // always falls through into `case 3` in the same call.
-            let mut text = None;
-            if context.needs_lab {
-                state = 3;
-                text = Some(
-                    "Before thou mayest engage the Gatekeeper, thou must solve the Labyrinth built by Ishtar. Thou canst enter the labyrinth through the door to the east."
-                        .to_string(),
-                );
-            } else {
-                state = 4;
-            }
-            if !gate_case3_stops(&mut state, context.needs_lab) {
-                text = gate_case4(
-                    &mut state,
-                    context.needs_lab,
-                    context.flags,
-                    context.player_name,
-                );
-            }
-            text
-        }
-        3 => {
-            if gate_case3_stops(&mut state, context.needs_lab) {
-                None
-            } else {
-                gate_case4(
-                    &mut state,
-                    context.needs_lab,
-                    context.flags,
-                    context.player_name,
-                )
-            }
-        }
-        4 => gate_case4(
-            &mut state,
-            context.needs_lab,
-            context.flags,
-            context.player_name,
-        ),
-        5 => {
-            state = 6;
-            Some(
-                "Name the class thou wishest to become to begin the test. Each try will cost thee 100 gold coins."
-                    .to_string(),
-            )
-        }
-        _ => None,
-    };
-
-    GateWelcomeOutcome {
-        welcome_state: state,
-        text,
-    }
-}
-
-/// C `gate_welcome_driver`'s `case 2:` of the `analyse_text_driver` switch
-/// (`gatekeeper.c:565-570`): a `"repeat"`/`"restart"` answer resets the
-/// dialogue to `0`, but only while `welcome_state <= 6` (a fully advanced
-/// test-in-progress conversation is left alone).
-pub fn gate_welcome_state_after_repeat(welcome_state: i32) -> i32 {
-    if welcome_state <= 6 {
-        0
-    } else {
-        welcome_state
-    }
-}
-
 /// C `teleport_next_lab(cn, 0)` truthiness (`src/system/lab.c:94-104`).
 /// With `do_teleport = 0`, `teleport_lab`'s `!do_teleport ||
 /// change_area(...)` always short-circuits true without touching the map,
@@ -3628,7 +1243,6 @@ pub fn needs_next_lab(lab_solved_bits: u64) -> bool {
             && crate::item_driver::legacy_lab_destination(lab_level).is_some()
     })
 }
-
 /// C `enter_test`'s class-choice/item-carrying preconditions
 /// (`gatekeeper.c:316-390`), excluding the side-effecting tail
 /// (`take_money`, `enter_room` room search) which needs `World` access.
@@ -3650,7 +1264,6 @@ pub struct GateEnterTestPrecheck {
     /// Arch-Seyan'Du, `8` Seyan'Du.
     pub class: i32,
 }
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GateEnterTestOutcome {
     /// "Sorry, only paying players may take the test."
@@ -3673,7 +1286,6 @@ pub enum GateEnterTestOutcome {
     /// `take_money(cn, 100 * 100)` then the `enter_room` search.
     Ready,
 }
-
 fn gate_class_choice_is_valid(flags: CharacterFlags, class: i32) -> bool {
     use CharacterFlags as F;
     match class {
@@ -3684,7 +1296,6 @@ fn gate_class_choice_is_valid(flags: CharacterFlags, class: i32) -> bool {
         _ => false,
     }
 }
-
 pub fn gate_enter_test_precheck(input: GateEnterTestPrecheck) -> GateEnterTestOutcome {
     if !input.is_paid {
         return GateEnterTestOutcome::NotPaid;
@@ -3712,7 +1323,6 @@ pub fn gate_enter_test_precheck(input: GateEnterTestPrecheck) -> GateEnterTestOu
     }
     GateEnterTestOutcome::Ready
 }
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CharacterDriverKind {
     SimpleBaddy,
@@ -3731,7 +1341,6 @@ pub enum CharacterDriverKind {
     CaligarSkelly,
     Lab2Undead,
 }
-
 impl CharacterDriverKind {
     pub fn from_legacy_id(driver: u16) -> Option<Self> {
         match driver {
@@ -3774,14 +1383,12 @@ impl CharacterDriverKind {
         }
     }
 }
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CharacterDriverCall {
     Tick { ret: i32, last_action: i32 },
     Died { killer_character_id: u32 },
     Respawn,
 }
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CharacterDriverOutcome {
     /// `simple_baddy_dead`: earth demons create earth/rain retaliation effects
@@ -3799,7 +1406,6 @@ pub enum CharacterDriverOutcome {
         call: CharacterDriverCall,
     },
 }
-
 impl CharacterDriverOutcome {
     pub fn legacy_return_code(self) -> i32 {
         match self {
@@ -3809,12 +1415,10 @@ impl CharacterDriverOutcome {
         }
     }
 }
-
 pub fn execute_character_driver(driver: u16, ret: i32, last_action: i32) -> CharacterDriverOutcome {
     let call = CharacterDriverCall::Tick { ret, last_action };
     dispatch_known_character_driver(driver, call)
 }
-
 pub fn execute_character_died_driver(
     driver: u16,
     killer_character_id: u32,
@@ -3824,11 +1428,9 @@ pub fn execute_character_died_driver(
     };
     dispatch_known_character_driver(driver, call)
 }
-
 pub fn execute_character_respawn_driver(driver: u16) -> CharacterDriverOutcome {
     dispatch_known_character_driver(driver, CharacterDriverCall::Respawn)
 }
-
 fn dispatch_known_character_driver(
     driver: u16,
     call: CharacterDriverCall,
@@ -3849,7 +1451,6 @@ fn dispatch_known_character_driver(
         None => CharacterDriverOutcome::Unsupported { driver, call },
     }
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -5621,3 +3222,55 @@ mod tests {
         }
     }
 }
+// Re-exports keep the historical `crate::character_driver::X` paths
+// stable while each NPC owns its file under `world::npc`.
+pub use crate::world::npc::aclerk::{parse_aclerk_driver_args, AclerkDriverData};
+pub use crate::world::npc::area1::camhermit::CamhermitDriverData;
+pub use crate::world::npc::area1::forest_ranger::ForestRangerDriverData;
+pub use crate::world::npc::area1::greeter::GreeterDriverData;
+pub use crate::world::npc::area1::gwendylon::{GwendylonDriverData, GWENDYLON_QA};
+pub use crate::world::npc::area1::jessica::JessicaDriverData;
+pub use crate::world::npc::area1::jiu::JiuDriverData;
+pub use crate::world::npc::area1::terion::TerionDriverData;
+pub use crate::world::npc::area1::yoakin::YoakinDriverData;
+pub use crate::world::npc::area13::dungeon_master::{
+    DungeonfighterDriverData, DungeonmasterDriverData, DUNGEONMASTER_QA, DUNGEON_SLOT_COUNT,
+};
+pub use crate::world::npc::area17::two_skelly::TwoSkellyDriverData;
+pub use crate::world::npc::area22::lab2_undead::{
+    apply_lab2_undead_create_message, parse_lab2_undead_driver_args, Lab2UndeadDriverData,
+};
+pub use crate::world::npc::area3::clara::{
+    clara_dialogue_step, clara_replay_state_after_text_analysis,
+    clara_state_after_swamp_monster_death, ClaraDialogueContext, ClaraDialogueOutcome,
+    ClaraDriverData,
+};
+pub use crate::world::npc::area30::clanclerk::{parse_clanclerk_driver_args, ClanclerkDriverData};
+pub use crate::world::npc::area30::clanmaster::{
+    parse_clanmaster_driver_args, ClanmasterDriverData, CLANMASTER_QA,
+};
+pub use crate::world::npc::area32::military::{
+    parse_military_advisor_driver_args, parse_military_master_driver_args,
+    MilitaryAdvisorDriverData, MilitaryMasterDriverData, MILITARY_QA,
+};
+pub use crate::world::npc::arena::{
+    parse_arena_manager_driver_args, ArenaContender, ArenaFighterDriverData,
+    ArenaManagerDriverData, ArenaMasterDriverData, ARENA_FIGHTER_MASTER_POS,
+    ARENA_FIGHTER_REST_POS, ARENA_MAX_CONTENDER, ARENA_QA,
+};
+pub use crate::world::npc::bank::{BankDriverData, BANK_QA};
+pub use crate::world::npc::clubmaster::{
+    parse_clubmaster_driver_args, ClubmasterDriverData, CLUBMASTER_QA,
+};
+pub use crate::world::npc::gate_fight::GateFightDriverData;
+pub use crate::world::npc::gate_welcome::{
+    gate_welcome_dialogue_step, gate_welcome_state_after_repeat, GateWelcomeContext,
+    GateWelcomeDriverData, GateWelcomeOutcome,
+};
+pub use crate::world::npc::janitor::JanitorDriverData;
+pub use crate::world::npc::lostcon::LostconDriverData;
+pub use crate::world::npc::macro_npc::{MacroDriverData, MacroDriverState};
+pub use crate::world::npc::merchant::{
+    parse_merchant_driver_args, MerchantDriverData, MERCHANT_QA,
+};
+pub use crate::world::npc::trader::{TraderDriverData, TRADER_QA};

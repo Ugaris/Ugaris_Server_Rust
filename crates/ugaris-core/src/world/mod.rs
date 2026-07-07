@@ -10,56 +10,35 @@
 //! (tool.c experience/level-up math), and `area_mech`/`assembly`/
 //! `traps_hazards` for area-specific machinery.
 
-mod aclerk;
 mod actions;
 mod admin_flag;
 mod allow;
 mod anticheat;
 mod area_mech;
-mod arena;
 mod assembly;
-mod bank;
-mod camhermit;
 mod character_values;
-mod clanclerk;
-mod clanmaster;
-mod clubmaster;
 mod combat;
 mod complain;
 mod consistency;
 mod date;
 mod death;
 mod doors;
-mod dungeon_fighter;
-mod dungeon_master;
 mod effect_tick;
 mod effects;
 mod exp;
 mod exterminate;
-mod forest_ranger;
-mod gate_fight;
-mod gatekeeper;
-mod greeter;
-mod gwendylon;
 mod helpers;
 mod hurt;
 mod item_outcomes;
 mod items;
 mod jail;
-mod janitor;
-mod jessica;
-mod jiu;
-mod lab2_undead;
 mod lastseen;
 mod light;
 mod lockname;
 mod look;
 mod loot;
-mod lostcon;
 mod lq;
-mod macro_npc;
-mod merchant;
-mod military;
+pub mod npc;
 mod npc_fight;
 mod npc_idle;
 mod npc_messages;
@@ -76,64 +55,44 @@ mod speed;
 mod spells;
 mod steal;
 mod teleport;
-mod terion;
 mod text;
-mod trader;
 mod traps_hazards;
 mod turn_seyan;
 mod values;
 mod weather;
-mod yoakin;
 
 pub use actions::*;
 pub use admin_flag::*;
 pub use allow::*;
 pub use anticheat::*;
 pub(crate) use area_mech::*;
-pub use arena::*;
 pub(crate) use assembly::*;
-pub use bank::*;
-pub use camhermit::*;
 pub(crate) use character_values::*;
-pub use clanclerk::*;
-pub use clanmaster::*;
-pub use clubmaster::*;
 pub(crate) use combat::*;
 pub use complain::*;
 pub use consistency::*;
 pub use death::*;
 pub use doors::*;
-pub use dungeon_master::*;
 #[allow(unused_imports)]
 pub(crate) use effect_tick::*;
 #[allow(unused_imports)]
 pub(crate) use effects::*;
 pub use exp::*;
 pub use exterminate::*;
-pub use forest_ranger::*;
-pub use gatekeeper::*;
-pub use greeter::*;
-pub use gwendylon::*;
 pub(crate) use helpers::*;
 pub use hurt::*;
 #[allow(unused_imports)]
 pub(crate) use item_outcomes::*;
 pub(crate) use items::*;
 pub use jail::*;
-pub use jessica::*;
-pub use jiu::*;
 #[allow(unused_imports)]
-pub(crate) use lab2_undead::*;
 pub use lastseen::*;
 pub(crate) use light::*;
 pub use lockname::*;
 pub use look::*;
 pub use loot::*;
-pub use lostcon::*;
 pub use lq::*;
-pub use macro_npc::*;
-pub use merchant::*;
-pub use military::*;
+pub use npc::*;
 pub use npc_fight::*;
 #[allow(unused_imports)]
 pub(crate) use npc_idle::*;
@@ -153,16 +112,20 @@ pub(crate) use spells::*;
 pub use steal::*;
 #[allow(unused_imports)]
 pub(crate) use teleport::*;
-pub use terion::*;
 pub use text::*;
-pub use trader::*;
 #[allow(unused_imports)]
 pub(crate) use traps_hazards::*;
 pub use values::*;
-pub use yoakin::*;
 
 #[cfg(test)]
 mod tests;
+
+// Names used only by test modules under `world::tests` via `use super::*`.
+#[allow(unused_imports)]
+use crate::character_driver::{
+    CDR_BANK, CDR_GATE_FIGHT, CDR_JANITOR, CDR_LAB2UNDEAD, CDR_MILITARY_ADVISOR,
+    CDR_MILITARY_MASTER, CDR_TRADER, NTID_GATEKEEPER, NT_CREATE,
+};
 
 use std::collections::HashMap;
 
@@ -172,15 +135,13 @@ use crate::{
     character_driver::{
         add_simple_baddy_enemy, add_simple_baddy_enemy_unchecked, execute_character_died_driver,
         process_simple_baddy_messages,
-        remove_simple_baddy_enemy as remove_simple_baddy_enemy_state, BankDriverData,
-        CharacterDriverMessage, CharacterDriverOutcome, CharacterDriverState, FightDriverData,
-        Lab2UndeadDriverData, LostconDriverData, SimpleBaddyEnemy, SimpleBaddyMessageOutcome,
-        CDR_ACLERK, CDR_BANK, CDR_CAMERON_FORESTMONSTER, CDR_DUNGEONFIGHTER, CDR_GATE_FIGHT,
-        CDR_GATE_WELCOME, CDR_JANITOR, CDR_LAB2UNDEAD, CDR_LOSTCON, CDR_MERCHANT,
-        CDR_MILITARY_ADVISOR, CDR_MILITARY_MASTER, CDR_SIMPLEBADDY, CDR_SWAMPMONSTER, CDR_TRADER,
-        FDEMON_MSG_WAYPOINT, NTID_FDEMON, NTID_GATEKEEPER, NTID_LAB2_DEAMONCHECK,
-        NTID_LABGNOMETORCH, NTID_TWOCITY_PICK, NT_CHAR, NT_CREATE, NT_DEAD, NT_DIDHIT, NT_GIVE,
-        NT_GOTHIT, NT_ITEM, NT_NPC, NT_SEEHIT, NT_SPELL, NT_TEXT,
+        remove_simple_baddy_enemy as remove_simple_baddy_enemy_state, CharacterDriverMessage,
+        CharacterDriverOutcome, CharacterDriverState, FightDriverData, SimpleBaddyEnemy,
+        SimpleBaddyMessageOutcome, CDR_ACLERK, CDR_CAMERON_FORESTMONSTER, CDR_DUNGEONFIGHTER,
+        CDR_GATE_WELCOME, CDR_LOSTCON, CDR_MERCHANT, CDR_SIMPLEBADDY, CDR_SWAMPMONSTER,
+        FDEMON_MSG_WAYPOINT, NTID_FDEMON, NTID_LAB2_DEAMONCHECK, NTID_LABGNOMETORCH,
+        NTID_TWOCITY_PICK, NT_CHAR, NT_DEAD, NT_DIDHIT, NT_GIVE, NT_GOTHIT, NT_ITEM, NT_NPC,
+        NT_SEEHIT, NT_SPELL, NT_TEXT,
     },
     clan::ClanRegistry,
     club::ClubRegistry,
