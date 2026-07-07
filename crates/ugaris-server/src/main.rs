@@ -54,6 +54,7 @@ mod tick_item_use_skelraise;
 mod tick_item_use_teufel;
 mod tick_item_use_transport;
 mod tick_item_use_warp;
+mod tick_item_use_xmas_swamp;
 mod tick_npc;
 mod tick_sync;
 mod tick_world;
@@ -1678,70 +1679,21 @@ async fn main() -> anyhow::Result<()> {
                                                 &mut failed,
                                             );
                                         }
-                                        ugaris_core::item_driver::ItemDriverOutcome::XmasMaker { character_id, .. } => {
-                                            if apply_xmasmaker(&mut world, &mut zone_loader, character_id) {
-                                                executed += 1;
-                                            } else {
-                                                failed += 1;
-                                            }
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::SwampSpawn { item_id, character_id: _, template, x, y, .. } => {
-                                            if spawn_swampspawn_character(
+                                        outcome @ (ugaris_core::item_driver::ItemDriverOutcome::XmasMaker { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::SwampSpawn { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::SwampSpawnPulse { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::XmasTree { .. }) => {
+                                            tick_item_use_xmas_swamp::dispatch_xmas_swamp_outcome(
                                                 &mut world,
                                                 &mut zone_loader,
                                                 &mut runtime,
-                                                item_id,
-                                                template,
-                                                x,
-                                                y,
-                                            ) {
-                                                executed += 1;
-                                            } else {
-                                                failed += 1;
-                                            }
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::SwampSpawnPulse { .. } => {}
-                                        ugaris_core::item_driver::ItemDriverOutcome::XmasTree { character_id, .. } => {
-                                            let (is_xmas, event_year) = runtime_effective_xmas_event(&runtime);
-                                            let gift_seed = world.tick.0;
-                                            let result = match runtime.player_for_character_mut(character_id) {
-                                                Some(player) => apply_xmastree(
-                                                    &mut world,
-                                                    &mut zone_loader,
-                                                    player,
-                                                    character_id,
-                                                    args.area_id,
-                                                    is_xmas,
-                                                    event_year,
-                                                    gift_seed,
-                                                ),
-                                                None => XmasTreeApplyResult::MissingPlayer,
-                                            };
-                                            match result {
-                                                XmasTreeApplyResult::Dormant => {
-                                                    feedback.push((character_id, "The tree seems dormant outside the holiday season.".to_string()));
-                                                    blocked += 1;
-                                                }
-                                                XmasTreeApplyResult::AlreadyGranted => {
-                                                    feedback.push((character_id, "The tree's magic has already granted you a gift.".to_string()));
-                                                    blocked += 1;
-                                                }
-                                                XmasTreeApplyResult::NeedsHolidayTreat => {
-                                                    feedback.push((character_id, "The tree awaits a special holiday treat before bestowing its gift.".to_string()));
-                                                    blocked += 1;
-                                                }
-                                                XmasTreeApplyResult::GiftGranted(item_name) => {
-                                                    feedback.push((character_id, format!("The tree glows brightly as you receive a {item_name}!")));
-                                                    executed += 1;
-                                                }
-                                                XmasTreeApplyResult::NoSpace => {
-                                                    feedback.push((character_id, "You need more space in your inventory for the gift!".to_string()));
-                                                    blocked += 1;
-                                                }
-                                                XmasTreeApplyResult::MissingPlayer => {
-                                                    failed += 1;
-                                                }
-                                            }
+                                                args.area_id,
+                                                outcome,
+                                                &mut feedback,
+                                                &mut executed,
+                                                &mut blocked,
+                                                &mut failed,
+                                            );
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::BlockedByRequirements { item_id, character_id }
                                             if is_chest_request =>

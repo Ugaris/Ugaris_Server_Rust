@@ -232,9 +232,13 @@ order.
   `tick_item_use_burndown::dispatch_burndown_outcome`
   (`crates/ugaris-server/src/tick_item_use_burndown.rs`, 52 lines;
   `main.rs` down to 3,882).
+  Twelfth family slice done: the xmas + swamp-spawn family (4 contiguous
+  variants - `XmasMaker`/`SwampSpawn`/`SwampSpawnPulse`/`XmasTree`) is
+  extracted into `tick_item_use_xmas_swamp::dispatch_xmas_swamp_outcome`
+  (`crates/ugaris-server/src/tick_item_use_xmas_swamp.rs`, 108 lines;
+  `main.rs` down to 3,834).
   Still inline in `main.rs`: every other outcome family (
-  xmas,
-  swamp, key-assembly, and the
+  key-assembly and the
   large no-op catch-all) - continue slicing one family per iteration
   following this file's pattern (`use super::*;`, take
   `world`/`zone_loader`/`runtime`/`achievement_repository`/`config` or
@@ -618,4 +622,9 @@ notes live in `PROGRESS_ARCHIVE.md`.
   action-outcome family (burndown barrel, 5 contiguous variants) into
   `tick_item_use_burndown::dispatch_burndown_outcome` (`main.rs` down
   to 3,882). 1091 server tests unchanged, clean build/boot-smoke.
+- 2026-07-07: P0.5 main() decomposition: sliced the twelfth completed-
+  action-outcome family (xmas + swamp-spawn, 4 contiguous variants)
+  into `tick_item_use_xmas_swamp::dispatch_xmas_swamp_outcome`
+  (`main.rs` down to 3,834). 1091 server tests unchanged, clean
+  build/boot-smoke.
 

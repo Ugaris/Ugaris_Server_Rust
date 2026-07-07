@@ -11,8 +11,8 @@
 //! verbatim into one file). Warp, chests, dungeon, ice/palace, Teufel,
 //! skel-raise, edemon/fdemon, transport, clan/lq/arena, and shrines were
 //! sliced first; this is the eleventh family slice. The rest of the
-//! match (xmas, swamp, key-assembly, ...) is still inline in `main.rs`
-//! pending further slices.
+//! match (key-assembly, ...) is still inline in `main.rs` pending
+//! further slices.
 
 use super::*;
 
