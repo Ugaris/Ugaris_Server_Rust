@@ -338,9 +338,10 @@ order.
   `PlayerRuntime::ppd_blob` field (it preserves unknown legacy blocks
   inside the JSON document). *(done - backfill startup routine closes the
   task; details in PORTING_LEDGER.md)*
-- [ ] **`military.rs` (3.2K) split** - `world/npc/area32/military.rs`
+- [x] **`military.rs` (3.2K) split** - `world/npc/area32/military.rs`
   holds two NPCs plus shared mission logic; split into
   `military_master.rs`, `military_advisor.rs`, and `missions.rs`.
+  *(done - details in PORTING_LEDGER.md)*
 
 ---
 
@@ -726,4 +727,10 @@ notes live in `PROGRESS_ARCHIVE.md`.
   methods; verified against a live Docker Postgres with real legacy rows
   (decode-success and decode-failure-retry paths both confirmed). 2534
   core + 1101 server tests pass, live DB suite green, clean build/boot.
+- 2026-07-08: P0.5 `military.rs` split CLOSED: mechanically split the
+  3,615-line file into `military/{mod,missions,military_master,
+  military_advisor}.rs` (largest 1,300 lines) via `tools/rust_split/
+  splitter.py` with a name-keyed `ASSIGN` spec exploding the multiple
+  `impl World` blocks by method name. 2534 core + 1101 server tests
+  unchanged, clean build/boot-smoke.
 
