@@ -117,6 +117,10 @@ pub const CDR_LYDIA: u16 = 16;
 /// gatekeeper-welcome NPC (`gate_welcome` template,
 /// `src/system/gatekeeper.c::gate_welcome_driver`).
 pub const CDR_GATE_WELCOME: u16 = 39;
+/// C `#define CDR_ROBBER 17` (`src/system/drvlib.h`, "specific enemy in
+/// area1, wood"): the midnight-meeting forest patrol NPC
+/// (`src/area/1/gwendylon.c::robber_driver`).
+pub const CDR_ROBBER: u16 = 17;
 /// C `#define CDR_CLANMASTER 27` (`src/system/drvlib.h`): the clan
 /// foundations NPC (`src/area/30/clanmaster.c::clanmaster_driver`).
 pub const CDR_CLANMASTER: u16 = 27;
@@ -260,6 +264,7 @@ pub enum CharacterDriverState {
     Brithildie(BrithildieDriverData),
     Nook(NookDriverData),
     Lydia(LydiaDriverData),
+    Robber(RobberDriverData),
 }
 /// C `bank_driver_parse` from `src/module/bank.c`. The C driver defaults
 /// opening hours to 6..23 before parsing (`bank_driver` lines 304-309).
@@ -937,7 +942,8 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::ForestRanger(_)
             | CharacterDriverState::Brithildie(_)
             | CharacterDriverState::Nook(_)
-            | CharacterDriverState::Lydia(_),
+            | CharacterDriverState::Lydia(_)
+            | CharacterDriverState::Robber(_),
         ) => SimpleBaddyDriverData::default(),
         None => SimpleBaddyDriverData::default(),
     };
@@ -3262,6 +3268,7 @@ pub use crate::world::npc::area1::jessica::JessicaDriverData;
 pub use crate::world::npc::area1::jiu::JiuDriverData;
 pub use crate::world::npc::area1::lydia::LydiaDriverData;
 pub use crate::world::npc::area1::nook::NookDriverData;
+pub use crate::world::npc::area1::robber::RobberDriverData;
 pub use crate::world::npc::area1::terion::TerionDriverData;
 pub use crate::world::npc::area1::yoakin::YoakinDriverData;
 pub use crate::world::npc::area13::dungeon_master::{

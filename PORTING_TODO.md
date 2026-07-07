@@ -380,17 +380,20 @@ Ordered by player progression; the C file is the oracle.
   unported `james_raisehint`/`can_raise`/`get_fight_skill_skill` helpers,
   `:5235-6003` - ~770 lines total, budget a dedicated iteration or a
   deliberately reduced first slice rather than treating it like the
-  quick NPC ports above), `balltrap_skelly_driver` (`:3712-3774`, a
-  fight-driver archer that
-  needs the generic multi-enemy `DRD_FIGHTDRIVER` system this codebase
-  currently only exposes via the `CDR_SIMPLEBADDY`-specific
-  implementation - see `world/npc_fight.rs`), `robber_driver`
-  (`:3775-3960`), `sanoa_driver` (`:3961-4104`), `reskin_driver`
-  (`:4105-4424`), `asturin_driver` (`:4425-`), `guiwynn_driver`/
-  `logain_driver` and the rest through `ch_driver`'s dispatch table
-  (`:6076-6155`), plus `balltrap_skelly_dead`'s no-op and the remaining
-  `gwendylon_dead`/`asturin_dead` shared death-hook branches
-  (`:6180-6222`).
+   quick NPC ports above), `balltrap_skelly_driver` (`:3712-3774`, a
+   fight-driver archer that
+   needs the generic multi-enemy `DRD_FIGHTDRIVER` system this codebase
+   currently only exposes via the `CDR_SIMPLEBADDY`-specific
+   implementation - see `world/npc_fight.rs`), `sanoa_driver`
+   (`:3961-4104`), `reskin_driver` (`:4105-4424`), `asturin_driver`
+   (`:4425-`), `guiwynn_driver`/`logain_driver` and the rest through
+   `ch_driver`'s dispatch table (`:6076-6155`), plus `balltrap_skelly_
+   dead`'s no-op and the remaining `gwendylon_dead`/`asturin_dead`
+   shared death-hook branches (`:6180-6222`). `robber_driver`
+   (`:3775-3960`, the midnight-meeting forest patrol NPC) is now ported
+   - see `crates/ugaris-core/src/world/npc/area1/robber.rs`'s own module
+   doc comment for its documented single-victim self-defense
+   simplification (mirroring `CDR_GATE_FIGHT`'s own precedent).
 - [ ] **Area 2 - `src/area/2/area2.c`** - remaining character drivers
   (zombie lord, priests). Item drivers done.
 - [ ] **Area 3 - `src/area/3/area3.c`** - palace story NPCs, lamp ghost
@@ -545,4 +548,8 @@ notes live in `PROGRESS_ARCHIVE.md`.
   action-outcome family (skel-raise, 4 contiguous variants) into
   `tick_item_use_skelraise::dispatch_skelraise_outcome` (`main.rs`
   down to 4,556). 1091 server tests unchanged, clean build/boot-smoke.
+- 2026-07-07: Area 1 `robber_driver` (`CDR_ROBBER`) ported: the
+  midnight-meeting forest patrol NPC's nine-waypoint walk, ladder/hole
+  use-triggers, torch upkeep, and single-victim self-defense. 2415
+  core + 1091 server tests pass, clean build/boot-smoke.
 
