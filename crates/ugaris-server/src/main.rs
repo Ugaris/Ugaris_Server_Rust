@@ -43,6 +43,7 @@ mod snapshots;
 mod spawns;
 mod stacks;
 mod tick_client_actions;
+mod tick_item_use_chests;
 mod tick_item_use_warp;
 mod tick_npc;
 mod tick_sync;
@@ -1246,113 +1247,36 @@ async fn main() -> anyhow::Result<()> {
                                         completion.legacy_return_code = ugaris_core::item_driver::legacy_item_driver_return_code(driver, &outcome);
                                     }
                                     match outcome {
-                                        ugaris_core::item_driver::ItemDriverOutcome::ChestTreasure { item_id, character_id, treasure_index } => {
-                                            match apply_chest_treasure(
+                                        outcome @ (ugaris_core::item_driver::ItemDriverOutcome::ChestTreasure { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::RandomChest { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::RatChest { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::InfiniteChest { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::InfiniteChestCursorOccupied { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::InfiniteChestKeyRequired { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::InfiniteChestUnknown { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::ForestChest { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::ForestChestCursorOccupied { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::ForestChestLocked { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::PickChest { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::PickChestCursorOccupied { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::PickChestLocked { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::PickChestBug { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::ChestSpawn { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::ChestSpawnCheck { .. }) => {
+                                            tick_item_use_chests::dispatch_chest_outcome(
                                                 &mut world,
                                                 &mut zone_loader,
-                                                runtime.player_for_character_mut(character_id),
-                                                item_id,
-                                                character_id,
-                                                treasure_index,
+                                                &mut runtime,
+                                                &achievement_repository,
+                                                &config,
                                                 realtime_seconds,
-                                            ) {
-                                                ChestTreasureApplyResult::Granted { item_name, key_name } => {
-                                                    if let Some(key_name) = key_name {
-                                                        feedback.push((character_id, format!("You use {key_name} to unlock the chest.")));
-                                                    }
-                                                    feedback.push((character_id, format!("You got a {item_name}.")));
-                                                    executed += 1;
-                                                    award_chest_opened_achievement(&mut world, &mut runtime, &achievement_repository, character_id, Some(treasure_index)).await;
-                                                }
-                                                ChestTreasureApplyResult::Empty => {
-                                                    feedback.push((character_id, CHEST_EMPTY_MESSAGE.to_string()));
-                                                    blocked += 1;
-                                                }
-                                                ChestTreasureApplyResult::KeyRequired => {
-                                                    feedback.push((character_id, CHEST_KEY_REQUIRED_MESSAGE.to_string()));
-                                                    blocked += 1;
-                                                }
-                                                ChestTreasureApplyResult::CursorOccupied => {
-                                                    feedback.push((character_id, CHEST_CURSOR_OCCUPIED_MESSAGE.to_string()));
-                                                    blocked += 1;
-                                                }
-                                                ChestTreasureApplyResult::MissingPlayer => {
-                                                    failed += 1;
-                                                }
-                                            }
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::RandomChest { item_id, character_id } => {
-                                            let random_seed = world.tick.0
-                                                ^ (u64::from(item_id.0) << 16)
-                                                ^ u64::from(character_id.0);
-                                            match apply_random_chest(
-                                                &mut world,
-                                                &mut zone_loader,
-                                                runtime.player_for_character_mut(character_id),
-                                                item_id,
-                                                character_id,
-                                                config.area_id,
-                                                realtime_seconds,
-                                                random_seed,
-                                            ) {
-                                                RandomChestApplyResult::Money { amount } => {
-                                                    feedback.push((character_id, format!("You found some money ({:.2}G)!", f64::from(amount) / 100.0)));
-                                                    executed += 1;
-                                                    award_chest_opened_achievement(&mut world, &mut runtime, &achievement_repository, character_id, None).await;
-                                                }
-                                                RandomChestApplyResult::Item { item_name } => {
-                                                    feedback.push((character_id, format!("You found a {item_name}.")));
-                                                    executed += 1;
-                                                    award_chest_opened_achievement(&mut world, &mut runtime, &achievement_repository, character_id, None).await;
-                                                }
-                                                RandomChestApplyResult::Empty => {
-                                                    feedback.push((character_id, RANDCHEST_EMPTY_MESSAGE.to_string()));
-                                                    blocked += 1;
-                                                }
-                                                RandomChestApplyResult::CursorOccupied => {
-                                                    feedback.push((character_id, RANDCHEST_CURSOR_OCCUPIED_MESSAGE.to_string()));
-                                                    blocked += 1;
-                                                }
-                                                RandomChestApplyResult::MissingPlayer => {
-                                                    failed += 1;
-                                                }
-                                            }
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::RatChest { item_id, character_id } => {
-                                            let random_seed = world.tick.0
-                                                ^ (u64::from(item_id.0) << 16)
-                                                ^ u64::from(character_id.0)
-                                                ^ 0x5241_5443_4845_5354;
-                                            match apply_rat_chest(
-                                                &mut world,
-                                                &mut zone_loader,
-                                                runtime.player_for_character_mut(character_id),
-                                                item_id,
-                                                character_id,
-                                                config.area_id,
-                                                realtime_seconds,
-                                                random_seed,
-                                            ) {
-                                                RatChestApplyResult::Money { amount } => {
-                                                    feedback.push((character_id, format!("You found some money ({:.2}G)!", f64::from(amount) / 100.0)));
-                                                    executed += 1;
-                                                }
-                                                RatChestApplyResult::Treasure { item_name } => {
-                                                    feedback.push((character_id, format!("You found a {item_name}.")));
-                                                    executed += 1;
-                                                }
-                                                RatChestApplyResult::Empty => {
-                                                    feedback.push((character_id, RANDCHEST_EMPTY_MESSAGE.to_string()));
-                                                    blocked += 1;
-                                                }
-                                                RatChestApplyResult::CursorOccupied => {
-                                                    feedback.push((character_id, RANDCHEST_CURSOR_OCCUPIED_MESSAGE.to_string()));
-                                                    blocked += 1;
-                                                }
-                                                RatChestApplyResult::MissingPlayer => {
-                                                    failed += 1;
-                                                }
-                                            }
+                                                outcome,
+                                                &mut feedback,
+                                                &mut executed,
+                                                &mut blocked,
+                                                &mut failed,
+                                            )
+                                            .await;
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::IceItemSpawn { character_id, template, .. } => {
                                             match grant_ice_itemspawn_to_cursor(
@@ -1449,45 +1373,6 @@ async fn main() -> anyhow::Result<()> {
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::PalaceDoorTick { .. } => {
                                             executed += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::InfiniteChest { character_id, template, key_name, .. } => {
-                                            match grant_template_item_to_cursor(
-                                                &mut world,
-                                                &mut zone_loader,
-                                                character_id,
-                                                template.as_str(),
-                                            ) {
-                                                Some(item_name) => {
-                                                    if let Some(key_name) = key_name {
-                                                        let key_name = outcome_item_name_text(&key_name);
-                                                        feedback.push((character_id, format!("You use {key_name} to open the chest.")));
-                                                    }
-                                                    feedback.push((character_id, format!("You got a {item_name}.")));
-                                                    executed += 1;
-                                                }
-                                                None => {
-                                                    feedback.push((
-                                                        character_id,
-                                                        "Congratulations, you have just discovered bug #4744C, please report it to the authorities!".to_string(),
-                                                    ));
-                                                    failed += 1;
-                                                }
-                                            }
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::InfiniteChestCursorOccupied { character_id, .. } => {
-                                            feedback.push((character_id, CHEST_CURSOR_OCCUPIED_MESSAGE.to_string()));
-                                            blocked += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::InfiniteChestKeyRequired { character_id, .. } => {
-                                            feedback.push((character_id, CHEST_KEY_REQUIRED_MESSAGE.to_string()));
-                                            blocked += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::InfiniteChestUnknown { character_id, .. } => {
-                                            feedback.push((
-                                                character_id,
-                                                "Congratulations, you have just discovered bug #4744B, please report it to the authorities!".to_string(),
-                                            ));
-                                            failed += 1;
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::DungeonTeleport { item_id, character_id, x, y, .. } => {
                                             let teleported = world.teleport_character_same_area(character_id, x, y, false)
@@ -1612,40 +1497,6 @@ async fn main() -> anyhow::Result<()> {
                                             feedback.push((character_id, "Please empty your hand (mouse cursor) first.".to_string()));
                                             blocked += 1;
                                         }
-                                        ugaris_core::item_driver::ItemDriverOutcome::ForestChest { character_id, amount, imp_flag_mask, .. } => {
-                                            match apply_forest_chest(
-                                                &mut world,
-                                                &mut zone_loader,
-                                                runtime.player_for_character_mut(character_id),
-                                                character_id,
-                                                amount,
-                                                imp_flag_mask,
-                                            ) {
-                                                ForestChestApplyResult::FoundMoney { .. } => {
-                                                    feedback.push((character_id, "You found a nice sum of money!".to_string()));
-                                                    executed += 1;
-                                                }
-                                                ForestChestApplyResult::Empty => {
-                                                    feedback.push((character_id, "The chest is empty.".to_string()));
-                                                    blocked += 1;
-                                                }
-                                                ForestChestApplyResult::CursorOccupied => {
-                                                    feedback.push((character_id, "Please empty your hand (mouse cursor) first.".to_string()));
-                                                    blocked += 1;
-                                                }
-                                                ForestChestApplyResult::MissingPlayer => {
-                                                    failed += 1;
-                                                }
-                                            }
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::ForestChestCursorOccupied { character_id, .. } => {
-                                            feedback.push((character_id, "Please empty your hand (mouse cursor) first.".to_string()));
-                                            blocked += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::ForestChestLocked { character_id, .. } => {
-                                            feedback.push((character_id, "The chest is locked and you don't have the right key.".to_string()));
-                                            blocked += 1;
-                                        }
                                         ugaris_core::item_driver::ItemDriverOutcome::JunkpileSearch { item_id, character_id, level } => {
                                             let random_seed = world.tick.0
                                                 ^ (u64::from(item_id.0) << 16)
@@ -1678,42 +1529,6 @@ async fn main() -> anyhow::Result<()> {
                                         ugaris_core::item_driver::ItemDriverOutcome::JunkpileCursorOccupied { character_id, .. } => {
                                             feedback.push((character_id, "Please empty your hand (mouse cursor) first.".to_string()));
                                             blocked += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::PickChest { character_id, template, .. } => {
-                                            match grant_template_item_to_cursor(
-                                                &mut world,
-                                                &mut zone_loader,
-                                                character_id,
-                                                template.as_str(),
-                                            ) {
-                                                Some(item_name) => {
-                                                    world.notify_twocity_pick_from_character(character_id);
-                                                    feedback.push((character_id, "You pick the lock.".to_string()));
-                                                    feedback.push((character_id, format!("You found a {}.", item_name.to_ascii_lowercase())));
-                                                    executed += 1;
-                                                }
-                                                None => {
-                                                    feedback.push((character_id, "You've found bug #8331.".to_string()));
-                                                    failed += 1;
-                                                }
-                                            }
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::PickChestCursorOccupied { character_id, .. } => {
-                                            feedback.push((character_id, "Please empty your hand (mouse cursor) first.".to_string()));
-                                            blocked += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::PickChestLocked { item_id, character_id } => {
-                                            let item_name = world
-                                                .items
-                                                .get(&item_id)
-                                                .map(|item| item.name.to_ascii_lowercase())
-                                                .unwrap_or_else(|| "chest".to_string());
-                                            feedback.push((character_id, format!("The {item_name} is locked and you don't have the right key.")));
-                                            blocked += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::PickChestBug { character_id, .. } => {
-                                            feedback.push((character_id, "You've found bug #8331.".to_string()));
-                                            failed += 1;
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::PickDoorToggle { character_id, picked_lock, .. } => {
                                             if picked_lock {
@@ -2527,22 +2342,6 @@ async fn main() -> anyhow::Result<()> {
                                                 failed += 1;
                                             }
                                         }
-                                        ugaris_core::item_driver::ItemDriverOutcome::ChestSpawn { item_id, character_id: _, template, x, y, .. } => {
-                                            if spawn_chestspawn_character(
-                                                &mut world,
-                                                &mut zone_loader,
-                                                &mut runtime,
-                                                item_id,
-                                                template,
-                                                x,
-                                                y,
-                                            ) {
-                                                executed += 1;
-                                            } else {
-                                                failed += 1;
-                                            }
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::ChestSpawnCheck { .. } => {}
                                         ugaris_core::item_driver::ItemDriverOutcome::SwampSpawn { item_id, character_id: _, template, x, y, .. } => {
                                             if spawn_swampspawn_character(
                                                 &mut world,
