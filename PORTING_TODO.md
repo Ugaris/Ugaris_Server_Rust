@@ -202,8 +202,13 @@ order.
   large no-op catch-all further down for the `key_name: None` case) -
   both arms are now inside the extracted dispatcher in the same
   relative order, and both original main.rs occurrences were removed.
+  Eighth family slice done: the transport-point family (3 contiguous
+  variants - `TransportOpen`/`TransportInvalid`/`TransportTravel`) is
+  extracted into `tick_item_use_transport::dispatch_transport_outcome`
+  (`crates/ugaris-server/src/tick_item_use_transport.rs`, 128 lines;
+  `main.rs` down to 4,300).
   Still inline in `main.rs`: every other outcome family (
-  transport, clan-spawn, lq, arena, shrines, xmas,
+  clan-spawn, lq, arena, shrines, xmas,
   swamp, burndown, key-assembly, and the
   large no-op catch-all) - continue slicing one family per iteration
   following this file's pattern (`use super::*;`, take
@@ -572,4 +577,8 @@ notes live in `PROGRESS_ARCHIVE.md`.
   action-outcome family (Edemon/Fdemon boss machinery, 19 variants)
   into `tick_item_use_edemon_fdemon::dispatch_edemon_fdemon_outcome`
   (`main.rs` down to 4,359). 1091 server tests unchanged, clean build/boot-smoke.
+- 2026-07-07: P0.5 main() decomposition: sliced the eighth completed-
+  action-outcome family (transport-point, 3 contiguous variants) into
+  `tick_item_use_transport::dispatch_transport_outcome` (`main.rs` down
+  to 4,300). 1091 server tests unchanged, clean build/boot-smoke.
 

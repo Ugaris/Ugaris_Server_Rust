@@ -49,6 +49,7 @@ mod tick_item_use_edemon_fdemon;
 mod tick_item_use_ice;
 mod tick_item_use_skelraise;
 mod tick_item_use_teufel;
+mod tick_item_use_transport;
 mod tick_item_use_warp;
 mod tick_npc;
 mod tick_sync;
@@ -1617,82 +1618,22 @@ async fn main() -> anyhow::Result<()> {
                                                 }
                                             }
                                         }
-                                        ugaris_core::item_driver::ItemDriverOutcome::TransportOpen { character_id, point, .. } => {
-                                            let Some(player) = runtime.player_for_character_mut(character_id) else {
-                                                failed += 1;
-                                                continue;
-                                            };
-                                            let newly_seen = if point == ugaris_core::item_driver::LEGACY_TRANSPORT_CLAN_EXIT {
-                                                false
-                                            } else {
-                                                player.touch_transport(point)
-                                            };
-                                            let seen = player.transport_seen;
-                                            if newly_seen {
-                                                feedback.push((character_id, "You have reached a new transportation point.".to_string()));
-                                            }
-                                            let clan_access = transport_clan_access(&world, character_id);
-                                            let payload = bytes::BytesMut::from(
-                                                &ugaris_protocol::packet::transport(seen, clan_access)[..],
-                                            );
-                                            for (session_id, _) in runtime.sessions_for_character(character_id) {
-                                                runtime.send_to_session(session_id, payload.clone());
-                                            }
-                                            executed += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::TransportInvalid { character_id, point, .. } => {
-                                            feedback.push((character_id, format!("Nothing happens - BUG ({point},#1).")));
-                                            blocked += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::TransportTravel { character_id, spec, .. } => {
-                                            let Some(player) = runtime.player_for_character(character_id) else {
-                                                failed += 1;
-                                                continue;
-                                            };
-                                            match apply_transport_travel(&mut world, player, character_id, config.area_id, spec) {
-                                                TransportTravelResult::SameArea { mirror, .. } => {
-                                                    if let Some(player) = runtime.player_for_character_mut(character_id) {
-                                                        player.set_current_mirror(mirror);
-                                                    }
-                                                    let mut builder = PacketBuilder::new();
-                                                    builder.mirror(mirror);
-                                                    let payload = builder.into_payload();
-                                                    for (session_id, _) in runtime.sessions_for_character(character_id) {
-                                                        runtime.send_to_session(session_id, payload.clone());
-                                                    }
-                                                    executed += 1;
-                                                }
-                                                TransportTravelResult::CrossArea { area, x, y, mirror } => {
-                                                    let transferred = attempt_cross_area_transfer(
-                                                        &mut world,
-                                                        &mut runtime,
-                                                        &character_repository,
-                                                        &area_repository,
-                                                        config.area_id,
-                                                        config.mirror_id,
-                                                        character_id,
-                                                        area,
-                                                        mirror,
-                                                        x,
-                                                        y,
-                                                    ).await;
-                                                    if transferred {
-                                                        executed += 1;
-                                                    } else {
-                                                        feedback.push((character_id, "Nothing happens - target area server is down.".to_string()));
-                                                        blocked += 1;
-                                                    }
-                                                }
-                                                TransportTravelResult::Busy => {
-                                                    feedback.push((character_id, "Please try again soon. Target is busy".to_string()));
-                                                    blocked += 1;
-                                                }
-                                                TransportTravelResult::Blocked(message)
-                                                | TransportTravelResult::Bug(message) => {
-                                                    feedback.push((character_id, message));
-                                                    blocked += 1;
-                                                }
-                                            }
+                                        outcome @ (ugaris_core::item_driver::ItemDriverOutcome::TransportOpen { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::TransportInvalid { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::TransportTravel { .. }) => {
+                                            tick_item_use_transport::dispatch_transport_outcome(
+                                                &mut world,
+                                                &mut runtime,
+                                                &character_repository,
+                                                &area_repository,
+                                                &config,
+                                                outcome,
+                                                &mut feedback,
+                                                &mut executed,
+                                                &mut blocked,
+                                                &mut failed,
+                                            )
+                                            .await;
                                         }
                                         ugaris_core::item_driver::ItemDriverOutcome::ClanSpawnExit { character_id, area_id, x, y, .. } => {
                                             if area_id != config.area_id {
