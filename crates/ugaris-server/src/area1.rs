@@ -70,7 +70,9 @@
 
 use super::*;
 use ugaris_core::item_ops::{give_item_to_character, GiveItemFlags, GiveItemResult};
-use ugaris_core::quest::quest_exp::{MONEY_AREA1_MADMAGE1, MONEY_AREA1_MADMAGE2};
+use ugaris_core::quest::quest_exp::{
+    MONEY_AREA1_MADKNIGHT, MONEY_AREA1_MADMAGE1, MONEY_AREA1_MADMAGE2,
+};
 use ugaris_core::quest::{
     QLOG_BRITHILDIE, QLOG_HERMIT_QUEST2, QLOG_JIU, QLOG_LYDIA, QLOG_NOOK, QLOG_RESKIN, QLOG_YOAKIN,
 };
@@ -79,9 +81,10 @@ use ugaris_core::world::{
     CamhermitOutcomeEvent, CamhermitPlayerFacts, ForestRangerOutcomeEvent, ForestRangerPlayerFacts,
     GreeterOutcomeEvent, GreeterPlayerFacts, GuiwynnOutcomeEvent, GuiwynnPlayerFacts,
     GwendylonOutcomeEvent, GwendylonPlayerFacts, JamesOutcomeEvent, JamesPlayerFacts,
-    JessicaOutcomeEvent, JessicaPlayerFacts, JiuOutcomeEvent, JiuPlayerFacts, LydiaOutcomeEvent,
-    LydiaPlayerFacts, NookOutcomeEvent, NookPlayerFacts, ReskinOutcomeEvent, ReskinPlayerFacts,
-    TerionOutcomeEvent, TerionPlayerFacts, YoakinOutcomeEvent, YoakinPlayerFacts,
+    JessicaOutcomeEvent, JessicaPlayerFacts, JiuOutcomeEvent, JiuPlayerFacts, LogainOutcomeEvent,
+    LogainPlayerFacts, LydiaOutcomeEvent, LydiaPlayerFacts, NookOutcomeEvent, NookPlayerFacts,
+    ReskinOutcomeEvent, ReskinPlayerFacts, TerionOutcomeEvent, TerionPlayerFacts,
+    YoakinOutcomeEvent, YoakinPlayerFacts,
 };
 
 pub(crate) fn camhermit_player_facts(
@@ -1393,6 +1396,141 @@ pub(crate) async fn apply_guiwynn_events(
             // (`gwendylon.c:4658-4664`, `4691-4697`, `4719-4725`).
             GuiwynnOutcomeEvent::GrantKeyItem { player_id } => {
                 if let Ok(item) = loader.instantiate_item_template("mad_key1", Some(player_id)) {
+                    let item_id = item.id;
+                    world.add_item(item);
+                    if !world.give_char_item(player_id, item_id) {
+                        world.destroy_item(item_id);
+                    }
+                    applied += 1;
+                }
+            }
+        }
+    }
+    applied
+}
+
+pub(crate) fn logain_player_facts(
+    runtime: &ServerRuntime,
+) -> HashMap<CharacterId, LogainPlayerFacts> {
+    runtime
+        .players
+        .values()
+        .filter_map(|player| {
+            let character_id = player.character_id?;
+            Some((
+                character_id,
+                LogainPlayerFacts {
+                    state: player.area1_logain_state(),
+                    seen_timer: player.area1_logain_seen_timer(),
+                    guiwynn_state: player.area1_guiwynn_state(),
+                },
+            ))
+        })
+        .collect()
+}
+
+/// Applies each [`LogainOutcomeEvent`] queued by
+/// `World::process_logain_actions`. See `world::logain`'s module doc
+/// comment for why [`LogainOutcomeEvent::QuestDone`]'s money reward (and
+/// [`LogainOutcomeEvent::GrantMadKey6`]/[`LogainOutcomeEvent::
+/// GrantMadKey9`]) need the `&mut ZoneLoader` parameter this function
+/// takes.
+pub(crate) async fn apply_logain_events(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    loader: &mut ZoneLoader,
+    events: Vec<LogainOutcomeEvent>,
+) -> usize {
+    let mut applied = 0;
+    for event in events {
+        match event {
+            LogainOutcomeEvent::UpdateState {
+                player_id,
+                new_state,
+            } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.set_area1_logain_state(new_state);
+                applied += 1;
+            }
+            LogainOutcomeEvent::UpdateSeenTimer { player_id, value } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.set_area1_logain_seen_timer(value);
+                applied += 1;
+            }
+            // C `questlog_open(co, 9)` (`src/system/questlog.c:204-217`):
+            // sets the flag and unconditionally resends the questlog.
+            LogainOutcomeEvent::QuestOpen { player_id } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.quest_log.open(9);
+                let payload = legacy_questlog_payload(player);
+                for (session_id, _) in runtime.sessions_for_character(player_id) {
+                    runtime.send_to_session(session_id, payload.clone());
+                }
+                applied += 1;
+            }
+            // C `questlog_done(co, 9)` (`src/system/questlog.c:267-305`)
+            // plus, only on first completion (C's `if (tmp == 1)`),
+            // `create_money_item(MONEY_AREA1_MADKNIGHT)` + plain
+            // `give_char_item` (`gwendylon.c:5140-5145`) - see the module
+            // doc comment for why the money reward can't stay a literal
+            // carried item via `give_item_to_character` (that helper
+            // auto-converts `IF_MONEY` items to gold, unlike C's plain
+            // `give_char_item` here).
+            LogainOutcomeEvent::QuestDone { player_id } => {
+                let Some(level) = world.characters.get(&player_id).map(|c| c.level) else {
+                    continue;
+                };
+                let level_val = level_value(level);
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                if let Some(completion) = player.quest_log.complete_legacy(9, level, level_val) {
+                    let payload = legacy_questlog_payload(player);
+                    world.give_exp(player_id, completion.granted_exp, u32::from(world.area_id));
+                    for (session_id, _) in runtime.sessions_for_character(player_id) {
+                        runtime.send_to_session(session_id, payload.clone());
+                    }
+                    applied += 1;
+
+                    if completion.times_done == 1 {
+                        let amount: u32 = MONEY_AREA1_MADKNIGHT.max(0) as u32;
+                        if let Ok(mut item) = loader.instantiate_item_template("money", None) {
+                            item.value = amount;
+                            item.sprite = create_money_item_sprite(amount);
+                            item.description = format!("{:.2}G.", f64::from(amount) / 100.0);
+                            let item_id = item.id;
+                            world.add_item(item);
+                            if !world.give_char_item(player_id, item_id) {
+                                world.destroy_item(item_id);
+                            }
+                        }
+                    }
+                }
+            }
+            // C's `!has_item(co, IID_AREA1_MADKEY6)` + `create_item
+            // ("mad_key6")` + plain `give_char_item` (`gwendylon.c:5009-
+            // 5015`, `5029-5035`).
+            LogainOutcomeEvent::GrantMadKey6 { player_id } => {
+                if let Ok(item) = loader.instantiate_item_template("mad_key6", Some(player_id)) {
+                    let item_id = item.id;
+                    world.add_item(item);
+                    if !world.give_char_item(player_id, item_id) {
+                        world.destroy_item(item_id);
+                    }
+                    applied += 1;
+                }
+            }
+            // C's `!has_item(co, IID_AREA1_MADKEY9)` + `create_item
+            // ("mad_key9")` + plain `give_char_item` (`gwendylon.c:5022-
+            // 5028`).
+            LogainOutcomeEvent::GrantMadKey9 { player_id } => {
+                if let Ok(item) = loader.instantiate_item_template("mad_key9", Some(player_id)) {
                     let item_id = item.id;
                     world.add_item(item);
                     if !world.give_char_item(player_id, item_id) {

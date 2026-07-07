@@ -726,3 +726,40 @@ pub(crate) async fn balltrap_driver_71(
     // guard skeleton (`src/area/1/gwendylon.c`).
     world.process_balltrap_actions(config.area_id);
 }
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn logain_driver_72(
+    mut world: &mut World,
+    mut runtime: &mut ServerRuntime,
+    mut zone_loader: &mut ZoneLoader,
+    config: &ServerConfig,
+    _args: &Args,
+    _completed_actions: &[WorldActionCompletion],
+    _achievement_repository: &Option<ugaris_db::PgAchievementRepository>,
+    _character_repository: &Option<ugaris_db::PgCharacterRepository>,
+    _area_repository: &Option<ugaris_db::PgAreaRepository>,
+    _clan_repository: &Option<ugaris_db::PgClanRegistryRepository>,
+    _clan_log_repository: &Option<ugaris_db::PgClanLogRepository>,
+    _merchant_repository: &Option<ugaris_db::PgMerchantRepository>,
+    _military_master_storage_repository: &Option<ugaris_db::PgMilitaryMasterStorageRepository>,
+    _military_advisor_storage_repository: &Option<ugaris_db::PgMilitaryAdvisorStorageRepository>,
+    _notes_repository: &Option<ugaris_db::PgNotesRepository>,
+    _anticheat_repository: &Option<ugaris_db::PgAntiCheatRepository>,
+    _auction_repository: &Option<ugaris_db::PgAuctionRepository>,
+) {
+    // C `logain_driver`: area 1's retired knight-trainer quest-giver NPC,
+    // the last driver in `ch_driver`'s dispatch table
+    // (`src/area/1/gwendylon.c`).
+    let logain_facts = logain_player_facts(&runtime);
+    let logain_events =
+        world.process_logain_actions(&logain_facts, current_unix_time() as i32, config.area_id);
+    let logain_events_applied =
+        apply_logain_events(&mut world, &mut runtime, &mut zone_loader, logain_events).await;
+    if logain_events_applied != 0 {
+        info!(
+            logain_events_applied,
+            tick = world.tick.0,
+            "applied logain dialogue events"
+        );
+    }
+}

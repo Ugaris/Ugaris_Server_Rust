@@ -47,6 +47,7 @@ mod lab2_undead;
 mod lastseen;
 mod light;
 mod lockname;
+mod logain;
 mod look;
 mod loot;
 mod lostcon;

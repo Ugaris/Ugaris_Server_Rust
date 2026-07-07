@@ -640,3 +640,22 @@ pub const IID_AREA1_MADPOTION: u32 = make_item_id(DEV_ID_DB, 0x00001C);
 /// second quest ("The Recipe for Happiness", `QLOG` index 8) turn-in
 /// item.
 pub const IID_AREA1_MADNOTE: u32 = make_item_id(DEV_ID_DB, 0x00001D);
+/// C `IID_AREA1_MADKEY6` (`src/common/item_id.h:90`): the Brotherhood-of-
+/// Knights door key `logain_driver` hands out at states 4 and 8 (`pub`,
+/// not `pub(crate)`, since `world::logain` needs it outside the
+/// `item_driver` module).
+pub const IID_AREA1_MADKEY6: u32 = make_item_id(DEV_ID_DB, 0x00001F);
+/// C `IID_AREA1_MADKEY7` (`src/common/item_id.h:91`): swept alongside
+/// `IID_AREA1_MADNOTE2`'s turn-in in `logain_driver`.
+pub const IID_AREA1_MADKEY7: u32 = make_item_id(DEV_ID_DB, 0x000020);
+/// C `IID_AREA1_MADKEY8` (`src/common/item_id.h:92`): swept alongside
+/// `IID_AREA1_MADNOTE2`'s turn-in in `logain_driver`.
+pub const IID_AREA1_MADKEY8: u32 = make_item_id(DEV_ID_DB, 0x000021);
+/// C `IID_AREA1_MADNOTE2` (`src/common/item_id.h:93`): `logain_driver`'s
+/// turn-in item (states <= 5), rewarding `MONEY_AREA1_MADKNIGHT` on first
+/// completion.
+pub const IID_AREA1_MADNOTE2: u32 = make_item_id(DEV_ID_DB, 0x000022);
+/// C `IID_AREA1_MADKEY9` (`src/common/item_id.h:94`): Loisan's house key
+/// `logain_driver` hands out at state 7 (`pub`, not `pub(crate)`, since
+/// `world::logain` needs it outside the `item_driver` module).
+pub const IID_AREA1_MADKEY9: u32 = make_item_id(DEV_ID_DB, 0x000023);

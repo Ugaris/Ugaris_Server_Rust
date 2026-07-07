@@ -11,6 +11,7 @@ pub mod gwendylon;
 pub mod james;
 pub mod jessica;
 pub mod jiu;
+pub mod logain;
 pub mod lydia;
 pub mod nook;
 pub mod reskin;
@@ -39,6 +40,8 @@ pub use james::*;
 pub use jessica::*;
 #[allow(unused_imports)]
 pub use jiu::*;
+#[allow(unused_imports)]
+pub use logain::*;
 #[allow(unused_imports)]
 pub use lydia::*;
 #[allow(unused_imports)]

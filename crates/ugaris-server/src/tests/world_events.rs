@@ -1194,6 +1194,114 @@ fn dungeonmaster_death_handler_ignores_non_matching_driver_and_non_lethal_hits()
     ));
 }
 
+#[test]
+fn area1_quest_giver_death_is_handled_but_sends_no_client_message() {
+    // C `ch_died_driver`'s remaining area-1 dispatch branches all route
+    // to `gwendylon_dead` (`gwendylon.c:6180-6206`), the same
+    // `charlog`-only bug line as `CDR_GATE_WELCOME`/`CDR_DUNGEONMASTER`'s
+    // - no client message, no reward/teleport side effects. Spot-check
+    // one representative driver from the ten (`CDR_LOGAIN`, the last one
+    // added).
+    let mut world = World::default();
+    let mut logain_npc = login_character(CharacterId(1), &login_block("Logain"), 1, 190, 200);
+    logain_npc.flags.remove(CharacterFlags::PLAYER);
+    logain_npc.driver = CDR_LOGAIN;
+    logain_npc.hp = POWERSCALE;
+    let killer = login_character(CharacterId(2), &login_block("Godmode"), 1, 191, 200);
+    world.add_character(logain_npc);
+    world.add_character(killer);
+
+    let mut runtime = ServerRuntime::default();
+
+    world.apply_legacy_hurt(
+        CharacterId(1),
+        Some(CharacterId(2)),
+        POWERSCALE * 2,
+        1,
+        0,
+        0,
+    );
+    apply_pk_hate_from_hurt_events(&mut runtime, &mut world, 0, &ZoneLoader::new());
+
+    let texts = world.drain_pending_system_texts();
+    assert!(!texts.iter().any(|text| text.message.contains("IMMORTAL")));
+}
+
+#[test]
+fn area1_quest_giver_death_handler_covers_every_listed_driver() {
+    for driver in [
+        CDR_TERION,
+        CDR_JAMES,
+        CDR_NOOK,
+        CDR_LYDIA,
+        CDR_GUIWYNN,
+        CDR_LOGAIN,
+        CDR_CAMHERMIT,
+        CDR_GREETER,
+        CDR_JESSICA,
+        CDR_BRITHILDIE,
+    ] {
+        let mut world = World::default();
+        let mut npc = login_character(CharacterId(1), &login_block("Npc"), 1, 190, 200);
+        npc.flags.remove(CharacterFlags::PLAYER);
+        npc.driver = driver;
+        world.add_character(npc);
+
+        let lethal = LegacyHurtEvent {
+            target_id: CharacterId(1),
+            cause_id: CharacterId(2),
+            outcome: LegacyHurtOutcome {
+                killed: true,
+                ..Default::default()
+            },
+        };
+        assert!(
+            apply_area1_quest_giver_death_from_hurt_event(&world, lethal),
+            "driver {driver} was not covered"
+        );
+    }
+}
+
+#[test]
+fn area1_quest_giver_death_handler_ignores_non_matching_driver_and_non_lethal_hits() {
+    let mut world = World::default();
+    let mut other_npc = login_character(CharacterId(1), &login_block("Other"), 1, 190, 200);
+    other_npc.flags.remove(CharacterFlags::PLAYER);
+    other_npc.hp = POWERSCALE * 5;
+    world.add_character(other_npc);
+
+    let non_lethal = LegacyHurtEvent {
+        target_id: CharacterId(1),
+        cause_id: CharacterId(2),
+        outcome: LegacyHurtOutcome {
+            killed: false,
+            ..Default::default()
+        },
+    };
+    assert!(!apply_area1_quest_giver_death_from_hurt_event(
+        &world, non_lethal
+    ));
+
+    let mut world2 = World::default();
+    let mut logain_npc = login_character(CharacterId(1), &login_block("Logain"), 1, 190, 200);
+    logain_npc.flags.remove(CharacterFlags::PLAYER);
+    logain_npc.driver = CDR_GATE_FIGHT; // not one of the listed drivers
+    world2.add_character(logain_npc);
+
+    let lethal_wrong_driver = LegacyHurtEvent {
+        target_id: CharacterId(1),
+        cause_id: CharacterId(2),
+        outcome: LegacyHurtOutcome {
+            killed: true,
+            ..Default::default()
+        },
+    };
+    assert!(!apply_area1_quest_giver_death_from_hurt_event(
+        &world2,
+        lethal_wrong_driver
+    ));
+}
+
 #[tokio::test]
 async fn clan_economy_tick_escalates_mutual_relation_request_immediately() {
     // `apply_clan_economy_tick`'s relation half wires `ClanRelations::

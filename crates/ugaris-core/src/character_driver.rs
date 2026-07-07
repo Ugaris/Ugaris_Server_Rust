@@ -147,6 +147,11 @@ pub const CDR_RESKIN: u16 = 20;
 /// Mages" investigation quest chain (`src/area/1/gwendylon.c::
 /// guiwynn_driver`).
 pub const CDR_GUIWYNN: u16 = 21;
+/// C `#define CDR_LOGAIN 23` (`src/system/drvlib.h`, "specific quest
+/// giver, area1, city"): the retired knight-trainer's mystery-quest
+/// dialogue chain (`src/area/1/gwendylon.c::logain_driver`) - the last
+/// driver in `ch_driver`'s dispatch table (`gwendylon.c:6076-6155`).
+pub const CDR_LOGAIN: u16 = 23;
 /// C `#define CDR_CLANMASTER 27` (`src/system/drvlib.h`): the clan
 /// foundations NPC (`src/area/30/clanmaster.c::clanmaster_driver`).
 pub const CDR_CLANMASTER: u16 = 27;
@@ -297,6 +302,7 @@ pub enum CharacterDriverState {
     Guiwynn(GuiwynnDriverData),
     James(JamesDriverData),
     Balltrap(BalltrapDriverData),
+    Logain(LogainDriverData),
 }
 /// C `bank_driver_parse` from `src/module/bank.c`. The C driver defaults
 /// opening hours to 6..23 before parsing (`bank_driver` lines 304-309).
@@ -981,7 +987,8 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::Reskin(_)
             | CharacterDriverState::Guiwynn(_)
             | CharacterDriverState::James(_)
-            | CharacterDriverState::Balltrap(_),
+            | CharacterDriverState::Balltrap(_)
+            | CharacterDriverState::Logain(_),
         ) => SimpleBaddyDriverData::default(),
         None => SimpleBaddyDriverData::default(),
     };
@@ -3308,6 +3315,7 @@ pub use crate::world::npc::area1::gwendylon::{GwendylonDriverData, GWENDYLON_QA}
 pub use crate::world::npc::area1::james::JamesDriverData;
 pub use crate::world::npc::area1::jessica::JessicaDriverData;
 pub use crate::world::npc::area1::jiu::JiuDriverData;
+pub use crate::world::npc::area1::logain::LogainDriverData;
 pub use crate::world::npc::area1::lydia::LydiaDriverData;
 pub use crate::world::npc::area1::nook::NookDriverData;
 pub use crate::world::npc::area1::reskin::ReskinDriverData;

@@ -595,7 +595,8 @@ impl World {
             | CharacterDriverState::Reskin(_)
             | CharacterDriverState::Guiwynn(_)
             | CharacterDriverState::James(_)
-            | CharacterDriverState::Balltrap(_) => None,
+            | CharacterDriverState::Balltrap(_)
+            | CharacterDriverState::Logain(_) => None,
         }
     }
 

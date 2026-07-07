@@ -431,123 +431,27 @@ Ordered by player progression; the C file is the oracle.
   quests, `tutorial_ppd` hints (player_driver.c has the tutorial hook -
   port together). This is the highest-value area work: new players see it
   first. Slice by NPC.
-  REMAINING: `camhermit_driver` (`CDR_CAMHERMIT`, the forest hermit's
-  bear-kill/tooth-necklace quest chain, `:707-996`), `yoakin_driver`
-  (`CDR_YOAKIN`, the hunter's bear-hunt quest chain plus the shrike-
-  talisman/leftover-give branches it also handles, `:996-1217`),
-  `terion_driver` (`CDR_TERION`, the village's ambient lore/storyteller
-  NPC, `:1228-1472`), `gwendylon_driver` (`CDR_GWENDYLON`, the main
-  quest-giver mage's four-skull quest chain, `:234-673`),
-  `greeter_driver` (`CDR_GREETER`, the tutorial-town Governor's class-
-  aware weapon/rest-area/movement civics dialogue plus its "learn"/
-  "repeat" text-command rewind branches, `:1485-1798`), `jessica_driver`
-  (`CDR_JESSICA`, the robber-operations two-quest chain, `:1809-2065`),
-  `jiu_driver` (`CDR_JIU`, the forest sanctuary pilgrim's riverbeast-
-  kill quest, `:2074-2247`), `forest_ranger_driver` (`CDR_FOREST_
-  RANGER`, the bear-attack warning sentry near the stone circle,
-  `:2284-2473`), and `brithildie_driver` (`CDR_BRITHILDIE`, the
-  Governor's-mother ambient lore NPC unlocking `QLOG_BRITHILDIE`,
-  `:2474-2823`) are ported so far - see the Progress Log entries below
-  and `crates/ugaris-core/src/world/camhermit.rs`/`world/yoakin.rs`/
-  `world/terion.rs`/`world/gwendylon.rs`/`world/greeter.rs`/
-  `world/jessica.rs`/`world/jiu.rs`/`world/forest_ranger.rs`/
-  `world/brithildie.rs`'s own module doc comments for their documented
-  gaps (forest_ranger's own gap: the `WN_LHAND` torch-relight idle
-  upkeep is not ported, a cosmetic light-radius detail - see its module
-  doc comment; brithildie's own gap: `BRITHILDIE_STATE_STORY_3_1/3_2/
-  3_3` are unreachable dead states in the C source itself, preserved as
-  such rather than "fixed" - see its module doc comment). The shared
-  area-1 `monster_dead`/
-  `bredel_dead`/`riverbeast_dead`/`bigbadspider_dead` death-hook
-  quartet (`:2255-2272`, `:2825-2842`, `:5201-5231`, `:2850-2870`) that
-  camhermit/jessica/jiu/brithildie's own doc comments called out as
-  their remaining blocker is now ported: `CDR_RIVERBEAST`/`CDR_BREDEL`/
-  `CDR_CAMERON_FORESTMONSTER`/`CDR_BIGBADSPIDER` driver IDs
-  (`crates/ugaris-core/src/character_driver.rs`),
-  `World::apply_area1_monster_death_driver` (the weapon-glow half,
-  `crates/ugaris-core/src/world/hurt.rs`), and four
-  `apply_*_death_from_hurt_event` hooks wired into
-  `apply_pk_hate_from_hurt_events`'s per-hurt-event dispatch
-  (`crates/ugaris-server/src/world_events/death_hooks.rs`) that
-  read/write `PlayerRuntime`'s `area1_camhermit_kills`/
-  `area1_jessica_state`/`area1_jiu_state`/`area1_brithildie_state` and
-  queue the exact C `log_char` reward/reminder text (brithildie's own
-  hook also drives a full `questlog_done`, unlike its siblings). Every
-  quest chain reachable through the eight ported NPCs above can now
-  complete end-to-end on a live server: `camhermit_state ==
-  CAMHERMIT_STATE_QUEST1DO` can reach 10 kills and see the reward line;
-  `jessica_state == JESSICA_STATE_QUEST2_DO` can advance to
-  `QUEST2_FINISH` on a `CDR_BREDEL` kill; `jiu_state ==
-  JIU_STATE_WAIT_FOR_KILL` can advance to `_BEAST_KILLED` on a
-  `CDR_RIVERBEAST` kill; `brithildie_state ==
-  BRITHILDIE_STATE_NOMORETALES_QOPEN` can complete `QLOG_BRITHILDIE` on
-  a `CDR_BIGBADSPIDER` kill. yoakin's and gwendylon's
-  `destroy_item_byID` sweeps still do not reach the account depot
-  (unrelated, separate gap). `nook_driver` (`CDR_NOOK`, the identity-
-  crisis judge/knight/jester NPC's greeting/hint chain plus its
-  stolen-cap side quest, `:3180-3457`) is now also ported - see
-  `crates/ugaris-core/src/world/npc/area1/nook.rs`'s own module doc
-  comment for its one structural gap (this NPC has no `seen_timer`
-  reminder gate anywhere in its C source at all, unlike every other
-  area-1 NPC ported so far - confirmed, not a missed port). `lydia_driver`
-  (`CDR_LYDIA`, the mage's-daughter hangover-potion quest chain unlocking
-  `QLOG_LYDIA`, `:3458-3703`) is now also ported - see
-  `crates/ugaris-core/src/world/npc/area1/lydia.rs`'s own module doc
-  comment for its documented gaps (the class-conditional reward-potion
-  `create_item`/`give_char_item` call is deferred to `ugaris-server`'s
-  `apply_lydia_events` since `World` has no `ZoneLoader` access, and the
-  `destroy_item_byID` sweep doesn't reach the account depot, same as
-  every sibling NPC's own documented gap). `robber_driver`
-   (`:3775-3960`, the midnight-meeting forest patrol NPC) is now ported
-   - see `crates/ugaris-core/src/world/npc/area1/robber.rs`'s own module
-   doc comment for its documented single-victim self-defense
-   simplification (mirroring `CDR_GATE_FIGHT`'s own precedent).
-   `sanoa_driver` (`CDR_SANOA`, the ambient dialogue-free twelve-waypoint
-   city walker, `:3961-4094`) is now also ported - see
-   `crates/ugaris-core/src/world/npc/area1/sanoa.rs`'s own module doc
-   comment; structurally identical to `robber_driver`'s self-defense
-   cascade, no torch upkeep, two door-toggle waypoints instead of ladder/
-    hole items. `reskin_driver` (`CDR_RESKIN`, the tavern-keeper/alchemy-
-    ingredient-turn-in NPC unlocking `QLOG_RESKIN`, `:4098-4417`) is now
-    also ported - see `crates/ugaris-core/src/world/npc/area1/reskin.rs`'s
-    own module doc comment for its documented gaps (C's own `case 7` bug:
-    `check_first_kill(co, 16)` never sets `didsay` even though it speaks a
-    line - preserved verbatim, not "fixed"). `asturin_driver` (`CDR_ASTURIN`,
-    the private-quarters guard NPC combining a positional greeting/warning
-    state machine with a full self-defense/regen/spell-self/return-to-post
-    cascade, `:4421-4533`) is now also ported, along with its `asturin_dead`
-    death hook (`:4535-4542`, wired as
-    `apply_asturin_death_from_hurt_event` in `ugaris-server`'s
-    `world_events::death_hooks`) - see
-    `crates/ugaris-core/src/world/npc/area1/asturin.rs`'s own module doc
-    comment for its documented gaps (single-victim self-defense
-    simplification, same precedent as `CDR_ROBBER`/`CDR_SANOA`).
-    `guiwynn_driver` (`CDR_GUIWYNN`, the town-mage's two-part "Order of
-    Mages" investigation quest chain, `QLOG` indices 7-8, `:4546-4889`) is
-    now also ported - see
-    `crates/ugaris-core/src/world/npc/area1/guiwynn.rs`'s own module doc
-    comment for its documented gaps (the money reward stays a literal
-    carried "money" item via plain `give_char_item`, not converted to gold
-    like `CDR_GWENDYLON`'s skull rewards - a genuine C behavioral
-    difference, not a simplification). `james_driver` (`CDR_JAMES`, the
-    town drunkard's Lydia-quest hand-off/hardcore-recruiter/paid-advice
-    NPC, `:2901-3179`) is now also ported, including `can_raise`/
-    `get_fight_skill_skill`/the `james_raisehint` advice-only weighted
-    priority computation (`:5235-5962`) - see
-    `crates/ugaris-core/src/world/npc/area1/james.rs`'s own module doc
-    comment for its documented gaps (the `CF_GOD`-only "raise me" debug
-    command and its equipment-grant tail are deliberately not ported; not
-     reachable by any real player). `balltrap_skelly_driver`
-     (`CDR_BALLTRAP`, `:3712-3767`, the stationary ball-trap-mechanism
-     guard skeleton) is now also ported - see
-     `crates/ugaris-core/src/world/npc/area1/balltrap.rs`'s own module doc
-     comment for its documented gap (same single-victim self-defense
-     simplification as `CDR_ROBBER`/`CDR_SANOA`). Still unported:
-     `logain_driver` (`CDR_LOGAIN`, `:4893-5195`, the retired knight-
-     trainer's mystery-quest dialogue chain - the last driver in
-     `ch_driver`'s dispatch table, `:6076-6155`), plus `balltrap_skelly_
-     dead`'s no-op and the remaining `gwendylon_dead` shared death-hook
-     branches (`:6180-6222`).
+  REMAINING: every `ch_driver`-dispatched NPC in `gwendylon.c` is now
+  ported (all 20 drivers, one file per NPC under
+  `crates/ugaris-core/src/world/npc/area1/` - see each file's own module
+  doc comment for its documented gaps, and `PORTING_LEDGER.md` for the
+  full per-NPC history), including the last one, `logain_driver`
+  (`CDR_LOGAIN`, `:4893-5195`, the retired knight-trainer's "Knightly
+  Troubles" quest chain, `QLOG` index 9). The shared area-1 death hooks
+  are also done: `balltrap_skelly_dead` is a C no-op (no port needed),
+  and the remaining `gwendylon_dead` dispatch branches (`CDR_TERION`/
+  `CDR_JAMES`/`CDR_NOOK`/`CDR_LYDIA`/`CDR_GUIWYNN`/`CDR_LOGAIN`/
+  `CDR_CAMHERMIT`/`CDR_GREETER`/`CDR_JESSICA`/`CDR_BRITHILDIE`,
+  `:6180-6206`) are ported as one generic hook,
+  `apply_area1_quest_giver_death_from_hurt_event`
+  (`crates/ugaris-server/src/world_events/death_hooks.rs`), same
+  charlog-only-bug/immortal-so-unreachable precedent as
+  `CDR_GATE_WELCOME`/`CDR_DUNGEONMASTER`'s own hooks. The one gap left
+  before this checkbox can close: `tutorial_ppd`/`tutorial()`
+  (`src/system/player_driver.c:374-934`, the newbie hint-window system
+  hooked from the player tick, not from any NPC) is not ported at all -
+  a genuinely separate, ~560-line system from the NPC drivers above, not
+  yet started.
 - [ ] **Area 2 - `src/area/2/area2.c`** - remaining character drivers
   (zombie lord, priests). Item drivers done.
 - [ ] **Area 3 - `src/area/3/area3.c`** - palace story NPCs, lamp ghost
@@ -802,4 +706,9 @@ notes live in `PROGRESS_ARCHIVE.md`.
   3-second-gated `do_use(DX_LEFT, 0)` trap trigger. Only `logain_driver`
   remains unported in this file. 1091 server + 2494 core tests pass, clean
   build/boot-smoke.
+- 2026-07-07: Area 1 `logain_driver` (`CDR_LOGAIN`) ported (the last NPC
+  in `ch_driver`'s dispatch table) plus the shared `gwendylon_dead`
+  death-hook branches for all 10 remaining quest-giver drivers. Only
+  `tutorial_ppd` (`player_driver.c`) is left before this checkbox closes.
+  1094 server + 2512 core tests pass, clean build/boot-smoke.
 

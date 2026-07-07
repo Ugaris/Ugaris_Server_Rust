@@ -423,6 +423,51 @@ pub(crate) fn apply_gate_welcome_death_from_hurt_event(
     true
 }
 
+/// C `ch_died_driver`'s remaining area-1 `gwendylon_dead` dispatch
+/// branches (`gwendylon.c:6180-6206`): `CDR_TERION`/`CDR_JAMES`/
+/// `CDR_NOOK`/`CDR_LYDIA`/`CDR_GUIWYNN`/`CDR_LOGAIN`/`CDR_CAMHERMIT`/
+/// `CDR_GREETER`/`CDR_JESSICA`/`CDR_BRITHILDIE` all route to the same
+/// `gwendylon_dead(cn, co)` (`:3704-3706`), the identical `charlog`-only
+/// bug line already ported for `CDR_GATE_WELCOME`/`CDR_DUNGEONMASTER`
+/// above - same text, same immortal-so-unreachable-in-practice caveat
+/// (every one of these quest-giver NPC templates carries `CF_IMMORTAL`).
+pub(crate) fn apply_area1_quest_giver_death_from_hurt_event(
+    world: &World,
+    event: LegacyHurtEvent,
+) -> bool {
+    if !event.outcome.killed {
+        return false;
+    }
+    let Some(target) = world.characters.get(&event.target_id) else {
+        return false;
+    };
+    const GWENDYLON_DEAD_DRIVERS: [u16; 10] = [
+        CDR_TERION,
+        CDR_JAMES,
+        CDR_NOOK,
+        CDR_LYDIA,
+        CDR_GUIWYNN,
+        CDR_LOGAIN,
+        CDR_CAMHERMIT,
+        CDR_GREETER,
+        CDR_JESSICA,
+        CDR_BRITHILDIE,
+    ];
+    if !GWENDYLON_DEAD_DRIVERS.contains(&target.driver) {
+        return false;
+    }
+    debug!(
+        target: "client_log",
+        "{}",
+        format_client_log_message(
+            &target.name,
+            target.id.0,
+            "I JUST DIED! I'M SUPPOSED TO BE IMMORTAL!"
+        )
+    );
+    true
+}
+
 /// C `ch_died_driver`/`CDR_DUNGEONMASTER` dispatch (`area/13/dungeon.c:
 /// 2197-2200`) routes any death of the dungeonmaster NPC to
 /// `immortal_dead(cn, co)` (`dungeon.c:1735-1737`), the identical
