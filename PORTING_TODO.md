@@ -153,8 +153,15 @@ order.
   `main.rs` down to ~4.7K). Unlike Warp's contiguous span, this family's
   variants were scattered across 5 spots in the match; each spot's code
   was either replaced with one combined or-pattern call arm (the first
-  spot) or deleted (the other 4), since match-arm order doesn't matter.
-  Still inline in `main.rs`: every other outcome family (ice, dungeon,
+  spot) or deleted (the other 4 spots), since match-arm order doesn't matter.
+  Third family slice done: the dungeon family (7 contiguous variants -
+  `DungeonTeleport`/`DungeonFake`/`DungeonKey`/`DungeonKeyCursorOccupied`/
+  `DungeonDoorMissingKeys`/`DungeonDoorTooManyDefenders`/
+  `DungeonDoorSolved`) is extracted into
+  `tick_item_use_dungeon::dispatch_dungeon_outcome`
+  (`crates/ugaris-server/src/tick_item_use_dungeon.rs`, 127 lines;
+  `main.rs` down to ~4.7K/4,683 lines).
+  Still inline in `main.rs`: every other outcome family (ice,
   teufel, skel-raise, transport, clan-spawn, lq, arena, shrines, xmas,
   swamp, edemon/fdemon, burndown, palace doors, key-assembly, and the
   large no-op catch-all) - continue slicing one family per iteration
@@ -486,4 +493,8 @@ notes live in `PROGRESS_ARCHIVE.md`.
   action-outcome family (chests, 16 non-contiguous variants) into
   `tick_item_use_chests::dispatch_chest_outcome` (`main.rs` down to
   ~4.7K). 1091 server tests unchanged, clean build/boot-smoke.
+- 2026-07-07: P0.5 main() decomposition: sliced the third completed-
+  action-outcome family (dungeon, 7 contiguous variants) into
+  `tick_item_use_dungeon::dispatch_dungeon_outcome` (`main.rs` down to
+  4,683). 1091 server tests unchanged, clean build/boot-smoke.
 
