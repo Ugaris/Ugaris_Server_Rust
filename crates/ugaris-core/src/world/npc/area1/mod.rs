@@ -5,6 +5,7 @@ pub mod brithildie;
 pub mod camhermit;
 pub mod forest_ranger;
 pub mod greeter;
+pub mod guiwynn;
 pub mod gwendylon;
 pub mod jessica;
 pub mod jiu;
@@ -26,6 +27,8 @@ pub use camhermit::*;
 pub use forest_ranger::*;
 #[allow(unused_imports)]
 pub use greeter::*;
+#[allow(unused_imports)]
+pub use guiwynn::*;
 #[allow(unused_imports)]
 pub use gwendylon::*;
 #[allow(unused_imports)]

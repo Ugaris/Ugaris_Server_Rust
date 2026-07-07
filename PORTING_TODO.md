@@ -521,15 +521,22 @@ Ordered by player progression; the C file is the oracle.
     `world_events::death_hooks`) - see
     `crates/ugaris-core/src/world/npc/area1/asturin.rs`'s own module doc
     comment for its documented gaps (single-victim self-defense
-    simplification, same precedent as `CDR_ROBBER`/`CDR_SANOA`). Still
-    unported: `james_driver` (`:2901-3179`, gated on the large unported
-    `james_raisehint`/`can_raise`/`get_fight_skill_skill` helpers,
-    `:5235-6003`), `balltrap_skelly_driver` (`:3712-3774`, a fight-driver
-    archer needing the generic multi-enemy `DRD_FIGHTDRIVER` system),
-    `guiwynn_driver`/`logain_driver` and the rest through `ch_driver`'s
-    dispatch table (`:6076-6155`), plus `balltrap_skelly_dead`'s no-op and
-    the remaining `gwendylon_dead` shared death-hook branches
-    (`:6180-6222`).
+    simplification, same precedent as `CDR_ROBBER`/`CDR_SANOA`).
+    `guiwynn_driver` (`CDR_GUIWYNN`, the town-mage's two-part "Order of
+    Mages" investigation quest chain, `QLOG` indices 7-8, `:4546-4889`) is
+    now also ported - see
+    `crates/ugaris-core/src/world/npc/area1/guiwynn.rs`'s own module doc
+    comment for its documented gaps (the money reward stays a literal
+    carried "money" item via plain `give_char_item`, not converted to gold
+    like `CDR_GWENDYLON`'s skull rewards - a genuine C behavioral
+    difference, not a simplification). Still unported: `james_driver`
+    (`:2901-3179`, gated on the large unported `james_raisehint`/
+    `can_raise`/`get_fight_skill_skill` helpers, `:5235-6003`),
+    `balltrap_skelly_driver` (`:3712-3774`, a fight-driver archer needing
+    the generic multi-enemy `DRD_FIGHTDRIVER` system), `logain_driver` and
+    the rest through `ch_driver`'s dispatch table (`:6076-6155`), plus
+    `balltrap_skelly_dead`'s no-op and the remaining `gwendylon_dead`
+    shared death-hook branches (`:6180-6222`).
 - [ ] **Area 2 - `src/area/2/area2.c`** - remaining character drivers
   (zombie lord, priests). Item drivers done.
 - [ ] **Area 3 - `src/area/3/area3.c`** - palace story NPCs, lamp ghost
@@ -770,4 +777,8 @@ notes live in `PROGRESS_ARCHIVE.md`.
   private-quarters guard's positional greeting/warning state machine plus
   its self-defense cascade and `asturin_dead` death hook. 1091 server +
   2454 core tests pass, clean build/boot-smoke.
+- 2026-07-07: Area 1 `guiwynn_driver` (`CDR_GUIWYNN`) ported: the
+  town-mage's two-part "Order of Mages" quest chain (`QLOG` 7-8), money
+  reward kept as a literal carried item (not gold), matching C. 1091
+  server + 2470 core tests pass, clean build/boot-smoke.
 

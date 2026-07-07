@@ -544,8 +544,12 @@ impl World {
     /// 4475-4487`) rather than `give_char_item_smart` - a genuine C
     /// behavioral difference (no ground-drop fallback), not a
     /// simplification, so it is kept as its own method rather than folded
-    /// into `give_char_item_smart`.
-    pub(crate) fn give_char_item(&mut self, target_id: CharacterId, item_id: ItemId) -> bool {
+    /// into `give_char_item_smart`. `pub` (not `pub(crate)`) since
+    /// `ugaris-server`'s `area1.rs::apply_guiwynn_events` needs it outside
+    /// the `ugaris_core` crate boundary for the `guiwynn_driver` money-item
+    /// reward (`create_money_item`+plain `give_char_item`, not
+    /// `give_char_item_smart`'s auto-gold-conversion `IF_MONEY` branch).
+    pub fn give_char_item(&mut self, target_id: CharacterId, item_id: ItemId) -> bool {
         let Some(target) = self.characters.get_mut(&target_id) else {
             return false;
         };

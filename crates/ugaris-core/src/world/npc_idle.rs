@@ -494,7 +494,8 @@ impl World {
                 | CharacterDriverState::Robber(_)
                 | CharacterDriverState::Sanoa(_)
                 | CharacterDriverState::Asturin(_)
-                | CharacterDriverState::Reskin(_) => None,
+                | CharacterDriverState::Reskin(_)
+                | CharacterDriverState::Guiwynn(_) => None,
             });
         let Some(target_id) = target_id else {
             return false;

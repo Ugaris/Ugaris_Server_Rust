@@ -133,6 +133,11 @@ pub const CDR_ASTURIN: u16 = 19;
 /// area1, city"): the tavern-keeper/alchemy-turn-in NPC
 /// (`src/area/1/gwendylon.c::reskin_driver`).
 pub const CDR_RESKIN: u16 = 20;
+/// C `#define CDR_GUIWYNN 21` (`src/system/drvlib.h`, "specific quest
+/// giver, area1, city"): the town-mage NPC running the two-part "Order of
+/// Mages" investigation quest chain (`src/area/1/gwendylon.c::
+/// guiwynn_driver`).
+pub const CDR_GUIWYNN: u16 = 21;
 /// C `#define CDR_CLANMASTER 27` (`src/system/drvlib.h`): the clan
 /// foundations NPC (`src/area/30/clanmaster.c::clanmaster_driver`).
 pub const CDR_CLANMASTER: u16 = 27;
@@ -280,6 +285,7 @@ pub enum CharacterDriverState {
     Sanoa(SanoaDriverData),
     Asturin(AsturinDriverData),
     Reskin(ReskinDriverData),
+    Guiwynn(GuiwynnDriverData),
 }
 /// C `bank_driver_parse` from `src/module/bank.c`. The C driver defaults
 /// opening hours to 6..23 before parsing (`bank_driver` lines 304-309).
@@ -961,7 +967,8 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::Robber(_)
             | CharacterDriverState::Sanoa(_)
             | CharacterDriverState::Asturin(_)
-            | CharacterDriverState::Reskin(_),
+            | CharacterDriverState::Reskin(_)
+            | CharacterDriverState::Guiwynn(_),
         ) => SimpleBaddyDriverData::default(),
         None => SimpleBaddyDriverData::default(),
     };
@@ -3282,6 +3289,7 @@ pub use crate::world::npc::area1::brithildie::BrithildieDriverData;
 pub use crate::world::npc::area1::camhermit::CamhermitDriverData;
 pub use crate::world::npc::area1::forest_ranger::ForestRangerDriverData;
 pub use crate::world::npc::area1::greeter::GreeterDriverData;
+pub use crate::world::npc::area1::guiwynn::GuiwynnDriverData;
 pub use crate::world::npc::area1::gwendylon::{GwendylonDriverData, GWENDYLON_QA};
 pub use crate::world::npc::area1::jessica::JessicaDriverData;
 pub use crate::world::npc::area1::jiu::JiuDriverData;

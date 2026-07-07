@@ -32,6 +32,7 @@ mod forest_ranger;
 mod gate_fight;
 mod gatekeeper;
 mod greeter;
+mod guiwynn;
 mod gwendylon;
 mod hurt;
 mod item_outcomes;

@@ -615,3 +615,28 @@ pub const IID_AREA1_ROBBERKEY1: u32 = make_item_id(DEV_ID_DB, 0x00000E);
 /// stolen-cap quest proof item. `pub` (not `pub(crate)`) since
 /// `world::nook` needs it outside the `item_driver` module.
 pub const IID_AREA1_JESTERCAP: u32 = make_item_id(DEV_ID_DB, 0x00004C);
+/// C `IID_AREA1_MADKEY1` (`src/common/item_id.h:82`): the front-door key
+/// `guiwynn_driver` hands out at each stage of its two-part "Order of
+/// Mages" quest chain (states 4, 7, and 10). `pub` (not `pub(crate)`)
+/// since `world::guiwynn` needs it outside the `item_driver` module.
+pub const IID_AREA1_MADKEY1: u32 = make_item_id(DEV_ID_DB, 0x000017);
+/// C `IID_AREA1_MADKEY2` (`src/common/item_id.h:83`): swept alongside
+/// both `guiwynn_driver` turn-ins (`IID_AREA1_MADPOTION`'s and
+/// `IID_AREA1_MADNOTE`'s).
+pub const IID_AREA1_MADKEY2: u32 = make_item_id(DEV_ID_DB, 0x000018);
+/// C `IID_AREA1_MADKEY3` (`src/common/item_id.h:84`): swept on
+/// `IID_AREA1_MADNOTE`'s turn-in.
+pub const IID_AREA1_MADKEY3: u32 = make_item_id(DEV_ID_DB, 0x000019);
+/// C `IID_AREA1_MADKEY4` (`src/common/item_id.h:85`): swept on
+/// `IID_AREA1_MADNOTE`'s turn-in.
+pub const IID_AREA1_MADKEY4: u32 = make_item_id(DEV_ID_DB, 0x00001A);
+/// C `IID_AREA1_MADKEY5` (`src/common/item_id.h:86`): swept on
+/// `IID_AREA1_MADNOTE`'s turn-in.
+pub const IID_AREA1_MADKEY5: u32 = make_item_id(DEV_ID_DB, 0x00001B);
+/// C `IID_AREA1_MADPOTION` (`src/common/item_id.h:87`): `guiwynn_driver`'s
+/// first quest ("Mages Gone Berserk", `QLOG` index 7) turn-in item.
+pub const IID_AREA1_MADPOTION: u32 = make_item_id(DEV_ID_DB, 0x00001C);
+/// C `IID_AREA1_MADNOTE` (`src/common/item_id.h:88`): `guiwynn_driver`'s
+/// second quest ("The Recipe for Happiness", `QLOG` index 8) turn-in
+/// item.
+pub const IID_AREA1_MADNOTE: u32 = make_item_id(DEV_ID_DB, 0x00001D);
