@@ -43,6 +43,7 @@ mod snapshots;
 mod spawns;
 mod stacks;
 mod tick_client_actions;
+mod tick_item_use_books_potions;
 mod tick_item_use_burndown;
 mod tick_item_use_caligar;
 mod tick_item_use_chests;
@@ -1838,204 +1839,30 @@ async fn main() -> anyhow::Result<()> {
                                             }
                                             executed += 1;
                                         }
-                                        ugaris_core::item_driver::ItemDriverOutcome::LollipopLicked {
-                                            character_id,
-                                            ..
-                                        } => {
-                                            area_feedback.push((
-                                                character_id,
-                                                lollipop_area_message(&world, character_id),
-                                                10,
-                                            ));
-                                            executed += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::LollipopMemories {
-                                            character_id,
-                                            ..
-                                        } => {
-                                            feedback.push((
-                                                character_id,
-                                                "Ahh memories, sweet memories.".to_string(),
-                                            ));
-                                            executed += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::ChristmasPopInspected {
-                                            character_id,
-                                            ..
-                                        } => {
-                                            for message in christmas_pop_inspection_messages() {
-                                                feedback.push((character_id, message.to_string()));
-                                            }
-                                            executed += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::SpecialPotionDrunk {
-                                            character_id,
-                                            kind,
-                                            ..
-                                        } => {
-                                            if let Some(message) = special_potion_fun_message(&world, character_id, kind) {
-                                                area_feedback.push((character_id, message, 16));
-                                            }
-                                            executed += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::SpecialPotionAntidote {
-                                            character_id,
-                                            poison_removed,
-                                            ..
-                                        } => {
-                                            feedback.push((
-                                                character_id,
-                                                if poison_removed {
-                                                    "You feel better."
-                                                } else {
-                                                    "It didn't have any effect."
-                                                }
-                                                .to_string(),
-                                            ));
-                                            executed += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::SpecialPotionInfravision {
-                                            character_id,
-                                            ..
-                                        } => {
-                                            feedback.push((character_id, "Your eyes start to itch.".to_string()));
-                                            executed += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::SpecialPotionSecurity {
-                                            character_id,
-                                            used,
-                                            ..
-                                        } => {
-                                            feedback.push((
-                                                character_id,
-                                                if used {
-                                                    "You feel secure."
-                                                } else {
-                                                    "You don't feel like drinking this potion now."
-                                                }
-                                                .to_string(),
-                                            ));
-                                            executed += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::SpecialPotionProfessionReset {
-                                            character_id,
-                                            used,
-                                            ..
-                                        } => {
-                                            if !used {
-                                                feedback.push((
-                                                    character_id,
-                                                    "You don't feel like drinking this potion now.".to_string(),
-                                                ));
-                                            }
-                                            executed += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::SpecialPotionBug {
-                                            character_id,
-                                            ..
-                                        } => {
-                                            feedback.push((
-                                                character_id,
-                                                "Please report bug #1734.".to_string(),
-                                            ));
-                                            blocked += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::BookText {
-                                            character_id,
-                                            kind,
-                                            demon_value,
-                                            ..
-                                        } => {
-                                            let lines = if kind == ugaris_core::item_driver::BOOK_NOOK_JOKES {
-                                                ugaris_core::item_driver::book_nook_joke_line_bytes(
-                                                    runtime_random_below(5) as u32,
-                                                )
-                                            } else {
-                                                ugaris_core::item_driver::book_text_line_bytes_for_reader_id(
-                                                    kind,
-                                                    demon_value,
-                                                    character_id.0,
-                                                )
-                                            };
-                                            for line in lines {
-                                                feedback_bytes.push((character_id, line));
-                                            }
-                                            if let Some(special_type) =
-                                                ugaris_core::item_driver::book_special_effect(kind)
-                                            {
-                                                special_feedback.push((
-                                                    character_id,
-                                                    bytes::BytesMut::from(
-                                                        &ugaris_protocol::packet::special(
-                                                            special_type,
-                                                            0,
-                                                            0,
-                                                        )[..],
-                                                    ),
-                                                ));
-                                            }
-                                            executed += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::BookcaseText {
-                                            character_id,
-                                            kind,
-                                            ..
-                                        } => {
-                                            let mut random_index = runtime_random_below(26) as u8;
-                                            let mut color = 1;
-                                            let mut solved_library = false;
-                                            let mut grant_library_exp = false;
-                                            if let Some(player) = runtime.player_for_character_mut(character_id) {
-                                                let colors = player.ensure_twocity_goodtile_with(|| {
-                                                    runtime_random_below(6) as u8 + 1
-                                                });
-                                                color = match kind {
-                                                    2..=6 => colors[usize::from(kind - 2)],
-                                                    _ => 1,
-                                                };
-                                                solved_library = player.twocity_solved_library;
-                                                if kind == 1 && !player.twocity_solved_library {
-                                                    player.twocity_solved_library = true;
-                                                    grant_library_exp = true;
-                                                }
-                                            }
-                                            if grant_library_exp {
-                                                // C `bookcase` (`area/17/two.c:2622`) grants the
-                                                // library-solved exp via `give_exp(cn, ...)`, not a
-                                                // raw mutation.
-                                                if let Some(level) =
-                                                    world.characters.get(&character_id).map(|character| character.level)
-                                                {
-                                                    let exp_added = ugaris_core::item_driver::bookcase_library_exp(level);
-                                                    world.give_exp(
-                                                        character_id,
-                                                        i64::from(exp_added),
-                                                        u32::from(args.area_id),
-                                                    );
-                                                }
-                                            }
-                                            if kind != 0 {
-                                                random_index = 0;
-                                            }
-                                            feedback_bytes.push((
-                                                character_id,
-                                                ugaris_core::item_driver::bookcase_text_line_bytes(
-                                                    kind,
-                                                    random_index,
-                                                    color,
-                                                    solved_library,
-                                                ),
-                                            ));
-                                            executed += 1;
-                                        }
-                                        ugaris_core::item_driver::ItemDriverOutcome::BookcaseLocked {
-                                            character_id,
-                                            ..
-                                        } => {
-                                            for line in ugaris_core::item_driver::bookcase_locked_text_lines() {
-                                                feedback.push((character_id, line.to_string()));
-                                            }
-                                            blocked += 1;
+                                        outcome @ (ugaris_core::item_driver::ItemDriverOutcome::LollipopLicked { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::LollipopMemories { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::ChristmasPopInspected { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::SpecialPotionDrunk { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::SpecialPotionAntidote { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::SpecialPotionInfravision { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::SpecialPotionSecurity { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::SpecialPotionProfessionReset { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::SpecialPotionBug { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::BookText { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::BookcaseText { .. }
+                                        | ugaris_core::item_driver::ItemDriverOutcome::BookcaseLocked { .. }) => {
+                                            tick_item_use_books_potions::dispatch_books_potions_outcome(
+                                                &mut world,
+                                                &mut runtime,
+                                                args.area_id,
+                                                outcome,
+                                                &mut feedback,
+                                                &mut feedback_bytes,
+                                                &mut special_feedback,
+                                                &mut area_feedback,
+                                                &mut executed,
+                                                &mut blocked,
+                                            );
                                         }
                                         outcome @ (ugaris_core::item_driver::ItemDriverOutcome::StafferBookText { .. }
                                         | ugaris_core::item_driver::ItemDriverOutcome::StafferAnimationBook { .. }

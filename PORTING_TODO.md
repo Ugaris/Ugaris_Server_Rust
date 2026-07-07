@@ -285,6 +285,15 @@ order.
   `tick_item_use_dig_pick::dispatch_dig_pick_outcome`
   (`crates/ugaris-server/src/tick_item_use_dig_pick.rs`, 186 lines;
   `main.rs` down to 3,245).
+  Eighteenth family slice done: the special-consumables/reading-material
+  family (12 contiguous variants - `LollipopLicked`/`LollipopMemories`/
+  `ChristmasPopInspected`/`SpecialPotionDrunk`/`SpecialPotionAntidote`/
+  `SpecialPotionInfravision`/`SpecialPotionSecurity`/
+  `SpecialPotionProfessionReset`/`SpecialPotionBug`/`BookText`/
+  `BookcaseText`/`BookcaseLocked`) is extracted into
+  `tick_item_use_books_potions::dispatch_books_potions_outcome`
+  (`crates/ugaris-server/src/tick_item_use_books_potions.rs`, 199 lines;
+  `main.rs` down to 3,072).
   Still inline in `main.rs`: every other outcome family (the large
   no-op catch-all) - continue slicing one family per iteration
   following this file's pattern (`use super::*;`, take
@@ -698,5 +707,11 @@ notes live in `PROGRESS_ARCHIVE.md`.
   action-outcome family (forest-spade/junkpile/pick-door, 8 contiguous
   variants) into `tick_item_use_dig_pick::dispatch_dig_pick_outcome`
   (`main.rs` down to 3,245). 1091 server + 2415 core tests unchanged,
+  clean build/boot-smoke.
+- 2026-07-07: P0.5 main() decomposition: sliced the eighteenth completed-
+  action-outcome family (lollipops/Christmas pop/special potions/books/
+  bookcase, 12 contiguous variants) into
+  `tick_item_use_books_potions::dispatch_books_potions_outcome`
+  (`main.rs` down to 3,072). 1091 server + 2415 core tests unchanged,
   clean build/boot-smoke.
 
