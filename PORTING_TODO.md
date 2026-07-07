@@ -320,9 +320,10 @@ order.
   passes, sync, queued-client-actions, completed-action outcomes) now
   lives in its own module and `main.rs` only orchestrates the calls in
   order.
-- [ ] **Split `tests/commands_admin/character.rs` (~8K)** by command
+- [x] **Split `tests/commands_admin/character.rs` (~8K)** by command
   keyword using `tools/rust_split/splitter.py` with a spec like the ones
   described in the ledger; keep shared helpers in the tests `mod.rs`.
+  *(done - details in PORTING_LEDGER.md)*
 - [ ] **Area-text color markers** - `WorldAreaText.message: String` drops
   legacy `COL_*` byte markers from every NPC line (documented deviation in
   several `world/npc/**` module docs). Carry bytes end-to-end and restore
@@ -739,4 +740,9 @@ notes live in `PROGRESS_ARCHIVE.md`.
   `tick_item_use_completion::process_completed_action_outcomes`
   (`main.rs` down to 1,586, under the 2,000 cap). 1091 server + 2415 core
   tests unchanged, clean build/boot-smoke.
+- 2026-07-07: P0.5 split `tests/commands_admin/character.rs` (7,933
+  lines) into 13 command-family files under
+  `tests/commands_admin/character/` via `tools/rust_split/splitter.py`
+  (largest now 1,038 lines). 1091 server + 2415 core tests unchanged,
+  clean build.
 
