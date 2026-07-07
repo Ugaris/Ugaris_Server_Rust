@@ -62,6 +62,15 @@ pub(crate) fn sync_phase(
         );
     }
 
+    let world_player_special_sessions = send_pending_world_player_specials(runtime, world);
+    if world_player_special_sessions != 0 {
+        info!(
+            world_player_special_sessions,
+            tick = world.tick.0,
+            "queued world player special feedback"
+        );
+    }
+
     let channel_broadcast_sessions = send_pending_world_channel_broadcasts(runtime, world);
     if channel_broadcast_sessions != 0 {
         info!(

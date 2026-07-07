@@ -58,6 +58,7 @@ mod teleport;
 mod text;
 mod traps_hazards;
 mod turn_seyan;
+mod tutorial;
 mod values;
 mod weather;
 
@@ -115,6 +116,7 @@ pub(crate) use teleport::*;
 pub use text::*;
 #[allow(unused_imports)]
 pub(crate) use traps_hazards::*;
+pub use tutorial::*;
 pub use values::*;
 
 #[cfg(test)]
@@ -336,6 +338,7 @@ pub struct World {
     pending_lq_npc_spawns: Vec<LqNpcSpawnRequest>,
     pending_look_maps: Vec<LookMapRequest>,
     pending_sound_specials: Vec<WorldSoundSpecial>,
+    pending_player_specials: Vec<WorldPlayerSpecial>,
     pending_system_texts: Vec<WorldSystemText>,
     pending_system_text_bytes: Vec<WorldSystemTextBytes>,
     pending_area_texts: Vec<WorldAreaText>,

@@ -80,6 +80,7 @@ mod terion;
 mod text;
 mod trader;
 mod turn_seyan;
+mod tutorial;
 mod values;
 mod weather;
 mod world_misc;

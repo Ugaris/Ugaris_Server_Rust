@@ -32,6 +32,7 @@ mod snapshots;
 mod spawns;
 mod stacks;
 mod transport;
+mod tutorial;
 mod weather;
 mod world_events;
 mod xmas;

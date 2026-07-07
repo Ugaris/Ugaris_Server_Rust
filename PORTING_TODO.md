@@ -426,32 +426,11 @@ movement), then boot with that area's data and smoke it.
 
 Ordered by player progression; the C file is the oracle.
 
-- [~] **Area 1 - `src/area/1/gwendylon.c` (6,286 lines)** - the tutorial
+- [x] **Area 1 - `src/area/1/gwendylon.c` (6,286 lines)** - the tutorial
   and main city NPCs: Gwendylon quest chain, Lydia tutorial give, skeleton
   quests, `tutorial_ppd` hints (player_driver.c has the tutorial hook -
   port together). This is the highest-value area work: new players see it
-  first. Slice by NPC.
-  REMAINING: every `ch_driver`-dispatched NPC in `gwendylon.c` is now
-  ported (all 20 drivers, one file per NPC under
-  `crates/ugaris-core/src/world/npc/area1/` - see each file's own module
-  doc comment for its documented gaps, and `PORTING_LEDGER.md` for the
-  full per-NPC history), including the last one, `logain_driver`
-  (`CDR_LOGAIN`, `:4893-5195`, the retired knight-trainer's "Knightly
-  Troubles" quest chain, `QLOG` index 9). The shared area-1 death hooks
-  are also done: `balltrap_skelly_dead` is a C no-op (no port needed),
-  and the remaining `gwendylon_dead` dispatch branches (`CDR_TERION`/
-  `CDR_JAMES`/`CDR_NOOK`/`CDR_LYDIA`/`CDR_GUIWYNN`/`CDR_LOGAIN`/
-  `CDR_CAMHERMIT`/`CDR_GREETER`/`CDR_JESSICA`/`CDR_BRITHILDIE`,
-  `:6180-6206`) are ported as one generic hook,
-  `apply_area1_quest_giver_death_from_hurt_event`
-  (`crates/ugaris-server/src/world_events/death_hooks.rs`), same
-  charlog-only-bug/immortal-so-unreachable precedent as
-  `CDR_GATE_WELCOME`/`CDR_DUNGEONMASTER`'s own hooks. The one gap left
-  before this checkbox can close: `tutorial_ppd`/`tutorial()`
-  (`src/system/player_driver.c:374-934`, the newbie hint-window system
-  hooked from the player tick, not from any NPC) is not ported at all -
-  a genuinely separate, ~560-line system from the NPC drivers above, not
-  yet started.
+  first. *(done - details in PORTING_LEDGER.md)*
 - [ ] **Area 2 - `src/area/2/area2.c`** - remaining character drivers
   (zombie lord, priests). Item drivers done.
 - [ ] **Area 3 - `src/area/3/area3.c`** - palace story NPCs, lamp ghost
@@ -711,4 +690,8 @@ notes live in `PROGRESS_ARCHIVE.md`.
   death-hook branches for all 10 remaining quest-giver drivers. Only
   `tutorial_ppd` (`player_driver.c`) is left before this checkbox closes.
   1094 server + 2512 core tests pass, clean build/boot-smoke.
+- 2026-07-07: `tutorial_ppd`/`tutorial()` (`player_driver.c:374-711`)
+  ported: all 17 newbie hint branches wired into the tick loop, closing
+  Area 1's last gap. 1098 server + 2531 core tests pass, clean
+  build/boot-smoke.
 

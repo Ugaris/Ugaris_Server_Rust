@@ -155,6 +155,26 @@ pub(crate) fn send_pending_world_system_texts(
     sent
 }
 
+/// Single-character `SV_SPECIAL` sibling of
+/// [`send_pending_world_system_texts`] - see `WorldPlayerSpecial`.
+pub(crate) fn send_pending_world_player_specials(
+    runtime: &mut ServerRuntime,
+    world: &mut World,
+) -> usize {
+    let mut sent = 0;
+    for event in world.drain_pending_player_specials() {
+        let payload = bytes::BytesMut::from(
+            &ugaris_protocol::packet::special(event.special_type, event.opt1, event.opt2)[..],
+        );
+        for (session_id, _) in runtime.sessions_for_character(event.character_id) {
+            if runtime.send_to_session(session_id, payload.clone()) {
+                sent += 1;
+            }
+        }
+    }
+    sent
+}
+
 /// Byte-payload sibling of [`send_pending_world_system_texts`] - see
 /// `WorldSystemTextBytes`.
 pub(crate) fn send_pending_world_system_text_bytes(

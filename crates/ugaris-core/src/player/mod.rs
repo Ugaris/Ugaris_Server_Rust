@@ -123,6 +123,66 @@ impl Default for QueuedAction {
     }
 }
 
+/// C `struct tutorial_ppd` (`src/system/player_driver.c:374-400`): the
+/// newbie in-window hint system's per-player throttle state, driving
+/// `tutorial()` (`:402-711`). Every `_cnt`/`_last_realtime_seconds` pair
+/// mirrors a C `X_cnt`/`X_last` pair (a hint fires at most 3 times - 10
+/// for `lydia`/`thief` - each gated by `TF_TIMEOUT` = one hour between
+/// repeats, except `lydia`/`thief` which use a 60-second repeat gate
+/// instead). `timer_realtime_seconds` is C's `ppd->timer`: reset to now
+/// whenever any hint fires, gating both the outer "run this check at
+/// most every 20 seconds" throttle (`player_driver.c:961`) and the
+/// "nothing fired in the last 3 minutes" gate for the generic hints tail
+/// (`potion`/`shift`/`ctrl`/`left`/`chat`/`chat2`/`raise2`). C's
+/// `grave_*`/`give_*` fields are declared but never read or written by
+/// `tutorial()`'s body (confirmed against the full function text) and
+/// are deliberately omitted here rather than carried as dead weight.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+pub struct TutorialPpd {
+    pub timer_realtime_seconds: u64,
+    pub welcome_cnt: u8,
+    pub welcome_last_realtime_seconds: u64,
+    pub lydia_cnt: u8,
+    pub lydia_last_realtime_seconds: u64,
+    pub thief_cnt: u8,
+    pub thief_last_realtime_seconds: u64,
+    pub torch_cnt: u8,
+    pub torch_last_realtime_seconds: u64,
+    pub battle_cnt: u8,
+    pub battle_last_realtime_seconds: u64,
+    /// See `world::tutorial`'s module doc comment for the documented,
+    /// deliberate simplification of C's own `ticker`-vs-`realtime` unit-
+    /// mismatch bug gating this counter (`player_driver.c:490-497`).
+    pub battle2_cnt: u8,
+    pub battle2_last_realtime_seconds: u64,
+    pub shop_cnt: u8,
+    pub shop_last_realtime_seconds: u64,
+    pub chest_cnt: u8,
+    pub chest_last_realtime_seconds: u64,
+    pub citem_cnt: u8,
+    pub citem_last_realtime_seconds: u64,
+    /// C `ppd->citem_start`: when the cursor item was first noticed (0 =
+    /// not currently tracking), independent of whether the hint has
+    /// fired yet.
+    pub citem_start_realtime_seconds: u64,
+    pub raise_cnt: u8,
+    pub raise_last_realtime_seconds: u64,
+    pub potion_cnt: u8,
+    pub potion_last_realtime_seconds: u64,
+    pub shift_cnt: u8,
+    pub shift_last_realtime_seconds: u64,
+    pub ctrl_cnt: u8,
+    pub ctrl_last_realtime_seconds: u64,
+    pub left_cnt: u8,
+    pub left_last_realtime_seconds: u64,
+    pub chat_cnt: u8,
+    pub chat_last_realtime_seconds: u64,
+    pub chat2_cnt: u8,
+    pub chat2_last_realtime_seconds: u64,
+    pub raise2_cnt: u8,
+    pub raise2_last_realtime_seconds: u64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlayerRuntime {
     pub session_id: u64,
@@ -313,6 +373,11 @@ pub struct PlayerRuntime {
     /// and `achievement_get_stat_progress` reads for progress-bar display.
     #[serde(default)]
     pub achievement_stats: AchievementStats,
+    /// C `struct tutorial_ppd` (`DRD_TUTORIAL_PPD`, `player_driver.c:374-
+    /// 400`): the newbie in-window hint system's throttle state. See
+    /// [`TutorialPpd`].
+    #[serde(default)]
+    pub tutorial: TutorialPpd,
     #[serde(default)]
     pub keyring_auto_add: bool,
     #[serde(default)]
@@ -658,6 +723,7 @@ impl PlayerRuntime {
             achievements: AchievementState::default(),
             achievement_data: AccountAchievements::default(),
             achievement_stats: AchievementStats::default(),
+            tutorial: TutorialPpd::default(),
             keyring_auto_add: false,
             current_section_id: 0,
             special_shrine_hcsc_last_touch_seconds: 0,

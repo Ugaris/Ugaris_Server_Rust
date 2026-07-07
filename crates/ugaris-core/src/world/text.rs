@@ -12,6 +12,18 @@ pub struct WorldSystemText {
     pub message: String,
 }
 
+/// A single-character direct `SV_SPECIAL` send (C `player_special(cn,
+/// type, opt1, opt2)`, `src/system/player.c:3792-3809`) - unlike
+/// [`WorldSoundSpecial`] (an area-radius broadcast), this always targets
+/// exactly one character.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WorldPlayerSpecial {
+    pub character_id: CharacterId,
+    pub special_type: u32,
+    pub opt1: u32,
+    pub opt2: u32,
+}
+
 /// Byte-payload sibling of [`WorldSystemText`] for `log_char` calls whose C
 /// text embeds a raw color-marker prefix (`COLOR_MARKER` = `\xb0`, e.g.
 /// `COL_DARK_GRAY "Mission kill, %d to go."`, `military.c`'s
@@ -360,6 +372,27 @@ impl World {
 
     pub fn drain_pending_sound_specials(&mut self) -> Vec<WorldSoundSpecial> {
         self.pending_sound_specials.drain(..).collect()
+    }
+
+    /// C `player_special(cn, type, opt1, opt2)` (`src/system/
+    /// player.c:3792-3809`). See [`WorldPlayerSpecial`].
+    pub fn queue_player_special(
+        &mut self,
+        character_id: CharacterId,
+        special_type: u32,
+        opt1: u32,
+        opt2: u32,
+    ) {
+        self.pending_player_specials.push(WorldPlayerSpecial {
+            character_id,
+            special_type,
+            opt1,
+            opt2,
+        });
+    }
+
+    pub fn drain_pending_player_specials(&mut self) -> Vec<WorldPlayerSpecial> {
+        self.pending_player_specials.drain(..).collect()
     }
 
     pub fn queue_system_text(&mut self, character_id: CharacterId, message: impl Into<String>) {

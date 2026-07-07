@@ -67,6 +67,7 @@ mod tick_npc;
 mod tick_sync;
 mod tick_world;
 mod transport;
+mod tutorial;
 mod weather;
 mod world_events;
 mod xmas;
@@ -212,9 +213,9 @@ use ugaris_core::{
         BankEvent, ClanclerkEvent, ClanmasterEvent, ClubmasterEvent, DungeonRaidBuildRequest,
         FirstKillCheck, GateWelcomeOutcomeEvent, GateWelcomePlayerFacts, LegacyHurtEvent,
         LookMapRequest, LootKiller, LootRegistry, MerchantTradeResult, PendingDeathLootRoll,
-        PunishmentNote, RaiseSkillOutcome, StealOutcome, StoreWare, TraderEvent,
-        WorldActionCompletion, AC_STATUS_FLAGGED, AC_STATUS_SUSPICIOUS, AC_STATUS_VERIFIED,
-        MERCHANT_STORE_SIZE, PUNISHMENT_NOTE_KIND,
+        PunishmentNote, RaiseSkillOutcome, StealOutcome, StoreWare, TraderEvent, TutorialHintKind,
+        TutorialOutcome, TutorialPlayerFacts, WorldActionCompletion, AC_STATUS_FLAGGED,
+        AC_STATUS_SUSPICIOUS, AC_STATUS_VERIFIED, MERCHANT_STORE_SIZE, PUNISHMENT_NOTE_KIND,
     },
     zone::ZoneLoader,
     ServerConfig, TickRate, World,
@@ -1067,6 +1068,29 @@ async fn main() -> anyhow::Result<()> {
                 }
                 if autobless_autopulse_casts != 0 {
                     info!(autobless_autopulse_casts, tick = world.tick.0, "queued player autobless/autopulse actions");
+                }
+
+                // C `tutorial()` (`player_driver.c:402-711`): the newbie
+                // in-window hint system, run for every connected player
+                // (own internal `ppd->timer` throttle skips players not
+                // yet due). See `ugaris_core::world::tutorial`'s module
+                // doc comment.
+                let tutorial_now = current_unix_time().max(0) as u64;
+                let tutorial_facts = tutorial::tutorial_player_facts(&runtime, tutorial_now);
+                let tutorial_outcomes = world.process_tutorial_hints(
+                    &tutorial_facts,
+                    &mut zone_loader,
+                    config.area_id,
+                    tutorial_now,
+                );
+                let tutorial_outcomes_applied =
+                    tutorial::apply_tutorial_outcomes(&mut runtime, tutorial_outcomes, tutorial_now);
+                if tutorial_outcomes_applied != 0 {
+                    info!(
+                        tutorial_outcomes_applied,
+                        tick = world.tick.0,
+                        "applied tutorial hint state updates"
+                    );
                 }
 
                 let setup_count = runtime.setup_world_actions(&mut world, config.area_id);
