@@ -453,3 +453,45 @@ pub(crate) fn apply_dungeonmaster_death_from_hurt_event(
     );
     true
 }
+
+/// C `ch_died_driver`/`CDR_ASTURIN` dispatch (`gwendylon.c:6105-6107`) ->
+/// `asturin_dead` (`:4535-4542`). C's `set_data(co, DRD_AREA1_PPD, ...)`
+/// succeeds for *any* live character `co` (the generic per-character
+/// memory-slot allocator has no player-only restriction), so the
+/// `quiet_say` line fires regardless of who the killer is - only the
+/// persistent `asturin_state = 4` write is player-only in this port
+/// (`PlayerRuntime` only exists for real players), matching the
+/// observable difference (an NPC killer's shadow `ppd` write is
+/// discarded/never read again in C anyway).
+pub(crate) fn apply_asturin_death_from_hurt_event(
+    runtime: &mut ServerRuntime,
+    world: &mut World,
+    event: LegacyHurtEvent,
+) -> bool {
+    if !event.outcome.killed {
+        return false;
+    }
+    let is_asturin_kill = world
+        .characters
+        .get(&event.target_id)
+        .is_some_and(|target| target.driver == CDR_ASTURIN);
+    if !is_asturin_kill {
+        return false;
+    }
+    let Some(killer_name) = world
+        .characters
+        .get(&event.cause_id)
+        .map(|killer| killer.name.clone())
+    else {
+        return false;
+    };
+
+    world.npc_quiet_say(
+        event.target_id,
+        &format!("I'll remember that, {killer_name}!"),
+    );
+    if let Some(player) = runtime.player_for_character_mut(event.cause_id) {
+        player.set_area1_asturin_state(4);
+    }
+    true
+}

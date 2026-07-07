@@ -178,6 +178,29 @@ impl World {
         true
     }
 
+    /// C `shout(cn, format, ...)` (`src/system/talk.c:188-219`): the
+    /// `CF_PLAYER`-only endurance-cost/`dlog` half belongs to the caller
+    /// (see `ugaris-server`'s player `/shout` command, `commands_chat.rs`);
+    /// this NPC-facing helper is the unconditional broadcast half only -
+    /// `"<name> shouts: \"<text>\""` fanned out at `shout_dist` tiles,
+    /// quote-reject guard. Returns `false` if the character is unknown or
+    /// `text` contains a `"`.
+    pub fn npc_shout(&mut self, character_id: CharacterId, text: &str) -> bool {
+        let Some(character) = self.characters.get(&character_id) else {
+            return false;
+        };
+        let Some(message) = shout_message(&character.name, text) else {
+            return false;
+        };
+        self.pending_area_texts.push(WorldAreaText {
+            x: character.x,
+            y: character.y,
+            max_distance: self.settings.shout_dist.max(0) as u16,
+            message: String::from_utf8_lossy(&message).into_owned(),
+        });
+        true
+    }
+
     /// C `emote(cn, format, ...)` (`src/system/talk.c:247`): `"<name>
     /// <text>."` fanned out at `emote_dist` tiles, quote-reject guard.
     /// Returns `false` if the character is unknown or `text` contains a

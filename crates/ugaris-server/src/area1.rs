@@ -74,12 +74,12 @@ use ugaris_core::quest::{
     QLOG_BRITHILDIE, QLOG_HERMIT_QUEST2, QLOG_JIU, QLOG_LYDIA, QLOG_NOOK, QLOG_RESKIN, QLOG_YOAKIN,
 };
 use ugaris_core::world::{
-    BrithildieOutcomeEvent, BrithildiePlayerFacts, CamhermitOutcomeEvent, CamhermitPlayerFacts,
-    ForestRangerOutcomeEvent, ForestRangerPlayerFacts, GreeterOutcomeEvent, GreeterPlayerFacts,
-    GwendylonOutcomeEvent, GwendylonPlayerFacts, JessicaOutcomeEvent, JessicaPlayerFacts,
-    JiuOutcomeEvent, JiuPlayerFacts, LydiaOutcomeEvent, LydiaPlayerFacts, NookOutcomeEvent,
-    NookPlayerFacts, ReskinOutcomeEvent, ReskinPlayerFacts, TerionOutcomeEvent, TerionPlayerFacts,
-    YoakinOutcomeEvent, YoakinPlayerFacts,
+    AsturinOutcomeEvent, AsturinPlayerFacts, BrithildieOutcomeEvent, BrithildiePlayerFacts,
+    CamhermitOutcomeEvent, CamhermitPlayerFacts, ForestRangerOutcomeEvent, ForestRangerPlayerFacts,
+    GreeterOutcomeEvent, GreeterPlayerFacts, GwendylonOutcomeEvent, GwendylonPlayerFacts,
+    JessicaOutcomeEvent, JessicaPlayerFacts, JiuOutcomeEvent, JiuPlayerFacts, LydiaOutcomeEvent,
+    LydiaPlayerFacts, NookOutcomeEvent, NookPlayerFacts, ReskinOutcomeEvent, ReskinPlayerFacts,
+    TerionOutcomeEvent, TerionPlayerFacts, YoakinOutcomeEvent, YoakinPlayerFacts,
 };
 
 pub(crate) fn camhermit_player_facts(
@@ -1189,6 +1189,56 @@ pub(crate) async fn apply_reskin_events(
                     player_id,
                 )
                 .await;
+                applied += 1;
+            }
+        }
+    }
+    applied
+}
+
+pub(crate) fn asturin_player_facts(
+    runtime: &ServerRuntime,
+) -> HashMap<CharacterId, AsturinPlayerFacts> {
+    runtime
+        .players
+        .values()
+        .filter_map(|player| {
+            let character_id = player.character_id?;
+            Some((
+                character_id,
+                AsturinPlayerFacts {
+                    state: player.area1_asturin_state(),
+                    seen_timer: player.area1_asturin_seen_timer(),
+                },
+            ))
+        })
+        .collect()
+}
+
+/// Applies each [`AsturinOutcomeEvent`] queued by
+/// `World::process_asturin_actions`. See the module doc comment.
+pub(crate) fn apply_asturin_events(
+    runtime: &mut ServerRuntime,
+    events: Vec<AsturinOutcomeEvent>,
+) -> usize {
+    let mut applied = 0;
+    for event in events {
+        match event {
+            AsturinOutcomeEvent::UpdateState {
+                player_id,
+                new_state,
+            } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.set_area1_asturin_state(new_state);
+                applied += 1;
+            }
+            AsturinOutcomeEvent::UpdateSeenTimer { player_id, value } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.set_area1_asturin_seen_timer(value);
                 applied += 1;
             }
         }

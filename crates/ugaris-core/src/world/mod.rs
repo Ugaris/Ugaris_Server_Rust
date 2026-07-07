@@ -191,7 +191,8 @@ use crate::{
         reset_dlight, LIGHT_DISTANCE,
     },
     log_text::{
-        emote_message, murmur_message, quiet_say_message, say_message, whisper_message, LOG_TALK,
+        emote_message, murmur_message, quiet_say_message, say_message, shout_message,
+        whisper_message, LOG_TALK,
     },
     map::{manhattan_distance, MapFlags, MapGrid},
     path::{pathfinder, pathfinder_ignore_characters},

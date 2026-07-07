@@ -591,6 +591,7 @@ impl World {
             | CharacterDriverState::Lydia(_)
             | CharacterDriverState::Robber(_)
             | CharacterDriverState::Sanoa(_)
+            | CharacterDriverState::Asturin(_)
             | CharacterDriverState::Reskin(_) => None,
         }
     }

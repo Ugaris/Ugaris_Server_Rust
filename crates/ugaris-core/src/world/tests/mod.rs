@@ -8,6 +8,7 @@ mod anticheat;
 mod area_mech;
 mod arena;
 mod assembly;
+mod asturin;
 mod bank;
 mod brithildie;
 mod camhermit;

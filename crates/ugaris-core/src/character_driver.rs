@@ -125,6 +125,10 @@ pub const CDR_ROBBER: u16 = 17;
 /// in area1, city"): the ambient twelve-waypoint city walker
 /// (`src/area/1/gwendylon.c::sanoa_driver`), no dialogue at all.
 pub const CDR_SANOA: u16 = 18;
+/// C `#define CDR_ASTURIN 19` (`src/system/drvlib.h`, "specific NPC
+/// (enemy) in area1, city"): the private-quarters guard NPC
+/// (`src/area/1/gwendylon.c::asturin_driver`).
+pub const CDR_ASTURIN: u16 = 19;
 /// C `#define CDR_RESKIN 20` (`src/system/drvlib.h`, "specific NPC in
 /// area1, city"): the tavern-keeper/alchemy-turn-in NPC
 /// (`src/area/1/gwendylon.c::reskin_driver`).
@@ -274,6 +278,7 @@ pub enum CharacterDriverState {
     Lydia(LydiaDriverData),
     Robber(RobberDriverData),
     Sanoa(SanoaDriverData),
+    Asturin(AsturinDriverData),
     Reskin(ReskinDriverData),
 }
 /// C `bank_driver_parse` from `src/module/bank.c`. The C driver defaults
@@ -955,6 +960,7 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::Lydia(_)
             | CharacterDriverState::Robber(_)
             | CharacterDriverState::Sanoa(_)
+            | CharacterDriverState::Asturin(_)
             | CharacterDriverState::Reskin(_),
         ) => SimpleBaddyDriverData::default(),
         None => SimpleBaddyDriverData::default(),
@@ -3271,6 +3277,7 @@ mod tests {
 // Re-exports keep the historical `crate::character_driver::X` paths
 // stable while each NPC owns its file under `world::npc`.
 pub use crate::world::npc::aclerk::{parse_aclerk_driver_args, AclerkDriverData};
+pub use crate::world::npc::area1::asturin::AsturinDriverData;
 pub use crate::world::npc::area1::brithildie::BrithildieDriverData;
 pub use crate::world::npc::area1::camhermit::CamhermitDriverData;
 pub use crate::world::npc::area1::forest_ranger::ForestRangerDriverData;
