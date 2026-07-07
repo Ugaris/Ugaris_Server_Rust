@@ -23,6 +23,12 @@ pub const QLOG_BRITHILDIE: usize = 81;
 pub const QLOG_HERMIT_QUEST1: usize = 82;
 pub const QLOG_HERMIT_QUEST2: usize = 83;
 pub const QLOG_JESSICA_KILL: usize = 84;
+/// C `questlog_open(co, 17)`/`questlog_done(co, 17)` (`src/area/1/
+/// gwendylon.c:4216,4237`, `reskin_driver`'s "The Unwanted Tenants"
+/// quest). No `#define QLOG_*` name exists for index 17 in
+/// `questlog.h` - C itself only ever spells it out as the bare literal
+/// `17`.
+pub const QLOG_RESKIN: usize = 17;
 
 /// C `struct questlog` (`src/system/questlog.c:98-105`): the static quest
 /// metadata table entry (name/level-range/giver/area/nominal exp/flags).

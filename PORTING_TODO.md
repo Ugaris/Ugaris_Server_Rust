@@ -507,15 +507,20 @@ Ordered by player progression; the C file is the oracle.
    `crates/ugaris-core/src/world/npc/area1/sanoa.rs`'s own module doc
    comment; structurally identical to `robber_driver`'s self-defense
    cascade, no torch upkeep, two door-toggle waypoints instead of ladder/
-   hole items. Still unported: `james_driver` (`:2901-3179`, gated on the
-   large unported `james_raisehint`/`can_raise`/`get_fight_skill_skill`
-   helpers, `:5235-6003`), `balltrap_skelly_driver` (`:3712-3774`, a
-   fight-driver archer needing the generic multi-enemy `DRD_FIGHTDRIVER`
-   system), `reskin_driver` (`:4105-4424`), `asturin_driver` (`:4425-`),
-   `guiwynn_driver`/`logain_driver` and the rest through `ch_driver`'s
-   dispatch table (`:6076-6155`), plus `balltrap_skelly_dead`'s no-op and
-   the remaining `gwendylon_dead`/`asturin_dead` shared death-hook
-   branches (`:6180-6222`).
+    hole items. `reskin_driver` (`CDR_RESKIN`, the tavern-keeper/alchemy-
+    ingredient-turn-in NPC unlocking `QLOG_RESKIN`, `:4098-4417`) is now
+    also ported - see `crates/ugaris-core/src/world/npc/area1/reskin.rs`'s
+    own module doc comment for its documented gaps (C's own `case 7` bug:
+    `check_first_kill(co, 16)` never sets `didsay` even though it speaks a
+    line - preserved verbatim, not "fixed"). Still unported: `james_driver`
+    (`:2901-3179`, gated on the large unported `james_raisehint`/
+    `can_raise`/`get_fight_skill_skill` helpers, `:5235-6003`),
+    `balltrap_skelly_driver` (`:3712-3774`, a fight-driver archer needing
+    the generic multi-enemy `DRD_FIGHTDRIVER` system), `asturin_driver`
+    (`:4425-`), `guiwynn_driver`/`logain_driver` and the rest through
+    `ch_driver`'s dispatch table (`:6076-6155`), plus
+    `balltrap_skelly_dead`'s no-op and the remaining `gwendylon_dead`/
+    `asturin_dead` shared death-hook branches (`:6180-6222`).
 - [ ] **Area 2 - `src/area/2/area2.c`** - remaining character drivers
   (zombie lord, priests). Item drivers done.
 - [ ] **Area 3 - `src/area/3/area3.c`** - palace story NPCs, lamp ghost
@@ -748,4 +753,8 @@ notes live in `PROGRESS_ARCHIVE.md`.
 - 2026-07-07: Area 1 `sanoa_driver` (`CDR_SANOA`) ported: ambient
   dialogue-free twelve-waypoint city walker plus self-defense cascade.
   1091 server + 2423 core tests pass, clean build/boot-smoke.
+- 2026-07-07: Area 1 `reskin_driver` (`CDR_RESKIN`) ported: tavern-keeper
+  dialogue chain unlocking `QLOG_RESKIN`, plus its alchemy-ingredient
+  turn-in (gold + `ACHIEVEMENT_WELL_PAID_GATHERER`). 1091 server + 2443
+  core tests pass, clean build/boot-smoke.
 

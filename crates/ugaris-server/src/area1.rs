@@ -60,19 +60,26 @@
 //! unlike every other `apply_*_events` function in this file (mirroring
 //! `world_events::npc_events::apply_gate_welcome_events`'s own precedent
 //! for the same reason), plus `ACHIEVEMENT_A_HELPING_HAND` on
-//! `QuestDone`.
+//! `QuestDone`. Reskin's own quest completion (`QLOG_RESKIN`, index 17,
+//! "The Unwanted Tenants") carries no gold reward on `QuestDone` itself,
+//! but its separate alchemy-ingredient turn-in path (`ReskinOutcomeEvent::
+//! GoldEarned`/`WellPaidGathererAchievement`) does, so
+//! [`apply_reskin_events`] wires both `award_swap_money_converted_
+//! achievement` (matching every other `GoldEarned` handler in this file)
+//! and a dedicated `award_reskin_well_paid_gatherer_achievement`.
 
 use super::*;
 use ugaris_core::item_ops::{give_item_to_character, GiveItemFlags, GiveItemResult};
 use ugaris_core::quest::{
-    QLOG_BRITHILDIE, QLOG_HERMIT_QUEST2, QLOG_JIU, QLOG_LYDIA, QLOG_NOOK, QLOG_YOAKIN,
+    QLOG_BRITHILDIE, QLOG_HERMIT_QUEST2, QLOG_JIU, QLOG_LYDIA, QLOG_NOOK, QLOG_RESKIN, QLOG_YOAKIN,
 };
 use ugaris_core::world::{
     BrithildieOutcomeEvent, BrithildiePlayerFacts, CamhermitOutcomeEvent, CamhermitPlayerFacts,
     ForestRangerOutcomeEvent, ForestRangerPlayerFacts, GreeterOutcomeEvent, GreeterPlayerFacts,
     GwendylonOutcomeEvent, GwendylonPlayerFacts, JessicaOutcomeEvent, JessicaPlayerFacts,
     JiuOutcomeEvent, JiuPlayerFacts, LydiaOutcomeEvent, LydiaPlayerFacts, NookOutcomeEvent,
-    NookPlayerFacts, TerionOutcomeEvent, TerionPlayerFacts, YoakinOutcomeEvent, YoakinPlayerFacts,
+    NookPlayerFacts, ReskinOutcomeEvent, ReskinPlayerFacts, TerionOutcomeEvent, TerionPlayerFacts,
+    YoakinOutcomeEvent, YoakinPlayerFacts,
 };
 
 pub(crate) fn camhermit_player_facts(
@@ -1054,6 +1061,135 @@ pub(crate) async fn apply_lydia_events(
                         }
                     }
                 }
+            }
+        }
+    }
+    applied
+}
+
+pub(crate) fn reskin_player_facts(
+    runtime: &ServerRuntime,
+) -> HashMap<CharacterId, ReskinPlayerFacts> {
+    runtime
+        .players
+        .values()
+        .filter_map(|player| {
+            let character_id = player.character_id?;
+            Some((
+                character_id,
+                ReskinPlayerFacts {
+                    state: player.area1_reskin_state(),
+                    seen_timer: player.area1_reskin_seen_timer(),
+                    gwendy_state: player.area1_gwendy_state(),
+                    terion_state: player.area1_terion_state(),
+                    logain_state: player.area1_logain_state(),
+                    got_bits: player.area1_reskin_got_bits() as u32,
+                    killed_guild_master: player.has_first_kill(16),
+                },
+            ))
+        })
+        .collect()
+}
+
+/// Applies each [`ReskinOutcomeEvent`] queued by
+/// `World::process_reskin_actions`. See the module doc comment.
+pub(crate) async fn apply_reskin_events(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    achievement_repository: &Option<ugaris_db::PgAchievementRepository>,
+    events: Vec<ReskinOutcomeEvent>,
+) -> usize {
+    let mut applied = 0;
+    for event in events {
+        match event {
+            ReskinOutcomeEvent::UpdateState {
+                player_id,
+                new_state,
+            } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.set_area1_reskin_state(new_state);
+                applied += 1;
+            }
+            ReskinOutcomeEvent::UpdateSeenTimer { player_id, value } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.set_area1_reskin_seen_timer(value);
+                applied += 1;
+            }
+            ReskinOutcomeEvent::UpdateGotBits { player_id, value } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.set_area1_reskin_got_bits(value);
+                applied += 1;
+            }
+            // C `questlog_open(co, 17)` (`src/system/questlog.c:204-217`):
+            // sets the flag and unconditionally resends the questlog.
+            ReskinOutcomeEvent::QuestOpen { player_id } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.quest_log.open(QLOG_RESKIN);
+                let payload = legacy_questlog_payload(player);
+                for (session_id, _) in runtime.sessions_for_character(player_id) {
+                    runtime.send_to_session(session_id, payload.clone());
+                }
+                applied += 1;
+            }
+            // C `questlog_done(co, 17)` (`src/system/questlog.c:267-305`):
+            // full exp-reward port via `QuestLog::complete_legacy`,
+            // applied through `World::give_exp` (matching every other
+            // quest-completion exp grant in this codebase), plus the
+            // unconditional questlog resend. Reskin's own quest carries no
+            // gold reward on completion itself (unlike the separate
+            // alchemy-ingredient turn-in path below), so no achievement
+            // wiring is needed here.
+            ReskinOutcomeEvent::QuestDone { player_id } => {
+                let Some(level) = world.characters.get(&player_id).map(|c| c.level) else {
+                    continue;
+                };
+                let level_val = level_value(level);
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                if let Some(completion) =
+                    player
+                        .quest_log
+                        .complete_legacy(QLOG_RESKIN, level, level_val)
+                {
+                    let payload = legacy_questlog_payload(player);
+                    world.give_exp(player_id, completion.granted_exp, u32::from(world.area_id));
+                    for (session_id, _) in runtime.sessions_for_character(player_id) {
+                        runtime.send_to_session(session_id, payload.clone());
+                    }
+                    applied += 1;
+                }
+            }
+            ReskinOutcomeEvent::GoldEarned { player_id, amount } => {
+                award_swap_money_converted_achievement(
+                    world,
+                    runtime,
+                    achievement_repository,
+                    player_id,
+                    amount,
+                )
+                .await;
+                applied += 1;
+            }
+            // C `achievement_award(co, ACHIEVEMENT_WELL_PAID_GATHERER, 1)`
+            // (`gwendylon.c:4351`).
+            ReskinOutcomeEvent::WellPaidGathererAchievement { player_id } => {
+                award_reskin_well_paid_gatherer_achievement(
+                    world,
+                    runtime,
+                    achievement_repository,
+                    player_id,
+                )
+                .await;
+                applied += 1;
             }
         }
     }

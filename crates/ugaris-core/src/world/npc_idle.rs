@@ -492,7 +492,8 @@ impl World {
                 | CharacterDriverState::Nook(_)
                 | CharacterDriverState::Lydia(_)
                 | CharacterDriverState::Robber(_)
-                | CharacterDriverState::Sanoa(_) => None,
+                | CharacterDriverState::Sanoa(_)
+                | CharacterDriverState::Reskin(_) => None,
             });
         let Some(target_id) = target_id else {
             return false;

@@ -10,12 +10,12 @@ use crate::{
         BrithildieDriverData, CamhermitDriverData, CharacterDriverState, DungeonmasterDriverData,
         ForestRangerDriverData, GateFightDriverData, GateWelcomeDriverData, GreeterDriverData,
         GwendylonDriverData, JanitorDriverData, JessicaDriverData, JiuDriverData, NookDriverData,
-        TerionDriverData, TraderDriverData, YoakinDriverData, ARENA_FIGHTER_REST_POS,
-        CDR_ARENAFIGHTER, CDR_ARENAMANAGER, CDR_ARENAMASTER, CDR_BRITHILDIE, CDR_CAMHERMIT,
-        CDR_CLANCLERK, CDR_CLANMASTER, CDR_CLUBMASTER, CDR_DUNGEONMASTER, CDR_FOREST_RANGER,
-        CDR_GATE_FIGHT, CDR_GATE_WELCOME, CDR_GREETER, CDR_GWENDYLON, CDR_JANITOR, CDR_JESSICA,
-        CDR_JIU, CDR_LAB2UNDEAD, CDR_NOOK, CDR_SIMPLEBADDY, CDR_TERION, CDR_TRADER, CDR_YOAKIN,
-        NT_CREATE,
+        ReskinDriverData, TerionDriverData, TraderDriverData, YoakinDriverData,
+        ARENA_FIGHTER_REST_POS, CDR_ARENAFIGHTER, CDR_ARENAMANAGER, CDR_ARENAMASTER,
+        CDR_BRITHILDIE, CDR_CAMHERMIT, CDR_CLANCLERK, CDR_CLANMASTER, CDR_CLUBMASTER,
+        CDR_DUNGEONMASTER, CDR_FOREST_RANGER, CDR_GATE_FIGHT, CDR_GATE_WELCOME, CDR_GREETER,
+        CDR_GWENDYLON, CDR_JANITOR, CDR_JESSICA, CDR_JIU, CDR_LAB2UNDEAD, CDR_NOOK, CDR_RESKIN,
+        CDR_SIMPLEBADDY, CDR_TERION, CDR_TRADER, CDR_YOAKIN, NT_CREATE,
     },
     entity::{
         Character, CharacterFlags, Item, ItemFlags, CHARACTER_VALUE_COUNT, INVENTORY_SIZE,
@@ -672,6 +672,13 @@ impl ZoneLoader {
             // nook_driver_data` (`set_data` zero-initializes it) - no
             // args to read here, same as `CDR_GATE_WELCOME` above.
             character.driver_state = Some(CharacterDriverState::Nook(NookDriverData::default()));
+        }
+        if template.driver == CDR_RESKIN {
+            // C never parses zone-file args into `struct
+            // reskin_driver_data` (`set_data` zero-initializes it) - no
+            // args to read here, same as `CDR_GATE_WELCOME` above.
+            character.driver_state =
+                Some(CharacterDriverState::Reskin(ReskinDriverData::default()));
         }
         if template.driver == CDR_FOREST_RANGER {
             // C never parses zone-file args into `struct

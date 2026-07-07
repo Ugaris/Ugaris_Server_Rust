@@ -60,6 +60,7 @@ mod punish;
 mod querystats;
 mod regen;
 mod rename;
+mod reskin;
 mod rmdeath;
 mod robber;
 mod sanoa;

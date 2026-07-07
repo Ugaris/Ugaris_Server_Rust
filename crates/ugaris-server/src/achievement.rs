@@ -1014,6 +1014,27 @@ pub(crate) async fn award_lydia_helping_hand_achievement(
     .await;
 }
 
+/// C `reskin_driver`'s alchemy-ingredient turn-in: `achievement_award(co,
+/// ACHIEVEMENT_WELL_PAID_GATHERER, 1)` (`src/area/1/gwendylon.c:4351`),
+/// fired once every alchemy-ingredient type (1-24) has been turned in.
+/// Consumes a `ReskinOutcomeEvent::WellPaidGathererAchievement` queued by
+/// `World::process_reskin_actions`.
+pub(crate) async fn award_reskin_well_paid_gatherer_achievement(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    repository: &Option<ugaris_db::PgAchievementRepository>,
+    player_id: CharacterId,
+) {
+    award_bare_achievement(
+        world,
+        runtime,
+        repository,
+        player_id,
+        AchievementType::WellPaidGatherer,
+    )
+    .await;
+}
+
 /// C `give_first_kill`'s class-range congrats-message dispatch
 /// (`death.c:213-253`). `has_name` gates on `ch[co].flags & CF_HASNAME`
 /// (checked before any class range); the two subsequent `else if` chains

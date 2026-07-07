@@ -9,6 +9,7 @@ pub mod jessica;
 pub mod jiu;
 pub mod lydia;
 pub mod nook;
+pub mod reskin;
 pub mod robber;
 pub mod sanoa;
 pub mod terion;
@@ -32,6 +33,8 @@ pub use jiu::*;
 pub use lydia::*;
 #[allow(unused_imports)]
 pub use nook::*;
+#[allow(unused_imports)]
+pub use reskin::*;
 #[allow(unused_imports)]
 pub use robber::*;
 #[allow(unused_imports)]
