@@ -40,14 +40,17 @@
 //!   log line is not replicated (no generic "was given from NPC" audit
 //!   log path exists yet, matching precedent elsewhere in this codebase).
 //! - COL_LIGHT_BLUE/COL_LIGHT_GREEN/COL_RESET color markers around
-//!   "help"/"accept trade"/"stop trade"/"show trade" keywords and the
-//!   "gave me:" notice are dropped (same simplification `world/bank.rs`
-//!   already made: the legacy color marker is a raw non-UTF8 byte that
-//!   cannot round-trip through a plain Rust `&str` literal) - wording
-//!   stays byte-for-byte identical otherwise.
+//!   "help"/"accept trade"/"stop trade"/"show trade" keywords are restored
+//!   via `COL_STR_LIGHT_BLUE`/`COL_STR_RESET` sentinels and
+//!   `World::npc_quiet_say_bytes`, same mechanism as `world::camhermit`;
+//!   the "gave me:" notice's `COL_LIGHT_GREEN` marker is restored the same
+//!   way at its `ugaris-server::world_events::npc_events::apply_trader_events`
+//!   call site (that one goes through `World::queue_system_text_bytes`
+//!   since it is a private system-text notice, not NPC area speech).
 use crate::character_driver::{mem_add_driver, mem_check_driver, mem_erase_driver};
 use crate::drvlib::offset2dx;
 use crate::item_ops::count_free_inventory_slots;
+use crate::text::{COL_STR_LIGHT_BLUE, COL_STR_RESET};
 use crate::world::*;
 
 const TRADER_GREET_DISTANCE: i32 = 10;
@@ -300,13 +303,13 @@ impl World {
                 data.c1_id = Some(speaker_id);
                 data.c2_id = Some(c2_id);
                 data.timeout = self.tick.0 + TRADER_TIMEOUT_TICKS;
-                self.npc_quiet_say(
+                self.npc_quiet_say_bytes(
                     trader_id,
                     &format!(
                         "I will handle a trade between {} and {}. You have three minutes to \
-                         complete it. When you are satisfied with the deal, say accept trade. If \
-                         you wish to stop the deal, say stop trade. You can check the deal with \
-                         show trade.",
+                         complete it. When you are satisfied with the deal, say {COL_STR_LIGHT_BLUE}accept trade{COL_STR_RESET}. If \
+                         you wish to stop the deal, say {COL_STR_LIGHT_BLUE}stop trade{COL_STR_RESET}. You can check the deal with \
+                         {COL_STR_LIGHT_BLUE}show trade{COL_STR_RESET}.",
                         speaker.name, c2.name
                     ),
                 );
@@ -581,11 +584,11 @@ impl World {
         }
 
         for (player_id, name, x, y) in greetings {
-            self.npc_quiet_say(
+            self.npc_quiet_say_bytes(
                 trader_id,
                 &format!(
                     "Hello {name}! I will work as middleman in any deal you might wish to make \
-                     with another player. With my help, no one will cheat you. "
+                     with another player. With my {COL_STR_LIGHT_BLUE}help{COL_STR_RESET}, no one will cheat you. "
                 ),
             );
             if let Some(trader_mut) = self.characters.get_mut(&trader_id) {

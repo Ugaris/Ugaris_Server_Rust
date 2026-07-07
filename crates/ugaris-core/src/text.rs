@@ -110,6 +110,17 @@ pub fn expand_color_sentinels(s: &str) -> Vec<u8> {
     out
 }
 
+/// Returns `true` if `s` contains any [`COL_STR_RESET`]-family sentinel
+/// codepoint - used by callers with a single shared "queue this reply"
+/// loop (e.g. `world::bank`'s QA-table replies) to decide per-reply
+/// whether to route through the byte-native `_bytes` sibling (carrying the
+/// expanded color marker) or the plain `String`-typed path, without having
+/// to duplicate the loop for the rare colored entries.
+pub fn has_color_sentinels(s: &str) -> bool {
+    s.chars()
+        .any(|ch| (COL_STR_SENTINEL_BASE..=COL_STR_SENTINEL_MAX).contains(&(ch as u32)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

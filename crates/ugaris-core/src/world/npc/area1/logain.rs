@@ -43,6 +43,10 @@
 //!   readability, not a structural deviation.
 //! - `balltrap_skelly_dead` (`gwendylon.c:5197-5199`) - the last death
 //!   hook in the C file - is a no-op (`;`) in C itself and needs no port.
+//! - The `case 5` reminder line wraps "repeat" in `COL_LIGHT_BLUE`/
+//!   `COL_RESET` markers (`gwendylon.c:5020-5021`); restored via
+//!   `COL_STR_LIGHT_BLUE`/`COL_STR_RESET` sentinels and
+//!   `World::npc_quiet_say_bytes`, same mechanism as `world::camhermit`.
 
 use std::collections::HashMap;
 
@@ -54,6 +58,7 @@ use crate::drvlib::offset2dx;
 use crate::item_driver::{
     IID_AREA1_MADKEY6, IID_AREA1_MADKEY7, IID_AREA1_MADKEY8, IID_AREA1_MADKEY9, IID_AREA1_MADNOTE2,
 };
+use crate::text::{COL_STR_LIGHT_BLUE, COL_STR_RESET};
 use crate::world::*;
 
 /// C `char_dist(cn, co) > 16` (`gwendylon.c:4954`): the `NT_CHAR` greeting
@@ -427,10 +432,10 @@ impl World {
             5 => {
                 // C `case 5:` (`gwendylon.c:5037-5045`).
                 if now.saturating_sub(facts.seen_timer) > LOGAIN_REMINDER_SECONDS {
-                    self.npc_quiet_say(
+                    self.npc_quiet_say_bytes(
                         logain_id,
                         &format!(
-                            "Hail thee, {}! Couldst thou find out who is responsible? Or dost thou want me to repeat mine offer?",
+                            "Hail thee, {}! Couldst thou find out who is responsible? Or dost thou want me to {COL_STR_LIGHT_BLUE}repeat{COL_STR_RESET} mine offer?",
                             player.name
                         ),
                     );

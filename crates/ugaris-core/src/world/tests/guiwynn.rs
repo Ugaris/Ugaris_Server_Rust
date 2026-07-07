@@ -172,10 +172,16 @@ fn guiwynn_state5_reminds_after_gate_elapses() {
     assert!(!events
         .iter()
         .any(|event| matches!(event, GuiwynnOutcomeEvent::UpdateState { .. })));
-    let texts = world.drain_pending_area_texts();
-    assert!(texts.iter().any(|text| text
-        .message
-        .contains("Didst thou find out anything about the Order")));
+    // C `case 5:` wraps "repeat" in `COL_LIGHT_BLUE`/`COL_RESET` markers
+    // (`gwendylon.c:4670-4671`); goes out via `npc_quiet_say_bytes`.
+    let texts = world.drain_pending_area_text_bytes();
+    assert!(texts
+        .iter()
+        .any(|text| String::from_utf8_lossy(&text.message)
+            .contains("Didst thou find out anything about the Order")));
+    assert!(texts
+        .iter()
+        .any(|text| text.message.windows(9).any(|w| w == b"\xb0c4repeat")));
 }
 
 #[test]

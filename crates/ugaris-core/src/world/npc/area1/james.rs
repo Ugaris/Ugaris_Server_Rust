@@ -17,9 +17,9 @@
 //! - The hardcore-invite line (`gwendylon.c:2972-2974`) and the
 //!   "advice"/"buy advice" invite/fee lines (`:3013-3015`, `:3058-3060`)
 //!   wrap parts of their text in `COL_LIGHT_RED`/`COL_LIGHT_BLUE`/
-//!   `COL_RESET` byte markers in C; dropped here for the same reason
-//!   documented on `world::camhermit`'s module doc comment
-//!   (`World::npc_quiet_say` broadcasts a plain UTF-8 `String`).
+//!   `COL_RESET` byte markers in C; restored via `COL_STR_LIGHT_RED`/
+//!   `COL_STR_LIGHT_BLUE`/`COL_STR_RESET` sentinels and
+//!   `World::npc_quiet_say_bytes`, same mechanism as `world::camhermit`.
 //! - `dlog(co, 0, "turned hardcore through James")` (`gwendylon.c:3133`)
 //!   is dropped - no Rust `dlog` sink exists (same established gap as
 //!   `world::exp`/`world::npc::trader`/`world::consistency`).
@@ -69,6 +69,7 @@ use crate::character_driver::{analyse_text_qa, TextAnalysisOutcome, CDR_LOSTCON,
 use crate::drvlib::offset2dx;
 use crate::item_driver::{bare_value, raise_cost};
 use crate::legacy::INVENTORY_START_INVENTORY;
+use crate::text::{COL_STR_LIGHT_BLUE, COL_STR_LIGHT_RED, COL_STR_RESET};
 use crate::world::character_values::{character_value_from_index, skill_base_attributes};
 use crate::world::values::skill_display_name;
 use crate::world::*;
@@ -339,10 +340,10 @@ impl World {
                     && player.exp == 0
                     && !player.flags.contains(CharacterFlags::HARDCORE)
                 {
-                    self.npc_quiet_say(
+                    self.npc_quiet_say_bytes(
                         james_id,
                         &format!(
-                            "Hello, {}. Dost thou wish to become a Hardcore character?",
+                            "{COL_STR_LIGHT_RED}Hello, {}. Dost thou wish to become a {COL_STR_LIGHT_BLUE}Hardcore{COL_STR_LIGHT_RED} character?",
                             player.name
                         ),
                     );
@@ -395,9 +396,11 @@ impl World {
                 }
             }
             4 => {
-                self.npc_quiet_say(
+                self.npc_quiet_say_bytes(
                     james_id,
-                    "If you ever need advice on how to raise your character, I'd be happy to help you - for a small fee.",
+                    &format!(
+                        "If you ever need {COL_STR_LIGHT_BLUE}advice{COL_STR_RESET} on how to raise your character, I'd be happy to help you - for a small fee."
+                    ),
                 );
                 new_state = 5;
                 didsay = true;
@@ -504,10 +507,10 @@ impl World {
                     );
                 } else {
                     let fee = james_advice_fee_gold(speaker.level);
-                    self.npc_quiet_say(
+                    self.npc_quiet_say_bytes(
                         james_id,
                         &format!(
-                            "I'll help thee for the small fee of {fee:.2}G, {}. Say buy advice if thou wantst it.",
+                            "I'll help thee for the small fee of {fee:.2}G, {}. Say {COL_STR_LIGHT_BLUE}buy advice{COL_STR_RESET} if thou wantst it.",
                             speaker.name
                         ),
                     );

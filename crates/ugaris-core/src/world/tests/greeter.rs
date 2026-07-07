@@ -227,8 +227,15 @@ fn greeter_state6_includes_james_reminder_only_when_james_state_zero() {
         player_id: CharacterId(2),
         new_state: 13,
     }));
+    // C `case 6:` wraps "learn" in `COL_LIGHT_BLUE`/`COL_RESET` markers
+    // (`gwendylon.c:1633-1634`); goes out via `npc_quiet_say_bytes`. The
+    // James-whimpering follow-up line has no color markers and still goes
+    // out via the plain `npc_quiet_say`/`pending_area_texts` queue.
+    let byte_texts = world.drain_pending_area_text_bytes();
+    assert!(byte_texts
+        .iter()
+        .any(|text| text.message.windows(8).any(|w| w == b"\xb0c4learn")));
     let texts = world.drain_pending_area_texts();
-    assert!(texts.iter().any(|text| text.message.contains("say learn.")));
     assert!(texts
         .iter()
         .any(|text| text.message.contains("poor James whimpering")));
@@ -274,13 +281,16 @@ fn greeter_state12_final_line_when_lydia_quest_done() {
         player_id: CharacterId(2),
         new_state: 14,
     }));
-    let texts = world.drain_pending_area_texts();
+    // C `case 12:` wraps "repeat" in `COL_LIGHT_BLUE`/`COL_RESET` markers
+    // (`gwendylon.c:1686-1687`); goes out via `npc_quiet_say_bytes`.
+    let texts = world.drain_pending_area_text_bytes();
     assert!(texts.iter().any(|text| {
-        text.message.contains("repeat mine words?")
-            && !text
-                .message
-                .contains("James is audibly in requirement of aid!")
+        let text = String::from_utf8_lossy(&text.message);
+        text.contains("repeat") && !text.contains("James is audibly in requirement of aid!")
     }));
+    assert!(texts
+        .iter()
+        .any(|text| text.message.windows(9).any(|w| w == b"\xb0c4repeat")));
 }
 
 #[test]
@@ -300,10 +310,11 @@ fn greeter_state12_reminder_line_when_lydia_quest_not_done() {
         player_id: CharacterId(2),
         new_state: 13,
     }));
-    let texts = world.drain_pending_area_texts();
-    assert!(texts.iter().any(|text| text
-        .message
-        .contains("James is audibly in requirement of aid!")));
+    let texts = world.drain_pending_area_text_bytes();
+    assert!(texts
+        .iter()
+        .any(|text| String::from_utf8_lossy(&text.message)
+            .contains("James is audibly in requirement of aid!")));
 }
 
 #[test]
@@ -343,10 +354,15 @@ fn greeter_state13_reminds_after_60_seconds_when_not_done() {
     assert!(!events
         .iter()
         .any(|event| matches!(event, GreeterOutcomeEvent::UpdateState { .. })));
-    let texts = world.drain_pending_area_texts();
+    // C `case 13:` wraps "repeat" in `COL_LIGHT_BLUE`/`COL_RESET` markers
+    // (`gwendylon.c:1706-1707`); goes out via `npc_quiet_say_bytes`.
+    let texts = world.drain_pending_area_text_bytes();
     assert!(texts
         .iter()
-        .any(|text| text.message.contains("Hail, Godmode!")));
+        .any(|text| String::from_utf8_lossy(&text.message).contains("Hail, Godmode!")));
+    assert!(texts
+        .iter()
+        .any(|text| text.message.windows(9).any(|w| w == b"\xb0c4repeat")));
 }
 
 #[test]

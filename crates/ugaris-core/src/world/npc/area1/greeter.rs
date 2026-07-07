@@ -18,9 +18,9 @@
 //! Deviations/gaps (documented, not silent):
 //! - The C `case 6`/`case 12`/`case 13` lines wrap "learn"/"repeat" in
 //!   `COL_LIGHT_BLUE`/`COL_RESET` markers (`gwendylon.c:1633-1634,1686-
-//!   1687,1691-1692,1706-1707`); dropped here for the same reason
-//!   documented on `world::yoakin`'s module doc comment (`World::
-//!   npc_quiet_say` broadcasts a plain UTF-8 `String`).
+//!   1687,1691-1692,1706-1707`); restored via `COL_STR_LIGHT_BLUE`/
+//!   `COL_STR_RESET` sentinels and `World::npc_quiet_say_bytes`, same
+//!   mechanism as `world::camhermit`.
 //! - `world::greeter`'s `NT_TEXT` handler follows `world::yoakin`'s
 //!   `current_victim`/`last_talk` reset-then-gate shape (`gwendylon.c:
 //!   1734-1741`), not `world::terion`'s ungated one - a genuine
@@ -30,6 +30,7 @@ use std::collections::HashMap;
 
 use crate::character_driver::{analyse_text_qa, TextAnalysisOutcome, CDR_GREETER, GWENDYLON_QA};
 use crate::drvlib::offset2dx;
+use crate::text::{COL_STR_LIGHT_BLUE, COL_STR_RESET};
 use crate::world::*;
 
 /// C `char_dist(cn, co) > 10` (`gwendylon.c:1534`): the `NT_CHAR` greeting
@@ -408,9 +409,11 @@ impl World {
             }
             GREETER_STATE_LEARN_PROMPT => {
                 // C `case 6:` (`gwendylon.c:1632-1642`).
-                self.npc_quiet_say(
+                self.npc_quiet_say_bytes(
                     greeter_id,
-                    "If thee wishes to learn more about the basics of gameplay, say learn.",
+                    &format!(
+                        "If thee wishes to learn more about the basics of gameplay, say {COL_STR_LIGHT_BLUE}learn{COL_STR_RESET}."
+                    ),
                 );
                 if facts.james_state == 0 {
                     self.npc_quiet_say(
@@ -467,15 +470,19 @@ impl World {
             GREETER_STATE_UNDERSTAND_PROMPT => {
                 // C `case 12:` (`gwendylon.c:1683-1697`).
                 if facts.lydia_quest_done {
-                    self.npc_quiet_say(
+                    self.npc_quiet_say_bytes(
                         greeter_id,
-                        "Didst thou understand? Or dost thou want me to repeat mine words?",
+                        &format!(
+                            "Didst thou understand? Or dost thou want me to {COL_STR_LIGHT_BLUE}repeat{COL_STR_RESET} mine words?"
+                        ),
                     );
                     new_state = GREETER_STATE_DONE;
                 } else {
-                    self.npc_quiet_say(
+                    self.npc_quiet_say_bytes(
                         greeter_id,
-                        "Didst thou understand? Or dost thou want me to repeat mine words? Otherwise, be off now. Like I said before. James is audibly in requirement of aid!",
+                        &format!(
+                            "Didst thou understand? Or dost thou want me to {COL_STR_LIGHT_BLUE}repeat{COL_STR_RESET} mine words? Otherwise, be off now. Like I said before. James is audibly in requirement of aid!"
+                        ),
                     );
                     new_state = GREETER_STATE_REMINDER;
                 }
@@ -486,10 +493,10 @@ impl World {
                 if facts.lydia_quest_done {
                     new_state = GREETER_STATE_DONE;
                 } else if now - facts.seen_timer > GREETER_STATE13_REMINDER_SECONDS {
-                    self.npc_quiet_say(
+                    self.npc_quiet_say_bytes(
                         greeter_id,
                         &format!(
-                            "Hail, {}! Didst thou understand? Or dost thou want me to repeat mine words? Otherwise, be off now. Like I said before. James is audibly in requirement of aid!",
+                            "Hail, {}! Didst thou understand? Or dost thou want me to {COL_STR_LIGHT_BLUE}repeat{COL_STR_RESET} mine words? Otherwise, be off now. Like I said before. James is audibly in requirement of aid!",
                             player.name
                         ),
                     );

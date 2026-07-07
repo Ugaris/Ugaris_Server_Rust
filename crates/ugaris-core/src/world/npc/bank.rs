@@ -19,6 +19,7 @@
 //! mirroring the existing `pending_*`/`drain_pending_*` convention used
 //! throughout `World` (e.g. `pending_kill_exp`).
 use crate::character_driver::{mem_add_driver, mem_check_driver, mem_erase_driver};
+use crate::text::{has_color_sentinels, COL_STR_LIGHT_BLUE, COL_STR_RESET};
 use crate::world::*;
 
 const BANK_GREET_DISTANCE: i32 = 10;
@@ -309,7 +310,15 @@ impl World {
         }
 
         for reply in replies {
-            self.npc_quiet_say(bank_id, &reply);
+            // A handful of `BANK_QA` answers (e.g. `"account"`) carry
+            // `COL_STR_*` sentinels for their C `COL_LIGHT_BLUE`/`COL_RESET`
+            // keyword styling; route those through the byte-native sibling,
+            // everything else keeps the plain `String` path.
+            if has_color_sentinels(&reply) {
+                self.npc_quiet_say_bytes(bank_id, &reply);
+            } else {
+                self.npc_quiet_say(bank_id, &reply);
+            }
         }
 
         self.pending_bank_events.extend(events);
@@ -371,14 +380,14 @@ impl World {
             greetings.push((
                 character.id,
                 format!(
-                    "Hello {}! Would you like to open an account with the Imperial Bank?",
+                    "Hello {}! Would you like to open an {COL_STR_LIGHT_BLUE}account{COL_STR_RESET} with the Imperial Bank?",
                     character.name
                 ),
             ));
         }
 
         for (player_id, greeting) in &greetings {
-            self.npc_quiet_say(bank_id, greeting);
+            self.npc_quiet_say_bytes(bank_id, greeting);
             if let Some(bank) = self.characters.get_mut(&bank_id) {
                 mem_add_driver(&mut bank.driver_memory, BANK_GREET_MEMORY_SLOT, player_id.0);
             }
@@ -600,13 +609,15 @@ pub struct BankDriverData {
 /// C `struct qa qa[]` from `src/module/bank.c`. Note `"help"`'s answer is a
 /// verbatim copy-paste of `merchant.c`'s line (`"Sorry, I'm just a
 /// merchant, %s!"`) even though this NPC is a banker - preserved as-is per
-/// the porting rule to copy quirks, not "fix" them. The `"account"`/
-/// `"explain deposit"`/`"explain withdraw"`/`"explain balance"` answers
-/// wrap the referenced keywords in `COL_LIGHT_BLUE`/`COL_RESET` in C; the
-/// shared [`analyse_text_qa`] pipeline works on plain `&str` (the legacy
-/// color marker is a raw non-UTF8 byte, see `crate::text::COL_LIGHT_BLUE`,
-/// and cannot be represented in a Rust string literal), so only the color
-/// styling is dropped here - the wording is byte-for-byte identical.
+/// the porting rule to copy quirks, not "fix" them. The `"account"` answer
+/// wraps its three referenced keywords in `COL_LIGHT_BLUE`/`COL_RESET` in C
+/// (`bank.c:90-93`); restored here via `COL_STR_LIGHT_BLUE`/`COL_STR_RESET`
+/// sentinels (the shared [`analyse_text_qa`] pipeline is plain `&str`, but
+/// `TextQaEntry::answer` is a `'static str` literal so the sentinels embed
+/// directly) - `bank_qa_reply`'s caller routes any reply containing them
+/// through `World::npc_quiet_say_bytes` via `crate::text::has_color_sentinels`.
+/// `"explain deposit"`/`"explain withdraw"`/`"explain balance"` themselves
+/// have no color markers in C, confirmed.
 pub const BANK_QA: &[TextQaEntry] = &[
     TextQaEntry {
         words: &["how", "are", "you"],
@@ -666,9 +677,9 @@ pub const BANK_QA: &[TextQaEntry] = &[
     TextQaEntry {
         words: &["account"],
         answer: Some(
-            "If you want to open an account, you must first deposit (explain deposit) some \
-             money in it. After that, you can inquire for your balance (explain balance) or \
-             withdraw (explain withdraw) money.",
+            "If you want to open an account, you must first deposit (\u{E0C4}explain deposit\u{E0C0}) some \
+             money in it. After that, you can inquire for your balance (\u{E0C4}explain balance\u{E0C0}) or \
+             withdraw (\u{E0C4}explain withdraw\u{E0C0}) money.",
         ),
         answer_code: 0,
     },

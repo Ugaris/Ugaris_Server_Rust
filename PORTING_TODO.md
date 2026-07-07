@@ -328,15 +328,17 @@ order.
   legacy `COL_*` byte markers from every NPC line (documented deviation in
   several `world/npc/**` module docs). Carry bytes end-to-end and restore
   the C markers in the QA tables that had them.
-  REMAINING: mechanism is built and one NPC is fully restored as the
-  worked example (see PORTING_LEDGER.md for the full design writeup);
-  still need to restore actual colors in the other ~12+ documented/
-  undocumented deviation sites: `gwendylon.rs`, `greeter.rs`, `yoakin.rs`,
-  `jessica.rs`, `reskin.rs`, `lydia.rs`, `james.rs`, `guiwynn.rs`,
-  `logain.rs`, `brithildie.rs`, `npc/trader.rs`, `npc/bank.rs`'s
-  `BANK_QA`, and `area32/military.rs` - each needs its `npc_say`/
-  `npc_quiet_say`/etc. call sites switched to the `_bytes` sibling with
-  `COL_STR_*` sentinels, same pattern as `camhermit.rs`.
+  REMAINING: mechanism is built and 12 of the 13 originally-listed
+  deviation sites are now restored: `gwendylon.rs`, `greeter.rs`,
+  `yoakin.rs`, `jessica.rs`, `reskin.rs`, `lydia.rs`, `james.rs`,
+  `guiwynn.rs`, `logain.rs`, `brithildie.rs`, `npc/trader.rs` (plus its
+  `world_events::npc_events::apply_trader_events` "gave me:" system-text
+  call site), and `npc/bank.rs`'s `BANK_QA`. Only `area32/military.rs`
+  remains - a much larger slice (20+ `COL_LIGHT_BLUE`/`COL_RESET` call
+  sites scattered across `process_military_master_actions`/`_messages`,
+  `process_military_advisor_actions`, mission-text rendering, and
+  `offer_favor`/`adv_favor_desc`, in a file already at 3,598 lines) -
+  do it as its own dedicated slice next.
 - [ ] **Retire legacy blob writes** - after a few clean iterations with
   `player_state_json` (migration 0020): stop populating
   `ppd_blob`/`subscriber_blob` in the three `snapshots.rs` builders, add a
@@ -708,4 +710,10 @@ notes live in `PROGRESS_ARCHIVE.md`.
   mechanism and restored it end-to-end on `camhermit.rs`'s reminder line
   (the worked example). ~12+ other deviation sites remain (see checkbox
   note). 1098 server + 2534 core tests pass, clean build/boot-smoke.
+- 2026-07-07: P0.5 area-text color markers: restored the remaining 12
+  documented/undocumented sites (gwendylon/greeter/yoakin/jessica/reskin/
+  lydia/james/guiwynn/logain/brithildie/trader/bank) via `COL_STR_*`
+  sentinels + `_bytes` siblings; added `text::has_color_sentinels` helper
+  for bank's shared reply loop. Only `area32/military.rs` remains. 1098
+  server + 2534 core tests pass, clean build/boot-smoke.
 

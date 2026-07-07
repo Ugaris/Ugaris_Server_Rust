@@ -24,9 +24,9 @@
 //!   straight to Yoakin) and consistent with this codebase's existing
 //!   depot-blind-spot precedent elsewhere.
 //! - The C `case 4` reminder line wraps "repeat" in `COL_LIGHT_BLUE`/
-//!   `COL_RESET` markers (`gwendylon.c:1095-1097`); dropped here for the
-//!   same reason documented on `world::camhermit`'s module doc comment
-//!   (`World::npc_quiet_say` broadcasts a plain UTF-8 `String`).
+//!   `COL_RESET` markers (`gwendylon.c:1095-1097`); restored via
+//!   `COL_STR_LIGHT_BLUE`/`COL_STR_RESET` sentinels and
+//!   `World::npc_quiet_say_bytes`, same mechanism as `world::camhermit`.
 //! - The bear-tooth reward (`create_money_item(MONEY_AREA1_BEARTOOTH)` +
 //!   `give_char_item_smart`, `gwendylon.c:1163-1166`) is ported as the
 //!   direct effect `give_char_item_smart`'s own `IF_MONEY` branch already
@@ -42,6 +42,7 @@ use crate::character_driver::{analyse_text_qa, TextAnalysisOutcome, CDR_YOAKIN, 
 use crate::drvlib::offset2dx;
 use crate::item_driver::{IID_AREA1_BIGBEAR_TOOTH, IID_SHRIKE_TALISMAN};
 use crate::quest::quest_exp::MONEY_AREA1_BEARTOOTH;
+use crate::text::{COL_STR_LIGHT_BLUE, COL_STR_RESET};
 use crate::world::*;
 
 /// C `char_dist(cn, co) > 10` (`gwendylon.c:1048`): the `NT_CHAR` greeting
@@ -379,10 +380,10 @@ impl World {
             new_state = YOAKIN_STATE_QUEST_DO;
         } else if new_state == YOAKIN_STATE_QUEST_DO {
             if now.saturating_sub(facts.seen_timer) > YOAKIN_STATE4_REMINDER_SECONDS {
-                self.npc_quiet_say(
+                self.npc_quiet_say_bytes(
                     yoakin_id,
                     &format!(
-                        "Hail, {}! Didst thou find that big mother bear? Or dost thou want me to repeat mine offer?",
+                        "Hail, {}! Didst thou find that big mother bear? Or dost thou want me to {COL_STR_LIGHT_BLUE}repeat{COL_STR_RESET} mine offer?",
                         player.name
                     ),
                 );

@@ -27,9 +27,9 @@
 //!   correctly (tested directly via the fact snapshot).
 //! - The `JESSICA_STATE_QUEST1_DO`/`QUEST2_DO` reminder lines wrap
 //!   "repeat" in `COL_LIGHT_BLUE`/`COL_RESET` markers in C (`gwendylon.c:
-//!   1925-1926`, `1956`); dropped here for the same reason documented on
-//!   `world::camhermit`'s module doc comment (`World::npc_quiet_say`
-//!   broadcasts a plain UTF-8 `String`).
+//!   1925-1926`, `1956`); restored via `COL_STR_LIGHT_BLUE`/
+//!   `COL_STR_RESET` sentinels and `World::npc_quiet_say_bytes`, same
+//!   mechanism as `world::camhermit`.
 //! - The `NT_GIVE` "unwanted item" give-back (`gwendylon.c:2038-2043`)
 //!   calls plain `give_char_item`, not `give_char_item_smart` like every
 //!   other area-1 NPC in this file - a genuine C behavioral difference
@@ -46,6 +46,7 @@ use crate::quest::{
     JESSICA_STATE_QUEST2_DO, JESSICA_STATE_QUEST2_FINISH, JESSICA_STATE_QUEST2_GIVE_1,
     QLOG_JESSICA_KILL, QLOG_JESSICA_ROBBER_NOTE,
 };
+use crate::text::{COL_STR_LIGHT_BLUE, COL_STR_RESET};
 use crate::world::*;
 
 /// C `char_dist(cn, co) > 10` (`gwendylon.c:1858`): the `NT_CHAR` greeting
@@ -373,9 +374,11 @@ impl World {
             new_state = JESSICA_STATE_QUEST1_DO;
         } else if new_state == JESSICA_STATE_QUEST1_DO {
             if now.saturating_sub(facts.seen_timer) > JESSICA_EXTEND_WAIT_TIME {
-                self.npc_quiet_say(
+                self.npc_quiet_say_bytes(
                     jessica_id,
-                    "Hast thou found proof of the robber's operations? Or dost thou want me to repeat mine offer?",
+                    &format!(
+                        "Hast thou found proof of the robber's operations? Or dost thou want me to {COL_STR_LIGHT_BLUE}repeat{COL_STR_RESET} mine offer?"
+                    ),
                 );
                 didsay = true;
             }
@@ -412,10 +415,10 @@ impl World {
             new_state = JESSICA_STATE_QUEST2_DO;
         } else if new_state == JESSICA_STATE_QUEST2_DO {
             if now.saturating_sub(facts.seen_timer) > JESSICA_EXTEND_WAIT_TIME {
-                self.npc_quiet_say(
+                self.npc_quiet_say_bytes(
                     jessica_id,
                     &format!(
-                        "Hello {}, does thou want me to repeat mine offer?",
+                        "Hello {}, does thou want me to {COL_STR_LIGHT_BLUE}repeat{COL_STR_RESET} mine offer?",
                         player.name
                     ),
                 );

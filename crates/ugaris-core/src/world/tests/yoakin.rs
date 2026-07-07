@@ -177,10 +177,16 @@ fn yoakin_state4_reminds_after_sixty_seconds() {
     assert!(!events
         .iter()
         .any(|event| matches!(event, YoakinOutcomeEvent::UpdateState { .. })));
-    let texts = world.drain_pending_area_texts();
-    assert!(texts.iter().any(|text| text
-        .message
-        .contains("Didst thou find that big mother bear")));
+    // C `case 4:` wraps "repeat" in `COL_LIGHT_BLUE`/`COL_RESET` markers
+    // (`gwendylon.c:1095-1097`); goes out via `npc_quiet_say_bytes`.
+    let texts = world.drain_pending_area_text_bytes();
+    assert!(texts
+        .iter()
+        .any(|text| String::from_utf8_lossy(&text.message)
+            .contains("Didst thou find that big mother bear")));
+    assert!(texts
+        .iter()
+        .any(|text| text.message.windows(9).any(|w| w == b"\xb0c4repeat")));
 }
 
 #[test]

@@ -57,6 +57,11 @@
 //!   verbatim, not "fixed" to match the sibling NPCs' shape.
 //! - No idle-mutterings table exists for this NPC in the C source (unlike
 //!   `world::nook`/`world::lydia`) - confirmed, not a missed port.
+//! - The `case 5`/`case 8` reminder lines wrap "repeat" in
+//!   `COL_LIGHT_BLUE`/`COL_RESET` markers (`gwendylon.c:4670-4671`,
+//!   `4700-4701`); restored via `COL_STR_LIGHT_BLUE`/`COL_STR_RESET`
+//!   sentinels and `World::npc_quiet_say_bytes`, same mechanism as
+//!   `world::camhermit`.
 
 use std::collections::HashMap;
 
@@ -65,6 +70,7 @@ use crate::character_driver::{
 };
 use crate::drvlib::offset2dx;
 use crate::item_driver::IID_AREA1_MADKEY1;
+use crate::text::{COL_STR_LIGHT_BLUE, COL_STR_RESET};
 use crate::world::*;
 
 /// C `char_dist(cn, co) > 16` (`gwendylon.c:4609`): the `NT_CHAR` greeting
@@ -447,10 +453,10 @@ impl World {
             5 => {
                 // C `case 5:` (`gwendylon.c:4666-4674`).
                 if now.saturating_sub(facts.seen_timer) > GUIWYNN_REMINDER_SECONDS {
-                    self.npc_quiet_say(
+                    self.npc_quiet_say_bytes(
                         guiwynn_id,
                         &format!(
-                            "Be greeted, {}! Didst thou find out anything about the Order? Or dost thou want me to repeat mine offer?",
+                            "Be greeted, {}! Didst thou find out anything about the Order? Or dost thou want me to {COL_STR_LIGHT_BLUE}repeat{COL_STR_RESET} mine offer?",
                             player.name
                         ),
                     );
@@ -489,10 +495,10 @@ impl World {
             8 => {
                 // C `case 8:` (`gwendylon.c:4699-4707`).
                 if now.saturating_sub(facts.seen_timer) > GUIWYNN_REMINDER_SECONDS {
-                    self.npc_quiet_say(
+                    self.npc_quiet_say_bytes(
                         guiwynn_id,
                         &format!(
-                            "Be greeted, {}! Didst thou find the recipe? Or dost thou want me to repeat mine offer?",
+                            "Be greeted, {}! Didst thou find the recipe? Or dost thou want me to {COL_STR_LIGHT_BLUE}repeat{COL_STR_RESET} mine offer?",
                             player.name
                         ),
                     );

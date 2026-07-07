@@ -124,10 +124,18 @@ fn james_state0_hardcore_invite_is_unconditional_alongside_greeting() {
     }
 
     world.process_james_actions(&facts(CharacterId(2), 0, 0, 0), 1);
-    let texts = world.drain_pending_area_texts();
-    assert!(texts
+    // The hardcore-invite line wraps "Hardcore" in `COL_LIGHT_RED`/
+    // `COL_LIGHT_BLUE` markers (`gwendylon.c:2972-2974`); goes out via
+    // `npc_quiet_say_bytes`.
+    let byte_texts = world.drain_pending_area_text_bytes();
+    assert!(byte_texts.iter().any(|text| {
+        let text = String::from_utf8_lossy(&text.message);
+        text.contains("Hardcore") && text.contains("character?")
+    }));
+    assert!(byte_texts
         .iter()
-        .any(|text| text.message.contains("Hardcore character")));
+        .any(|text| text.message.windows(11).any(|w| w == b"\xb0c4Hardcore")));
+    let texts = world.drain_pending_area_texts();
     assert!(texts
         .iter()
         .any(|text| text.message.contains("Ah, hello there")));
@@ -289,9 +297,16 @@ fn james_text_advice_quotes_fee_for_low_level_and_declines_high_level() {
         james.push_driver_text_message(CharacterId(2), "advice");
     }
     world.process_james_actions(&facts(CharacterId(2), 0, 0, 0), 1);
-    let texts = world.drain_pending_area_texts();
+    // The fee line wraps "buy advice" in `COL_LIGHT_BLUE`/`COL_RESET`
+    // markers (`gwendylon.c:3058-3060`); goes out via `npc_quiet_say_bytes`.
+    let texts = world.drain_pending_area_text_bytes();
     // 10^3 / 100.0 = 10.00G.
-    assert!(texts.iter().any(|text| text.message.contains("10.00G")));
+    assert!(texts
+        .iter()
+        .any(|text| String::from_utf8_lossy(&text.message).contains("10.00G")));
+    assert!(texts
+        .iter()
+        .any(|text| text.message.windows(13).any(|w| w == b"\xb0c4buy advice")));
 
     let mut world = World::default();
     world.map.tile_mut(12, 10).unwrap().light = 255;

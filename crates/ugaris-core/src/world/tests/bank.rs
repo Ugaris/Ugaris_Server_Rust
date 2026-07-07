@@ -50,16 +50,18 @@ fn bank_greets_visible_players_once() {
     assert!(world.spawn_character(visitor, 12, 10));
 
     world.process_bank_actions(0);
-    let texts = world.drain_pending_area_texts();
+    // Wraps "account" in `COL_LIGHT_BLUE`/`COL_RESET` markers (`bank.c:
+    // 337-338`); goes out via `npc_quiet_say_bytes`.
+    let texts = world.drain_pending_area_text_bytes();
     assert_eq!(texts.len(), 1);
-    assert!(texts[0].message.contains("Hello Godmode!"));
-    assert!(texts[0]
-        .message
-        .contains("open an account with the Imperial Bank?"));
+    assert!(String::from_utf8_lossy(&texts[0].message).contains("Hello Godmode!"));
+    let greeting = String::from_utf8_lossy(&texts[0].message);
+    assert!(greeting.contains("open an") && greeting.contains("with the Imperial Bank?"));
+    assert!(texts[0].message.windows(10).any(|w| w == b"\xb0c4account"));
 
     // Second pass: memory suppresses the repeat greeting.
     world.process_bank_actions(0);
-    assert!(world.drain_pending_area_texts().is_empty());
+    assert!(world.drain_pending_area_text_bytes().is_empty());
 }
 
 fn bank_npc_already_greeted(id: u32, greeted: u32) -> Character {
@@ -92,10 +94,11 @@ fn bank_replies_to_small_talk_keyword() {
 }
 
 #[test]
-fn bank_account_qa_explains_deposit_withdraw_and_balance_without_color_markers() {
-    // C wraps the referenced keywords in COL_LIGHT_BLUE/COL_RESET; this
-    // port drops the color styling (see `character_driver::BANK_QA`'s doc
-    // comment) but keeps the wording byte-for-byte identical otherwise.
+fn bank_account_qa_explains_deposit_withdraw_and_balance_with_color_markers() {
+    // C wraps the three referenced keywords in COL_LIGHT_BLUE/COL_RESET
+    // (`bank.c:90-93`); restored via `COL_STR_LIGHT_BLUE`/`COL_STR_RESET`
+    // sentinels (`character_driver::BANK_QA`'s doc comment) - goes out via
+    // `npc_quiet_say_bytes`.
     let mut world = World::default();
     world.map.tile_mut(12, 10).unwrap().light = 255;
     assert!(world.spawn_character(bank_npc_already_greeted(1, 2), 10, 10));
@@ -108,11 +111,27 @@ fn bank_account_qa_explains_deposit_withdraw_and_balance_without_color_markers()
     }
     world.process_bank_actions(0);
 
-    let texts = world.drain_pending_area_texts();
+    let texts = world.drain_pending_area_text_bytes();
     assert!(texts.iter().any(|text| {
-        text.message.contains("first deposit (explain deposit)")
-            && text.message.contains("balance (explain balance)")
-            && text.message.contains("withdraw (explain withdraw)")
+        let text = String::from_utf8_lossy(&text.message);
+        text.contains("first deposit (")
+            && text.contains("balance (")
+            && text.contains("withdraw (")
+    }));
+    assert!(texts.iter().any(|text| {
+        text.message
+            .windows(18)
+            .any(|w| w == b"\xb0c4explain deposit")
+    }));
+    assert!(texts.iter().any(|text| {
+        text.message
+            .windows(18)
+            .any(|w| w == b"\xb0c4explain balance")
+    }));
+    assert!(texts.iter().any(|text| {
+        text.message
+            .windows(19)
+            .any(|w| w == b"\xb0c4explain withdraw")
     }));
 }
 

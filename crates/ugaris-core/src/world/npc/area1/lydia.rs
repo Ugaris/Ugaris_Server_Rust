@@ -35,9 +35,9 @@
 //!   (`DRD_DEPOT_PPD`) - same documented gap as `world::gwendylon`/
 //!   `world::yoakin`/`world::nook`.
 //! - The state-4 reminder line wraps "repeat" in `COL_LIGHT_BLUE`/
-//!   `COL_RESET` markers in C (`gwendylon.c:3548`); dropped here for the
-//!   same reason documented on `world::camhermit`'s module doc comment
-//!   (`World::npc_quiet_say` broadcasts a plain UTF-8 `String`).
+//!   `COL_RESET` markers in C (`gwendylon.c:3548`); restored via
+//!   `COL_STR_LIGHT_BLUE`/`COL_STR_RESET` sentinels and
+//!   `World::npc_quiet_say_bytes`, same mechanism as `world::camhermit`.
 //! - The pre-`switch` auto-reset (`gwendylon.c:3512-3514`: `realtime -
 //!   ppd->lydia_seen_timer > 120 && ppd->lydia_state && ppd->lydia_state <
 //!   4` resets the state to `0`) is a genuinely new pattern not seen in
@@ -49,6 +49,7 @@ use std::collections::HashMap;
 use crate::character_driver::{analyse_text_qa, TextAnalysisOutcome, CDR_LYDIA, GWENDYLON_QA};
 use crate::drvlib::offset2dx;
 use crate::item_driver::{IID_AREA1_WOODKEY2, IID_AREA1_WOODPOTION};
+use crate::text::{COL_STR_LIGHT_BLUE, COL_STR_RESET};
 use crate::world::*;
 
 /// C `char_dist(cn, co) > 10` (`gwendylon.c:3502`): the `NT_CHAR` greeting
@@ -382,10 +383,10 @@ impl World {
                 // C `if (realtime - ppd->lydia_seen_timer > 60) { ... }`
                 // (`gwendylon.c:3546-3552`).
                 if now.saturating_sub(facts.seen_timer) > LYDIA_REMINDER_SECONDS {
-                    self.npc_quiet_say(
+                    self.npc_quiet_say_bytes(
                         lydia_id,
                         &format!(
-                            "Hello again, {}! Didst thou find the potion? Or dost thou want me to repeat mine offer?",
+                            "Hello again, {}! Didst thou find the potion? Or dost thou want me to {COL_STR_LIGHT_BLUE}repeat{COL_STR_RESET} mine offer?",
                             player.name
                         ),
                     );

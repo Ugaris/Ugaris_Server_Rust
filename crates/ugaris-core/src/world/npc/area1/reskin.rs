@@ -26,9 +26,9 @@
 //!   `last_talk`/`current_victim`/`NTID_DIDSAY` broadcast fires for this
 //!   turn even though a line was said.
 //! - The `case 3` reminder line wraps "repeat" in `COL_LIGHT_BLUE`/
-//!   `COL_RESET` markers in C (`gwendylon.c:4204`); dropped here for the
-//!   same reason documented on `world::camhermit`'s module doc comment
-//!   (`World::npc_quiet_say` broadcasts a plain UTF-8 `String`).
+//!   `COL_RESET` markers in C (`gwendylon.c:4204`); restored via
+//!   `COL_STR_LIGHT_BLUE`/`COL_STR_RESET` sentinels and
+//!   `World::npc_quiet_say_bytes`, same mechanism as `world::camhermit`.
 //! - The `NT_GIVE` branch's non-money item hand-back (`gwendylon.c:4369-
 //!   4372,4378-4381`) uses C's plain `give_char_item` (hand-then-
 //!   overflow-inventory, no drop-to-ground fallback); `World::
@@ -53,6 +53,7 @@ use crate::character_driver::{
 use crate::drvlib::offset2dx;
 use crate::item_driver::{drdata, IID_ALCHEMY_INGREDIENT};
 use crate::quest::GWENDYLON_STATE_FIRST_SKULL_DONE;
+use crate::text::{COL_STR_LIGHT_BLUE, COL_STR_RESET};
 use crate::world::*;
 
 /// C `char_dist(cn, co) > 16` (`gwendylon.c:4162`): the `NT_CHAR` greeting
@@ -392,10 +393,10 @@ impl World {
             RESKIN_STATE_WAIT_INGREDIENTS => {
                 // C `case 3:` (`gwendylon.c:4200-4210`).
                 if now.saturating_sub(facts.seen_timer) > RESKIN_SEEN_REMINDER_SECONDS {
-                    self.npc_quiet_say(
+                    self.npc_quiet_say_bytes(
                         reskin_id,
                         &format!(
-                            "Hello again, {}! Didst thou find any new ingredients? Or dost thou want me to repeat mine offer?",
+                            "Hello again, {}! Didst thou find any new ingredients? Or dost thou want me to {COL_STR_LIGHT_BLUE}repeat{COL_STR_RESET} mine offer?",
                             player.name
                         ),
                     );

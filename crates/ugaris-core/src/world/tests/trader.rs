@@ -39,16 +39,19 @@ fn trader_greets_visible_players_once() {
     assert!(world.spawn_character(player(2, "Godmode"), 12, 10));
 
     world.process_trader_actions();
-    let texts = world.drain_pending_area_texts();
+    // Wraps "help" in `COL_LIGHT_BLUE`/`COL_RESET` markers (`base.c:4286-
+    // 4287`); goes out via `npc_quiet_say_bytes`.
+    let texts = world.drain_pending_area_text_bytes();
     assert_eq!(texts.len(), 1);
-    assert!(texts[0].message.contains("Hello Godmode!"));
-    assert!(texts[0]
-        .message
-        .contains("I will work as middleman in any deal"));
+    assert!(String::from_utf8_lossy(&texts[0].message).contains("Hello Godmode!"));
+    assert!(
+        String::from_utf8_lossy(&texts[0].message).contains("I will work as middleman in any deal")
+    );
+    assert!(texts[0].message.windows(7).any(|w| w == b"\xb0c4help"));
 
     // Second pass: memory suppresses the repeat greeting.
     world.process_trader_actions();
-    assert!(world.drain_pending_area_texts().is_empty());
+    assert!(world.drain_pending_area_text_bytes().is_empty());
 }
 
 #[test]
@@ -103,10 +106,23 @@ fn trade_with_starts_a_trade_between_named_players() {
     }
     world.process_trader_actions();
 
-    let texts = world.drain_pending_area_texts();
-    assert!(texts.iter().any(|text| text
-        .message
-        .contains("I will handle a trade between Godmode and Egbert")));
+    // Wraps "accept trade"/"stop trade"/"show trade" in `COL_LIGHT_BLUE`/
+    // `COL_RESET` markers (`base.c:4368-4370`); goes out via
+    // `npc_quiet_say_bytes`.
+    let texts = world.drain_pending_area_text_bytes();
+    assert!(texts
+        .iter()
+        .any(|text| String::from_utf8_lossy(&text.message)
+            .contains("I will handle a trade between Godmode and Egbert")));
+    assert!(texts
+        .iter()
+        .any(|text| text.message.windows(15).any(|w| w == b"\xb0c4accept trade")));
+    assert!(texts
+        .iter()
+        .any(|text| text.message.windows(13).any(|w| w == b"\xb0c4stop trade")));
+    assert!(texts
+        .iter()
+        .any(|text| text.message.windows(13).any(|w| w == b"\xb0c4show trade")));
 
     let data = trader_state(&world, CharacterId(1));
     assert_eq!(data.state, 1);

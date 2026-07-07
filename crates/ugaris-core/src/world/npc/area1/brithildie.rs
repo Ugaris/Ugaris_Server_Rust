@@ -43,11 +43,16 @@
 //!   (same split as `world::jiu`'s `riverbeast_dead` gap) - not in this
 //!   file, since it fires from a different NPC's (`CDR_BIGBADSPIDER`)
 //!   death, not from `brithildie_driver` itself.
+//! - The `NOMORETALES_QOPEN`/`_QDONE` reminder line wraps "Repeat all" in
+//!   `COL_LIGHT_BLUE`/`COL_RESET` markers (`gwendylon.c:2716-2717`);
+//!   restored via `COL_STR_LIGHT_BLUE`/`COL_STR_RESET` sentinels and
+//!   `World::npc_quiet_say_bytes`, same mechanism as `world::camhermit`.
 
 use std::collections::HashMap;
 
 use crate::character_driver::{analyse_text_qa, TextAnalysisOutcome, CDR_BRITHILDIE, GWENDYLON_QA};
 use crate::drvlib::offset2dx;
+use crate::text::{COL_STR_LIGHT_BLUE, COL_STR_RESET};
 use crate::world::*;
 
 /// C `char_dist(cn, co) > 15` (`gwendylon.c:2523`): the `NT_CHAR` greeting
@@ -520,10 +525,10 @@ impl World {
                 // BRITHILDIE_STATE_NOMORETALES_QDONE:` (`gwendylon.c:2713-
                 // 2722`).
                 if now.saturating_sub(facts.seen_timer) > BRITHILDIE_EXTEND_WAIT_TIME {
-                    self.npc_quiet_say(
+                    self.npc_quiet_say_bytes(
                         brithildie_id,
                         &format!(
-                            "Hail thee {}! I have no more tales to tell. If you wish me to repeat all my tales say Repeat all.",
+                            "Hail thee {}! I have no more tales to tell. If you wish me to repeat all my tales say {COL_STR_LIGHT_BLUE}Repeat all{COL_STR_RESET}.",
                             player.name
                         ),
                     );

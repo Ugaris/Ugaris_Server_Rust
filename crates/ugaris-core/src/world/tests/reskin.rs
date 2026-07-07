@@ -155,10 +155,16 @@ fn reskin_state3_reminder_after_seen_timer_window() {
     assert!(!events
         .iter()
         .any(|event| matches!(event, ReskinOutcomeEvent::UpdateState { .. })));
-    let texts = world.drain_pending_area_texts();
+    // C `case 3:` wraps "repeat" in `COL_LIGHT_BLUE`/`COL_RESET` markers
+    // (`gwendylon.c:4204`); goes out via `npc_quiet_say_bytes`.
+    let texts = world.drain_pending_area_text_bytes();
     assert!(texts
         .iter()
-        .any(|text| text.message.contains("Didst thou find any new ingredients")));
+        .any(|text| String::from_utf8_lossy(&text.message)
+            .contains("Didst thou find any new ingredients")));
+    assert!(texts
+        .iter()
+        .any(|text| text.message.windows(9).any(|w| w == b"\xb0c4repeat")));
 }
 
 #[test]

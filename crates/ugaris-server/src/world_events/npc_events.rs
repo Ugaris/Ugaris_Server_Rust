@@ -1,4 +1,5 @@
 use super::*;
+use ugaris_core::text::{expand_color_sentinels, COL_STR_LIGHT_GREEN};
 
 /// C `bank_driver`'s deposit/withdraw/balance handling (`src/module/
 /// bank.c`), persistent-balance half: applies each [`BankEvent`] queued
@@ -132,9 +133,13 @@ pub(crate) async fn apply_trader_events(
                     continue;
                 };
                 // C `log_char(c2, LOG_SYSTEM, 0, COL_LIGHT_GREEN "%s gave
-                // me:", giver_name)` - color marker dropped (see
-                // `world/trader.rs`'s module doc comment).
-                world.queue_system_text(notify_id, format!("{giver_name} gave me:"));
+                // me:", giver_name)` - restored via `COL_STR_LIGHT_GREEN`
+                // sentinel and `World::queue_system_text_bytes`, same
+                // mechanism as `world::camhermit`'s `COL_STR_*` sentinels.
+                world.queue_system_text_bytes(
+                    notify_id,
+                    expand_color_sentinels(&format!("{COL_STR_LIGHT_GREEN}{giver_name} gave me:")),
+                );
                 if let Some(item) = world.items.get(&item_id).cloned() {
                     for line in legacy_item_look_text(&item, &viewer).lines() {
                         world.queue_system_text(notify_id, line.to_string());

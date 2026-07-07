@@ -42,10 +42,9 @@
 //!   `PlayerRuntime`/DB layer, not `World` (same documented gap as
 //!   `world::yoakin`).
 //! - The four `_WAIT` reminder lines wrap "repeat" in `COL_LIGHT_BLUE`/
-//!   `COL_RESET` markers in C (`gwendylon.c:333,372,411,449`); dropped
-//!   here for the same reason documented on `world::camhermit`'s module
-//!   doc comment (`World::npc_quiet_say` broadcasts a plain UTF-8
-//!   `String`).
+//!   `COL_RESET` markers in C (`gwendylon.c:333,372,411,449`); restored via
+//!   `COL_STR_LIGHT_BLUE`/`COL_STR_RESET` sentinels and
+//!   `World::npc_quiet_say_bytes`, same mechanism as `world::camhermit`.
 
 use std::collections::HashMap;
 
@@ -64,6 +63,7 @@ use crate::quest::{
     GWENDYLON_STATE_SECOND_SKULL_DONE, GWENDYLON_STATE_THIRD_SKULL_DONE, QLOG_GWENDY_FIRST_SKULL,
     QLOG_GWENDY_FOUL_MAGICIAN, QLOG_GWENDY_SECOND_SKULL, QLOG_GWENDY_THIRD_SKULL,
 };
+use crate::text::{COL_STR_LIGHT_BLUE, COL_STR_RESET};
 use crate::world::*;
 
 /// C `char_dist(cn, co) > 16` (`gwendylon.c:283`): the `NT_CHAR` greeting
@@ -453,10 +453,10 @@ impl World {
             didsay = true;
         } else if facts.state == GWENDYLON_STATE_FIRST_SKULL_WAIT {
             if now.saturating_sub(facts.seen_timer) > GWENDYLON_REMINDER_SECONDS {
-                self.npc_quiet_say(
+                self.npc_quiet_say_bytes(
                     gwendylon_id,
                     &format!(
-                        "Be greeted, {}! Didst thou find anything magical in the skeleton's ruin? Or dost thou want me to repeat mine offer?",
+                        "Be greeted, {}! Didst thou find anything magical in the skeleton's ruin? Or dost thou want me to {COL_STR_LIGHT_BLUE}repeat{COL_STR_RESET} mine offer?",
                         player.name
                     ),
                 );
@@ -503,10 +503,10 @@ impl World {
             didsay = true;
         } else if facts.state == GWENDYLON_STATE_SECOND_SKULL_WAIT {
             if now.saturating_sub(facts.seen_timer) > GWENDYLON_REMINDER_SECONDS {
-                self.npc_quiet_say(
+                self.npc_quiet_say_bytes(
                     gwendylon_id,
                     &format!(
-                        "Be greeted, {}! Didst thou find anything magical in the other skeleton place? Or dost thou want me to repeat mine offer?",
+                        "Be greeted, {}! Didst thou find anything magical in the other skeleton place? Or dost thou want me to {COL_STR_LIGHT_BLUE}repeat{COL_STR_RESET} mine offer?",
                         player.name
                     ),
                 );
@@ -548,10 +548,10 @@ impl World {
             didsay = true;
         } else if facts.state == GWENDYLON_STATE_THIRD_SKULL_WAIT {
             if now.saturating_sub(facts.seen_timer) > GWENDYLON_REMINDER_SECONDS {
-                self.npc_quiet_say(
+                self.npc_quiet_say_bytes(
                     gwendylon_id,
                     &format!(
-                        "Ah, {}! Didst thou find the skull? It really is of the utmost importance. Or dost thou want me to repeat mine offer?",
+                        "Ah, {}! Didst thou find the skull? It really is of the utmost importance. Or dost thou want me to {COL_STR_LIGHT_BLUE}repeat{COL_STR_RESET}  mine offer?",
                         player.name
                     ),
                 );
@@ -593,10 +593,10 @@ impl World {
             didsay = true;
         } else if facts.state == GWENDYLON_STATE_FOUL_MAGICIAN_WAIT {
             if now.saturating_sub(facts.seen_timer) > GWENDYLON_REMINDER_SECONDS {
-                self.npc_quiet_say(
+                self.npc_quiet_say_bytes(
                     gwendylon_id,
                     &format!(
-                        "Ah, {}! I am most concerned. Didst thou find anything? Or dost thou want me to repeat what I said about it?",
+                        "Ah, {}! I am most concerned. Didst thou find anything? Or dost thou want me to {COL_STR_LIGHT_BLUE}repeat{COL_STR_RESET}  what I said about it?",
                         player.name
                     ),
                 );

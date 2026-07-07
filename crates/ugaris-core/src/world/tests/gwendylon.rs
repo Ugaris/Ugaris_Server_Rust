@@ -116,10 +116,22 @@ fn gwendylon_first_skull_wait_reminder_notifies_tutorial() {
     assert!(!events
         .iter()
         .any(|event| matches!(event, GwendylonOutcomeEvent::UpdateState { .. })));
-    let texts = world.drain_pending_area_texts();
-    assert!(texts.iter().any(|text| text.message.contains(
-        "Be greeted, Godmode! Didst thou find anything magical in the skeleton's ruin?"
-    )));
+    // Reminder line goes out via the byte-native `npc_quiet_say_bytes` path
+    // (`WorldAreaTextBytes`, not `WorldAreaText`) since it carries the C
+    // source's `COL_LIGHT_BLUE "repeat" COL_RESET` color-marker bytes
+    // around the word "repeat" (`gwendylon.c:333-335`).
+    let texts = world.drain_pending_area_text_bytes();
+    assert!(texts
+        .iter()
+        .any(|text| String::from_utf8_lossy(&text.message).contains(
+            "Be greeted, Godmode! Didst thou find anything magical in the skeleton's ruin?"
+        )));
+    assert!(texts
+        .iter()
+        .any(|text| text.message.windows(9).any(|w| w == b"\xb0c4repeat")));
+    assert!(texts
+        .iter()
+        .any(|text| text.message.windows(4).any(|w| w == b"\xb0c0 ")));
 
     let player = world.characters.get(&CharacterId(2)).unwrap();
     assert!(player

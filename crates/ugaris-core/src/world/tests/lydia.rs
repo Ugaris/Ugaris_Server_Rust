@@ -118,10 +118,15 @@ fn lydia_state4_reminds_after_gate_elapses() {
     assert!(!events
         .iter()
         .any(|event| matches!(event, LydiaOutcomeEvent::UpdateState { .. })));
-    let texts = world.drain_pending_area_texts();
+    // C `case 4:` wraps "repeat" in `COL_LIGHT_BLUE`/`COL_RESET` markers
+    // (`gwendylon.c:3548`); goes out via `npc_quiet_say_bytes`.
+    let texts = world.drain_pending_area_text_bytes();
     assert!(texts
         .iter()
-        .any(|text| text.message.contains("Didst thou find the potion")));
+        .any(|text| String::from_utf8_lossy(&text.message).contains("Didst thou find the potion")));
+    assert!(texts
+        .iter()
+        .any(|text| text.message.windows(9).any(|w| w == b"\xb0c4repeat")));
 }
 
 #[test]

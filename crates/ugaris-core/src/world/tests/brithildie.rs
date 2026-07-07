@@ -279,10 +279,16 @@ fn nomoretales_reminds_after_extend_wait_time_elapses() {
     assert!(!events
         .iter()
         .any(|event| matches!(event, BrithildieOutcomeEvent::UpdateState { .. })));
-    let texts = world.drain_pending_area_texts();
+    // The reminder line wraps "Repeat all" in `COL_LIGHT_BLUE`/
+    // `COL_RESET` markers (`gwendylon.c:2716-2717`); goes out via
+    // `npc_quiet_say_bytes`.
+    let texts = world.drain_pending_area_text_bytes();
+    assert!(texts.iter().any(
+        |text| String::from_utf8_lossy(&text.message).contains("I have no more tales to tell")
+    ));
     assert!(texts
         .iter()
-        .any(|text| text.message.contains("I have no more tales to tell")));
+        .any(|text| text.message.windows(13).any(|w| w == b"\xb0c4Repeat all")));
 }
 
 #[test]
