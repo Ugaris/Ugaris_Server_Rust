@@ -7,6 +7,7 @@ pub mod greeter;
 pub mod gwendylon;
 pub mod jessica;
 pub mod jiu;
+pub mod lydia;
 pub mod nook;
 pub mod terion;
 pub mod yoakin;
@@ -25,6 +26,8 @@ pub use gwendylon::*;
 pub use jessica::*;
 #[allow(unused_imports)]
 pub use jiu::*;
+#[allow(unused_imports)]
+pub use lydia::*;
 #[allow(unused_imports)]
 pub use nook::*;
 #[allow(unused_imports)]

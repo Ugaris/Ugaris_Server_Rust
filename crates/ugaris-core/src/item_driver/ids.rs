@@ -597,6 +597,15 @@ pub const IID_AREA1_WARLOCKKEY: u32 = make_item_id(DEV_ID_DB, 0x00000A);
 /// hand-off to area 36 - see `world::gwendylon`'s module doc comment.
 pub const IID_CALIGARLETTER: u32 = make_item_id(DEV_ID_DB, 0x0000AF);
 
+/// C `IID_AREA1_WOODKEY2` (`src/common/item_id.h:71`): the second wood
+/// key `lydia_driver`'s hangover-potion quest destroys alongside the
+/// potion itself on turn-in. `pub` (not `pub(crate)`) since `world::lydia`
+/// needs it outside the `item_driver` module.
+pub const IID_AREA1_WOODKEY2: u32 = make_item_id(DEV_ID_DB, 0x00000C);
+/// C `IID_AREA1_WOODPOTION` (`src/common/item_id.h:72`): `lydia_driver`'s
+/// hangover-cure quest proof item. `pub` (not `pub(crate)`) since
+/// `world::lydia` needs it outside the `item_driver` module.
+pub const IID_AREA1_WOODPOTION: u32 = make_item_id(DEV_ID_DB, 0x00000D);
 /// C `IID_AREA1_ROBBERKEY1` (`src/common/item_id.h:73`): the robber
 /// hideout key `nook_driver`'s stolen-cap quest destroys alongside the cap
 /// itself on turn-in. `pub` (not `pub(crate)`) since `world::nook` needs it

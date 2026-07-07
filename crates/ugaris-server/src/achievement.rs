@@ -994,6 +994,26 @@ pub(crate) async fn award_clubmaster_master_achievement(
     .await;
 }
 
+/// C `lydia_driver`'s hangover-potion turn-in: `achievement_award(co,
+/// ACHIEVEMENT_A_HELPING_HAND, 1)` (`src/area/1/gwendylon.c:3607`).
+/// Consumes a `LydiaOutcomeEvent::QuestDone` queued by
+/// `World::process_lydia_actions`.
+pub(crate) async fn award_lydia_helping_hand_achievement(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    repository: &Option<ugaris_db::PgAchievementRepository>,
+    player_id: CharacterId,
+) {
+    award_bare_achievement(
+        world,
+        runtime,
+        repository,
+        player_id,
+        AchievementType::AHelpingHand,
+    )
+    .await;
+}
+
 /// C `give_first_kill`'s class-range congrats-message dispatch
 /// (`death.c:213-253`). `has_name` gates on `ch[co].flags & CF_HASNAME`
 /// (checked before any class range); the two subsequent `else if` chains

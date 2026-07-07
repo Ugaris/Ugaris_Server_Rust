@@ -109,6 +109,10 @@ pub const CDR_BIGBADSPIDER: u16 = 153;
 /// area1, knight castle" - the identity-crisis jester/judge/knight NPC
 /// (`src/area/1/gwendylon.c::nook_driver`).
 pub const CDR_NOOK: u16 = 15;
+/// C `#define CDR_LYDIA 16` (`src/system/drvlib.h`): "specific NPC in
+/// area1, knight castle" - Gwendylon's hungover daughter and her
+/// hangover-potion quest chain (`src/area/1/gwendylon.c::lydia_driver`).
+pub const CDR_LYDIA: u16 = 16;
 /// C `#define CDR_GATE_WELCOME 39` (`src/system/drvlib.h`): the stationary
 /// gatekeeper-welcome NPC (`gate_welcome` template,
 /// `src/system/gatekeeper.c::gate_welcome_driver`).
@@ -255,6 +259,7 @@ pub enum CharacterDriverState {
     ForestRanger(ForestRangerDriverData),
     Brithildie(BrithildieDriverData),
     Nook(NookDriverData),
+    Lydia(LydiaDriverData),
 }
 /// C `bank_driver_parse` from `src/module/bank.c`. The C driver defaults
 /// opening hours to 6..23 before parsing (`bank_driver` lines 304-309).
@@ -931,7 +936,8 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::Jiu(_)
             | CharacterDriverState::ForestRanger(_)
             | CharacterDriverState::Brithildie(_)
-            | CharacterDriverState::Nook(_),
+            | CharacterDriverState::Nook(_)
+            | CharacterDriverState::Lydia(_),
         ) => SimpleBaddyDriverData::default(),
         None => SimpleBaddyDriverData::default(),
     };
@@ -3254,6 +3260,7 @@ pub use crate::world::npc::area1::greeter::GreeterDriverData;
 pub use crate::world::npc::area1::gwendylon::{GwendylonDriverData, GWENDYLON_QA};
 pub use crate::world::npc::area1::jessica::JessicaDriverData;
 pub use crate::world::npc::area1::jiu::JiuDriverData;
+pub use crate::world::npc::area1::lydia::LydiaDriverData;
 pub use crate::world::npc::area1::nook::NookDriverData;
 pub use crate::world::npc::area1::terion::TerionDriverData;
 pub use crate::world::npc::area1::yoakin::YoakinDriverData;

@@ -587,7 +587,8 @@ impl World {
             | CharacterDriverState::Jiu(_)
             | CharacterDriverState::ForestRanger(_)
             | CharacterDriverState::Brithildie(_)
-            | CharacterDriverState::Nook(_) => None,
+            | CharacterDriverState::Nook(_)
+            | CharacterDriverState::Lydia(_) => None,
         }
     }
 

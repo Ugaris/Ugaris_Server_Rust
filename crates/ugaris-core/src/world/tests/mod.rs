@@ -47,6 +47,7 @@ mod look;
 mod loot;
 mod lostcon;
 mod lq;
+mod lydia;
 mod macro_npc;
 mod merchant;
 mod military;

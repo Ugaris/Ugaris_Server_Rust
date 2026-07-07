@@ -10,7 +10,8 @@
 //! process_forest_ranger_actions`,
 //! `CDR_BRITHILDIE`/`ugaris_core::world::brithildie::
 //! process_brithildie_actions`,
-//! `CDR_NOOK`/`ugaris_core::world::nook::process_nook_actions`).
+//! `CDR_NOOK`/`ugaris_core::world::nook::process_nook_actions`,
+//! `CDR_LYDIA`/`ugaris_core::world::lydia::process_lydia_actions`).
 //!
 //! Mirrors the `World`/`PlayerRuntime` split already established for
 //! `world::gatekeeper`'s `GateWelcomePlayerFacts`/`GateWelcomeOutcomeEvent`
@@ -51,9 +52,18 @@
 //! no `QuestDone`/achievement handling either. Nook's own quest (the
 //! stolen-cap side quest) carries no gold reward either (`nook_driver`'s
 //! own turn-in line says so explicitly), so [`apply_nook_events`] needs no
-//! achievement wiring, same as Jessica/Jiu.
+//! achievement wiring, same as Jessica/Jiu. Lydia's own quest completion
+//! carries no gold reward either, but does carry a class-conditional
+//! reward *item* (`mana_potion1`/`healing_potion1`) that needs
+//! `ZoneLoader::instantiate_item_template` (`World` has no template
+//! access), so [`apply_lydia_events`] takes a `&mut ZoneLoader` parameter,
+//! unlike every other `apply_*_events` function in this file (mirroring
+//! `world_events::npc_events::apply_gate_welcome_events`'s own precedent
+//! for the same reason), plus `ACHIEVEMENT_A_HELPING_HAND` on
+//! `QuestDone`.
 
 use super::*;
+use ugaris_core::item_ops::{give_item_to_character, GiveItemFlags, GiveItemResult};
 use ugaris_core::quest::{
     QLOG_BRITHILDIE, QLOG_HERMIT_QUEST2, QLOG_JIU, QLOG_LYDIA, QLOG_NOOK, QLOG_YOAKIN,
 };
@@ -61,8 +71,8 @@ use ugaris_core::world::{
     BrithildieOutcomeEvent, BrithildiePlayerFacts, CamhermitOutcomeEvent, CamhermitPlayerFacts,
     ForestRangerOutcomeEvent, ForestRangerPlayerFacts, GreeterOutcomeEvent, GreeterPlayerFacts,
     GwendylonOutcomeEvent, GwendylonPlayerFacts, JessicaOutcomeEvent, JessicaPlayerFacts,
-    JiuOutcomeEvent, JiuPlayerFacts, NookOutcomeEvent, NookPlayerFacts, TerionOutcomeEvent,
-    TerionPlayerFacts, YoakinOutcomeEvent, YoakinPlayerFacts,
+    JiuOutcomeEvent, JiuPlayerFacts, LydiaOutcomeEvent, LydiaPlayerFacts, NookOutcomeEvent,
+    NookPlayerFacts, TerionOutcomeEvent, TerionPlayerFacts, YoakinOutcomeEvent, YoakinPlayerFacts,
 };
 
 pub(crate) fn camhermit_player_facts(
@@ -922,6 +932,127 @@ pub(crate) fn apply_nook_events(
                         runtime.send_to_session(session_id, payload.clone());
                     }
                     applied += 1;
+                }
+            }
+        }
+    }
+    applied
+}
+
+pub(crate) fn lydia_player_facts(
+    runtime: &ServerRuntime,
+) -> HashMap<CharacterId, LydiaPlayerFacts> {
+    runtime
+        .players
+        .values()
+        .filter_map(|player| {
+            let character_id = player.character_id?;
+            Some((
+                character_id,
+                LydiaPlayerFacts {
+                    state: player.area1_lydia_state(),
+                    seen_timer: player.area1_lydia_seen_timer(),
+                },
+            ))
+        })
+        .collect()
+}
+
+/// Applies each [`LydiaOutcomeEvent`] queued by
+/// `World::process_lydia_actions`. See the module doc comment for why
+/// this one (uniquely among this file's `apply_*_events` functions) needs
+/// a `&mut ZoneLoader`.
+pub(crate) async fn apply_lydia_events(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    loader: &mut ZoneLoader,
+    achievement_repository: &Option<ugaris_db::PgAchievementRepository>,
+    events: Vec<LydiaOutcomeEvent>,
+) -> usize {
+    let mut applied = 0;
+    for event in events {
+        match event {
+            LydiaOutcomeEvent::UpdateState {
+                player_id,
+                new_state,
+            } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.set_area1_lydia_state(new_state);
+                applied += 1;
+            }
+            LydiaOutcomeEvent::UpdateSeenTimer { player_id, value } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.set_area1_lydia_seen_timer(value);
+                applied += 1;
+            }
+            // C `questlog_open(co, 0)` (`src/system/questlog.c:204-217`):
+            // sets the flag and unconditionally resends the questlog.
+            LydiaOutcomeEvent::QuestOpen { player_id } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.quest_log.open(QLOG_LYDIA);
+                let payload = legacy_questlog_payload(player);
+                for (session_id, _) in runtime.sessions_for_character(player_id) {
+                    runtime.send_to_session(session_id, payload.clone());
+                }
+                applied += 1;
+            }
+            // C `questlog_done(co, QLOG_LYDIA)` (`src/system/
+            // questlog.c:267-305`) plus `achievement_award(co,
+            // ACHIEVEMENT_A_HELPING_HAND, 1)` (`gwendylon.c:3607`).
+            LydiaOutcomeEvent::QuestDone { player_id } => {
+                let Some(level) = world.characters.get(&player_id).map(|c| c.level) else {
+                    continue;
+                };
+                let level_val = level_value(level);
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                if let Some(completion) = player
+                    .quest_log
+                    .complete_legacy(QLOG_LYDIA, level, level_val)
+                {
+                    let payload = legacy_questlog_payload(player);
+                    world.give_exp(player_id, completion.granted_exp, u32::from(world.area_id));
+                    for (session_id, _) in runtime.sessions_for_character(player_id) {
+                        runtime.send_to_session(session_id, payload.clone());
+                    }
+                    award_lydia_helping_hand_achievement(
+                        world,
+                        runtime,
+                        achievement_repository,
+                        player_id,
+                    )
+                    .await;
+                    applied += 1;
+                }
+            }
+            // C's class-conditional `create_item(...)`/`give_char_item(co,
+            // in)` reward (`gwendylon.c:614-621`) - the plain
+            // (non-drop-fallback) give, matching C's own plain
+            // `give_char_item`. `grant_clan_jewel`'s own precedent: on any
+            // non-`Ok` result the freshly instantiated `Item` is simply
+            // never registered in `world.items`, which is the Rust
+            // equivalent of C's `destroy_item(in)` on failure (there is
+            // nothing to destroy since it was never added).
+            LydiaOutcomeEvent::GrantPotion {
+                player_id,
+                template,
+            } => {
+                if let Ok(mut item) = loader.instantiate_item_template(template, Some(player_id)) {
+                    if let Some(character) = world.characters.get_mut(&player_id) {
+                        if let GiveItemResult::Ok =
+                            give_item_to_character(character, &mut item, GiveItemFlags::NONE)
+                        {
+                            world.add_item(item);
+                            applied += 1;
+                        }
+                    }
                 }
             }
         }

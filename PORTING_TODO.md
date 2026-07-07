@@ -350,14 +350,21 @@ Ordered by player progression; the C file is the oracle.
   `crates/ugaris-core/src/world/npc/area1/nook.rs`'s own module doc
   comment for its one structural gap (this NPC has no `seen_timer`
   reminder gate anywhere in its C source at all, unlike every other
-  area-1 NPC ported so far - confirmed, not a missed port). Every other
-  NPC in this file is still unported: `james_driver` (`:2901-3179`,
-  gated on the large unported `james_raisehint`/`can_raise`/
-  `get_fight_skill_skill` helpers, `:5235-6003` - ~770 lines total,
-  budget a dedicated iteration or a deliberately reduced first slice
-  rather than treating it like the quick NPC ports above),
-  `lydia_driver` (`:3458-3703`),
-  `balltrap_skelly_driver` (`:3712-3774`, a fight-driver archer that
+  area-1 NPC ported so far - confirmed, not a missed port). `lydia_driver`
+  (`CDR_LYDIA`, the mage's-daughter hangover-potion quest chain unlocking
+  `QLOG_LYDIA`, `:3458-3703`) is now also ported - see
+  `crates/ugaris-core/src/world/npc/area1/lydia.rs`'s own module doc
+  comment for its documented gaps (the class-conditional reward-potion
+  `create_item`/`give_char_item` call is deferred to `ugaris-server`'s
+  `apply_lydia_events` since `World` has no `ZoneLoader` access, and the
+  `destroy_item_byID` sweep doesn't reach the account depot, same as
+  every sibling NPC's own documented gap). Every other NPC in this file
+  is still unported: `james_driver` (`:2901-3179`, gated on the large
+  unported `james_raisehint`/`can_raise`/`get_fight_skill_skill` helpers,
+  `:5235-6003` - ~770 lines total, budget a dedicated iteration or a
+  deliberately reduced first slice rather than treating it like the
+  quick NPC ports above), `balltrap_skelly_driver` (`:3712-3774`, a
+  fight-driver archer that
   needs the generic multi-enemy `DRD_FIGHTDRIVER` system this codebase
   currently only exposes via the `CDR_SIMPLEBADDY`-specific
   implementation - see `world/npc_fight.rs`), `robber_driver`
@@ -509,4 +516,8 @@ notes live in `PROGRESS_ARCHIVE.md`.
   action-outcome family (ice + palace/Islena doors, 12 contiguous
   variants) into `tick_item_use_ice::dispatch_ice_outcome` (`main.rs`
   down to 4,610). 1091 server tests unchanged, clean build/boot-smoke.
+- 2026-07-07: Area 1 `lydia_driver` (`CDR_LYDIA`) ported: the mage's-
+  daughter hangover-potion quest chain (`QLOG_LYDIA`), reward-potion
+  grant deferred to `ugaris-server`. 2406 core + 1091 server tests pass,
+  clean build/boot-smoke.
 
