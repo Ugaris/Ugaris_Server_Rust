@@ -32,28 +32,22 @@
 //! `_profile`/`_exp`/`_cn`/`_serial` (`player/areas_misc.rs`).
 //!
 //! This module additionally ports [`World::army_follow_driver`]/
-//! [`World::army_back_driver`]/[`World::army_front_driver`] (C
-//! `army_follow_driver`/`army_back_driver`/`army_front_driver`,
-//! `fdemon.c:633-673`), [`World::fdemon_army_process_text_messages`] (the
+//! [`World::army_back_driver`]/[`World::army_front_driver`]/
+//! [`World::army_behind_driver`] (C `army_follow_driver`/
+//! `army_back_driver`/`army_front_driver`/`army_behind_driver`,
+//! `fdemon.c:633-705`), [`World::fdemon_army_process_text_messages`] (the
 //! `NT_TEXT` mission-command reception half of C `fdemon_army`,
 //! `fdemon.c:1370-1423`, minus the emote-reaction dispatch), and
 //! [`World::fdemon_army_tick`] (the mission-dispatch/leader-lost-
 //! disintegration slice of C `fdemon_army`, `fdemon.c:1327-1532`) - enough
 //! for a recruited soldier to follow, hold position ("back"), stay close
-//! ("retreat"), or walk ahead of ("front") its leader on command. The real
-//! spawning (`take_soldiers`/`drop_soldiers`, needing `ZoneLoader`) lives
-//! in `ugaris-server`'s `area8_army.rs`, matching the `pents.rs`/`world/
-//! pents.rs` split precedent.
+//! ("retreat"), walk ahead of ("front"), or take up a flanking attack
+//! position behind whatever the leader is facing ("behind") on command.
+//! The real spawning (`take_soldiers`/`drop_soldiers`, needing
+//! `ZoneLoader`) lives in `ugaris-server`'s `area8_army.rs`, matching the
+//! `pents.rs`/`world/pents.rs` split precedent.
 //!
 //! Deviations/gaps still open in this slice (documented, not silent):
-//! - `MIS_BEHIND` (`army_behind_driver`, `fdemon.c:688-705`) is not
-//!   ported: it needs a live map-tile character lookup plus `do_attack`
-//!   combat (attacking whatever the leader is facing), unlike the other
-//!   three missions' pure movement. The `"behind"` `NT_TEXT` command is
-//!   still accepted and sets `FarmyData::mission = MIS_BEHIND` (matching
-//!   C's own reply text), but [`World::fdemon_army_tick`] then does
-//!   nothing for it - the soldier simply stands still until commanded
-//!   elsewhere.
 //! - Combat: `fight_driver_update`/`do_heal`/`do_bless`/
 //!   `fight_driver_attack_visible` (self-defense, the heal/bless support-
 //!   caster behavior gated on `V_HEAL`/`V_BLESS`) are not ported - a
@@ -673,6 +667,102 @@ impl World {
         )
     }
 
+    /// C `army_behind_driver(cn, dat)` (`fdemon.c:688-705`): positions the
+    /// soldier directly behind whatever character (`co`) the leader is
+    /// currently facing, then attacks it. `co` is found by looking up the
+    /// map tile immediately in front of the leader (C's
+    /// `dx2offset(ch[cc].dir, ...)`); the soldier's target tile is one
+    /// step behind `co` in `co`'s own facing direction (C's `(ch[co].dir
+    /// + 3) % 8 + 1`, the same [`opposite_direction`] helper
+    /// [`World::army_back_driver`] uses). If the soldier isn't already
+    /// standing there, C's `move_driver(cn, tx, ty, 0)` (ported as
+    /// [`World::setup_walk_toward`], itself exactly `pathfinder` +
+    /// `walk_or_use_driver`, i.e. `move_driver`'s own definition) is
+    /// tried first; on success this returns `true` immediately without
+    /// attacking this tick, matching C's early `return 1`. If the move
+    /// fails, the soldier says "cannot go there" and its mission reverts
+    /// to `MIS_FOLLOW`, but - matching C's lack of an early return there
+    /// - execution still falls through to the attack attempt below.
+    /// Returns whether an attack was queued (C's final `return
+    /// do_attack(cn, ch[co].dir, co)`), or `false` if the leader or `co`
+    /// can no longer be resolved. C's random `AC_ATTACK1 + RANDOM(3)`
+    /// variant pick is not reproduced (matching the pre-existing
+    /// `action::ATTACK1`-only simplification already used by every other
+    /// `do_attack` caller in this codebase, e.g.
+    /// `setup_simple_baddy_attack_driver`/`attack_driver_direct` in
+    /// `world/npc_fight.rs`).
+    pub fn army_behind_driver(&mut self, character_id: CharacterId, area_id: u16) -> bool {
+        let Some(character) = self.characters.get(&character_id) else {
+            return false;
+        };
+        let Some(CharacterDriverState::FdemonArmy(dat)) = character.driver_state.clone() else {
+            return false;
+        };
+        let Some(leader) = self.characters.get(&dat.leader_cn) else {
+            return false;
+        };
+        let Ok(leader_direction) = Direction::try_from(leader.dir) else {
+            return false;
+        };
+        let (fdx, fdy) = leader_direction.delta();
+        let Some(front_x) = offset_coordinate(usize::from(leader.x), fdx) else {
+            return false;
+        };
+        let Some(front_y) = offset_coordinate(usize::from(leader.y), fdy) else {
+            return false;
+        };
+        let target_tile_character = self
+            .map
+            .tile(front_x, front_y)
+            .map(|tile| tile.character)
+            .unwrap_or(0);
+        if target_tile_character == 0 {
+            return false;
+        }
+        let target_id = CharacterId(u32::from(target_tile_character));
+        let Some(target) = self.characters.get(&target_id) else {
+            return false;
+        };
+        let (target_x, target_y) = (target.x, target.y);
+        let target_dir = target.dir;
+        let Ok(behind_direction) = Direction::try_from(opposite_direction(target_dir)) else {
+            return false;
+        };
+        let (bdx, bdy) = behind_direction.delta();
+        let Some(behind_x) = offset_coordinate(usize::from(target_x), bdx) else {
+            return false;
+        };
+        let Some(behind_y) = offset_coordinate(usize::from(target_y), bdy) else {
+            return false;
+        };
+
+        let (cx, cy) = (character.x, character.y);
+        if usize::from(cx) != behind_x || usize::from(cy) != behind_y {
+            if self.setup_walk_toward(character_id, behind_x, behind_y, 0, area_id, false) {
+                return true;
+            }
+            self.npc_say(character_id, "cannot go there");
+            self.set_fdemon_army_mission(character_id, MIS_FOLLOW);
+        }
+
+        let weather_movement_percent = self.settings.weather_movement_percent;
+        let Some(target) = self.characters.get(&target_id).cloned() else {
+            return false;
+        };
+        let Some(attacker) = self.characters.get_mut(&character_id) else {
+            return false;
+        };
+        crate::do_action::do_attack(
+            attacker,
+            &self.map,
+            &target,
+            target_dir,
+            action::ATTACK1,
+            weather_movement_percent,
+        )
+        .is_ok()
+    }
+
     /// C `fdemon_army`'s `NT_TEXT` message branch (`fdemon.c:1370-1423`),
     /// minus the `res >= 20` emote-reaction dispatch (`got_emote`) and
     /// case `7`'s emote-stats debug dump - both meaningless without the
@@ -814,8 +904,8 @@ impl World {
 
     /// C `fdemon_army(cn, ret, lastact)` (`fdemon.c:1327-1532`) - the
     /// leader-lost-disintegration guard plus both mission-dispatch
-    /// `switch (dat->mission)` blocks (`FOLLOW`/`BACK`/`RETREAT`/`FRONT`;
-    /// `BEHIND` is a documented no-op, see the module doc comment), minus
+    /// `switch (dat->mission)` blocks (`FOLLOW`/`BACK`/`RETREAT`/`FRONT`/
+    /// `BEHIND`, the last via [`World::army_behind_driver`]), minus
     /// the combat/heal/bless self-defense fallback that sits between them
     /// in C and the trailing emote/regen/idle tail (also documented
     /// gaps). Returns `true` if the soldier disintegrated (leader lost -
@@ -869,9 +959,9 @@ impl World {
                 }
             }
             MIS_BEHIND => {
-                // `army_behind_driver` is not ported - see the module doc
-                // comment; the soldier stands still until commanded
-                // elsewhere.
+                if self.army_behind_driver(character_id, area_id) {
+                    return false;
+                }
             }
             MIS_FRONT => {
                 if self.army_front_driver(character_id, 10, area_id) {

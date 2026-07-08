@@ -337,8 +337,11 @@ fn fdemon_army_tick_dispatches_mis_front_via_army_front_driver() {
 }
 
 #[test]
-fn fdemon_army_tick_mis_behind_is_a_documented_no_op() {
+fn fdemon_army_tick_mis_behind_does_nothing_without_a_leader_facing_target() {
     let mut world = World::default();
+    // Default `character()` dir is 0 (no facing direction), so
+    // `army_behind_driver` can't resolve a target tile - matches C's own
+    // `dx2offset` failing on an out-of-range `dir`.
     let leader = leader_npc(1, 100, 100);
     world.characters.insert(leader.id, leader);
 
@@ -354,6 +357,111 @@ fn fdemon_army_tick_mis_behind_is_a_documented_no_op() {
     let unmoved = world.characters.get(&soldier_id).unwrap();
     assert_eq!((unmoved.x, unmoved.y), (80, 100));
     assert_eq!(unmoved.action, 0);
+}
+
+#[test]
+fn army_behind_driver_attacks_when_already_positioned_behind_the_leaders_target() {
+    let mut world = World::default();
+    let mut leader = leader_npc(1, 100, 100);
+    leader.dir = Direction::Right as u8; // faces (101, 100).
+    world.characters.insert(leader.id, leader);
+
+    // The enemy the leader is facing, standing at (101, 100), itself
+    // facing Down - "behind" it (opposite of Down = Up) is (101, 99).
+    let mut target = character(3);
+    target.name = "Target".into();
+    target.x = 101;
+    target.y = 100;
+    target.dir = Direction::Down as u8;
+    world.characters.insert(target.id, target);
+    world.map.tile_mut(101, 100).unwrap().character = 3;
+
+    // Soldier already standing at the "behind" tile.
+    let mut soldier = soldier_npc(2, 101, 99, CharacterId(1));
+    let Some(CharacterDriverState::FdemonArmy(dat)) = soldier.driver_state.as_mut() else {
+        panic!("expected FdemonArmy driver state");
+    };
+    dat.mission = MIS_BEHIND;
+    let soldier_id = soldier.id;
+    world.characters.insert(soldier_id, soldier);
+
+    assert!(world.army_behind_driver(soldier_id, 1));
+    let attacker = world.characters.get(&soldier_id).unwrap();
+    assert_ne!(attacker.action, 0, "an attack action should be queued");
+    assert_eq!(attacker.act1, 3);
+    // C's `do_attack(cn, ch[co].dir, co)` sets the soldier's own facing
+    // to the target's facing direction (they're lined up back-to-back).
+    assert_eq!(attacker.dir, Direction::Down as u8);
+}
+
+#[test]
+fn army_behind_driver_walks_toward_the_position_behind_the_leaders_target_when_not_there_yet() {
+    let mut world = World::default();
+    let mut leader = leader_npc(1, 100, 100);
+    leader.dir = Direction::Right as u8; // faces (101, 100).
+    world.characters.insert(leader.id, leader);
+
+    let mut target = character(3);
+    target.name = "Target".into();
+    target.x = 101;
+    target.y = 100;
+    target.dir = Direction::Down as u8; // behind tile: (101, 99).
+    world.characters.insert(target.id, target);
+    world.map.tile_mut(101, 100).unwrap().character = 3;
+
+    // Soldier far from the "behind" tile.
+    let soldier = soldier_npc(2, 80, 100, CharacterId(1));
+    let soldier_id = soldier.id;
+    world.characters.insert(soldier_id, soldier);
+
+    assert!(world.army_behind_driver(soldier_id, 1));
+    let moved = world.characters.get(&soldier_id).unwrap();
+    assert!(moved.action != 0 || moved.x != 80);
+    // A successful move returns early - no attack is queued this tick.
+    assert_ne!(moved.act1, 3);
+}
+
+#[test]
+fn army_behind_driver_returns_false_when_the_leader_faces_nobody() {
+    let mut world = World::default();
+    let mut leader = leader_npc(1, 100, 100);
+    leader.dir = Direction::Right as u8; // faces (101, 100) - empty tile.
+    world.characters.insert(leader.id, leader);
+
+    let soldier = soldier_npc(2, 101, 99, CharacterId(1));
+    let soldier_id = soldier.id;
+    world.characters.insert(soldier_id, soldier);
+
+    assert!(!world.army_behind_driver(soldier_id, 1));
+}
+
+#[test]
+fn fdemon_army_tick_dispatches_mis_behind_via_army_behind_driver() {
+    let mut world = World::default();
+    let mut leader = leader_npc(1, 100, 100);
+    leader.dir = Direction::Right as u8;
+    world.characters.insert(leader.id, leader);
+
+    let mut target = character(3);
+    target.name = "Target".into();
+    target.x = 101;
+    target.y = 100;
+    target.dir = Direction::Down as u8;
+    world.characters.insert(target.id, target);
+    world.map.tile_mut(101, 100).unwrap().character = 3;
+
+    let mut soldier = soldier_npc(2, 101, 99, CharacterId(1));
+    let Some(CharacterDriverState::FdemonArmy(dat)) = soldier.driver_state.as_mut() else {
+        panic!("expected FdemonArmy driver state");
+    };
+    dat.mission = MIS_BEHIND;
+    let soldier_id = soldier.id;
+    world.characters.insert(soldier_id, soldier);
+
+    assert!(!world.fdemon_army_tick(soldier_id, 1));
+    let attacker = world.characters.get(&soldier_id).unwrap();
+    assert_ne!(attacker.action, 0);
+    assert_eq!(attacker.act1, 3);
 }
 
 #[test]

@@ -655,14 +655,18 @@ Ordered by player progression; the C file is the oracle.
   `army_front_driver` are now ported, so `MIS_BACK`/`MIS_RETREAT`/
   `MIS_FRONT` are fully live missions a leader can command a soldier into
   (only the leader's own speech, gated by C's `find_platoon` platoon-
-  membership check, can issue a command). `MIS_BEHIND` is accepted (sets
-  the mission, replies "I'll go rub his back, ...") but `army_behind_
-  driver` itself is still not ported - it needs a live map-tile lookup
-  (whatever the leader is facing) plus `do_attack` combat, unlike the
-  other three missions' pure movement - so a soldier told to go "behind"
-  simply stands still. Still needed: `army_behind_driver`'s combat,
-  combat/heal/bless self-defense (`fight_driver_update`/`do_heal`/
-  `do_bless`/`fight_driver_attack_visible`), the `do_emote`/`got_emote`
+  membership check, can issue a command). Sixth slice done:
+  `army_behind_driver` (`fdemon.c:688-705`) is now also ported - it looks
+  up whatever character the leader is facing (a direct map-tile lookup),
+  computes the tile directly behind that character (opposite of its own
+  facing direction, reusing the `opposite_direction` helper
+  `army_back_driver` already established), walks there via
+  `World::setup_walk_toward` (already an exact `move_driver` equivalent -
+  `pathfinder` + `walk_or_use_driver`) if not already positioned, and
+  attacks with `do_action::do_attack` once in position - so `MIS_BEHIND`
+  is now a fully live mission. Still needed: combat/heal/bless
+  self-defense (`fight_driver_update`/`do_heal`/`do_bless`/
+  `fight_driver_attack_visible`), the `do_emote`/`got_emote`
   personality/chat engine (`FarmyData` omits the `emote` field entirely,
   and the `NT_TEXT` handler's `res >= 20` emote-reaction dispatch plus its
   own emote-stats debug command are both skipped), `platoon_exp`'s now-
@@ -1059,4 +1063,8 @@ notes live in `PROGRESS_ARCHIVE.md`.
   `army_back_driver`/`army_front_driver` - `MIS_BACK`/`MIS_RETREAT`/
   `MIS_FRONT` are now live; only `army_behind_driver`'s combat remains
   unported. 2794 core + 1111 server tests pass, clean build/boot-smoke.
+- 2026-07-08: Area 8 `CDR_FDEMON_ARMY` sixth slice: ported
+  `army_behind_driver` (leader-facing-target lookup + flank positioning
+  + `do_attack`) - `MIS_BEHIND` is now fully live. 2798 core + 1111
+  server tests pass, clean build/boot-smoke.
 
