@@ -6,6 +6,7 @@ pub mod guard;
 mod guard_messages;
 pub mod sanwyn;
 pub mod servant;
+pub mod thiefguard;
 pub mod two_skelly;
 
 #[allow(unused_imports)]
@@ -18,6 +19,8 @@ pub use guard::*;
 pub use sanwyn::*;
 #[allow(unused_imports)]
 pub use servant::*;
+#[allow(unused_imports)]
+pub use thiefguard::*;
 #[allow(unused_imports)]
 pub use two_skelly::*;
 
@@ -48,12 +51,18 @@ pub const CS_HONOR: i32 = 3;
 /// small-talk/command table `analyse_text_driver` matches against for
 /// every Two-City NPC in this file (`guard_driver`/`barkeeper`/`servant`/
 /// `thiefguard`/`thiefmaster`/`sanwyn`/`skelly`/`alchemist`). Every row
-/// except `status`/answer_code 14 and `pay a fee`/answer_code 15 and
-/// `i am done`/answer_code 16 (belonging to the still-unported
-/// `thiefguard`/`thiefmaster`) is ported so far - add the rest here
-/// (never duplicate the table) when that work happens, same "one shared
-/// file-local table, many drivers" precedent as `world::npc::area16::
-/// FOREST_QA`/`world::npc::area3::AREA3_QA`.
+/// except `i am done`/answer_code 16 (belonging to the still-unported
+/// `thiefmaster`) is ported so far - `status`/answer_code 14 is ported
+/// (row present below) even though it is genuinely dead code in C itself:
+/// grepping every `switch (didsay)`/`switch (analyse_text_driver(...))`
+/// block in `two.c` confirms no driver's `NT_TEXT` switch has a `case 14`
+/// arm at all (not even `thiefmaster`, whose own switch only handles `2`/
+/// `16`), so saying "status" to any Two-City NPC has always been a silent
+/// no-op beyond `didsay`'s usual talkdir/current_victim bookkeeping - kept
+/// in the table for parity, not silently dropped. Add the rest here
+/// (never duplicate the table) when `thiefmaster` is ported, same "one
+/// shared file-local table, many drivers" precedent as `world::npc::
+/// area16::FOREST_QA`/`world::npc::area3::AREA3_QA`.
 pub const TWOCITY_QA: &[TextQaEntry] = &[
     TextQaEntry {
         words: &["how", "are", "you"],
@@ -99,6 +108,16 @@ pub const TWOCITY_QA: &[TextQaEntry] = &[
         words: &["buy", "pass"],
         answer: None,
         answer_code: 13,
+    },
+    TextQaEntry {
+        words: &["status"],
+        answer: None,
+        answer_code: 14,
+    },
+    TextQaEntry {
+        words: &["pay", "a", "fee"],
+        answer: None,
+        answer_code: 15,
     },
     TextQaEntry {
         words: &["pay"],

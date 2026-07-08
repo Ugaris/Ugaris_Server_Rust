@@ -163,6 +163,7 @@ impl World {
             &character,
             area_id,
             FightDriverSuppressions::default(),
+            true,
             &mut random,
         ) {
             return true;

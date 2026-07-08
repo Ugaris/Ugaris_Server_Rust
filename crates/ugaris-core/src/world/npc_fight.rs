@@ -152,6 +152,7 @@ impl World {
             &attacker,
             area_id,
             FightDriverSuppressions::default(),
+            true,
             &mut random,
         )
     }
@@ -187,6 +188,7 @@ impl World {
             &attacker,
             area_id,
             suppressions,
+            true,
             &mut random,
         )
     }
@@ -196,16 +198,26 @@ impl World {
     /// score/attempt every visible enemy in score order (highest `(999 -
     /// dist) * 10 [+5 if facing]` first), falling back to pathfinding
     /// toward the last known position of one invisible enemy when nothing
-    /// visible could be attacked and `!suppressions.nomove` (C's `if
-    /// (!ppd->nomove && fight_driver_follow_invisible(cn))` gate - the
-    /// always-all-`false`-suppressions NPC caller never sets `nomove`, so
-    /// this preserves its behavior unchanged).
+    /// visible could be attacked, `!suppressions.nomove`, and
+    /// `may_follow_invisible` (C's `if (!ppd->nomove &&
+    /// fight_driver_follow_invisible(cn))` gate - the always-all-`false`-
+    /// suppressions NPC caller never sets `nomove`, so this preserves its
+    /// behavior unchanged). `may_follow_invisible` exists because a few C
+    /// drivers (e.g. `two.c::thiefguard`, `strategy.c`, `saltmine.c`) call
+    /// `fight_driver_attack_visible(cn, 0)` (full movement allowed for the
+    /// attack task itself) but never call `fight_driver_follow_invisible`
+    /// at all - a real, deliberate C behavior difference from
+    /// `simple_baddy_driver`/`lostcon_driver`, not modeled by
+    /// `suppressions.nomove` alone (which also suppresses movement *within*
+    /// the visible-attack task itself, unlike C's independent nomove
+    /// argument to the two separate functions).
     pub(crate) fn fight_driver_attack_visible_and_follow(
         &mut self,
         character_id: CharacterId,
         attacker: &Character,
         area_id: u16,
         suppressions: FightDriverSuppressions,
+        may_follow_invisible: bool,
         random: &mut impl FnMut(u32) -> u32,
     ) -> bool {
         let enemies = self.refresh_simple_baddy_enemy_tracking(attacker);
@@ -239,7 +251,7 @@ impl World {
             }
         }
 
-        if suppressions.nomove {
+        if suppressions.nomove || !may_follow_invisible {
             return false;
         }
 
@@ -635,7 +647,8 @@ impl World {
             | CharacterDriverState::TwoAlchemist(_)
             | CharacterDriverState::TwoBarkeeper(_)
             | CharacterDriverState::TwoServant(_)
-            | CharacterDriverState::TwoGuard(_) => None,
+            | CharacterDriverState::TwoGuard(_)
+            | CharacterDriverState::TwoThiefGuard(_) => None,
         }
     }
 

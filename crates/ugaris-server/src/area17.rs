@@ -18,7 +18,7 @@ use ugaris_core::world::{
     TwoAlchemistOutcomeEvent, TwoAlchemistPlayerFacts, TwoBarkeeperOutcomeEvent,
     TwoBarkeeperPlayerFacts, TwoGuardOutcomeEvent, TwoGuardPlayerFacts, TwoSanwynOutcomeEvent,
     TwoSanwynPlayerFacts, TwoServantOutcomeEvent, TwoServantPlayerFacts, TwoSkellyOutcomeEvent,
-    TwoSkellyPlayerFacts, CS_GUEST, LS_CLEAN,
+    TwoSkellyPlayerFacts, TwoThiefGuardOutcomeEvent, TwoThiefGuardPlayerFacts, CS_GUEST, LS_CLEAN,
 };
 
 pub(crate) fn two_skelly_player_facts(
@@ -469,6 +469,46 @@ pub(crate) fn apply_two_servant_events(
             }
             applied += 1;
         }
+    }
+    applied
+}
+
+pub(crate) fn two_thiefguard_player_facts(
+    runtime: &ServerRuntime,
+) -> HashMap<CharacterId, TwoThiefGuardPlayerFacts> {
+    runtime
+        .players
+        .values()
+        .filter_map(|player| {
+            let character_id = player.character_id?;
+            Some((
+                character_id,
+                TwoThiefGuardPlayerFacts {
+                    thief_state: player.twocity_thief_state(),
+                },
+            ))
+        })
+        .collect()
+}
+
+/// Applies each [`TwoThiefGuardOutcomeEvent`] queued by
+/// `World::process_two_thiefguard_actions`: plain `twocity_ppd.thief_state`
+/// bookkeeping, same shape as `apply_two_skelly_events`.
+pub(crate) fn apply_two_thiefguard_events(
+    runtime: &mut ServerRuntime,
+    events: Vec<TwoThiefGuardOutcomeEvent>,
+) -> usize {
+    let mut applied = 0;
+    for event in events {
+        let TwoThiefGuardOutcomeEvent::UpdateThiefState {
+            player_id,
+            new_state,
+        } = event;
+        let Some(player) = runtime.player_for_character_mut(player_id) else {
+            continue;
+        };
+        player.set_twocity_thief_state(new_state);
+        applied += 1;
     }
     applied
 }

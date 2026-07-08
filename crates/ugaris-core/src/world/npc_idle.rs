@@ -542,7 +542,8 @@ impl World {
                 | CharacterDriverState::TwoAlchemist(_)
                 | CharacterDriverState::TwoBarkeeper(_)
                 | CharacterDriverState::TwoServant(_)
-                | CharacterDriverState::TwoGuard(_) => None,
+                | CharacterDriverState::TwoGuard(_)
+                | CharacterDriverState::TwoThiefGuard(_) => None,
             });
         let Some(target_id) = target_id else {
             return false;

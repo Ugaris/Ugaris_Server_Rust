@@ -635,11 +635,16 @@ impl World {
         if !dat.closeup {
             if let Some(character) = self.characters.get(&character_id).cloned() {
                 let mut seed = self.legacy_random_seed;
+                // C `fight_driver_attack_visible(cn, 0)` here has no
+                // accompanying `fight_driver_follow_invisible` call
+                // (`fdemon.c:1494`, unlike `fdemon_demon`'s own hunt tick)
+                // - `may_follow_invisible: false`.
                 let attacked = self.fight_driver_attack_visible_and_follow(
                     character_id,
                     &character,
                     area_id,
                     FightDriverSuppressions::default(),
+                    false,
                     &mut |below| legacy_random_below_from_seed(&mut seed, below),
                 );
                 self.legacy_random_seed = seed;

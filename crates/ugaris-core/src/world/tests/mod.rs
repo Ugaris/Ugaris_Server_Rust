@@ -107,6 +107,7 @@ mod teleport;
 mod terion;
 mod tester;
 mod text;
+mod thiefguard;
 mod thomas;
 mod trader;
 mod turn_seyan;
