@@ -809,6 +809,114 @@ fn lethal_forest_monster_hurt_counts_camhermit_kills_and_reports_at_ten() {
 }
 
 #[test]
+fn lethal_forest_monster_hurt_counts_imp_kills_and_advances_state_past_twenty() {
+    let mut world = World::default();
+    let killer = login_character(CharacterId(99), &login_block("Killer"), 16, 20, 60);
+    world.add_character(killer);
+
+    let mut runtime = ServerRuntime::default();
+    let mut player = PlayerRuntime::connected(1, 0);
+    player.character_id = Some(CharacterId(99));
+    player.set_area3_imp_state(2);
+    player.set_area3_imp_kills(20);
+    runtime.players.insert(1, player);
+
+    // C `ch[cn].sprite == 306` (`forest.c:828`) - the `bear35` template.
+    let mut bear = login_character(CharacterId(1), &login_block("Bear"), 16, 10, 10);
+    bear.flags.remove(CharacterFlags::PLAYER);
+    bear.driver = CDR_FORESTMONSTER;
+    bear.sprite = 306;
+    bear.hp = POWERSCALE;
+    world.add_character(bear);
+
+    world.apply_legacy_hurt(
+        CharacterId(1),
+        Some(CharacterId(99)),
+        POWERSCALE * 2,
+        1,
+        0,
+        0,
+    );
+    apply_pk_hate_from_hurt_events(&mut runtime, &mut world, 0, &ZoneLoader::new());
+
+    let player = runtime.player_for_character(CharacterId(99)).unwrap();
+    assert_eq!(player.area3_imp_kills(), 21);
+    assert_eq!(player.area3_imp_state(), 3);
+}
+
+#[test]
+fn lethal_forest_monster_hurt_with_hardkill_flag_advances_hermit_state() {
+    let mut world = World::default();
+    let mut killer = login_character(CharacterId(99), &login_block("Killer"), 16, 20, 60);
+    // The spider queen's `CF_HARDKILL` flag nullifies damage from any
+    // weapon but the forged `IID_HARDKILL` one (`hurt.rs:119-125`) - give
+    // the killer one at a sufficient level so the hit actually lands.
+    killer.inventory[worn_slot::RIGHT_HAND] = Some(ItemId(500));
+    world.add_character(killer);
+    let mut weapon = ugaris_core::entity::Item {
+        id: ItemId(500),
+        name: "Hardkill Weapon".into(),
+        description: String::new(),
+        flags: ugaris_core::entity::ItemFlags::empty(),
+        sprite: 0,
+        value: 0,
+        min_level: 0,
+        max_level: 99,
+        needs_class: 0,
+        template_id: IID_HARDKILL,
+        owner_id: 0,
+        modifier_index: [0; ugaris_core::entity::MAX_MODIFIERS],
+        modifier_value: [0; ugaris_core::entity::MAX_MODIFIERS],
+        x: 0,
+        y: 0,
+        carried_by: Some(CharacterId(99)),
+        contained_in: None,
+        content_id: 0,
+        driver: 0,
+        driver_data: vec![0; 38],
+        serial: 0,
+    };
+    weapon.driver_data[37] = 99;
+    world.add_item(weapon);
+
+    let mut runtime = ServerRuntime::default();
+    let mut player = PlayerRuntime::connected(1, 0);
+    player.character_id = Some(CharacterId(99));
+    player.set_area3_hermit_state(4);
+    runtime.players.insert(1, player);
+
+    let mut queen = login_character(CharacterId(1), &login_block("Spider Queen"), 16, 10, 10);
+    queen.flags.remove(CharacterFlags::PLAYER);
+    queen.driver = CDR_FORESTMONSTER;
+    queen.flags.insert(CharacterFlags::HARDKILL);
+    queen.level = 1;
+    queen.hp = POWERSCALE;
+    world.add_character(queen);
+
+    world.apply_legacy_hurt(
+        CharacterId(1),
+        Some(CharacterId(99)),
+        POWERSCALE * 2,
+        1,
+        0,
+        0,
+    );
+    apply_pk_hate_from_hurt_events(&mut runtime, &mut world, 0, &ZoneLoader::new());
+
+    assert_eq!(
+        runtime
+            .player_for_character(CharacterId(99))
+            .unwrap()
+            .area3_hermit_state(),
+        5
+    );
+    let texts = world.drain_pending_system_texts();
+    assert!(texts.iter().any(|text| {
+        text.character_id == CharacterId(99) && text.message == "Thou hast slain the spider queen."
+    }));
+}
+
+#[test]
 fn hurt_events_start_legacy_player_fightback_for_nearby_attacker() {
     let mut world = World::default();
     let target = login_character(CharacterId(1), &login_block("Target"), 1, 10, 10);

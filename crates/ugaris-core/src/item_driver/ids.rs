@@ -472,6 +472,10 @@ pub const IID_AREA16_ROBBERKEY: u32 = (0x01 << 24) | 0x000060;
 
 pub const IID_AREA16_SKELLYKEY: u32 = (0x01 << 24) | 0x000061;
 
+/// C `MAKE_ITEMID(DEV_ID_DB, 0x00005F)` (`src/common/item_id.h:154`): the
+/// praying mantis `world::npc::area16::william`'s quest-23 turn-in item.
+pub const IID_AREA16_MANTIS: u32 = (0x01 << 24) | 0x00005F;
+
 pub const IID_MINEGATEWAY: u32 = (0x01 << 24) | 0x000098;
 
 pub const IID_CALIGAR_PALACE_KEY_PART: u32 = (0x01 << 24) | 0x0000B3;

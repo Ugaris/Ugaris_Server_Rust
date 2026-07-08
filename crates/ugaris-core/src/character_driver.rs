@@ -26,6 +26,32 @@ pub const CDR_MACRO: u16 = 37;
 pub const CDR_SWAMPCLARA: u16 = 54;
 pub const CDR_SWAMPMONSTER: u16 = 56;
 pub const CDR_PALACEISLENA: u16 = 57;
+/// C `#define CDR_FORESTIMP 58` (`src/system/drvlib.h`): the treasure-
+/// hinting imp (`src/area/16/forest.c::imp_driver`), see
+/// `world::npc::area16::imp`'s module doc comment.
+pub const CDR_FORESTIMP: u16 = 58;
+/// C `#define CDR_FORESTMONSTER 59` (`src/system/drvlib.h`): area 16's
+/// wolves/bears/skeletons. C's own `ch_driver` dispatch
+/// (`forest.c:909-911`) is an unconditional tail call to
+/// `char_driver(CDR_SIMPLEBADDY, ...)`, so `CDR_FORESTMONSTER` characters
+/// reuse the SimpleBaddy AI end-to-end - same precedent as `CDR_PENTER`/
+/// `CDR_SWAMPMONSTER` (see the `character.driver == CDR_SIMPLEBADDY`
+/// gates widened alongside those in `world/npc_fight.rs`/
+/// `world/npc_idle.rs`). Its own `ch_died_driver`/`monster_dead` death
+/// hook (`forest.c:817-853`) lives in `World::
+/// apply_forest_monster_death_driver` (item weapon-glow half) plus
+/// `ugaris-server`'s `apply_forest_monster_death_from_hurt_event`
+/// (`imp_kills`/`hermit_state` halves, which need `PlayerRuntime`).
+pub const CDR_FORESTMONSTER: u16 = 59;
+/// C `#define CDR_FORESTWILLIAM 60` (`src/system/drvlib.h`): the
+/// bear-hunt/mantis-stew quest giver (`src/area/16/forest.c::
+/// william_driver`), see `world::npc::area16::william`'s module doc
+/// comment.
+pub const CDR_FORESTWILLIAM: u16 = 60;
+/// C `#define CDR_FORESTHERMIT 61` (`src/system/drvlib.h`): the
+/// spider-queen quest giver (`src/area/16/forest.c::hermit_driver`), see
+/// `world::npc::area16::hermit`'s module doc comment.
+pub const CDR_FORESTHERMIT: u16 = 61;
 pub const CDR_TWOSKELLY: u16 = 70;
 pub const CDR_TRADER: u16 = 72;
 /// C `#define CDR_PENTER 64` (`src/system/drvlib.h`): pentagram-quest
@@ -427,6 +453,9 @@ pub enum CharacterDriverState {
     Islena(IslenaDriverData),
     PalaceGuard(PalaceGuardDriverData),
     GolemKeyhold(GolemKeyholdDriverData),
+    ForestImp(ForestImpDriverData),
+    ForestWilliam(ForestWilliamDriverData),
+    ForestHermit(ForestHermitDriverData),
 }
 /// C `bank_driver_parse` from `src/module/bank.c`. The C driver defaults
 /// opening hours to 6..23 before parsing (`bank_driver` lines 304-309).
@@ -1201,7 +1230,10 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::FdemonArmy(_)
             | CharacterDriverState::Islena(_)
             | CharacterDriverState::PalaceGuard(_)
-            | CharacterDriverState::GolemKeyhold(_),
+            | CharacterDriverState::GolemKeyhold(_)
+            | CharacterDriverState::ForestImp(_)
+            | CharacterDriverState::ForestWilliam(_)
+            | CharacterDriverState::ForestHermit(_),
         ) => SimpleBaddyDriverData::default(),
         None => SimpleBaddyDriverData::default(),
     };
@@ -3584,6 +3616,9 @@ pub use crate::world::npc::area12::golemkeyholder::GolemKeyholdDriverData;
 pub use crate::world::npc::area13::dungeon_master::{
     DungeonfighterDriverData, DungeonmasterDriverData, DUNGEONMASTER_QA, DUNGEON_SLOT_COUNT,
 };
+pub use crate::world::npc::area16::hermit::ForestHermitDriverData;
+pub use crate::world::npc::area16::imp::ForestImpDriverData;
+pub use crate::world::npc::area16::william::ForestWilliamDriverData;
 pub use crate::world::npc::area17::two_skelly::TwoSkellyDriverData;
 pub use crate::world::npc::area2::moonie::MoonieDriverData;
 pub use crate::world::npc::area2::superior::SuperiorDriverData;

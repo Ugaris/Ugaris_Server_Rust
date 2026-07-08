@@ -67,11 +67,13 @@ impl World {
         // pentagram demons (`pents.c::demon_character_driver`) do the same
         // tail call (`char_driver(CDR_SIMPLEBADDY, ...)`), same precedent.
         // `CDR_SWAMPMONSTER`'s `ch_driver` dispatch (`swamp.c:807-809`) is
-        // the same one-line unconditional tail call too.
+        // the same one-line unconditional tail call too, as is `CDR_
+        // FORESTMONSTER`'s (`forest.c:909-911`).
         if (character.driver != CDR_SIMPLEBADDY
             && character.driver != CDR_DUNGEONFIGHTER
             && character.driver != CDR_PENTER
-            && character.driver != CDR_SWAMPMONSTER)
+            && character.driver != CDR_SWAMPMONSTER
+            && character.driver != CDR_FORESTMONSTER)
             || character.action != 0
             || character.flags.contains(CharacterFlags::DEAD)
         {
@@ -321,7 +323,8 @@ impl World {
                 ((character.driver == CDR_SIMPLEBADDY
                     || character.driver == CDR_DUNGEONFIGHTER
                     || character.driver == CDR_PENTER
-                    || character.driver == CDR_SWAMPMONSTER)
+                    || character.driver == CDR_SWAMPMONSTER
+                    || character.driver == CDR_FORESTMONSTER)
                     && matches!(
                         character.driver_state,
                         Some(CharacterDriverState::SimpleBaddy(_))
@@ -528,7 +531,10 @@ impl World {
                 | CharacterDriverState::FdemonArmy(_)
                 | CharacterDriverState::Islena(_)
                 | CharacterDriverState::PalaceGuard(_)
-                | CharacterDriverState::GolemKeyhold(_) => None,
+                | CharacterDriverState::GolemKeyhold(_)
+                | CharacterDriverState::ForestImp(_)
+                | CharacterDriverState::ForestWilliam(_)
+                | CharacterDriverState::ForestHermit(_) => None,
             });
         let Some(target_id) = target_id else {
             return false;

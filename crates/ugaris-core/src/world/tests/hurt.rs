@@ -486,6 +486,61 @@ fn swamp_monster_death_driver_rejects_repeated_or_non_midnight_circles() {
 }
 
 #[test]
+fn forest_monster_death_driver_upgrades_midnight_stone_circle_weapon() {
+    let mut world = World::default();
+    world.date.hour = 0;
+    let mut dead = character(1);
+    dead.driver = CDR_FORESTMONSTER;
+    let mut killer = character(2);
+    killer.flags.insert(CharacterFlags::PLAYER);
+    killer.inventory[worn_slot::RIGHT_HAND] = Some(ItemId(7));
+    let mut weapon = item(7, ItemFlags::empty());
+    weapon.name = "Sword".into();
+    weapon.driver_data.resize(38, 0);
+    assert!(world.spawn_character(dead, 10, 10));
+    assert!(world.spawn_character(killer, 185, 188));
+    world.add_item(weapon);
+
+    assert!(world.apply_forest_monster_death_driver(CharacterId(1), CharacterId(2)));
+
+    let weapon = world.items.get(&ItemId(7)).unwrap();
+    assert_eq!(weapon.template_id, IID_HARDKILL);
+    assert_eq!(weapon.driver_data[36], 8);
+    assert_eq!(weapon.driver_data[37], 6);
+    assert!(weapon.flags.contains(ItemFlags::QUEST));
+    assert_eq!(
+        world.drain_pending_system_texts(),
+        vec![WorldSystemText {
+            character_id: CharacterId(2),
+            message: "Your Sword starts to glow.".into(),
+        }]
+    );
+}
+
+#[test]
+fn forest_monster_death_driver_rejects_repeated_or_non_midnight_circles() {
+    let mut world = World::default();
+    world.date.hour = 1;
+    let mut dead = character(1);
+    dead.driver = CDR_FORESTMONSTER;
+    let mut killer = character(2);
+    killer.flags.insert(CharacterFlags::PLAYER);
+    killer.inventory[worn_slot::RIGHT_HAND] = Some(ItemId(7));
+    let mut weapon = item(7, ItemFlags::empty());
+    weapon.driver_data.resize(38, 0);
+    assert!(world.spawn_character(dead, 10, 10));
+    assert!(world.spawn_character(killer, 185, 188));
+    world.add_item(weapon);
+
+    assert!(!world.apply_forest_monster_death_driver(CharacterId(1), CharacterId(2)));
+    world.date.hour = 0;
+    world.items.get_mut(&ItemId(7)).unwrap().driver_data[36] = 8;
+
+    assert!(!world.apply_forest_monster_death_driver(CharacterId(1), CharacterId(2)));
+    assert!(world.drain_pending_system_texts().is_empty());
+}
+
+#[test]
 fn area1_monster_death_driver_upgrades_noon_stone_circle_weapon() {
     let mut world = World::default();
     world.date.hour = 12;

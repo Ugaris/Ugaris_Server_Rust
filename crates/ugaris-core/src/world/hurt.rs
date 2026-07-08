@@ -401,6 +401,68 @@ impl World {
         true
     }
 
+    /// C `monster_dead` (`src/area/16/forest.c:817-853`), the stone-
+    /// circle-area weapon-glow half only (the `imp_kills`/`hermit_state`
+    /// counter halves need `PlayerRuntime` and live in `ugaris-server::
+    /// world_events::apply_forest_monster_death_from_hurt_event`
+    /// instead). Field-for-field identical to [`Self::
+    /// apply_swamp_monster_death_driver`] but with area 16's own bounding
+    /// box (`bit = 8`, `x: 182..=192, y: 185..=192`), midnight trigger
+    /// hour (same as area 15's own `hour == 0`), and `+= 6` charge amount
+    /// rather than area 15's `+= 12`.
+    pub fn apply_forest_monster_death_driver(
+        &mut self,
+        dead_id: CharacterId,
+        killer_id: CharacterId,
+    ) -> bool {
+        let Some(dead) = self.characters.get(&dead_id) else {
+            return false;
+        };
+        if dead.driver != CDR_FORESTMONSTER {
+            return false;
+        }
+        let Some(killer) = self.characters.get(&killer_id) else {
+            return false;
+        };
+        if !killer.flags.contains(CharacterFlags::PLAYER) {
+            return false;
+        }
+
+        // C `if (ch[co].x >= 182 && ch[co].y >= 185 && ch[co].x <= 192 &&
+        // ch[co].y <= 192) bit = 8;` (`forest.c:842-844`).
+        let bit: u8 = if (182..=192).contains(&killer.x) && (185..=192).contains(&killer.y) {
+            8
+        } else {
+            0
+        };
+        // C `if (hour == 0 && bit && ...)` (`forest.c:846`).
+        if self.date.hour != 0 || bit == 0 {
+            return false;
+        }
+
+        let Some(item_id) = killer.inventory[worn_slot::RIGHT_HAND] else {
+            return false;
+        };
+        let Some(item) = self.items.get_mut(&item_id) else {
+            return false;
+        };
+        if item.driver != 0 || item.driver_data.get(36).copied().unwrap_or_default() & bit != 0 {
+            return false;
+        }
+        if item.driver_data.len() <= 37 {
+            item.driver_data.resize(38, 0);
+        }
+        item.template_id = IID_HARDKILL;
+        item.driver_data[37] = item.driver_data[37].saturating_add(6);
+        item.driver_data[36] |= bit;
+        item.flags.insert(ItemFlags::QUEST);
+        self.pending_system_texts.push(WorldSystemText {
+            character_id: killer_id,
+            message: format!("Your {} starts to glow.", item.name),
+        });
+        true
+    }
+
     /// C `monster_dead` (`src/area/1/gwendylon.c:5201-5231`), the stone-
     /// circle-area weapon-glow half only (the `CDR_CAMHERMIT` kill-counter
     /// half needs `PlayerRuntime` and lives in

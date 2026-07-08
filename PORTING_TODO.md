@@ -774,7 +774,14 @@ Ordered by player progression; the C file is the oracle.
   NT_TEXT/NT_GIVE message-loop integration, military-point rewards, and
   the `CDR_SWAMPMONSTER`->`CDR_SIMPLEBADDY` AI-gate widening all ported;
   details in PORTING_LEDGER.md)*
-- [ ] **Area 16 - `src/area/16/forest.c`** - forest NPCs/robber quest.
+- [x] **Area 16 - `src/area/16/forest.c`** - forest NPCs/robber quest.
+  *(done - `imp_driver`/`william_driver`/`hermit_driver` (`CDR_FORESTIMP`/
+  `CDR_FORESTWILLIAM`/`CDR_FORESTHERMIT`) ported as one file each under
+  `world/npc/area16/`, sharing a new `FOREST_QA` table; `CDR_FORESTMONSTER`
+  reuses `CDR_SIMPLEBADDY` AI (same precedent as `CDR_SWAMPMONSTER`) plus
+  its `monster_dead` death hook (`imp_kills`/`hermit_state` counters +
+  hardkill-weapon glow). `IDR_FORESTCHEST` was already fully ported.
+  Details in PORTING_LEDGER.md.)*
 - [ ] **Area 17 - `src/area/17/two.c`** - Two-City thief/skeleton NPC
   drivers (`CDR_TWOSKELLY` has state scaffolding).
 - [ ] **Area 18 - `src/area/18/bones.c`** - rune quest completion
@@ -1213,4 +1220,11 @@ notes live in `PROGRESS_ARCHIVE.md`.
   real bug: a duplicate `EXP_AREA15_HARDKILL` constant was `5000` instead
   of C's `7500`. 2891 core + 1136 server tests pass, clean build/boot-
   smoke (area 15, 11 characters, no panics).
+- 2026-07-08: Area 16 CLOSED: ported `imp_driver`/`william_driver`/
+  `hermit_driver` (`world/npc/area16/{imp,william,hermit}.rs`) plus
+  `CDR_FORESTMONSTER`'s `monster_dead` death hook (weapon-glow in
+  `World::apply_forest_monster_death_driver`, `imp_kills`/`hermit_state`
+  counters in `ugaris-server::apply_forest_monster_death_from_hurt_event`).
+  2918 core + 1138 server tests pass, clean build/boot-smoke (area 16,
+  116 characters, no panics).
 

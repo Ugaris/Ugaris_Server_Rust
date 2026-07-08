@@ -8,18 +8,20 @@ use crate::{
         parse_arena_manager_driver_args, parse_clanclerk_driver_args, parse_clanmaster_driver_args,
         parse_clubmaster_driver_args, ArenaFighterDriverData, ArenaMasterDriverData,
         Astro2DriverData, BrithildieDriverData, CamhermitDriverData, CarlosDriverData,
-        CharacterDriverState, ClaraDriverData, DungeonmasterDriverData, ForestRangerDriverData,
-        GateFightDriverData, GateWelcomeDriverData, GolemKeyholdDriverData, GreeterDriverData,
-        GwendylonDriverData, JanitorDriverData, JessicaDriverData, JiuDriverData, KassimDriverData,
-        KellyDriverData, NookDriverData, ReskinDriverData, SeymourDriverData, SirJonesDriverData,
+        CharacterDriverState, ClaraDriverData, DungeonmasterDriverData, ForestHermitDriverData,
+        ForestImpDriverData, ForestRangerDriverData, ForestWilliamDriverData, GateFightDriverData,
+        GateWelcomeDriverData, GolemKeyholdDriverData, GreeterDriverData, GwendylonDriverData,
+        JanitorDriverData, JessicaDriverData, JiuDriverData, KassimDriverData, KellyDriverData,
+        NookDriverData, ReskinDriverData, SeymourDriverData, SirJonesDriverData,
         SuperiorDriverData, SupermaxDriverData, TerionDriverData, ThomasDriverData,
         TraderDriverData, YoakinDriverData, ARENA_FIGHTER_REST_POS, CDR_ARENAFIGHTER,
         CDR_ARENAMANAGER, CDR_ARENAMASTER, CDR_ASTRO2, CDR_BRITHILDIE, CDR_CAMHERMIT, CDR_CARLOS,
-        CDR_CLANCLERK, CDR_CLANMASTER, CDR_CLUBMASTER, CDR_DUNGEONMASTER, CDR_FOREST_RANGER,
-        CDR_GATE_FIGHT, CDR_GATE_WELCOME, CDR_GOLEMKEYHOLDER, CDR_GREETER, CDR_GWENDYLON,
-        CDR_JANITOR, CDR_JESSICA, CDR_JIU, CDR_KASSIM, CDR_KELLY, CDR_LAB2UNDEAD, CDR_NOOK,
-        CDR_RESKIN, CDR_SEYMOUR, CDR_SIMPLEBADDY, CDR_SIRJONES, CDR_SUPERIOR, CDR_SUPERMAX,
-        CDR_SWAMPCLARA, CDR_TERION, CDR_THOMAS, CDR_TRADER, CDR_YOAKIN, NT_CREATE,
+        CDR_CLANCLERK, CDR_CLANMASTER, CDR_CLUBMASTER, CDR_DUNGEONMASTER, CDR_FORESTHERMIT,
+        CDR_FORESTIMP, CDR_FORESTMONSTER, CDR_FORESTWILLIAM, CDR_FOREST_RANGER, CDR_GATE_FIGHT,
+        CDR_GATE_WELCOME, CDR_GOLEMKEYHOLDER, CDR_GREETER, CDR_GWENDYLON, CDR_JANITOR, CDR_JESSICA,
+        CDR_JIU, CDR_KASSIM, CDR_KELLY, CDR_LAB2UNDEAD, CDR_NOOK, CDR_RESKIN, CDR_SEYMOUR,
+        CDR_SIMPLEBADDY, CDR_SIRJONES, CDR_SUPERIOR, CDR_SUPERMAX, CDR_SWAMPCLARA, CDR_TERION,
+        CDR_THOMAS, CDR_TRADER, CDR_YOAKIN, NT_CREATE,
     },
     entity::{
         Character, CharacterFlags, Item, ItemFlags, CHARACTER_VALUE_COUNT, INVENTORY_SIZE,
@@ -604,6 +606,49 @@ impl ZoneLoader {
             // clara_driver_data` (`set_data` zero-initializes it) - no
             // args to read here, same as `CDR_GATE_WELCOME` above.
             character.driver_state = Some(CharacterDriverState::Clara(ClaraDriverData::default()));
+        }
+        if template.driver == CDR_FORESTMONSTER {
+            // C `ch_driver`'s `CDR_FORESTMONSTER` dispatch (`forest.c:909-
+            // 911`): an unconditional every-tick tail call to
+            // `char_driver(CDR_SIMPLEBADDY, CDT_DRIVER, cn, ret,
+            // lastact)`, reusing the SimpleBaddy driver's full idle-
+            // wander/auto-attack AI wholesale - same precedent as
+            // `CDR_PENTER`/`CDR_SWAMPMONSTER` above. The `wolf33`/
+            // `bear35`/`skeleton38`/`skeleton38_key` templates
+            // (`zones/16/forest.chr`) carry the same
+            // `arg="aggressive=1;helper=0;scavenger=...;"` shape
+            // SimpleBaddy's own `NT_CREATE` handler parses.
+            character.push_driver_message(NT_CREATE, 0, 0, 0);
+            apply_simple_baddy_create_message(&mut character, Some(&template.args), 0);
+        }
+        if template.driver == CDR_FORESTIMP {
+            // C never parses zone-file args into `struct
+            // imp_driver_data` (`set_data` zero-initializes it) - no
+            // args to read here (the zone file's own `arg="aggressive=
+            // ...";` line is dead weight for this driver - `imp_driver`
+            // never calls `fight_driver_set_dist`/reads `ch[cn].arg` at
+            // all), same as `CDR_SWAMPCLARA` above.
+            character.driver_state = Some(CharacterDriverState::ForestImp(
+                ForestImpDriverData::default(),
+            ));
+        }
+        if template.driver == CDR_FORESTWILLIAM {
+            // C never parses zone-file args into `struct
+            // william_driver_data` (`set_data` zero-initializes it) - no
+            // `arg=` line exists for this template at all
+            // (`zones/16/forest.chr`), same as `CDR_SWAMPCLARA` above.
+            character.driver_state = Some(CharacterDriverState::ForestWilliam(
+                ForestWilliamDriverData::default(),
+            ));
+        }
+        if template.driver == CDR_FORESTHERMIT {
+            // C never parses zone-file args into `struct
+            // hermit_driver_data` (`set_data` zero-initializes it) - no
+            // `arg=` line exists for this template at all
+            // (`zones/16/forest.chr`), same as `CDR_SWAMPCLARA` above.
+            character.driver_state = Some(CharacterDriverState::ForestHermit(
+                ForestHermitDriverData::default(),
+            ));
         }
         if template.driver == crate::character_driver::CDR_FDEMON_DEMON {
             // C `fdemon_demon`'s own very first check (`fdemon.c:2746-2749`)

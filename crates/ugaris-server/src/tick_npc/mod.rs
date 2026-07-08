@@ -8,6 +8,7 @@ pub(crate) mod area1;
 pub(crate) mod area11;
 pub(crate) mod area12;
 pub(crate) mod area13;
+pub(crate) mod area16;
 pub(crate) mod area2;
 pub(crate) mod area22;
 pub(crate) mod area3;
@@ -1902,6 +1903,66 @@ pub(crate) async fn run_all(
     )
     .await;
     area3::clara_driver_93(
+        &mut *world,
+        &mut *runtime,
+        &mut *zone_loader,
+        config,
+        args,
+        completed_actions,
+        achievement_repository,
+        character_repository,
+        area_repository,
+        clan_repository,
+        clan_log_repository,
+        merchant_repository,
+        military_master_storage_repository,
+        military_advisor_storage_repository,
+        notes_repository,
+        anticheat_repository,
+        auction_repository,
+    )
+    .await;
+    area16::forest_imp_driver_94(
+        &mut *world,
+        &mut *runtime,
+        &mut *zone_loader,
+        config,
+        args,
+        completed_actions,
+        achievement_repository,
+        character_repository,
+        area_repository,
+        clan_repository,
+        clan_log_repository,
+        merchant_repository,
+        military_master_storage_repository,
+        military_advisor_storage_repository,
+        notes_repository,
+        anticheat_repository,
+        auction_repository,
+    )
+    .await;
+    area16::forest_william_driver_95(
+        &mut *world,
+        &mut *runtime,
+        &mut *zone_loader,
+        config,
+        args,
+        completed_actions,
+        achievement_repository,
+        character_repository,
+        area_repository,
+        clan_repository,
+        clan_log_repository,
+        merchant_repository,
+        military_master_storage_repository,
+        military_advisor_storage_repository,
+        notes_repository,
+        anticheat_repository,
+        auction_repository,
+    )
+    .await;
+    area16::forest_hermit_driver_96(
         &mut *world,
         &mut *runtime,
         &mut *zone_loader,

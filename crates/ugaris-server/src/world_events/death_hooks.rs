@@ -113,6 +113,62 @@ pub(crate) fn apply_swamp_monster_death_from_hurt_event(
     progressed_clara || upgraded_weapon
 }
 
+/// C `ch_died_driver`/`CDR_FORESTMONSTER` dispatch (`forest.c:938-940`)
+/// -> `monster_dead` (`:817-853`). Splits like `apply_swamp_monster_
+/// death_from_hurt_event`: the `imp_kills`/`hermit_state` counter halves
+/// here (need `PlayerRuntime`), the weapon-glow item mutation in
+/// [`World::apply_forest_monster_death_driver`].
+pub(crate) fn apply_forest_monster_death_from_hurt_event(
+    runtime: &mut ServerRuntime,
+    world: &mut World,
+    event: LegacyHurtEvent,
+) -> bool {
+    if !event.outcome.killed {
+        return false;
+    }
+    let Some((sprite, is_hardkill)) = world
+        .characters
+        .get(&event.target_id)
+        .zip(world.characters.get(&event.cause_id))
+        .and_then(|(target, killer)| {
+            (target.driver == CDR_FORESTMONSTER && killer.flags.contains(CharacterFlags::PLAYER))
+                .then_some((
+                    target.sprite,
+                    target.flags.contains(CharacterFlags::HARDKILL),
+                ))
+        })
+    else {
+        return false;
+    };
+
+    let mut progressed = false;
+    if let Some(player) = runtime.player_for_character_mut(event.cause_id) {
+        // C `if ((ch[cn].sprite == 306) && ... ppd->imp_state == 2) {
+        // ppd->imp_kills++; if (ppd->imp_kills > 20) { ppd->imp_state = 3;
+        // } }` (`forest.c:828-834`) - sprite `306` is the `bear35`
+        // template.
+        if sprite == 306 && player.area3_imp_state() == 2 {
+            let kills = player.area3_imp_kills() + 1;
+            player.set_area3_imp_kills(kills);
+            if kills > 20 {
+                player.set_area3_imp_state(3);
+            }
+            progressed = true;
+        }
+        // C `if ((ch[cn].flags & CF_HARDKILL) && ... ppd->hermit_state ==
+        // 4) { ppd->hermit_state = 5; log_char(co, LOG_SYSTEM, 0, "Thou
+        // hast slain the spider queen."); }` (`forest.c:836-840`).
+        if is_hardkill && player.area3_hermit_state() == 4 {
+            player.set_area3_hermit_state(5);
+            world.queue_system_text(event.cause_id, "Thou hast slain the spider queen.");
+            progressed = true;
+        }
+    }
+
+    let upgraded_weapon = world.apply_forest_monster_death_driver(event.target_id, event.cause_id);
+    progressed || upgraded_weapon
+}
+
 /// C `ch_died_driver`/`CDR_CAMERON_FORESTMONSTER` dispatch
 /// (`gwendylon.c:6212-6214`) -> `monster_dead` (`:5201-5231`). Splits like
 /// `apply_swamp_monster_death_from_hurt_event`: the `camhermit_kills`
