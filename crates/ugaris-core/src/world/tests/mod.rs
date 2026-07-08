@@ -106,6 +106,7 @@ mod thomas;
 mod trader;
 mod turn_seyan;
 mod tutorial;
+mod two_skelly;
 mod values;
 mod vampire;
 mod vampire2;

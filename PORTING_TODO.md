@@ -782,8 +782,17 @@ Ordered by player progression; the C file is the oracle.
   its `monster_dead` death hook (`imp_kills`/`hermit_state` counters +
   hardkill-weapon glow). `IDR_FORESTCHEST` was already fully ported.
   Details in PORTING_LEDGER.md.)*
-- [ ] **Area 17 - `src/area/17/two.c`** - Two-City thief/skeleton NPC
+- [~] **Area 17 - `src/area/17/two.c`** - Two-City thief/skeleton NPC
   drivers (`CDR_TWOSKELLY` has state scaffolding).
+  REMAINING: `CDR_TWOSKELLY` ("Scarcewind", the raised governor's-ghost
+  quest giver, quest 30) is now fully ported (`world/npc/area17/
+  two_skelly.rs`), including its 30-second self-destruct timer and the
+  new file-local `TWOCITY_QA` shared table (`world/npc/area17/mod.rs`,
+  currently only the entries this NPC needs). Still unported:
+  `CDR_TWOGUARD`/`CDR_TWOBARKEEPER`/`CDR_TWOSERVANT`/`CDR_TWOTHIEFGUARD`/
+  `CDR_TWOTHIEFMASTER`/`CDR_TWOROBBER`'s death hook/`CDR_TWOSANWYN`/
+  `CDR_TWOALCHEMIST` - see `PORTING_LEDGER.md` for the full driver
+  breakdown and suggested next-slice order.
 - [ ] **Area 18 - `src/area/18/bones.c`** - rune quest completion
   (`exec_rune` rewards), bone NPCs.
 - [ ] **Area 19 - `src/area/19/nomad.c`** - nomad camp NPCs/trading.
@@ -856,6 +865,10 @@ Keep entries to at most three lines: date, task, one-line result.
 Anything longer belongs in `PORTING_LEDGER.md`; historical verbose
 notes live in `PROGRESS_ARCHIVE.md`.
 
+- 2026-07-08: Area 17 STARTED: ported `CDR_TWOSKELLY` (`world/npc/
+  area17/two_skelly.rs`, quest 30) plus a new `raise_skeleton_from_
+  template` rest-position fix it depends on. 2929 core + 1138 server
+  tests pass, clean build/boot-smoke.
 - 2026-07-08: Area 14 STARTED: ported `shrine_indecisiveness`/
   `shrine_bribes` plus the `sendquestlog` resend after every successful
   random-shrine use (all 10 ported kinds). Only `shrine_welding` remains.

@@ -468,6 +468,12 @@ pub const IID_AREA17_BLOODBOWL: u32 = (0x01 << 24) | 0x000071;
 
 pub const IID_AREA17_LOCKPICK: u32 = (0x01 << 24) | 0x000062;
 
+pub const IID_AREA17_GREENKEY: u32 = (0x01 << 24) | 0x000072;
+
+pub const IID_AREA17_REDKEY: u32 = (0x01 << 24) | 0x000073;
+
+pub const IID_AREA17_CROSS: u32 = (0x01 << 24) | 0x000074;
+
 pub const IID_AREA16_ROBBERKEY: u32 = (0x01 << 24) | 0x000060;
 
 pub const IID_AREA16_SKELLYKEY: u32 = (0x01 << 24) | 0x000061;

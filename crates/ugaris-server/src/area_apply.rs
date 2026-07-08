@@ -1394,6 +1394,16 @@ pub(crate) fn raise_skeleton_from_template(
     if !world.spawn_character(raised, x, y) {
         return false;
     }
+    // C `create_drop_char` (`tool.c:3319-3321`): `ch[cn].tmpx = ch[cn].x;
+    // ch[cn].tmpy = ch[cn].y;` right after the actual drop-placement
+    // (which may snap to an adjacent tile) - ported as `rest_x`/`rest_y`,
+    // the same substitution every other stationary NPC in this codebase
+    // makes. Needed for `CDR_TWOSKELLY`'s (`quest_skeleton`) own move-
+    // back-to-post logic to have a sane home tile instead of `(0, 0)`.
+    if let Some(raised) = world.characters.get_mut(&raised_id) {
+        raised.rest_x = raised.x;
+        raised.rest_y = raised.y;
+    }
     for item in inventory_items {
         world.items.insert(item.id, item);
     }

@@ -1658,7 +1658,6 @@ pub enum CharacterDriverKind {
     SwampClara,
     SwampMonster,
     PalaceIslena,
-    TwoSkelly,
     Trader,
     LqNpc,
     Janitor,
@@ -1677,7 +1676,6 @@ impl CharacterDriverKind {
             CDR_SWAMPCLARA => Some(Self::SwampClara),
             CDR_SWAMPMONSTER => Some(Self::SwampMonster),
             CDR_PALACEISLENA => Some(Self::PalaceIslena),
-            CDR_TWOSKELLY => Some(Self::TwoSkelly),
             CDR_TRADER => Some(Self::Trader),
             CDR_LQNPC => Some(Self::LqNpc),
             CDR_JANITOR => Some(Self::Janitor),
@@ -1698,7 +1696,6 @@ impl CharacterDriverKind {
             Self::SwampClara => CDR_SWAMPCLARA,
             Self::SwampMonster => CDR_SWAMPMONSTER,
             Self::PalaceIslena => CDR_PALACEISLENA,
-            Self::TwoSkelly => CDR_TWOSKELLY,
             Self::Trader => CDR_TRADER,
             Self::LqNpc => CDR_LQNPC,
             Self::Janitor => CDR_JANITOR,
@@ -2083,7 +2080,6 @@ mod tests {
             CharacterDriverKind::PalaceIslena.legacy_id(),
             CDR_PALACEISLENA
         );
-        assert_eq!(CharacterDriverKind::TwoSkelly.legacy_id(), CDR_TWOSKELLY);
         assert_eq!(CharacterDriverKind::Trader.legacy_id(), CDR_TRADER);
         assert_eq!(CharacterDriverKind::LqNpc.legacy_id(), CDR_LQNPC);
         assert_eq!(CharacterDriverKind::Janitor.legacy_id(), CDR_JANITOR);
@@ -2155,7 +2151,6 @@ mod tests {
             (CDR_SWAMPCLARA, CharacterDriverKind::SwampClara),
             (CDR_SWAMPMONSTER, CharacterDriverKind::SwampMonster),
             (CDR_PALACEISLENA, CharacterDriverKind::PalaceIslena),
-            (CDR_TWOSKELLY, CharacterDriverKind::TwoSkelly),
             (CDR_TRADER, CharacterDriverKind::Trader),
             (CDR_LQNPC, CharacterDriverKind::LqNpc),
             (CDR_JANITOR, CharacterDriverKind::Janitor),
@@ -2227,18 +2222,6 @@ mod tests {
         );
         assert_eq!(clara_died.legacy_return_code(), 1);
 
-        let two_skelly_died = execute_character_died_driver(CDR_TWOSKELLY, 123);
-        assert_eq!(
-            two_skelly_died,
-            CharacterDriverOutcome::HandledStub {
-                kind: CharacterDriverKind::TwoSkelly,
-                call: CharacterDriverCall::Died {
-                    killer_character_id: 123,
-                },
-            }
-        );
-        assert_eq!(two_skelly_died.legacy_return_code(), 1);
-
         let swamp_monster_died = execute_character_died_driver(CDR_SWAMPMONSTER, 123);
         assert_eq!(
             swamp_monster_died,
@@ -2290,16 +2273,6 @@ mod tests {
             }
         );
         assert_eq!(clara_respawn.legacy_return_code(), 1);
-
-        let two_skelly_respawn = execute_character_respawn_driver(CDR_TWOSKELLY);
-        assert_eq!(
-            two_skelly_respawn,
-            CharacterDriverOutcome::HandledStub {
-                kind: CharacterDriverKind::TwoSkelly,
-                call: CharacterDriverCall::Respawn,
-            }
-        );
-        assert_eq!(two_skelly_respawn.legacy_return_code(), 1);
 
         let swamp_monster_respawn = execute_character_respawn_driver(CDR_SWAMPMONSTER);
         assert_eq!(
