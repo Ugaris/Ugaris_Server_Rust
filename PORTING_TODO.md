@@ -633,10 +633,11 @@ Ordered by player progression; the C file is the oracle.
   accessors (`PlayerRuntime::farmy_soldier_type`/`_rank`/`_base`/
   `_profile`/`_exp`/`_cn`/`_serial` in `player/areas_misc.rs`), and now
   also `update_soldier`'s stat-scaling (`scale_soldier_skill`/
-  `scale_soldier_values`) and skill-tiered equipment selection
-  (`soldier_equipment_items`). Still needed: `calc_exp` (C's skill-sum exp
-  formula - not yet ported anywhere in the Rust tree; `exp2level` already
-  exists in `world/exp.rs`), the actual `take_soldiers`/`drop_soldiers`
+  `scale_soldier_values`), skill-tiered equipment selection
+  (`soldier_equipment_items`), and exp/level recompute
+  (`calc_exp` in `world/exp.rs`, C `skill.c:174-196`, plus
+  `finalize_soldier_exp_and_level` composing it with the already-ported
+  `exp2level`). Still needed: the actual `take_soldiers`/`drop_soldiers`
   character spawning (`ZoneLoader::instantiate_character_template
   ("army1s"/"army2s", ..)`, `drop_char` placement), the `CDR_FDEMON_ARMY`
   driver id + `CharacterDriverState` variant + `army_follow_driver`/
@@ -1019,4 +1020,9 @@ notes live in `PROGRESS_ARCHIVE.md`.
   pure stat-scaling + skill-tiered equipment selection in
   `fdemon_army.rs`. `calc_exp`/spawning/formation-AI still remain.
   2766 core + 1108 server tests pass, clean build.
+- 2026-07-08: Area 8 `CDR_FDEMON_ARMY` third slice: ported `calc_exp`
+  (`world/exp.rs`, C `skill.c:174-196`) plus `update_soldier`'s exp/level
+  recompute (`fdemon_army::finalize_soldier_exp_and_level`). Spawning/
+  driver id/formation-AI/emotes still remain. 2771 core + 1108 server
+  tests pass, clean build.
 

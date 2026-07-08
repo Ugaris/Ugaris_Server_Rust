@@ -92,6 +92,54 @@ pub fn level2maxitem(level: i32) -> i32 {
     20
 }
 
+/// C `calc_exp(cn)` (`src/system/skill.c:174-196`): the exp cost to fairly
+/// re-earn a character's current bare (`value[1]`) skill values from
+/// scratch. C calls this from `create_char` (`src/system/create.c:1034`)
+/// so every freshly-instantiated character's `exp`/`exp_used` reflect what
+/// a player would have had to spend to reach its template skill values,
+/// and again from `take_soldiers` (`src/area/8/fdemon.c:421`) after a
+/// recruited `CDR_FDEMON_ARMY` soldier's `value[1]` array is scaled by
+/// `update_soldier` (see `world/npc/area8/fdemon_army.rs::
+/// scale_soldier_values`).
+///
+/// For each raisable skill (`skill_raise_cost_factor(v) != 0`) with a
+/// non-zero bare value, sums [`crate::item_driver::raise_cost`] (or, for
+/// `CharacterFlags::PLAYER` characters raising past
+/// [`crate::item_driver::skillmax`], [`crate::item_driver::supermax_cost`])
+/// for every step from `skill_start(v) + 1` up to the current value,
+/// matching C's `for (n = skill[v].start + 1; n <= ch[cn].value[1][v]; n++)`
+/// loop exactly (including reading `n - 1` as the "current" value at each
+/// step, i.e. the cost of the raise that reached `n`).
+pub fn calc_exp(character: &Character) -> u32 {
+    let seyan = character.flags.contains(CharacterFlags::WARRIOR)
+        && character.flags.contains(CharacterFlags::MAGE);
+    let is_player = character.flags.contains(CharacterFlags::PLAYER);
+
+    let mut exp: u32 = 0;
+    for v in 0..CHARACTER_VALUE_COUNT {
+        let current = character.values[1][v];
+        if current == 0 {
+            continue;
+        }
+        if crate::item_driver::skill_raise_cost_factor(v) == 0 {
+            continue;
+        }
+
+        let start = crate::item_driver::skill_start(v);
+        let mut n = start + 1;
+        while n <= i32::from(current) {
+            let prior = (n - 1) as i16;
+            if is_player && i32::from(prior) >= i32::from(crate::item_driver::skillmax(character)) {
+                exp = exp.saturating_add(crate::item_driver::supermax_cost(character, v, prior));
+            } else {
+                exp = exp.saturating_add(crate::item_driver::raise_cost(v, prior, seyan));
+            }
+            n += 1;
+        }
+    }
+    exp
+}
+
 impl World {
     /// C `give_exp(cn, val)` (`src/system/tool.c:1371-1423`): the canonical
     /// experience-grant entry point. Applies the hardcore/global exp

@@ -2223,15 +2223,45 @@
         "test result: ok. 2762 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.22s",
         "test result: ok. 81 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
       ]
+    },
+    {
+      "iteration": 65,
+      "startedAt": "2026-07-08T09:55:11.523Z",
+      "endedAt": "2026-07-08T10:07:58.123Z",
+      "durationMs": 765564,
+      "agent": "opencode",
+      "model": "anthropic/claude-sonnet-5",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "PORTING_TODO.md",
+        "crates/ugaris-core/src/world/exp.rs",
+        "crates/ugaris-core/src/world/npc/area8/fdemon_army.rs",
+        "crates/ugaris-core/src/world/tests/exp.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "Everything is green: 2771 core + 1108 server tests pass, zero failures, clean build with zero warnings, and `cargo fmt --all` is clean.",
+        "test result: ok. 1108 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.09s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "219-                        ZoneError::MapOutOfBounds {",
+        "238-                                .ok_or(ZoneError::MapOutOfBounds { x: tx, y: ty })?;",
+        "245-                        ZoneError::MapOutOfBounds {",
+        "390-            .ok_or_else(|| ZoneError::UnknownCharacter(key.to_string()))?",
+        "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 2766 filtered out; finished in 0.00s",
+        "error: could not compile `ugaris-core` (lib test) due to 2 previous errors",
+        "test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 2758 filtered out; finished in 0.00s"
+      ]
     }
   ],
-  "totalDurationMs": 81755129,
+  "totalDurationMs": 82520693,
   "struggleIndicators": {
     "repeatedErrors": {
       "Everything builds cleanly, all tests pass (2380 core + 1091 server, zero failures, zero warnings), f": 1,
       "Verification: `cargo fmt --all`, `cargo test --workspace` (2380 ugaris-core + 1091 ugaris-server, al": 1,
       "test result: ok. 1089 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.09s": 1,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 64,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 65,
       "The arguments provided to the tool are invalid: Invalid input for tool read: JSON parsing failed: Te": 15,
       "Error message: JSON Parse error: Property name must be a string literal": 12,
       "error: could not compile `ugaris-core` (lib) due to 4 previous errors": 2,
@@ -2440,7 +2470,7 @@
       "- All verification green: `cargo fmt --all`, `cargo test --workspace` (2696 core + 81 db + 1108 serv": 1,
       "test result: ok. 2696 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.22s": 2,
       "test result: ok. 1108 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.12s": 1,
-      "test result: ok. 1108 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.09s": 4,
+      "test result: ok. 1108 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.09s": 5,
       "245-        return Err(DoError::Dead);": 1,
       "248-    let direction = Direction::try_from(direction).map_err(|_| DoError::IllegalDirection)?;": 1,
       "test world::tests::tester::tester_takes_an_adjacent_potion_directly ... FAILED": 1,
@@ -2473,7 +2503,15 @@
       "test result: ok. 2762 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.23s": 1,
       "Everything is green: 2766 core tests (4 new), 1108 server tests unchanged, zero failures, zero warni": 1,
       "All verification passed: `cargo fmt --all`, `cargo test --workspace` (2766 core + 81 db + 3 net + 45": 1,
-      "test result: ok. 2762 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.22s": 1
+      "test result: ok. 2762 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.22s": 1,
+      "Everything is green: 2771 core + 1108 server tests pass, zero failures, clean build with zero warnin": 1,
+      "219-                        ZoneError::MapOutOfBounds {": 1,
+      "238-                                .ok_or(ZoneError::MapOutOfBounds { x: tx, y: ty })?;": 1,
+      "245-                        ZoneError::MapOutOfBounds {": 1,
+      "390-            .ok_or_else(|| ZoneError::UnknownCharacter(key.to_string()))?": 1,
+      "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 2766 filtered out; finished in 0.00s": 1,
+      "error: could not compile `ugaris-core` (lib test) due to 2 previous errors": 1,
+      "test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 2758 filtered out; finished in 0.00s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

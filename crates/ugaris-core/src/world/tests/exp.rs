@@ -492,3 +492,52 @@ fn give_exp_does_not_queue_macro_event_when_noexp_or_area_21_short_circuits() {
     world2.give_exp(CharacterId(2), 100, 21);
     assert!(world2.drain_exp_gain_events().is_empty());
 }
+
+// C `calc_exp(cn)` (`src/system/skill.c:174-196`).
+#[test]
+fn calc_exp_sums_raise_cost_from_skill_start_to_current_value() {
+    let mut ch = character(1);
+    ch.values[1][CharacterValue::Sword as usize] = 3;
+    // start=1, so steps are n=2 (prior=1, nr=6, 6^3/10=21) and n=3
+    // (prior=2, nr=7, 7^3/10=34): 21+34=55.
+    assert_eq!(calc_exp(&ch), 55);
+}
+
+#[test]
+fn calc_exp_skips_non_raisable_skills_even_when_the_bare_value_is_nonzero() {
+    let mut ch = character(1);
+    ch.values[1][CharacterValue::Sword as usize] = 3; // 55, from the test above
+    ch.values[1][CharacterValue::Armor as usize] = 20; // cost factor 0, skipped entirely
+    ch.values[1][CharacterValue::Attack as usize] = 2; // start=1: n=2, prior=1, nr=6, 6^3/10=21
+    assert_eq!(calc_exp(&ch), 55 + 21);
+}
+
+#[test]
+fn calc_exp_uses_supermax_cost_past_skillmax_only_for_players() {
+    let mut ch = character(1);
+    ch.values[1][CharacterValue::Sword as usize] = 51;
+    // Non-player (e.g. an NPC/soldier template): raise_cost all the way,
+    // skillmax's CF_PLAYER-only supermax branch never triggers.
+    assert_eq!(calc_exp(&ch), 237_115);
+
+    // Same skill values, but a player (non-CF_ARCH, skillmax==50): the
+    // final step (prior=50) crosses into supermax_cost's 3,000,000-per-
+    // point-of-canraise-weight penalty on top of the same raise_cost.
+    ch.flags.insert(CharacterFlags::PLAYER);
+    assert_eq!(calc_exp(&ch), 3_237_115);
+}
+
+#[test]
+fn calc_exp_applies_the_seyan_four_over_thirty_cost_multiplier() {
+    let mut ch = character(1);
+    ch.values[1][CharacterValue::Hp as usize] = 12; // start=10: steps n=11,12
+    assert_eq!(calc_exp(&ch), 166, "non-seyan: nr^3 * cost / 10");
+
+    ch.flags.insert(CharacterFlags::WARRIOR);
+    ch.flags.insert(CharacterFlags::MAGE);
+    assert_eq!(
+        calc_exp(&ch),
+        223,
+        "seyan (warrior+mage): nr^3 * cost * 4 / 30"
+    );
+}

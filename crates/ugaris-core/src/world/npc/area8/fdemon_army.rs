@@ -10,13 +10,14 @@
 //! C's `take_soldiers`/`assign_profile`/`update_soldier`
 //! (`fdemon.c:384-446`): the static `profile[]` table (`fdemon.c:313-320`),
 //! the type/profile eligibility logic that decides *which* soldier(s)
-//! become newly recruitable at a given army rank, and `update_soldier`'s
-//! per-skill stat scaling ([`scale_soldier_values`]) plus its
-//! skill-tiered equipment selection ([`soldier_equipment_items`]). This is
+//! become newly recruitable at a given army rank, `update_soldier`'s
+//! per-skill stat scaling ([`scale_soldier_values`]), its skill-tiered
+//! equipment selection ([`soldier_equipment_items`]), and its exp/level
+//! recompute ([`finalize_soldier_exp_and_level`], reusing the now-ported
+//! `crate::world::calc_exp`/`exp2level`, `world/exp.rs`). This is
 //! deliberately reusable ahead of the actual `World`-side spawning
 //! integration (real `Character`/`Item` creation via
 //! `ZoneLoader::instantiate_character_template("army1s"/"army2s", ..)`,
-//! `calc_exp`/`exp2level` (not yet ported to core - see `world/exp.rs`),
 //! `drop_char` placement, `farmy_data` follow-state initialization) - see
 //! `PORTING_TODO.md`'s Area 8 entry for the full remaining scope
 //! (`take_soldiers`/`drop_soldiers` spawning, `army_follow_driver`/
@@ -283,6 +284,19 @@ pub fn soldier_equipment_items(
     }
 }
 
+/// C `update_soldier`'s exp/level recompute
+/// (`fdemon.c:421-422`: `ch[co].exp = ch[co].exp_used = calc_exp(co);
+/// ch[co].level = exp2level(ch[co].exp);`), called after
+/// [`scale_soldier_values`] has written the soldier's freshly-scaled
+/// `value[1]` array so `exp`/`level` stay consistent with what a player
+/// would have had to spend to reach those skill values.
+pub fn finalize_soldier_exp_and_level(character: &mut crate::entity::Character) {
+    let exp = crate::world::calc_exp(character);
+    character.exp = exp;
+    character.exp_used = exp;
+    character.level = crate::world::exp2level(exp);
+}
+
 /// One newly-eligible recruit slot, as planned by [`plan_soldier_recruitment`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SoldierRecruitPlan {
@@ -545,6 +559,96 @@ mod tests {
     fn soldier_equipment_items_mage_gets_only_a_dagger_skill_tiered_dagger() {
         let items = soldier_equipment_items(SOLDIER_TYPE_MAGE, 999, 999, 12);
         assert_eq!(items, vec![(WN_RHAND, "dagger2q1".to_string())]);
+    }
+
+    #[test]
+    fn finalize_soldier_exp_and_level_recomputes_exp_used_and_level_from_scaled_values() {
+        use crate::entity::{Character, CharacterFlags};
+        use crate::ids::CharacterId;
+
+        let base = soldier_base_strength(1); // 47
+        let mut character = Character {
+            id: CharacterId(1),
+            serial: 1,
+            name: "Soldier".into(),
+            description: String::new(),
+            flags: CharacterFlags::USED,
+            sprite: 0,
+            c1: 0,
+            c2: 0,
+            c3: 0,
+            driver: 0,
+            group: 0,
+            clan: 0,
+            clan_rank: 0,
+            clan_serial: 0,
+            staff_code: String::new(),
+            speed_mode: Default::default(),
+            x: 0,
+            y: 0,
+            rest_area: 0,
+            rest_x: 0,
+            rest_y: 0,
+            tox: 0,
+            toy: 0,
+            dir: 0,
+            action: 0,
+            duration: 0,
+            step: 0,
+            act1: 0,
+            act2: 0,
+            hp: 0,
+            mana: 0,
+            endurance: 0,
+            lifeshield: 0,
+            level: 1,
+            exp: 999,
+            exp_used: 999,
+            military_points: 0,
+            military_normal_exp: 0,
+            gold: 0,
+            karma: 0,
+            creation_time: 0,
+            saves: 0,
+            got_saved: 0,
+            deaths: 0,
+            regen_ticker: 0,
+            last_regen: 0,
+            cursor_item: None,
+            current_container: None,
+            values: Character::empty_values(),
+            professions: Character::empty_professions(),
+            inventory: Character::empty_inventory(),
+            driver_state: None,
+            driver_messages: Vec::new(),
+            driver_memory: crate::character_driver::DriverMemory::default(),
+            template_key: String::new(),
+            respawn_ticks: 0,
+            merchant: None,
+            class: 0,
+            dungeonfighter: None,
+            fight_driver: None,
+        };
+        // A slice of army1s's template markers (V_HP=2, V_ENDURANCE=1,
+        // V_SWORD=3), same fixture as `scale_soldier_values_...` above.
+        let template_markers = [2, 1, 0, 3, 3];
+        let mut scaled = [0i32; 5];
+        scale_soldier_values(&template_markers, base, &mut scaled);
+        for (v, value) in scaled.iter().enumerate() {
+            character.values[1][v] = *value as i16;
+        }
+        // values[1][..5] = [42(-5), 23(/2), 0(untouched), 47(base), 47(base)]
+
+        finalize_soldier_exp_and_level(&mut character);
+
+        let expected_exp = crate::world::calc_exp(&character);
+        assert_eq!(character.exp, expected_exp);
+        assert_eq!(character.exp_used, expected_exp);
+        assert_eq!(character.level, crate::world::exp2level(expected_exp));
+        assert!(
+            character.exp > 0,
+            "scaled skill values must produce nonzero exp"
+        );
     }
 
     #[test]
