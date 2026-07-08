@@ -42,6 +42,7 @@ mod greeter;
 mod guiwynn;
 mod gwendylon;
 mod hurt;
+mod islena;
 mod item_outcomes;
 mod items;
 mod jail;

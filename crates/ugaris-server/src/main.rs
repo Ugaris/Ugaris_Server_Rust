@@ -10,6 +10,7 @@
 
 mod achievement;
 mod area1;
+mod area11;
 mod area3;
 mod area8;
 mod area8_army;

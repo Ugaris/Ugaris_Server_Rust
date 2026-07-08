@@ -473,6 +473,16 @@ pub struct PlayerRuntime {
     pub saltmine_ladder_last_seconds: [u64; SALTMINE_LADDER_COUNT],
     #[serde(default)]
     pub saltmine_pending_salt: u32,
+    /// C `struct islena_ppd { int islena_state; }` (`src/area/11/palace.c:
+    /// 566-568`, backing the persistent `DRD_ISLENA_PPD`): the boss
+    /// dialogue/aggro state machine `palace_islena` drives before combat
+    /// starts (`0..=3` canned greetings) and pins to `10` forever once the
+    /// player has hurt her (permanent hostility - see
+    /// `world::npc::area11::islena`'s module doc comment). New persistent
+    /// state per `AGENTS.md`'s persistence rule: a plain `#[serde(default)]`
+    /// field on `PlayerRuntime`, no legacy blob codec needed.
+    #[serde(default)]
+    pub islena_state: i32,
     /// C `struct pent_debug_data`/`struct pentagram_player_data`
     /// (`command.c:1136-1143`, `area/4/pents.c:130-139`), stored at
     /// `DRD_PENT_NPPD`. Unlike every neighboring `_PPD` id in
@@ -763,6 +773,7 @@ impl PlayerRuntime {
             twocity_solved_library: false,
             saltmine_ladder_last_seconds: [0; SALTMINE_LADDER_COUNT],
             saltmine_pending_salt: 0,
+            islena_state: 0,
             pentagram_debug: PentagramDebugData::default(),
             macro_ppd: MacroPpd::default(),
             depot: Self::default_depot(),

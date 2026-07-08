@@ -1065,6 +1065,27 @@ pub(crate) async fn award_reskin_well_paid_gatherer_achievement(
 /// time (quest 20 is `QLF_REPEATABLE`, and C's call is unconditional, not
 /// gated on first completion). Consumes a `CarlosOutcomeEvent::
 /// DragonStaffQuestDone` queued by `World::process_carlos_actions`.
+/// C `islena_dead`'s `achievement_award(co, ACHIEVEMENT_LADYKILLER, 1)`
+/// (`src/area/11/palace.c:765`), fired the first time a player slays
+/// Islena. Consumes a `CharacterId` queued by `World::apply_islena_death`
+/// into `pending_islena_ladykiller_awards`, drained once per tick by
+/// `crate::area11::process_islena_ladykiller_awards`.
+pub(crate) async fn award_islena_ladykiller_achievement(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    repository: &Option<ugaris_db::PgAchievementRepository>,
+    player_id: CharacterId,
+) {
+    award_bare_achievement(
+        world,
+        runtime,
+        repository,
+        player_id,
+        AchievementType::Ladykiller,
+    )
+    .await;
+}
+
 pub(crate) async fn award_dragonsbane_achievement(
     world: &mut World,
     runtime: &mut ServerRuntime,

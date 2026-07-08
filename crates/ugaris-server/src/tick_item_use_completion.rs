@@ -1363,5 +1363,7 @@ pub(crate) async fn process_completed_action_outcomes(
             achievement_repository,
         )
         .await;
+        crate::area11::process_islena_ladykiller_awards(world, runtime, achievement_repository)
+            .await;
     }
 }

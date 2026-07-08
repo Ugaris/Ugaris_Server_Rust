@@ -584,6 +584,13 @@ pub struct World {
     /// `World` doesn't have, same architectural split as every other
     /// `pending_*_achievement*`-shaped queue.
     pending_penter_demon_lords_demise_awards: Vec<CharacterId>,
+    /// `CharacterId`s of players who just landed the killing blow on
+    /// `CDR_PALACEISLENA` for the first time (`islena_dead`'s `else`
+    /// branch, `src/area/11/palace.c:751-766`) - the `ACHIEVEMENT_
+    /// LADYKILLER` one-shot award needs the async DB-backed achievement
+    /// repository `World` doesn't have, same architectural split as
+    /// `pending_penter_demon_lords_demise_awards` above.
+    pending_islena_ladykiller_awards: Vec<CharacterId>,
 }
 
 impl Default for Tick {

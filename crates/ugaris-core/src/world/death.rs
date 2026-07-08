@@ -137,6 +137,15 @@ impl World {
             self.apply_penter_demon_death(target_id, cause_id);
         }
 
+        // C `ch_died_driver`'s `CDR_PALACEISLENA` case (`palace.c:824-826`,
+        // `islena_dead`): `if (!co) return;` - only runs when there's a
+        // killer, same guard shape as the `CDR_PENTER` case above.
+        if target_driver == crate::character_driver::CDR_PALACEISLENA {
+            if let Some(killer_id) = cause_id {
+                self.apply_islena_death(target_id, killer_id);
+            }
+        }
+
         // C: killer experience via kill_score with hardcore/lag caps.
         let killer = cause_id.and_then(|id| self.characters.get(&id));
         if let (Some(cause_id), Some(killer)) = (cause_id, killer) {

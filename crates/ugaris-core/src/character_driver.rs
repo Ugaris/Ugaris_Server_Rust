@@ -413,6 +413,7 @@ pub enum CharacterDriverState {
     /// NPC" precedent as [`CharacterDriverState::ClanFound`].
     Engrave(EngraveDriverData),
     FdemonArmy(FarmyData),
+    Islena(IslenaDriverData),
 }
 /// C `bank_driver_parse` from `src/module/bank.c`. The C driver defaults
 /// opening hours to 6..23 before parsing (`bank_driver` lines 304-309).
@@ -1184,7 +1185,8 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::Supermax(_)
             | CharacterDriverState::Tester(_)
             | CharacterDriverState::Engrave(_)
-            | CharacterDriverState::FdemonArmy(_),
+            | CharacterDriverState::FdemonArmy(_)
+            | CharacterDriverState::Islena(_),
         ) => SimpleBaddyDriverData::default(),
         None => SimpleBaddyDriverData::default(),
     };
@@ -3555,6 +3557,7 @@ pub use crate::world::npc::area1::robber::RobberDriverData;
 pub use crate::world::npc::area1::sanoa::SanoaDriverData;
 pub use crate::world::npc::area1::terion::TerionDriverData;
 pub use crate::world::npc::area1::yoakin::YoakinDriverData;
+pub use crate::world::npc::area11::islena::IslenaDriverData;
 pub use crate::world::npc::area13::dungeon_master::{
     DungeonfighterDriverData, DungeonmasterDriverData, DUNGEONMASTER_QA, DUNGEON_SLOT_COUNT,
 };

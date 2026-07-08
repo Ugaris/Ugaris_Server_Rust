@@ -617,7 +617,8 @@ impl World {
             | CharacterDriverState::Supermax(_)
             | CharacterDriverState::Tester(_)
             | CharacterDriverState::Engrave(_)
-            | CharacterDriverState::FdemonArmy(_) => None,
+            | CharacterDriverState::FdemonArmy(_)
+            | CharacterDriverState::Islena(_) => None,
         }
     }
 

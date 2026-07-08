@@ -722,8 +722,16 @@ Ordered by player progression; the C file is the oracle.
   is empty, all NPCs are plain `CDR_SIMPLEBADDY`; found and fixed a real
   `CF_IDEMON` freeze-modifier bug in `npc_fight.rs` combat AI; details in
   PORTING_LEDGER.md)*
-- [ ] **Area 11 - `src/area/11/palace.c`** - palace guards, Islena fight
+- [~] **Area 11 - `src/area/11/palace.c`** - palace guards, Islena fight
   driver (door/bomb/cap items ported).
+  REMAINING: `palace_islena` (`CDR_PALACEISLENA`) is now fully ported -
+  four-line greeting dialogue, `islena_state`-gated permanent hostility,
+  the three "Power of X" full-heal defense triggers, and `islena_dead`'s
+  first-kill `ACHIEVEMENT_LADYKILLER` award / repeat-kill revenge-damage
+  branch (`world/npc/area11/islena.rs`, `tick_npc/area11.rs`,
+  `ugaris-server/src/area11.rs`). `palace_guard` (`CDR_PALACEGUARD`, the
+  patrol/alert/scream sentries plus the moving `ice_eye` "line" NPC) is
+  still unported - see `PORTING_LEDGER.md`.
 - [ ] **Area 12 - `src/area/12/mine.c`** - keyholder golems, miners. Also
   wire `achievement_add_silver_mined`/`_gold_mined` from the
   `handle_mining_result` reward cascade using the existing `award_*`
@@ -1135,6 +1143,10 @@ notes live in `PROGRESS_ARCHIVE.md`.
   unported. 2794 core + 1111 server tests pass, clean build/boot-smoke.
 - 2026-07-08: Area 8 `CDR_FDEMON_ARMY` sixth slice: ported
   `army_behind_driver` (leader-facing-target lookup + flank positioning
-  + `do_attack`) - `MIS_BEHIND` is now fully live. 2798 core + 1111
+   + `do_attack`) - `MIS_BEHIND` is now fully live. 2798 core + 1111
   server tests pass, clean build/boot-smoke.
+- 2026-07-08: Area 11 STARTED: ported `palace_islena`/`CDR_PALACEISLENA`
+  (dialogue/aggro state machine, three "Power of X" heal triggers,
+  `islena_dead`'s `ACHIEVEMENT_LADYKILLER` award). `palace_guard` remains.
+  2844 core + 1113 server tests pass, clean build/boot-smoke (area 11).
 
