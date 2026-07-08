@@ -1,9 +1,10 @@
 //! Server-side wiring for area 3's crypt-entrance/crypt-quest/astronomer/
-//! army-enrollment NPCs (`CDR_THOMAS`/`ugaris_core::world::thomas::
-//! process_thomas_actions`, `CDR_SIRJONES`/`ugaris_core::world::
+//! army-enrollment/park-shrine NPCs (`CDR_THOMAS`/`ugaris_core::world::
+//! thomas::process_thomas_actions`, `CDR_SIRJONES`/`ugaris_core::world::
 //! sir_jones::process_sir_jones_actions`, `CDR_ASTRO2`/`ugaris_core::
 //! world::astro2::process_astro2_actions`, `CDR_SEYMOUR`/`ugaris_core::
-//! world::seymour::process_seymour_actions`).
+//! world::seymour::process_seymour_actions`, `CDR_KELLY`/`ugaris_core::
+//! world::kelly::process_kelly_actions`).
 //!
 //! Mirrors the `World`/`PlayerRuntime` split already established in
 //! `area1.rs`: [`thomas_player_facts`]/[`sir_jones_player_facts`]/
@@ -24,10 +25,12 @@
 //! `world`/`runtime`, no `loader`.
 
 use super::*;
+use crate::achievement::award_swap_money_converted_achievement;
 use ugaris_core::quest::quest_exp::MONEY_AREA3_MOONIES;
 use ugaris_core::world::{
-    Astro2OutcomeEvent, Astro2PlayerFacts, SeymourOutcomeEvent, SeymourPlayerFacts,
-    SirJonesOutcomeEvent, SirJonesPlayerFacts, ThomasOutcomeEvent, ThomasPlayerFacts,
+    Astro2OutcomeEvent, Astro2PlayerFacts, KellyOutcomeEvent, KellyPlayerFacts,
+    SeymourOutcomeEvent, SeymourPlayerFacts, SirJonesOutcomeEvent, SirJonesPlayerFacts,
+    ThomasOutcomeEvent, ThomasPlayerFacts,
 };
 
 pub(crate) fn thomas_player_facts(
@@ -394,6 +397,221 @@ pub(crate) fn apply_seymour_events(
                             u32::from(world.area_id),
                         );
                     }
+                }
+            }
+        }
+    }
+    applied
+}
+
+pub(crate) fn kelly_player_facts(
+    runtime: &ServerRuntime,
+) -> HashMap<CharacterId, KellyPlayerFacts> {
+    runtime
+        .players
+        .values()
+        .filter_map(|player| {
+            let character_id = player.character_id?;
+            Some((
+                character_id,
+                KellyPlayerFacts {
+                    kelly_state: player.area3_kelly_state(),
+                    seymour_state: player.area3_seymour_state(),
+                    quest14_done: player.quest_log.is_done(14),
+                    quest15_done: player.quest_log.is_done(15),
+                    clara_state: player.area3_clara_state(),
+                    found1: player.area3_kelly_found1(),
+                    found2: player.area3_kelly_found2(),
+                    found3: player.area3_kelly_found3(),
+                    found_cnt: player.area3_kelly_found_cnt(),
+                    quest54_count: player.quest_log.count(54),
+                    quest60_count: player.quest_log.count(60),
+                },
+            ))
+        })
+        .collect()
+}
+
+/// Applies each [`KellyOutcomeEvent`] queued by
+/// `World::process_kelly_actions`. Needs `loader` for
+/// [`KellyOutcomeEvent::GrantCaligarLetter`] (same `ZoneLoader::
+/// instantiate_item_template` precedent as `apply_sir_jones_events`/
+/// `apply_astro2_events`) and `achievement_repository` for
+/// [`KellyOutcomeEvent::GoldEarned`]'s wealth-ladder half (same
+/// `award_swap_money_converted_achievement` precedent as `area1.rs`'s
+/// `GwendylonOutcomeEvent::GoldEarned`/`ReskinOutcomeEvent::GoldEarned`).
+pub(crate) async fn apply_kelly_events(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    loader: &mut ZoneLoader,
+    achievement_repository: &Option<ugaris_db::PgAchievementRepository>,
+    events: Vec<KellyOutcomeEvent>,
+) -> usize {
+    let mut applied = 0;
+    for event in events {
+        match event {
+            KellyOutcomeEvent::UpdateKellyState {
+                player_id,
+                new_state,
+            } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.set_area3_kelly_state(new_state);
+                applied += 1;
+            }
+            // C `questlog_open(co, ...)` (`src/system/questlog.c:204-217`):
+            // sets the flag and unconditionally resends the questlog.
+            KellyOutcomeEvent::QuestOpen { player_id, quest } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.quest_log.open(quest);
+                let payload = legacy_questlog_payload(player);
+                for (session_id, _) in runtime.sessions_for_character(player_id) {
+                    runtime.send_to_session(session_id, payload.clone());
+                }
+                applied += 1;
+            }
+            // C `ppd->kelly_found_cnt = cnt;` (`area3.c:1116`).
+            KellyOutcomeEvent::UpdateFoundCnt {
+                player_id,
+                new_found_cnt,
+            } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.set_area3_kelly_found_cnt(new_found_cnt);
+                applied += 1;
+            }
+            // C `tmp = questlog_done(co, 13); ... if (tmp == 1) {
+            // give_military_pts(cn, co, 4, 1); }` (`area3.c:1328-1333`).
+            KellyOutcomeEvent::CreeperHeadQuestDone {
+                player_id,
+                kelly_id,
+            } => {
+                let Some(level) = world.characters.get(&player_id).map(|c| c.level) else {
+                    continue;
+                };
+                let level_val = level_value(level);
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                if let Some(completion) = player.quest_log.complete_legacy(13, level, level_val) {
+                    let payload = legacy_questlog_payload(player);
+                    world.give_exp(player_id, completion.granted_exp, u32::from(world.area_id));
+                    for (session_id, _) in runtime.sessions_for_character(player_id) {
+                        runtime.send_to_session(session_id, payload.clone());
+                    }
+                    applied += 1;
+
+                    if completion.times_done == 1 {
+                        world.give_military_pts_from_npc(
+                            player_id,
+                            kelly_id,
+                            4,
+                            1,
+                            u32::from(world.area_id),
+                        );
+                    }
+                }
+            }
+            // C `questlog_done(co, 14);` (`area3.c:1123`) - return value
+            // unused, no conditional point reward (quest 14's own table
+            // `exp` is `0`; the real reward already came from `case 9`'s
+            // per-shrine `give_military_pts` calls, applied directly in
+            // `World`).
+            KellyOutcomeEvent::ParkShrinesQuestDone { player_id } => {
+                let Some(level) = world.characters.get(&player_id).map(|c| c.level) else {
+                    continue;
+                };
+                let level_val = level_value(level);
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                if let Some(completion) = player.quest_log.complete_legacy(14, level, level_val) {
+                    let payload = legacy_questlog_payload(player);
+                    world.give_exp(player_id, completion.granted_exp, u32::from(world.area_id));
+                    for (session_id, _) in runtime.sessions_for_character(player_id) {
+                        runtime.send_to_session(session_id, payload.clone());
+                    }
+                    applied += 1;
+                }
+            }
+            // C `questlog_done(co, 15); give_military_pts(cn, co, 3, 1);`
+            // (`area3.c:1176-1177`) - unconditional, unlike the `NT_GIVE`
+            // completions above.
+            KellyOutcomeEvent::ClaraReportDone {
+                player_id,
+                kelly_id,
+            } => {
+                let Some(level) = world.characters.get(&player_id).map(|c| c.level) else {
+                    continue;
+                };
+                let level_val = level_value(level);
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                if let Some(completion) = player.quest_log.complete_legacy(15, level, level_val) {
+                    let payload = legacy_questlog_payload(player);
+                    world.give_exp(player_id, completion.granted_exp, u32::from(world.area_id));
+                    for (session_id, _) in runtime.sessions_for_character(player_id) {
+                        runtime.send_to_session(session_id, payload.clone());
+                    }
+                    applied += 1;
+                }
+                world.give_military_pts_from_npc(
+                    player_id,
+                    kelly_id,
+                    3,
+                    1,
+                    u32::from(world.area_id),
+                );
+            }
+            // C `give_money`'s `achievement_add_gold_earned` wealth-ladder
+            // half - see the module doc comment and `KellyOutcomeEvent::
+            // GoldEarned`'s own doc comment.
+            KellyOutcomeEvent::GoldEarned { player_id, amount } => {
+                award_swap_money_converted_achievement(
+                    world,
+                    runtime,
+                    achievement_repository,
+                    player_id,
+                    amount,
+                )
+                .await;
+                applied += 1;
+            }
+            // C `case 24`'s conditional letter grant (`area3.c:1239-1244`):
+            // `create_item("caligar_letter")` + `give_char_item`.
+            KellyOutcomeEvent::GrantCaligarLetter { player_id } => {
+                if let Ok(item) = loader.instantiate_item_template("caligar_letter", None) {
+                    let item_id = item.id;
+                    world.add_item(item);
+                    if !world.give_char_item(player_id, item_id) {
+                        world.destroy_item(item_id);
+                    }
+                    applied += 1;
+                }
+            }
+            // C `questlog_done(co, 60);` (`area3.c:1339`) - the exp/resend
+            // half; the `give_money` reward is applied directly in `World`
+            // (see `KellyOutcomeEvent::GoldEarned`).
+            KellyOutcomeEvent::PlaqueQuestDone { player_id } => {
+                let Some(level) = world.characters.get(&player_id).map(|c| c.level) else {
+                    continue;
+                };
+                let level_val = level_value(level);
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                if let Some(completion) = player.quest_log.complete_legacy(60, level, level_val) {
+                    let payload = legacy_questlog_payload(player);
+                    world.give_exp(player_id, completion.granted_exp, u32::from(world.area_id));
+                    for (session_id, _) in runtime.sessions_for_character(player_id) {
+                        runtime.send_to_session(session_id, payload.clone());
+                    }
+                    applied += 1;
                 }
             }
         }

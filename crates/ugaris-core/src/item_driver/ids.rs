@@ -446,6 +446,11 @@ pub const IID_AREA2_ZOMBIESKULL2: u32 = (0x01 << 24) | 0x000026;
 
 pub const IID_AREA2_ZOMBIESKULL3: u32 = (0x01 << 24) | 0x000027;
 
+/// C `IID_AREA2_CREEPERHEAD` (`src/common/item_id.h:113`): the huge Stone
+/// Creeper's head area 3's `kelly_driver` (`world::kelly`) collects to
+/// complete quest 13.
+pub const IID_AREA2_CREEPERHEAD: u32 = (0x01 << 24) | 0x000036;
+
 /// C `IID_AREA2_LOISANNOTE` (`src/common/item_id.h:99`): proof of
 /// Loisan's death area 3's `seymour_driver` (`world::seymour`) collects
 /// to complete quest 12.
@@ -613,6 +618,14 @@ pub const IID_AREA1_WARLOCKKEY: u32 = make_item_id(DEV_ID_DB, 0x00000A);
 /// teleport-letter item `gwendylon_driver` accepts to trigger a cross-area
 /// hand-off to area 36 - see `world::gwendylon`'s module doc comment.
 pub const IID_CALIGARLETTER: u32 = make_item_id(DEV_ID_DB, 0x0000AF);
+/// C `IID_CALIGARPLAQUE` (`src/common/item_id.h:243`): the stolen Emperor
+/// signature plaque area 3's `kelly_driver` (`world::kelly`) collects to
+/// complete quest 60 and award the final gold reward.
+pub const IID_CALIGARPLAQUE: u32 = make_item_id(DEV_ID_DB, 0x0000B4);
+/// C `IID_AREA15_HEAD` (`src/common/item_id.h:151`): the Swamp Beast head
+/// area 3's `kelly_driver` (`world::kelly`) buys for a size-scaled bounty
+/// (`collect_heads`).
+pub const IID_AREA15_HEAD: u32 = make_item_id(DEV_ID_DB, 0x00005C);
 
 /// C `IID_AREA1_WOODKEY2` (`src/common/item_id.h:71`): the second wood
 /// key `lydia_driver`'s hangover-potion quest destroys alongside the

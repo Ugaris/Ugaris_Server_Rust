@@ -459,10 +459,14 @@ Ordered by player progression; the C file is the oracle.
   `CDR_SEYMOUR`), sharing `AREA3_QA`; the C `set_army_rank(co, 1)`
   enrollment call is reproduced as a direct `military_points = 1` write
   (see the module's own doc comment for why that's equivalent).
+  `kelly_driver` (the biggest chain: quests 13-15/54/60, park shrines,
+  swamp-beast-head bounties, the Caligar-plaque hunt) is now also ported
+  (`world/npc/area3/kelly.rs`, `CDR_KELLY`), sharing `AREA3_QA` plus a new
+  `shortcut to caligar`(7) QA entry for `kelly_driver`'s own god-only
+  fast-forward; new `kelly_found1-3`/`kelly_found_cnt` `PlayerRuntime`
+  accessors were added alongside it.
   Still unported, in suggested order:
-  `kelly_driver` (biggest chain, quests 13-15/54/60, needs new
-  `kelly_found1-3`/`kelly_found_cnt`/`crypt_bonus` `PlayerRuntime`
-  accessors), `carlos_driver` (uses `DRD_STAFFER_PPD` not `area3_ppd`;
+  `carlos_driver` (uses `DRD_STAFFER_PPD` not `area3_ppd`;
   needs `AchievementType::Dragonsbane` wiring + `mem_check_driver`/
   `mem_add_driver`), `kassim_driver` (engraving service; needs a new
   per-player transient `DRD_ENGRAVE_DATA`-equivalent driver-state slot,
@@ -470,11 +474,11 @@ Ordered by player progression; the C file is the oracle.
   `skillmax`/`supermax_canraise`/`supermax_cost` helpers from `tool.c`),
   `lampghost_driver`/`_respawn`/`_dead` (needs a new global `lamp[250]`-
   equivalent registry shared with the already-ported `onofflight_driver`;
-  do last - most architecturally distinct driver in the file). All 9
-  share the `qa[]` table (`area3.c:106-204`) via a new `AREA3_QA` table
-  (a superset of `GWENDYLON_QA` plus `list`/`money`/`shortcut to
-  caligar`/`explain`/`engrave:`/the ~80-entry raise/lower-skill block) -
-  not yet created.
+  do last - most architecturally distinct driver in the file). These
+  remaining 4 still need the `list`/`money`/`explain`/`engrave: `/~86-entry
+  raise-lower-skill block added to `AREA3_QA` (deferred rather than
+  guessing the `V_*` skill-id mapping ahead of time - see that table's own
+  doc comment).
 - [ ] **Area 4 - `src/area/4/pents.c`** - pentagram quest NPCs + demon
   wave logic beyond the ported item boundary. Also wire the achievement
   calls this file's reward mechanic makes in C (`achievement_add_pents`,
@@ -791,4 +795,8 @@ notes live in `PROGRESS_ARCHIVE.md`.
   handler (Loisan's note/zombie skull 1/zombie skull 2) and the
   `set_army_rank(co, 1)` enrollment deviation. 2592 core + 1101 server
   tests pass, clean build/boot-smoke.
+- 2026-07-08: Area 3: ported `kelly_driver` (27-state chain: quests
+  13-15/54/60, park shrines, swamp-beast-head bounties, Caligar-plaque
+  hunt), plus a new `shortcut to caligar` `AREA3_QA` entry. 2616 core +
+  1101 server tests pass, clean build/boot-smoke.
 

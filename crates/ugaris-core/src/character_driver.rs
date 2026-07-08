@@ -246,6 +246,10 @@ pub const CDR_SIRJONES: u16 = 36;
 /// arrivals in Aston and hands out the army-enrollment quest chain
 /// (`src/area/3/area3.c::seymour_driver`).
 pub const CDR_SEYMOUR: u16 = 24;
+/// C `#define CDR_KELLY 30` (`src/system/drvlib.h`, "NPC in area 3"): the
+/// Seyan'Du Sergeant who runs area 3's longest quest chain (`src/area/3/
+/// area3.c::kelly_driver`).
+pub const CDR_KELLY: u16 = 30;
 pub const DRD_SIMPLEBADDYDRIVER: u32 = 0x0100_0013;
 pub const DRD_CLARADRIVER: u32 = 0x0100_0059;
 pub const DRD_SKELLYDRIVER: u32 = 0x0100_006a;
@@ -350,6 +354,7 @@ pub enum CharacterDriverState {
     Thomas(ThomasDriverData),
     SirJones(SirJonesDriverData),
     Seymour(SeymourDriverData),
+    Kelly(KellyDriverData),
 }
 /// C `bank_driver_parse` from `src/module/bank.c`. The C driver defaults
 /// opening hours to 6..23 before parsing (`bank_driver` lines 304-309).
@@ -1044,7 +1049,8 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::Astro2(_)
             | CharacterDriverState::Thomas(_)
             | CharacterDriverState::SirJones(_)
-            | CharacterDriverState::Seymour(_),
+            | CharacterDriverState::Seymour(_)
+            | CharacterDriverState::Kelly(_),
         ) => SimpleBaddyDriverData::default(),
         None => SimpleBaddyDriverData::default(),
     };
@@ -3397,6 +3403,7 @@ pub use crate::world::npc::area3::clara::{
     clara_state_after_swamp_monster_death, ClaraDialogueContext, ClaraDialogueOutcome,
     ClaraDriverData,
 };
+pub use crate::world::npc::area3::kelly::KellyDriverData;
 pub use crate::world::npc::area3::seymour::SeymourDriverData;
 pub use crate::world::npc::area3::sir_jones::SirJonesDriverData;
 pub use crate::world::npc::area3::thomas::ThomasDriverData;

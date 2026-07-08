@@ -164,3 +164,44 @@ pub(crate) async fn seymour_driver_81(
         );
     }
 }
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn kelly_driver_82(
+    mut world: &mut World,
+    mut runtime: &mut ServerRuntime,
+    mut zone_loader: &mut ZoneLoader,
+    config: &ServerConfig,
+    _args: &Args,
+    _completed_actions: &[WorldActionCompletion],
+    achievement_repository: &Option<ugaris_db::PgAchievementRepository>,
+    _character_repository: &Option<ugaris_db::PgCharacterRepository>,
+    _area_repository: &Option<ugaris_db::PgAreaRepository>,
+    _clan_repository: &Option<ugaris_db::PgClanRegistryRepository>,
+    _clan_log_repository: &Option<ugaris_db::PgClanLogRepository>,
+    _merchant_repository: &Option<ugaris_db::PgMerchantRepository>,
+    _military_master_storage_repository: &Option<ugaris_db::PgMilitaryMasterStorageRepository>,
+    _military_advisor_storage_repository: &Option<ugaris_db::PgMilitaryAdvisorStorageRepository>,
+    _notes_repository: &Option<ugaris_db::PgNotesRepository>,
+    _anticheat_repository: &Option<ugaris_db::PgAntiCheatRepository>,
+    _auction_repository: &Option<ugaris_db::PgAuctionRepository>,
+) {
+    // C `kelly_driver`: area 3's park-shrine/swamp-bounty/Caligar-plaque
+    // quest giver NPC (`src/area/3/area3.c`).
+    let kelly_facts = kelly_player_facts(runtime);
+    let kelly_events = world.process_kelly_actions(&kelly_facts, config.area_id);
+    let kelly_events_applied = apply_kelly_events(
+        &mut world,
+        &mut runtime,
+        &mut zone_loader,
+        achievement_repository,
+        kelly_events,
+    )
+    .await;
+    if kelly_events_applied != 0 {
+        info!(
+            kelly_events_applied,
+            tick = world.tick.0,
+            "applied kelly dialogue events"
+        );
+    }
+}

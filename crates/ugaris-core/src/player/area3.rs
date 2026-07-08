@@ -31,6 +31,32 @@ impl PlayerRuntime {
         self.write_area3_i32(AREA3_PPD_KELLY_STATE_OFFSET, state);
     }
 
+    /// C `struct area3_ppd::kelly_found_cnt` (`src/area/3/area3.h:21`).
+    pub fn area3_kelly_found_cnt(&self) -> i32 {
+        self.read_area3_i32(AREA3_PPD_KELLY_FOUND_CNT_OFFSET)
+    }
+
+    pub fn set_area3_kelly_found_cnt(&mut self, count: i32) {
+        self.write_area3_i32(AREA3_PPD_KELLY_FOUND_CNT_OFFSET, count);
+    }
+
+    /// C `struct area3_ppd::kelly_found1` (`src/area/3/area3.h:22`), set by
+    /// `parkshrine_driver` (`src/area/2/area2.c:740-744`, ported as
+    /// [`crate::player::PlayerRuntime::memorize_park_shrine`]).
+    pub fn area3_kelly_found1(&self) -> bool {
+        self.read_area3_i32(AREA3_PPD_KELLY_FOUND1_OFFSET) != 0
+    }
+
+    /// C `struct area3_ppd::kelly_found2` (`src/area/3/area3.h:23`).
+    pub fn area3_kelly_found2(&self) -> bool {
+        self.read_area3_i32(AREA3_PPD_KELLY_FOUND2_OFFSET) != 0
+    }
+
+    /// C `struct area3_ppd::kelly_found3` (`src/area/3/area3.h:24`).
+    pub fn area3_kelly_found3(&self) -> bool {
+        self.read_area3_i32(AREA3_PPD_KELLY_FOUND3_OFFSET) != 0
+    }
+
     pub fn area3_clara_state(&self) -> i32 {
         self.read_area3_i32(AREA3_PPD_CLARA_STATE_OFFSET)
     }

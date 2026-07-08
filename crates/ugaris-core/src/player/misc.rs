@@ -623,6 +623,8 @@ pub(crate) const AREA3_PPD_SEYMOUR_STATE_OFFSET: usize = 0 * 4;
 
 pub(crate) const AREA3_PPD_KELLY_STATE_OFFSET: usize = 1 * 4;
 
+pub(crate) const AREA3_PPD_KELLY_FOUND_CNT_OFFSET: usize = 2 * 4;
+
 pub(crate) const AREA3_PPD_KELLY_FOUND1_OFFSET: usize = 3 * 4;
 
 pub(crate) const AREA3_PPD_KELLY_FOUND2_OFFSET: usize = 4 * 4;
