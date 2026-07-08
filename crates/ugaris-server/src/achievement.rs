@@ -1060,6 +1060,27 @@ pub(crate) async fn award_reskin_well_paid_gatherer_achievement(
     .await;
 }
 
+/// C `carlos_driver`'s dragon-staff turn-in: `achievement_award(co,
+/// ACHIEVEMENT_DRAGONSBANE, 1)` (`src/area/3/area3.c:2267`), fired every
+/// time (quest 20 is `QLF_REPEATABLE`, and C's call is unconditional, not
+/// gated on first completion). Consumes a `CarlosOutcomeEvent::
+/// DragonStaffQuestDone` queued by `World::process_carlos_actions`.
+pub(crate) async fn award_dragonsbane_achievement(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    repository: &Option<ugaris_db::PgAchievementRepository>,
+    player_id: CharacterId,
+) {
+    award_bare_achievement(
+        world,
+        runtime,
+        repository,
+        player_id,
+        AchievementType::Dragonsbane,
+    )
+    .await;
+}
+
 /// C `give_first_kill`'s class-range congrats-message dispatch
 /// (`death.c:213-253`). `has_name` gates on `ch[co].flags & CF_HASNAME`
 /// (checked before any class range); the two subsequent `else if` chains

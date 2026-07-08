@@ -25,12 +25,12 @@
 //! `world`/`runtime`, no `loader`.
 
 use super::*;
-use crate::achievement::award_swap_money_converted_achievement;
+use crate::achievement::{award_dragonsbane_achievement, award_swap_money_converted_achievement};
 use ugaris_core::quest::quest_exp::MONEY_AREA3_MOONIES;
 use ugaris_core::world::{
-    Astro2OutcomeEvent, Astro2PlayerFacts, KellyOutcomeEvent, KellyPlayerFacts,
-    SeymourOutcomeEvent, SeymourPlayerFacts, SirJonesOutcomeEvent, SirJonesPlayerFacts,
-    ThomasOutcomeEvent, ThomasPlayerFacts,
+    Astro2OutcomeEvent, Astro2PlayerFacts, CarlosOutcomeEvent, CarlosPlayerFacts,
+    KellyOutcomeEvent, KellyPlayerFacts, SeymourOutcomeEvent, SeymourPlayerFacts,
+    SirJonesOutcomeEvent, SirJonesPlayerFacts, ThomasOutcomeEvent, ThomasPlayerFacts,
 };
 
 pub(crate) fn thomas_player_facts(
@@ -606,6 +606,155 @@ pub(crate) async fn apply_kelly_events(
                     continue;
                 };
                 if let Some(completion) = player.quest_log.complete_legacy(60, level, level_val) {
+                    let payload = legacy_questlog_payload(player);
+                    world.give_exp(player_id, completion.granted_exp, u32::from(world.area_id));
+                    for (session_id, _) in runtime.sessions_for_character(player_id) {
+                        runtime.send_to_session(session_id, payload.clone());
+                    }
+                    applied += 1;
+                }
+            }
+        }
+    }
+    applied
+}
+
+pub(crate) fn carlos_player_facts(
+    world: &World,
+    runtime: &ServerRuntime,
+) -> HashMap<CharacterId, CarlosPlayerFacts> {
+    runtime
+        .players
+        .values()
+        .filter_map(|player| {
+            let character_id = player.character_id?;
+            let level = world
+                .characters
+                .get(&character_id)
+                .map(|character| character.level)
+                .unwrap_or_default();
+            Some((
+                character_id,
+                CarlosPlayerFacts {
+                    carlos_state: player.staffer_carlos_state(),
+                    carlos2_state: player.staffer_carlos2_state(),
+                    level,
+                    quest61_count: player.quest_log.count(61),
+                },
+            ))
+        })
+        .collect()
+}
+
+/// Applies each [`CarlosOutcomeEvent`] queued by
+/// `World::process_carlos_actions`. Needs `loader` for
+/// [`CarlosOutcomeEvent::GrantCarlosKey`] (same `ZoneLoader::
+/// instantiate_item_template` precedent as `apply_sir_jones_events`) and
+/// `achievement_repository` for [`CarlosOutcomeEvent::
+/// DragonStaffQuestDone`]'s unconditional Dragonsbane award.
+pub(crate) async fn apply_carlos_events(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    loader: &mut ZoneLoader,
+    achievement_repository: &Option<ugaris_db::PgAchievementRepository>,
+    events: Vec<CarlosOutcomeEvent>,
+) -> usize {
+    let mut applied = 0;
+    for event in events {
+        match event {
+            CarlosOutcomeEvent::UpdateCarlosState {
+                player_id,
+                new_state,
+            } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.set_staffer_carlos_state(new_state);
+                applied += 1;
+            }
+            CarlosOutcomeEvent::UpdateCarlos2State {
+                player_id,
+                new_state,
+            } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.set_staffer_carlos2_state(new_state);
+                applied += 1;
+            }
+            // C `questlog_open(co, ...)` (`src/system/questlog.c:204-217`):
+            // sets the flag and unconditionally resends the questlog.
+            CarlosOutcomeEvent::QuestOpen { player_id, quest } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.quest_log.open(quest);
+                let payload = legacy_questlog_payload(player);
+                for (session_id, _) in runtime.sessions_for_character(player_id) {
+                    runtime.send_to_session(session_id, payload.clone());
+                }
+                applied += 1;
+            }
+            // C `case 4`'s conditional key grant (`area3.c:2205-2210`):
+            // `create_item("carlos_key")` + `give_char_item`, speaking
+            // "Thou wilt need this key to unlock the door in front of the
+            // stairs down." only on success (see the `world::carlos`
+            // module doc comment for why that follow-up line lives here,
+            // not in `World`).
+            CarlosOutcomeEvent::GrantCarlosKey {
+                player_id,
+                carlos_id,
+            } => {
+                if let Ok(item) = loader.instantiate_item_template("carlos_key", None) {
+                    let item_id = item.id;
+                    world.add_item(item);
+                    if world.give_char_item(player_id, item_id) {
+                        world.npc_quiet_say(
+                            carlos_id,
+                            "Thou wilt need this key to unlock the door in front of the stairs down.",
+                        );
+                    } else {
+                        world.destroy_item(item_id);
+                    }
+                    applied += 1;
+                }
+            }
+            // C `tmp = questlog_done(co, 20); ... achievement_award(co,
+            // ACHIEVEMENT_DRAGONSBANE, 1);` (`area3.c:2266-2267`) -
+            // unlike every other quest-completion event in this file, the
+            // achievement award is unconditional (not gated on
+            // `times_done == 1`), matching quest 20's `QLF_REPEATABLE`
+            // flag and C's own unconditional call.
+            CarlosOutcomeEvent::DragonStaffQuestDone { player_id } => {
+                let Some(level) = world.characters.get(&player_id).map(|c| c.level) else {
+                    continue;
+                };
+                let level_val = level_value(level);
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                if let Some(completion) = player.quest_log.complete_legacy(20, level, level_val) {
+                    let payload = legacy_questlog_payload(player);
+                    world.give_exp(player_id, completion.granted_exp, u32::from(world.area_id));
+                    for (session_id, _) in runtime.sessions_for_character(player_id) {
+                        runtime.send_to_session(session_id, payload.clone());
+                    }
+                    applied += 1;
+                }
+                award_dragonsbane_achievement(world, runtime, achievement_repository, player_id)
+                    .await;
+            }
+            // C `questlog_done(co, 61);` (`area3.c:2280`) - the exp/resend
+            // half; no achievement or extra reward attached.
+            CarlosOutcomeEvent::RitualQuestDone { player_id } => {
+                let Some(level) = world.characters.get(&player_id).map(|c| c.level) else {
+                    continue;
+                };
+                let level_val = level_value(level);
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                if let Some(completion) = player.quest_log.complete_legacy(61, level, level_val) {
                     let payload = legacy_questlog_payload(player);
                     world.give_exp(player_id, completion.granted_exp, u32::from(world.area_id));
                     for (session_id, _) in runtime.sessions_for_character(player_id) {

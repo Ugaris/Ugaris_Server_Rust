@@ -1007,8 +1007,14 @@ impl World {
 
     /// C `has_item(cn, ID)` (`src/system/drvlib.c:2411-2424`): scans every
     /// inventory slot (`0..INVENTORYSIZE`, matching C's full equipment/
-    /// spell/main-inventory range) plus the cursor item.
-    fn character_has_item_template(&self, character_id: CharacterId, template_id: u32) -> bool {
+    /// spell/main-inventory range) plus the cursor item. `pub(crate)`
+    /// (not private) since `world::carlos`'s `NT_CHAR` handler reuses it
+    /// too (see that module's own doc comment).
+    pub(crate) fn character_has_item_template(
+        &self,
+        character_id: CharacterId,
+        template_id: u32,
+    ) -> bool {
         let Some(character) = self.characters.get(&character_id) else {
             return false;
         };

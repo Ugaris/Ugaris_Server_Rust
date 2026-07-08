@@ -465,17 +465,24 @@ Ordered by player progression; the C file is the oracle.
   `shortcut to caligar`(7) QA entry for `kelly_driver`'s own god-only
   fast-forward; new `kelly_found1-3`/`kelly_found_cnt` `PlayerRuntime`
   accessors were added alongside it.
+  `carlos_driver` (two independent chains gated on `questlog_count(co,
+  61)`: the ritual quest, `carlos2_state`/quest 61, and the repeatable
+  dragon-staff quest, `carlos_state`/quest 20, whose
+  `achievement_award(ACHIEVEMENT_DRAGONSBANE)` fires unconditionally on
+  every turn-in) is now also ported (`world/npc/area3/carlos.rs`,
+  `CDR_CARLOS`), sharing `AREA3_QA`; new `staffer_carlos2_state`
+  `PlayerRuntime` accessor, `AchievementType::Dragonsbane` award wrapper,
+  and 8 `IID_CARLOS_DOOR`/`IID_STAFF_DRAGON*`/`IID_MAX_*` item-id
+  constants were added alongside it.
   Still unported, in suggested order:
-  `carlos_driver` (uses `DRD_STAFFER_PPD` not `area3_ppd`;
-  needs `AchievementType::Dragonsbane` wiring + `mem_check_driver`/
-  `mem_add_driver`), `kassim_driver` (engraving service; needs a new
-  per-player transient `DRD_ENGRAVE_DATA`-equivalent driver-state slot,
-  same precedent as `ClanFoundData`), `supermax_driver` (needs unported
-  `skillmax`/`supermax_canraise`/`supermax_cost` helpers from `tool.c`),
+  `kassim_driver` (engraving service; needs a new per-player transient
+  `DRD_ENGRAVE_DATA`-equivalent driver-state slot, same precedent as
+  `ClanFoundData`), `supermax_driver` (needs unported `skillmax`/
+  `supermax_canraise`/`supermax_cost` helpers from `tool.c`),
   `lampghost_driver`/`_respawn`/`_dead` (needs a new global `lamp[250]`-
   equivalent registry shared with the already-ported `onofflight_driver`;
   do last - most architecturally distinct driver in the file). These
-  remaining 4 still need the `list`/`money`/`explain`/`engrave: `/~86-entry
+  remaining 3 still need the `list`/`money`/`explain`/`engrave: `/~86-entry
   raise-lower-skill block added to `AREA3_QA` (deferred rather than
   guessing the `V_*` skill-id mapping ahead of time - see that table's own
   doc comment).
@@ -799,4 +806,9 @@ notes live in `PROGRESS_ARCHIVE.md`.
   13-15/54/60, park shrines, swamp-beast-head bounties, Caligar-plaque
   hunt), plus a new `shortcut to caligar` `AREA3_QA` entry. 2616 core +
   1101 server tests pass, clean build/boot-smoke.
+- 2026-07-08: Area 3: ported `carlos_driver` (two independent quest
+  chains: ritual/quest 61 + repeatable dragon-staff/quest 20 with
+  unconditional `Dragonsbane` achievement), plus `staffer_carlos2_state`
+  and 8 new item-id constants. 2629 core + 1101 server tests pass, clean
+  build/boot-smoke.
 

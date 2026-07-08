@@ -689,3 +689,30 @@ pub const IID_AREA1_MADNOTE2: u32 = make_item_id(DEV_ID_DB, 0x000022);
 /// `logain_driver` hands out at state 7 (`pub`, not `pub(crate)`, since
 /// `world::logain` needs it outside the `item_driver` module).
 pub const IID_AREA1_MADKEY9: u32 = make_item_id(DEV_ID_DB, 0x000023);
+
+/// C `IID_CARLOS_DOOR` (`src/common/item_id.h:206`): gates `carlos_
+/// driver`'s `carlos_key` grant (`world::carlos` checks `!has_item(co,
+/// IID_CARLOS_DOOR)` before creating the key). `pub` (not `pub(crate)`)
+/// since `world::carlos` needs it outside the `item_driver` module.
+pub const IID_CARLOS_DOOR: u32 = make_item_id(DEV_ID_DB, 0x000093);
+/// C `IID_STAFF_DRAGONKEY1` (`src/common/item_id.h:346`): swept alongside
+/// `IID_STAFF_DRAGONSTAFF`'s turn-in in `carlos_driver`.
+pub const IID_STAFF_DRAGONKEY1: u32 = make_item_id(DEV_ID_RHORUN, 0x000001);
+/// C `IID_STAFF_DRAGONKEY2` (`src/common/item_id.h:347`): swept alongside
+/// `IID_STAFF_DRAGONSTAFF`'s turn-in in `carlos_driver`.
+pub const IID_STAFF_DRAGONKEY2: u32 = make_item_id(DEV_ID_RHORUN, 0x000002);
+/// C `IID_STAFF_DRAGONKEY3` (`src/common/item_id.h:348`): swept alongside
+/// `IID_STAFF_DRAGONSTAFF`'s turn-in in `carlos_driver`.
+pub const IID_STAFF_DRAGONKEY3: u32 = make_item_id(DEV_ID_RHORUN, 0x000003);
+/// C `IID_STAFF_DRAGONKEY4` (`src/common/item_id.h:349`): swept alongside
+/// `IID_STAFF_DRAGONSTAFF`'s turn-in in `carlos_driver`.
+pub const IID_STAFF_DRAGONKEY4: u32 = make_item_id(DEV_ID_RHORUN, 0x000004);
+/// C `IID_STAFF_DRAGONSTAFF` (`src/common/item_id.h:351`): `carlos_
+/// driver`'s first-quest (`staffer_carlos_state`) turn-in item.
+pub const IID_STAFF_DRAGONSTAFF: u32 = make_item_id(DEV_ID_RHORUN, 0x000010);
+/// C `IID_MAX_CHRONICLES` (`src/common/item_id.h:372`): swept alongside
+/// `IID_MAX_RITUAL`'s turn-in in `carlos_driver`.
+pub const IID_MAX_CHRONICLES: u32 = make_item_id(DEV_ID_MAX, 0x000003);
+/// C `IID_MAX_RITUAL` (`src/common/item_id.h:373`): `carlos_driver`'s
+/// second-quest (`staffer_carlos2_state`) turn-in item.
+pub const IID_MAX_RITUAL: u32 = make_item_id(DEV_ID_MAX, 0x000004);

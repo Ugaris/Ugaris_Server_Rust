@@ -205,3 +205,45 @@ pub(crate) async fn kelly_driver_82(
         );
     }
 }
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn carlos_driver_83(
+    mut world: &mut World,
+    mut runtime: &mut ServerRuntime,
+    mut zone_loader: &mut ZoneLoader,
+    config: &ServerConfig,
+    _args: &Args,
+    _completed_actions: &[WorldActionCompletion],
+    achievement_repository: &Option<ugaris_db::PgAchievementRepository>,
+    _character_repository: &Option<ugaris_db::PgCharacterRepository>,
+    _area_repository: &Option<ugaris_db::PgAreaRepository>,
+    _clan_repository: &Option<ugaris_db::PgClanRegistryRepository>,
+    _clan_log_repository: &Option<ugaris_db::PgClanLogRepository>,
+    _merchant_repository: &Option<ugaris_db::PgMerchantRepository>,
+    _military_master_storage_repository: &Option<ugaris_db::PgMilitaryMasterStorageRepository>,
+    _military_advisor_storage_repository: &Option<ugaris_db::PgMilitaryAdvisorStorageRepository>,
+    _notes_repository: &Option<ugaris_db::PgNotesRepository>,
+    _anticheat_repository: &Option<ugaris_db::PgAntiCheatRepository>,
+    _auction_repository: &Option<ugaris_db::PgAuctionRepository>,
+) {
+    // C `carlos_driver`: the Imperial Army investigator running the
+    // dragon-staff quest (quest 20) and the Imperial Vault ritual quest
+    // (quest 61) (`src/area/3/area3.c`).
+    let carlos_facts = carlos_player_facts(world, runtime);
+    let carlos_events = world.process_carlos_actions(&carlos_facts, config.area_id);
+    let carlos_events_applied = apply_carlos_events(
+        &mut world,
+        &mut runtime,
+        &mut zone_loader,
+        achievement_repository,
+        carlos_events,
+    )
+    .await;
+    if carlos_events_applied != 0 {
+        info!(
+            carlos_events_applied,
+            tick = world.tick.0,
+            "applied carlos dialogue events"
+        );
+    }
+}

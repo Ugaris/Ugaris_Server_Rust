@@ -92,6 +92,17 @@ impl PlayerRuntime {
         self.write_staffer_i32(STAFFER_PPD_CARLOS_STATE_OFFSET, state);
     }
 
+    /// C `struct staffer_ppd::carlos2_state` (`src/common/staffer_ppd.h:43`)
+    /// - `carlos_driver`'s Imperial Vault ritual quest state, separate from
+    /// the dragon-staff quest's `carlos_state` above.
+    pub fn staffer_carlos2_state(&self) -> i32 {
+        self.read_staffer_i32(STAFFER_PPD_CARLOS2_STATE_OFFSET)
+    }
+
+    pub fn set_staffer_carlos2_state(&mut self, state: i32) {
+        self.write_staffer_i32(STAFFER_PPD_CARLOS2_STATE_OFFSET, state);
+    }
+
     pub fn staffer_countbran_state(&self) -> i32 {
         self.read_staffer_i32(STAFFER_PPD_COUNTBRAN_STATE_OFFSET)
     }

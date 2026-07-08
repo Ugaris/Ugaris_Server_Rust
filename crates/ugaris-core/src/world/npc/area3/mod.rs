@@ -2,6 +2,7 @@
 
 pub mod astro1;
 pub mod astro2;
+pub mod carlos;
 pub mod clara;
 pub mod kelly;
 pub mod seymour;
@@ -12,6 +13,8 @@ pub mod thomas;
 pub use astro1::*;
 #[allow(unused_imports)]
 pub use astro2::*;
+#[allow(unused_imports)]
+pub use carlos::*;
 #[allow(unused_imports)]
 pub use clara::*;
 #[allow(unused_imports)]
@@ -28,9 +31,9 @@ use crate::character_driver::TextQaEntry;
 /// C `struct qa qa[]` from `src/area/3/area3.c:106-204` - the small-talk
 /// table `analyse_text_driver`'s own local copy in this file feeds every
 /// `area3.c` NPC driver that calls it (`world::thomas`, `world::
-/// sir_jones`, `world::astro2`, `world::seymour`, and eventually
-/// `kassim_driver`/`supermax_driver`/`carlos_driver`/`kelly_driver`), not
-/// just one - same "one shared file-local table, many drivers" shape as
+/// sir_jones`, `world::astro2`, `world::seymour`, `world::kelly`, `world::
+/// carlos`, and eventually `kassim_driver`/`supermax_driver`), not just
+/// one - same "one shared file-local table, many drivers" shape as
 /// `world::npc::area1::gwendylon::GWENDYLON_QA`.
 ///
 /// The first 13 entries (`area3.c:106-118`, canned greetings plus

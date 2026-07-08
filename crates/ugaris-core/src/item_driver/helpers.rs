@@ -41,6 +41,15 @@ pub(crate) const DEV_ID_DB: u32 = 0x01;
 
 pub(crate) const DEV_ID_WARR: u32 = 0x06;
 
+/// C `DEV_ID_RHORUN` (`src/common/item_id.h:40`): the dragon-staff items
+/// `carlos_driver`'s first quest (`world::carlos`) hands out/collects.
+pub(crate) const DEV_ID_RHORUN: u32 = 0x07;
+
+/// C `DEV_ID_MAX` (`src/common/item_id.h:47`, "maximillan"): the Imperial
+/// Vault ritual items `carlos_driver`'s second quest (`world::carlos`)
+/// hands out/collects.
+pub(crate) const DEV_ID_MAX: u32 = 0x0E;
+
 /// C `DEV_ID_RH` (`src/system/drdata.h:47`/`src/common/item_id.h:54`,
 /// "ID of Roman Haas"): the area-1 hermit-quest teeth item below.
 pub(crate) const DEV_ID_RH: u32 = 0x3A;

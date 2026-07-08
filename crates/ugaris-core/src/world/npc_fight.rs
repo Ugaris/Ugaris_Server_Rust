@@ -606,7 +606,8 @@ impl World {
             | CharacterDriverState::Thomas(_)
             | CharacterDriverState::SirJones(_)
             | CharacterDriverState::Seymour(_)
-            | CharacterDriverState::Kelly(_) => None,
+            | CharacterDriverState::Kelly(_)
+            | CharacterDriverState::Carlos(_) => None,
         }
     }
 

@@ -15,6 +15,7 @@ mod balltrap;
 mod bank;
 mod brithildie;
 mod camhermit;
+mod carlos;
 mod character_values;
 mod clanclerk;
 mod clanmaster;

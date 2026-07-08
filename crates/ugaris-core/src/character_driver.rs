@@ -250,6 +250,11 @@ pub const CDR_SEYMOUR: u16 = 24;
 /// Seyan'Du Sergeant who runs area 3's longest quest chain (`src/area/3/
 /// area3.c::kelly_driver`).
 pub const CDR_KELLY: u16 = 30;
+/// C `#define CDR_CARLOS 90` (`src/system/drvlib.h:138`, "gives dragon-
+/// breath-quest"): the Imperial Army investigator who runs the dragon-
+/// staff quest (quest 20) and the Imperial Vault ritual quest (quest 61)
+/// (`src/area/3/area3.c::carlos_driver`).
+pub const CDR_CARLOS: u16 = 90;
 pub const DRD_SIMPLEBADDYDRIVER: u32 = 0x0100_0013;
 pub const DRD_CLARADRIVER: u32 = 0x0100_0059;
 pub const DRD_SKELLYDRIVER: u32 = 0x0100_006a;
@@ -355,6 +360,7 @@ pub enum CharacterDriverState {
     SirJones(SirJonesDriverData),
     Seymour(SeymourDriverData),
     Kelly(KellyDriverData),
+    Carlos(CarlosDriverData),
 }
 /// C `bank_driver_parse` from `src/module/bank.c`. The C driver defaults
 /// opening hours to 6..23 before parsing (`bank_driver` lines 304-309).
@@ -1050,7 +1056,8 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::Thomas(_)
             | CharacterDriverState::SirJones(_)
             | CharacterDriverState::Seymour(_)
-            | CharacterDriverState::Kelly(_),
+            | CharacterDriverState::Kelly(_)
+            | CharacterDriverState::Carlos(_),
         ) => SimpleBaddyDriverData::default(),
         None => SimpleBaddyDriverData::default(),
     };
@@ -3398,6 +3405,7 @@ pub use crate::world::npc::area22::lab2_undead::{
 };
 pub use crate::world::npc::area3::astro1::Astro1DriverData;
 pub use crate::world::npc::area3::astro2::Astro2DriverData;
+pub use crate::world::npc::area3::carlos::CarlosDriverData;
 pub use crate::world::npc::area3::clara::{
     clara_dialogue_step, clara_replay_state_after_text_analysis,
     clara_state_after_swamp_monster_death, ClaraDialogueContext, ClaraDialogueOutcome,

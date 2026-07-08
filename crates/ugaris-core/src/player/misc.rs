@@ -785,6 +785,11 @@ pub(crate) const STAFFER_PPD_DWARFCHIEF_STATE_OFFSET: usize = 18 * 4;
 
 pub(crate) const STAFFER_PPD_DWARFSHAMAN_STATE_OFFSET: usize = 19 * 4;
 
+/// C `struct staffer_ppd::carlos2_state` (`src/common/staffer_ppd.h:43`,
+/// field index 23 - the last field before `rouven_state`), consumed by
+/// `carlos_driver`'s Imperial Vault ritual quest (`src/area/3/area3.c`).
+pub(crate) const STAFFER_PPD_CARLOS2_STATE_OFFSET: usize = 23 * 4;
+
 pub(crate) const FARMY_PPD_BOSS_STAGE_OFFSET: usize = 0;
 
 pub(crate) const TEUFELRAT_PPD_KILLS_OFFSET: usize = 0;
