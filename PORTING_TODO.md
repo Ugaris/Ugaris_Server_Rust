@@ -625,15 +625,20 @@ Ordered by player progression; the C file is the oracle.
   Still unported: `CDR_FDEMON_ARMY` (the recruitable-soldier "take"/"drop"/
   formation-following/emote system, `farmy_data`/`farmy_ppd.soldier[]`) -
   the boss's own "take"/"drop" `NT_TEXT` tail and `platoon_exp`'s soldier-
-  exp loop are documented gaps pending that driver. First slice of that
-  driver ported: the pure, spawning-independent `struct profile`/
-  `assign_profile`/`take_soldiers` type-and-profile eligibility logic
-  (`world::npc::area8::fdemon_army`) plus the `struct soldier` PPD field
+  exp loop are documented gaps pending that driver. First two slices of
+  that driver ported, both pure and spawning-independent:
+  `world::npc::area8::fdemon_army` carries `struct profile`/
+  `assign_profile`/`take_soldiers`'s type-and-profile eligibility logic
+  (`plan_soldier_recruitment`) plus the `struct soldier` PPD field
   accessors (`PlayerRuntime::farmy_soldier_type`/`_rank`/`_base`/
-  `_profile`/`_exp`/`_cn`/`_serial` in `player/areas_misc.rs`). Still
-  needed: the actual `take_soldiers`/`drop_soldiers` character spawning
-  (`ZoneLoader::instantiate_character_template("army1s"/"army2s", ..)`,
-  skill-tiered equipment, `drop_char` placement), the `CDR_FDEMON_ARMY`
+  `_profile`/`_exp`/`_cn`/`_serial` in `player/areas_misc.rs`), and now
+  also `update_soldier`'s stat-scaling (`scale_soldier_skill`/
+  `scale_soldier_values`) and skill-tiered equipment selection
+  (`soldier_equipment_items`). Still needed: `calc_exp` (C's skill-sum exp
+  formula - not yet ported anywhere in the Rust tree; `exp2level` already
+  exists in `world/exp.rs`), the actual `take_soldiers`/`drop_soldiers`
+  character spawning (`ZoneLoader::instantiate_character_template
+  ("army1s"/"army2s", ..)`, `drop_char` placement), the `CDR_FDEMON_ARMY`
   driver id + `CharacterDriverState` variant + `army_follow_driver`/
   `army_front_driver`/`army_back_driver`/`army_behind_driver` formation AI,
   `find_platoon`/`platoon_exp`'s soldier-exp half, the `do_emote`/
@@ -1010,4 +1015,8 @@ notes live in `PROGRESS_ARCHIVE.md`.
   `assign_profile`/type-eligibility logic (`fdemon_army.rs`) + `struct
   soldier` PPD accessors; spawning/formation-AI/emotes still remain.
   2762 core + 1108 server tests pass, clean build/boot-smoke.
+- 2026-07-08: Area 8 `CDR_FDEMON_ARMY` second slice: `update_soldier`'s
+  pure stat-scaling + skill-tiered equipment selection in
+  `fdemon_army.rs`. `calc_exp`/spawning/formation-AI still remain.
+  2766 core + 1108 server tests pass, clean build.
 

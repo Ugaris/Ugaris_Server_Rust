@@ -2195,15 +2195,43 @@
         "test result: ok. 2762 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.23s",
         "test result: ok. 81 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
       ]
+    },
+    {
+      "iteration": 64,
+      "startedAt": "2026-07-08T09:43:37.092Z",
+      "endedAt": "2026-07-08T09:55:07.759Z",
+      "durationMs": 689581,
+      "agent": "opencode",
+      "model": "anthropic/claude-sonnet-5",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "PORTING_TODO.md",
+        "crates/ugaris-core/src/world/npc/area8/fdemon_army.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "Everything is green: 2766 core tests (4 new), 1108 server tests unchanged, zero failures, zero warnings, clean build and formatting.",
+        "All verification passed: `cargo fmt --all`, `cargo test --workspace` (2766 core + 81 db + 3 net + 45 protocol + 1108 server, zero failures/warnings), `cargo build -p ugaris-server` clean. No boot-smok",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&1 | grep -E \"FAILED|error|test result\"",
+        "test error::tests::error_constants_match_legacy_header ... ok",
+        "test error::tests::error_strings_match_legacy_table ... ok",
+        "test error::tests::out_of_range_errors_use_c_fallback_string ... ok",
+        "test world::tests::dungeon_master::attack_command_failure_says_error_and_never_charges_or_queues ... ok",
+        "test result: ok. 2762 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.22s",
+        "test result: ok. 81 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+      ]
     }
   ],
-  "totalDurationMs": 81065548,
+  "totalDurationMs": 81755129,
   "struggleIndicators": {
     "repeatedErrors": {
       "Everything builds cleanly, all tests pass (2380 core + 1091 server, zero failures, zero warnings), f": 1,
       "Verification: `cargo fmt --all`, `cargo test --workspace` (2380 ugaris-core + 1091 ugaris-server, al": 1,
       "test result: ok. 1089 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.09s": 1,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 63,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 64,
       "The arguments provided to the tool are invalid: Invalid input for tool read: JSON parsing failed: Te": 15,
       "Error message: JSON Parse error: Property name must be a string literal": 12,
       "error: could not compile `ugaris-core` (lib) due to 4 previous errors": 2,
@@ -2213,14 +2241,14 @@
       "All 1091 server tests still pass (same count as before), no failures. Let's check for warnings speci": 1,
       "1. Health check: `cargo test --workspace` was already green (2380 core + 78 db + 3 net + 45 protocol": 1,
       "\u001b[0m$ \u001b[0mcargo test --workspace 2>&1 | grep -E \"FAILED|error|test result\"": 2,
-      "test error::tests::error_constants_match_legacy_header ... ok": 22,
-      "test error::tests::error_strings_match_legacy_table ... ok": 22,
-      "test error::tests::out_of_range_errors_use_c_fallback_string ... ok": 21,
-      "test world::tests::dungeon_master::attack_command_failure_says_error_and_never_charges_or_queues ...": 15,
+      "test error::tests::error_constants_match_legacy_header ... ok": 23,
+      "test error::tests::error_strings_match_legacy_table ... ok": 23,
+      "test error::tests::out_of_range_errors_use_c_fallback_string ... ok": 22,
+      "test world::tests::dungeon_master::attack_command_failure_says_error_and_never_charges_or_queues ...": 16,
       "test result: ok. 2380 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.19s": 3,
       "test result: ok. 78 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 35,
       "test result: ok. 1091 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.09s": 17,
-      "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&": 36,
+      "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&": 37,
       "test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s": 24,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 27,
       "test result: ok. 45 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 25,
@@ -2429,7 +2457,7 @@
       "All green, no failures, no build warnings (matches are test names containing \"warning\", not compiler": 1,
       "- `cargo test --workspace`: 2712 core (+1 new regression test) + 81 db + 3 net + 45 protocol + 1108 ": 1,
       "test result: ok. 2711 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.23s": 1,
-      "test result: ok. 81 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 2,
+      "test result: ok. 81 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 3,
       "- **14 new focused tests**, all passing; full workspace suite green (2724 core + 1108 server + other": 1,
       ".ok_or(ZoneError::MapOutOfBounds {": 1,
       "test world::tests::fdemon::build_connects_waypoints_forty_tiles_apart ... FAILED": 1,
@@ -2442,7 +2470,10 @@
       "test result: FAILED. 7 passed; 1 failed; 0 ignored; 0 measured; 2753 filtered out; finished in 0.00s": 1,
       "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 2753 filtered out; finished in 0.00s": 1,
       "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 2758 filtered out; finished in 0.00s": 1,
-      "test result: ok. 2762 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.23s": 1
+      "test result: ok. 2762 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.23s": 1,
+      "Everything is green: 2766 core tests (4 new), 1108 server tests unchanged, zero failures, zero warni": 1,
+      "All verification passed: `cargo fmt --all`, `cargo test --workspace` (2766 core + 81 db + 3 net + 45": 1,
+      "test result: ok. 2762 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.22s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0
