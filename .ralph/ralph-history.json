@@ -2927,15 +2927,54 @@
         "test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 2917 filtered out; finished in 0.00s",
         "test result: ok. 1138 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 7.84s"
       ]
+    },
+    {
+      "iteration": 85,
+      "startedAt": "2026-07-08T20:15:33.007Z",
+      "endedAt": "2026-07-08T20:36:15.665Z",
+      "durationMs": 1241629,
+      "agent": "opencode",
+      "model": "anthropic/claude-sonnet-5",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "PORTING_TODO.md",
+        "crates/ugaris-core/src/character_driver.rs",
+        "crates/ugaris-core/src/item_driver/ids.rs",
+        "crates/ugaris-core/src/world/npc/area17/mod.rs",
+        "crates/ugaris-core/src/world/npc_fight.rs",
+        "crates/ugaris-core/src/world/npc_idle.rs",
+        "crates/ugaris-core/src/world/tests/mod.rs",
+        "crates/ugaris-core/src/zone.rs",
+        "crates/ugaris-server/src/area17.rs",
+        "crates/ugaris-server/src/tick_npc/area17.rs",
+        "crates/ugaris-server/src/tick_npc/mod.rs",
+        "crates/ugaris-core/src/world/npc/area17/alchemist.rs",
+        "crates/ugaris-core/src/world/tests/alchemist.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "- Verified: `cargo fmt --all`, `cargo test --workspace` (2939+81+3+45+1138, all green, zero failures), `cargo build --workspace`/`-p ugaris-server` (zero warnings), and a boot-smoke run showing hundre",
+        "test result: ok. 1138 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 7.82s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "700-- Area 37 `IDR_ARKHATA` subtype `1` now ports the C `stopwatch_driver` timer path: zero-character timer calls reschedule every 10 ticks, carried stopwatch items resolve the carrying player, `DRD_A",
+        "704-- C `can_attack` player-vs-player hate-list admission has an explicit Rust policy seam: after the existing area-1, PK-flag, and three-level-range guards, `can_attack_in_area_with_clan_policy` call",
+        "709-- Completed player area-spell actions now use the same runtime attack-policy seam as projectile/effect ticks: `tick_basic_actions_with_attack_policy` lets the server apply `DRD_PK_PPD` hate-list a",
+        "719-- C `can_attack` stale PK hate cleanup is now represented at the Rust player attack setup boundary: direct `PAC_KILL` plus character-targeted fireball/ball admission remove a hated defender from t",
+        "722-- Retained player-damage fireball/ball policy denial now applies the same C stale-hate cleanup rules as direct/character-targeted setup: runtime effect attack checks use the attacking player's `DR",
+        "7588:- 2026-07-08: Area 17 (`src/area/17/two.c`) STARTED: ported `CDR_TWOSKELLY`/`skelly`+`skelly_dead` (`two.c:2761-2943`), \"Scarcewind\" the murdered governor's raised-ghost quest giver (quest 30, \"T",
+        "use thiserror::Error;"
+      ]
     }
   ],
-  "totalDurationMs": 118871264,
+  "totalDurationMs": 120112893,
   "struggleIndicators": {
     "repeatedErrors": {
       "Everything builds cleanly, all tests pass (2380 core + 1091 server, zero failures, zero warnings), f": 1,
       "Verification: `cargo fmt --all`, `cargo test --workspace` (2380 ugaris-core + 1091 ugaris-server, al": 1,
       "test result: ok. 1089 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.09s": 1,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 84,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 85,
       "The arguments provided to the tool are invalid: Invalid input for tool read: JSON parsing failed: Te": 16,
       "Error message: JSON Parse error: Property name must be a string literal": 13,
       "error: could not compile `ugaris-core` (lib) due to 4 previous errors": 2,
@@ -3246,11 +3285,19 @@
       "All green (2929 core tests, 0 failures across the workspace). Let's build the server one more time t": 1,
       "crates/ugaris-core/src/do_action.rs-131-        return Err(DoError::IllegalDirection);": 1,
       "crates/ugaris-core/src/do_action.rs-134-        return Err(DoError::Dead);": 1,
-      "test result: ok. 1138 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 7.82s": 1,
+      "test result: ok. 1138 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 7.82s": 2,
       "test world::tests::two_skelly::skelly_greets_new_player_opens_quest_and_advances_state ... FAILED": 1,
       "test result: FAILED. 11 passed; 1 failed; 0 ignored; 0 measured; 2917 filtered out; finished in 0.00": 1,
       "test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 2917 filtered out; finished in 0.00s": 1,
-      "test result: ok. 1138 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 7.84s": 1
+      "test result: ok. 1138 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 7.84s": 1,
+      "- Verified: `cargo fmt --all`, `cargo test --workspace` (2939+81+3+45+1138, all green, zero failures": 1,
+      "700-- Area 37 `IDR_ARKHATA` subtype `1` now ports the C `stopwatch_driver` timer path: zero-characte": 1,
+      "704-- C `can_attack` player-vs-player hate-list admission has an explicit Rust policy seam: after th": 1,
+      "709-- Completed player area-spell actions now use the same runtime attack-policy seam as projectile/": 1,
+      "719-- C `can_attack` stale PK hate cleanup is now represented at the Rust player attack setup bounda": 1,
+      "722-- Retained player-damage fireball/ball policy denial now applies the same C stale-hate cleanup r": 1,
+      "7588:- 2026-07-08: Area 17 (`src/area/17/two.c`) STARTED: ported `CDR_TWOSKELLY`/`skelly`+`skelly_de": 1,
+      "use thiserror::Error;": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

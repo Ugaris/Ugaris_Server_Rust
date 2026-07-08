@@ -53,6 +53,10 @@ pub const CDR_FORESTWILLIAM: u16 = 60;
 /// `world::npc::area16::hermit`'s module doc comment.
 pub const CDR_FORESTHERMIT: u16 = 61;
 pub const CDR_TWOSKELLY: u16 = 70;
+/// C `#define CDR_TWOALCHEMIST 71` (`src/system/drvlib.h`): the
+/// spider-poison quest giver "Cervik" (`src/area/17/two.c::alchemist`),
+/// see `world::npc::area17::alchemist`'s module doc comment.
+pub const CDR_TWOALCHEMIST: u16 = 71;
 pub const CDR_TRADER: u16 = 72;
 /// C `#define CDR_PENTER 64` (`src/system/drvlib.h`): pentagram-quest
 /// guardian demons (`src/area/4/pents.c::demon_character_driver`). Its own
@@ -381,6 +385,7 @@ pub enum CharacterDriverState {
     SimpleBaddy(SimpleBaddyDriverData),
     Clara(ClaraDriverData),
     TwoSkelly(TwoSkellyDriverData),
+    TwoAlchemist(TwoAlchemistDriverData),
     Lab2Undead(Lab2UndeadDriverData),
     Merchant(MerchantDriverData),
     Aclerk(AclerkDriverData),
@@ -1233,7 +1238,8 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::GolemKeyhold(_)
             | CharacterDriverState::ForestImp(_)
             | CharacterDriverState::ForestWilliam(_)
-            | CharacterDriverState::ForestHermit(_),
+            | CharacterDriverState::ForestHermit(_)
+            | CharacterDriverState::TwoAlchemist(_),
         ) => SimpleBaddyDriverData::default(),
         None => SimpleBaddyDriverData::default(),
     };
@@ -2056,6 +2062,7 @@ mod tests {
         assert_eq!(CDR_SWAMPMONSTER, 56);
         assert_eq!(CDR_PALACEISLENA, 57);
         assert_eq!(CDR_TWOSKELLY, 70);
+        assert_eq!(CDR_TWOALCHEMIST, 71);
         assert_eq!(CDR_TRADER, 72);
         assert_eq!(CDR_LQNPC, 74);
         assert_eq!(CDR_JANITOR, 85);
@@ -2122,6 +2129,23 @@ mod tests {
                 last_talk_tick: 111,
                 current_victim: Some(CharacterId(12)),
                 alive_tick: 222,
+            })
+        );
+    }
+
+    #[test]
+    fn two_alchemist_driver_state_matches_legacy_runtime_data_shape() {
+        let mut data = TwoAlchemistDriverData::default();
+        assert_eq!(data.last_talk_tick, 0);
+        assert_eq!(data.current_victim, None);
+
+        data.last_talk_tick = 111;
+        data.current_victim = Some(CharacterId(12));
+        assert_eq!(
+            CharacterDriverState::TwoAlchemist(data),
+            CharacterDriverState::TwoAlchemist(TwoAlchemistDriverData {
+                last_talk_tick: 111,
+                current_victim: Some(CharacterId(12)),
             })
         );
     }
@@ -3592,6 +3616,7 @@ pub use crate::world::npc::area13::dungeon_master::{
 pub use crate::world::npc::area16::hermit::ForestHermitDriverData;
 pub use crate::world::npc::area16::imp::ForestImpDriverData;
 pub use crate::world::npc::area16::william::ForestWilliamDriverData;
+pub use crate::world::npc::area17::alchemist::TwoAlchemistDriverData;
 pub use crate::world::npc::area17::two_skelly::TwoSkellyDriverData;
 pub use crate::world::npc::area2::moonie::MoonieDriverData;
 pub use crate::world::npc::area2::superior::SuperiorDriverData;

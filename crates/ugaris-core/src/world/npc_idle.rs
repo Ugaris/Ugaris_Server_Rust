@@ -534,7 +534,8 @@ impl World {
                 | CharacterDriverState::GolemKeyhold(_)
                 | CharacterDriverState::ForestImp(_)
                 | CharacterDriverState::ForestWilliam(_)
-                | CharacterDriverState::ForestHermit(_) => None,
+                | CharacterDriverState::ForestHermit(_)
+                | CharacterDriverState::TwoAlchemist(_) => None,
             });
         let Some(target_id) = target_id else {
             return false;

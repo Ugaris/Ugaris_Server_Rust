@@ -1,7 +1,10 @@
 //! Area 17 (Two-City/Exkordon) NPCs, one file per NPC.
 
+pub mod alchemist;
 pub mod two_skelly;
 
+#[allow(unused_imports)]
+pub use alchemist::*;
 #[allow(unused_imports)]
 pub use two_skelly::*;
 
@@ -11,14 +14,14 @@ use crate::character_driver::TextQaEntry;
 /// small-talk/command table `analyse_text_driver` matches against for
 /// every Two-City NPC in this file (`guard_driver`/`barkeeper`/`servant`/
 /// `thiefguard`/`thiefmaster`/`sanwyn`/`skelly`/`alchemist`). Only the
-/// entries `world::npc::area17::two_skelly` actually needs are ported so
-/// far (the first 8 rows, through `repeat`/answer_code 2); the remaining
-/// `guest`/`citizen`/`honor`/`enemy`/`chat`/`bribe`/`threaten`/`pay
-/// bribe`/`pay`/`buy pass`/`status`/`pay a fee`/`i am done` rows belong to
-/// NPCs not yet ported - add them here (never duplicate the table) when
-/// that work happens, same "one shared file-local table, many drivers"
-/// precedent as `world::npc::area16::FOREST_QA`/`world::npc::area3::
-/// AREA3_QA`.
+/// entries `world::npc::area17::two_skelly`/`world::npc::area17::
+/// alchemist` actually need are ported so far (the first 8 rows, through
+/// `repeat`/answer_code 2); the remaining `guest`/`citizen`/`honor`/
+/// `enemy`/`chat`/`bribe`/`threaten`/`pay bribe`/`pay`/`buy pass`/
+/// `status`/`pay a fee`/`i am done` rows belong to NPCs not yet ported -
+/// add them here (never duplicate the table) when that work happens, same
+/// "one shared file-local table, many drivers" precedent as `world::npc::
+/// area16::FOREST_QA`/`world::npc::area3::AREA3_QA`.
 pub const TWOCITY_QA: &[TextQaEntry] = &[
     TextQaEntry {
         words: &["how", "are", "you"],

@@ -788,11 +788,16 @@ Ordered by player progression; the C file is the oracle.
   quest giver, quest 30) is now fully ported (`world/npc/area17/
   two_skelly.rs`), including its 30-second self-destruct timer and the
   new file-local `TWOCITY_QA` shared table (`world/npc/area17/mod.rs`,
-  currently only the entries this NPC needs). Still unported:
-  `CDR_TWOGUARD`/`CDR_TWOBARKEEPER`/`CDR_TWOSERVANT`/`CDR_TWOTHIEFGUARD`/
-  `CDR_TWOTHIEFMASTER`/`CDR_TWOROBBER`'s death hook/`CDR_TWOSANWYN`/
-  `CDR_TWOALCHEMIST` - see `PORTING_LEDGER.md` for the full driver
-  breakdown and suggested next-slice order.
+  currently only the entries this NPC needs). `CDR_TWOALCHEMIST`
+  ("Cervik", the spider-poison quest giver, quest 31) is now also ported
+  (`world/npc/area17/alchemist.rs`), sharing `TWOCITY_QA`; its 1st/3rd/
+  7th/10th-completion potion reward (`combo_potion3`/`security_potion`,
+  level-gated) is finished server-side (`ugaris-server/area17.rs`) since
+  it needs the quest-log completion count and `ZoneLoader`. Still
+  unported: `CDR_TWOGUARD`/`CDR_TWOBARKEEPER`/`CDR_TWOSERVANT`/
+  `CDR_TWOTHIEFGUARD`/`CDR_TWOTHIEFMASTER`/`CDR_TWOROBBER`'s death hook/
+  `CDR_TWOSANWYN` - see `PORTING_LEDGER.md` for the full driver breakdown
+  and suggested next-slice order.
 - [ ] **Area 18 - `src/area/18/bones.c`** - rune quest completion
   (`exec_rune` rewards), bone NPCs.
 - [ ] **Area 19 - `src/area/19/nomad.c`** - nomad camp NPCs/trading.

@@ -474,6 +474,8 @@ pub const IID_AREA17_REDKEY: u32 = (0x01 << 24) | 0x000073;
 
 pub const IID_AREA17_CROSS: u32 = (0x01 << 24) | 0x000074;
 
+pub const IID_AREA17_POISON: u32 = (0x01 << 24) | 0x000075;
+
 pub const IID_AREA16_ROBBERKEY: u32 = (0x01 << 24) | 0x000060;
 
 pub const IID_AREA16_SKELLYKEY: u32 = (0x01 << 24) | 0x000061;
