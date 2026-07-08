@@ -19,6 +19,7 @@ mod carlos;
 mod character_values;
 mod clanclerk;
 mod clanmaster;
+mod clara;
 mod clubmaster;
 mod combat;
 mod complain;

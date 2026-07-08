@@ -66,9 +66,12 @@ impl World {
         // see `Character::dungeonfighter`'s doc comment. `CDR_PENTER`
         // pentagram demons (`pents.c::demon_character_driver`) do the same
         // tail call (`char_driver(CDR_SIMPLEBADDY, ...)`), same precedent.
+        // `CDR_SWAMPMONSTER`'s `ch_driver` dispatch (`swamp.c:807-809`) is
+        // the same one-line unconditional tail call too.
         if (character.driver != CDR_SIMPLEBADDY
             && character.driver != CDR_DUNGEONFIGHTER
-            && character.driver != CDR_PENTER)
+            && character.driver != CDR_PENTER
+            && character.driver != CDR_SWAMPMONSTER)
             || character.action != 0
             || character.flags.contains(CharacterFlags::DEAD)
         {
@@ -317,7 +320,8 @@ impl World {
             .filter_map(|(&character_id, character)| {
                 ((character.driver == CDR_SIMPLEBADDY
                     || character.driver == CDR_DUNGEONFIGHTER
-                    || character.driver == CDR_PENTER)
+                    || character.driver == CDR_PENTER
+                    || character.driver == CDR_SWAMPMONSTER)
                     && matches!(
                         character.driver_state,
                         Some(CharacterDriverState::SimpleBaddy(_))

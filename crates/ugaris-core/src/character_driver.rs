@@ -1518,7 +1518,11 @@ pub(crate) fn next_legacy_name_value(input: &str) -> Option<(&str, &str, &str)> 
     let input = input[value_len..].strip_prefix(';')?;
     Some((name, value, input.trim_start_matches(char::is_whitespace)))
 }
-pub const EXP_AREA15_HARDKILL: i32 = 5_000;
+/// C `#define EXP_AREA15_HARDKILL 7500` (`src/common/quest_exp.h:43`).
+/// Single source of truth is `crate::quest::quest_exp::EXP_AREA15_HARDKILL`
+/// (`i64`); re-exposed here as `i32` to match `ClaraDialogueOutcome::
+/// military_exp`/`World::give_military_pts_from_npc`'s `exps: i32`.
+pub const EXP_AREA15_HARDKILL: i32 = crate::quest::quest_exp::EXP_AREA15_HARDKILL as i32;
 /// C `teleport_next_lab(cn, 0)` truthiness (`src/system/lab.c:94-104`).
 /// With `do_teleport = 0`, `teleport_lab`'s `!do_teleport ||
 /// change_area(...)` always short-circuits true without touching the map,
@@ -2097,15 +2101,15 @@ mod tests {
     #[test]
     fn clara_driver_state_matches_legacy_runtime_data_shape() {
         let mut data = ClaraDriverData::default();
-        assert_eq!(data.last_talk_tick, 0);
+        assert_eq!(data.last_talk, 0);
         assert_eq!(data.current_victim, None);
 
-        data.last_talk_tick = 1234;
+        data.last_talk = 1234;
         data.current_victim = Some(CharacterId(77));
         assert_eq!(
             CharacterDriverState::Clara(data),
             CharacterDriverState::Clara(ClaraDriverData {
-                last_talk_tick: 1234,
+                last_talk: 1234,
                 current_victim: Some(CharacterId(77)),
             })
         );

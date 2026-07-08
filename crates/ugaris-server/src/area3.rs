@@ -27,11 +27,13 @@
 use super::*;
 use crate::achievement::{award_dragonsbane_achievement, award_swap_money_converted_achievement};
 use ugaris_core::quest::quest_exp::MONEY_AREA3_MOONIES;
+use ugaris_core::world::npc::area3::clara::clara_hardkill_weapon_facts;
 use ugaris_core::world::{
     Astro2OutcomeEvent, Astro2PlayerFacts, CarlosOutcomeEvent, CarlosPlayerFacts,
-    KassimOutcomeEvent, KassimPlayerFacts, KellyOutcomeEvent, KellyPlayerFacts,
-    SeymourOutcomeEvent, SeymourPlayerFacts, SirJonesOutcomeEvent, SirJonesPlayerFacts,
-    SupermaxOutcomeEvent, SupermaxPlayerFacts, ThomasOutcomeEvent, ThomasPlayerFacts,
+    ClaraOutcomeEvent, ClaraPlayerFacts, KassimOutcomeEvent, KassimPlayerFacts, KellyOutcomeEvent,
+    KellyPlayerFacts, SeymourOutcomeEvent, SeymourPlayerFacts, SirJonesOutcomeEvent,
+    SirJonesPlayerFacts, SupermaxOutcomeEvent, SupermaxPlayerFacts, ThomasOutcomeEvent,
+    ThomasPlayerFacts,
 };
 
 pub(crate) fn thomas_player_facts(
@@ -876,6 +878,92 @@ pub(crate) fn apply_supermax_events(
                 };
                 player.add_supermax_gold(amount);
                 applied += 1;
+            }
+        }
+    }
+    applied
+}
+
+pub(crate) fn clara_player_facts(
+    world: &World,
+    runtime: &ServerRuntime,
+) -> HashMap<CharacterId, ClaraPlayerFacts> {
+    runtime
+        .players
+        .values()
+        .filter_map(|player| {
+            let character_id = player.character_id?;
+            let (has_hardkill_item, hardkill_ritual_progress) =
+                clara_hardkill_weapon_facts(world, character_id);
+            Some((
+                character_id,
+                ClaraPlayerFacts {
+                    clara_state: player.area3_clara_state(),
+                    kelly_state: player.area3_kelly_state(),
+                    has_hardkill_item,
+                    hardkill_ritual_progress,
+                    questlog_21_count: i32::from(player.quest_log.count(21)),
+                },
+            ))
+        })
+        .collect()
+}
+
+/// Applies each [`ClaraOutcomeEvent`] queued by `World::process_clara_
+/// actions`. Neither event touches `ZoneLoader` or achievements - Clara
+/// has no carried-item reward or achievement call, unlike her `world::
+/// kelly`/`world::seymour` siblings (see `world::clara`'s own module doc
+/// comment).
+pub(crate) fn apply_clara_events(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    events: Vec<ClaraOutcomeEvent>,
+) -> usize {
+    let mut applied = 0;
+    for event in events {
+        match event {
+            ClaraOutcomeEvent::UpdateClaraState {
+                player_id,
+                new_state,
+            } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.set_area3_clara_state(new_state);
+                applied += 1;
+            }
+            // C `questlog_open(co, 21)` (`swamp.c:614`):
+            // sets the flag and unconditionally resends the questlog.
+            ClaraOutcomeEvent::QuestOpen { player_id } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.quest_log.open(21);
+                let payload = legacy_questlog_payload(player);
+                for (session_id, _) in runtime.sessions_for_character(player_id) {
+                    runtime.send_to_session(session_id, payload.clone());
+                }
+                applied += 1;
+            }
+            // C `questlog_done(co, 21);` (`swamp.c:666`) - the exp/resend
+            // half; the conditional `give_military_pts` reward is applied
+            // directly in `World` (see `world::clara`'s own doc comment).
+            ClaraOutcomeEvent::QuestDone { player_id } => {
+                let Some(level) = world.characters.get(&player_id).map(|c| c.level) else {
+                    continue;
+                };
+                let level_val = level_value(level);
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                if let Some(completion) = player.quest_log.complete_legacy(21, level, level_val) {
+                    let payload = legacy_questlog_payload(player);
+                    world.give_exp(player_id, completion.granted_exp, u32::from(world.area_id));
+                    for (session_id, _) in runtime.sessions_for_character(player_id) {
+                        runtime.send_to_session(session_id, payload.clone());
+                    }
+                    applied += 1;
+                }
             }
         }
     }

@@ -130,10 +130,13 @@ impl World {
         // exact attack logic for `CDR_DUNGEONFIGHTER` guard NPCs too - see
         // `Character::dungeonfighter`'s doc comment. `CDR_PENTER` pentagram
         // demons (`pents.c::demon_character_driver`) do the same tail call
-        // (`char_driver(CDR_SIMPLEBADDY, ...)`), same precedent.
+        // (`char_driver(CDR_SIMPLEBADDY, ...)`), same precedent. `CDR_
+        // SWAMPMONSTER`'s `ch_driver` dispatch (`swamp.c:807-809`) is the
+        // same one-line unconditional tail call too.
         if (attacker.driver != CDR_SIMPLEBADDY
             && attacker.driver != CDR_DUNGEONFIGHTER
-            && attacker.driver != CDR_PENTER)
+            && attacker.driver != CDR_PENTER
+            && attacker.driver != CDR_SWAMPMONSTER)
             || attacker.action != 0
             || attacker.flags.contains(CharacterFlags::DEAD)
         {
@@ -2575,7 +2578,8 @@ impl World {
             .filter_map(|(&character_id, character)| {
                 ((character.driver == CDR_SIMPLEBADDY
                     || character.driver == CDR_DUNGEONFIGHTER
-                    || character.driver == CDR_PENTER)
+                    || character.driver == CDR_PENTER
+                    || character.driver == CDR_SWAMPMONSTER)
                     && matches!(
                         character.driver_state,
                         Some(CharacterDriverState::SimpleBaddy(_))

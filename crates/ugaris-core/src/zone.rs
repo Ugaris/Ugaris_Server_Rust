@@ -8,10 +8,10 @@ use crate::{
         parse_arena_manager_driver_args, parse_clanclerk_driver_args, parse_clanmaster_driver_args,
         parse_clubmaster_driver_args, ArenaFighterDriverData, ArenaMasterDriverData,
         Astro2DriverData, BrithildieDriverData, CamhermitDriverData, CarlosDriverData,
-        CharacterDriverState, DungeonmasterDriverData, ForestRangerDriverData, GateFightDriverData,
-        GateWelcomeDriverData, GolemKeyholdDriverData, GreeterDriverData, GwendylonDriverData,
-        JanitorDriverData, JessicaDriverData, JiuDriverData, KassimDriverData, KellyDriverData,
-        NookDriverData, ReskinDriverData, SeymourDriverData, SirJonesDriverData,
+        CharacterDriverState, ClaraDriverData, DungeonmasterDriverData, ForestRangerDriverData,
+        GateFightDriverData, GateWelcomeDriverData, GolemKeyholdDriverData, GreeterDriverData,
+        GwendylonDriverData, JanitorDriverData, JessicaDriverData, JiuDriverData, KassimDriverData,
+        KellyDriverData, NookDriverData, ReskinDriverData, SeymourDriverData, SirJonesDriverData,
         SuperiorDriverData, SupermaxDriverData, TerionDriverData, ThomasDriverData,
         TraderDriverData, YoakinDriverData, ARENA_FIGHTER_REST_POS, CDR_ARENAFIGHTER,
         CDR_ARENAMANAGER, CDR_ARENAMASTER, CDR_ASTRO2, CDR_BRITHILDIE, CDR_CAMHERMIT, CDR_CARLOS,
@@ -19,7 +19,7 @@ use crate::{
         CDR_GATE_FIGHT, CDR_GATE_WELCOME, CDR_GOLEMKEYHOLDER, CDR_GREETER, CDR_GWENDYLON,
         CDR_JANITOR, CDR_JESSICA, CDR_JIU, CDR_KASSIM, CDR_KELLY, CDR_LAB2UNDEAD, CDR_NOOK,
         CDR_RESKIN, CDR_SEYMOUR, CDR_SIMPLEBADDY, CDR_SIRJONES, CDR_SUPERIOR, CDR_SUPERMAX,
-        CDR_TERION, CDR_THOMAS, CDR_TRADER, CDR_YOAKIN, NT_CREATE,
+        CDR_SWAMPCLARA, CDR_TERION, CDR_THOMAS, CDR_TRADER, CDR_YOAKIN, NT_CREATE,
     },
     entity::{
         Character, CharacterFlags, Item, ItemFlags, CHARACTER_VALUE_COUNT, INVENTORY_SIZE,
@@ -584,6 +584,26 @@ impl ZoneLoader {
             // SimpleBaddy's own `NT_CREATE` handler parses.
             character.push_driver_message(NT_CREATE, 0, 0, 0);
             apply_simple_baddy_create_message(&mut character, Some(&template.args), 0);
+        }
+        if template.driver == crate::character_driver::CDR_SWAMPMONSTER {
+            // C `ch_driver`'s `CDR_SWAMPMONSTER` dispatch (`swamp.c:807-
+            // 809`): an unconditional every-tick tail call to
+            // `char_driver(CDR_SIMPLEBADDY, CDT_DRIVER, cn, ret,
+            // lastact)`, reusing the SimpleBaddy driver's full idle-
+            // wander/auto-attack AI wholesale - same precedent as
+            // `CDR_PENTER`/`CDR_DUNGEONFIGHTER` above. The `swamp25n`/
+            // `swamp27n`/`swamp29n`/`swamp31n` templates
+            // (`zones/15/swamp.chr`) carry the same
+            // `arg="aggressive=1;helper=0;scavenger=...;"` shape
+            // SimpleBaddy's own `NT_CREATE` handler parses.
+            character.push_driver_message(NT_CREATE, 0, 0, 0);
+            apply_simple_baddy_create_message(&mut character, Some(&template.args), 0);
+        }
+        if template.driver == CDR_SWAMPCLARA {
+            // C never parses zone-file args into `struct
+            // clara_driver_data` (`set_data` zero-initializes it) - no
+            // args to read here, same as `CDR_GATE_WELCOME` above.
+            character.driver_state = Some(CharacterDriverState::Clara(ClaraDriverData::default()));
         }
         if template.driver == crate::character_driver::CDR_FDEMON_DEMON {
             // C `fdemon_demon`'s own very first check (`fdemon.c:2746-2749`)
@@ -1936,6 +1956,65 @@ mod tests {
         assert_eq!(data.aggressive, 1);
         assert_eq!(data.startdist, 40);
         assert_eq!(data.stopdist, 80);
+    }
+
+    #[test]
+    fn swampmonster_template_installs_simple_baddy_state_from_arg() {
+        // Mirrors `zones/15/swamp.chr`'s real `swamp25n`/`swamp27n`/
+        // `swamp29n`/`swamp31n` entries: `driver=56` (`CDR_SWAMPMONSTER`)
+        // with a SimpleBaddy-style `arg=` string that `swamp_monster`'s
+        // own tail `char_driver(CDR_SIMPLEBADDY, ...)` call reads.
+        let chars = r#"
+            swamp25n:
+              name="Swamp Beastling"
+              driver=56
+              arg="aggressive=1;helper=0;scavenger=0;startdist=40;chardist=0;stopdist=60;"
+              V_HP=12
+            ;
+        "#;
+
+        let mut loader = ZoneLoader::new();
+        loader.load_character_templates_str(chars).unwrap();
+
+        let (character, _inventory_items) = loader
+            .instantiate_character_template("swamp25n", CharacterId(9))
+            .unwrap();
+
+        assert_eq!(character.driver, crate::character_driver::CDR_SWAMPMONSTER);
+        assert!(character.driver_messages.is_empty());
+        let Some(CharacterDriverState::SimpleBaddy(data)) = &character.driver_state else {
+            panic!("simple baddy state missing");
+        };
+        assert_eq!(data.aggressive, 1);
+        assert_eq!(data.startdist, 40);
+        assert_eq!(data.stopdist, 60);
+    }
+
+    #[test]
+    fn clara_template_installs_default_clara_driver_state() {
+        // C never parses zone-file args into `struct clara_driver_data`
+        // (`set_data` zero-initializes it) - no args to read for
+        // `CDR_SWAMPCLARA` (`driver=54`).
+        let chars = r#"
+            clara:
+              name="Clara"
+              driver=54
+              V_HP=100
+            ;
+        "#;
+
+        let mut loader = ZoneLoader::new();
+        loader.load_character_templates_str(chars).unwrap();
+
+        let (character, _inventory_items) = loader
+            .instantiate_character_template("clara", CharacterId(9))
+            .unwrap();
+
+        assert_eq!(character.driver, crate::character_driver::CDR_SWAMPCLARA);
+        assert_eq!(
+            character.driver_state,
+            Some(CharacterDriverState::Clara(ClaraDriverData::default()))
+        );
     }
 
     #[test]

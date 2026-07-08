@@ -341,3 +341,39 @@ pub(crate) async fn lampghost_driver_86(
     // (`src/area/3/area3.c`).
     world.process_lampghost_actions(config.area_id);
 }
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn clara_driver_93(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    _zone_loader: &mut ZoneLoader,
+    config: &ServerConfig,
+    _args: &Args,
+    _completed_actions: &[WorldActionCompletion],
+    _achievement_repository: &Option<ugaris_db::PgAchievementRepository>,
+    _character_repository: &Option<ugaris_db::PgCharacterRepository>,
+    _area_repository: &Option<ugaris_db::PgAreaRepository>,
+    _clan_repository: &Option<ugaris_db::PgClanRegistryRepository>,
+    _clan_log_repository: &Option<ugaris_db::PgClanLogRepository>,
+    _merchant_repository: &Option<ugaris_db::PgMerchantRepository>,
+    _military_master_storage_repository: &Option<ugaris_db::PgMilitaryMasterStorageRepository>,
+    _military_advisor_storage_repository: &Option<ugaris_db::PgMilitaryAdvisorStorageRepository>,
+    _notes_repository: &Option<ugaris_db::PgNotesRepository>,
+    _anticheat_repository: &Option<ugaris_db::PgAntiCheatRepository>,
+    _auction_repository: &Option<ugaris_db::PgAuctionRepository>,
+) {
+    // C `clara_driver`: area 15's swamp-outpost commander NPC
+    // (`src/area/15/swamp.c`), spawned as an area-3 driver id since it
+    // shares area 3's `area3_ppd` struct - see `world::clara`'s own
+    // module doc comment.
+    let clara_facts = clara_player_facts(world, runtime);
+    let clara_events = world.process_clara_actions(&clara_facts, config.area_id);
+    let clara_events_applied = apply_clara_events(world, runtime, clara_events);
+    if clara_events_applied != 0 {
+        info!(
+            clara_events_applied,
+            tick = world.tick.0,
+            "applied clara dialogue events"
+        );
+    }
+}

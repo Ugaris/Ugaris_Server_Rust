@@ -769,8 +769,11 @@ Ordered by player progression; the C file is the oracle.
   *(done - `shrine_welding` plus its `can_receive_mod`/`can_give_mod`
   helpers now ported via a new `World::apply_random_shrine_welding`/
   `World::recompute_item_requirements`; details in PORTING_LEDGER.md)*
-- [ ] **Area 15 - `src/area/15/swamp.c`** - Clara dialogue runtime (state
-  helpers exist), military reward application.
+- [x] **Area 15 - `src/area/15/swamp.c`** - Clara dialogue runtime (state
+  helpers exist), military reward application. *(done - runtime NT_CHAR/
+  NT_TEXT/NT_GIVE message-loop integration, military-point rewards, and
+  the `CDR_SWAMPMONSTER`->`CDR_SIMPLEBADDY` AI-gate widening all ported;
+  details in PORTING_LEDGER.md)*
 - [ ] **Area 16 - `src/area/16/forest.c`** - forest NPCs/robber quest.
 - [ ] **Area 17 - `src/area/17/two.c`** - Two-City thief/skeleton NPC
   drivers (`CDR_TWOSKELLY` has state scaffolding).
@@ -1203,4 +1206,11 @@ notes live in `PROGRESS_ARCHIVE.md`.
   `mine.rs`), `check_military_silver`, and the silver/gold-mined
   achievement wiring. Orb/artifact finds and `CDR_GOLEMKEYHOLDER` remain.
   2865 core + 1123 server tests pass, clean build/boot-smoke.
+- 2026-07-08: Area 15 CLOSED: wired `clara_driver`'s full `NT_CHAR`/
+  `NT_TEXT`/`NT_GIVE` message loop + military-point rewards onto the
+  existing pure `clara_dialogue_step`, widened the `CDR_SWAMPMONSTER`->
+  `CDR_SIMPLEBADDY` AI gates (same precedent as `CDR_PENTER`), and fixed a
+  real bug: a duplicate `EXP_AREA15_HARDKILL` constant was `5000` instead
+  of C's `7500`. 2891 core + 1136 server tests pass, clean build/boot-
+  smoke (area 15, 11 characters, no panics).
 
