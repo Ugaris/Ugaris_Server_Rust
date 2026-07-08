@@ -8,6 +8,7 @@ mod anticheat;
 mod area_mech;
 mod arena;
 mod assembly;
+mod astro1;
 mod asturin;
 mod balltrap;
 mod bank;

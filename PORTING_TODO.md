@@ -438,8 +438,31 @@ Ordered by player progression; the C file is the oracle.
 - [x] **Area 2 - `src/area/2/area2.c`** - remaining character drivers
   (zombie lord, priests). Item drivers done. *(done - details in
   PORTING_LEDGER.md)*
-- [ ] **Area 3 - `src/area/3/area3.c`** - palace story NPCs, lamp ghost
+- [~] **Area 3 - `src/area/3/area3.c`** - palace story NPCs, lamp ghost
   quest flow (lamps themselves are ported).
+  REMAINING: `astro1_driver` (ambient moon-telescope monologue, no
+  dialogue/quest/item interaction) is ported (`world/npc/area3/astro1.rs`,
+  `CDR_ASTRO1`), establishing the file's NPC scaffolding. Still unported,
+  in suggested order: `thomas_driver`+`sir_jones_driver` (share
+  `crypt_state`; cross-reference the already-ported `CDR_VAMPIRE`/
+  `CDR_VAMPIRE2` death hooks, which already gate on `area3_crypt_state`),
+  `astro2_driver` (quest 16, lost astronomer notes), `seymour_driver`
+  (quest 10-12, Aston entry NPC, needs an army-rank-grant deviation),
+  `kelly_driver` (biggest chain, quests 13-15/54/60, needs new
+  `kelly_found1-3`/`kelly_found_cnt`/`crypt_bonus` `PlayerRuntime`
+  accessors), `carlos_driver` (uses `DRD_STAFFER_PPD` not `area3_ppd`;
+  needs `AchievementType::Dragonsbane` wiring + `mem_check_driver`/
+  `mem_add_driver`), `kassim_driver` (engraving service; needs a new
+  per-player transient `DRD_ENGRAVE_DATA`-equivalent driver-state slot,
+  same precedent as `ClanFoundData`), `supermax_driver` (needs unported
+  `skillmax`/`supermax_canraise`/`supermax_cost` helpers from `tool.c`),
+  `lampghost_driver`/`_respawn`/`_dead` (needs a new global `lamp[250]`-
+  equivalent registry shared with the already-ported `onofflight_driver`;
+  do last - most architecturally distinct driver in the file). All 9
+  share the `qa[]` table (`area3.c:106-204`) via a new `AREA3_QA` table
+  (a superset of `GWENDYLON_QA` plus `list`/`money`/`shortcut to
+  caligar`/`explain`/`engrave:`/the ~80-entry raise/lower-skill block) -
+  not yet created.
 - [ ] **Area 4 - `src/area/4/pents.c`** - pentagram quest NPCs + demon
   wave logic beyond the ported item boundary. Also wire the achievement
   calls this file's reward mechanic makes in C (`achievement_add_pents`,
@@ -739,4 +762,8 @@ notes live in `PROGRESS_ARCHIVE.md`.
   `CDR_VAMPIRE2`) as one file each under `world/npc/area2/`, plus the
   `vampire`/`vampire2_dead` crypt-quest completion death hooks. 2553 core
   + 1101 server tests pass, clean build/boot-smoke.
+- 2026-07-08: Area 3 (`src/area/3/area3.c`) STARTED: documented the full
+  9-remaining-driver breakdown, ported the simplest (`astro1_driver`,
+  ambient monologue, `world/npc/area3/astro1.rs`). 2558 core + 1101
+  server tests pass, clean build/boot-smoke.
 

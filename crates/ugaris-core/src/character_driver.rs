@@ -223,6 +223,10 @@ pub const CDR_VAMPIRE: u16 = 34;
 /// area 2"): the Vampire Lord 2 boss NPC
 /// (`src/area/2/area2.c::vampire2_driver`).
 pub const CDR_VAMPIRE2: u16 = 38;
+/// C `#define CDR_ASTRO1 32` (`src/system/drvlib.h`, "tells wild stories"):
+/// area 3's ambient moon-telescope astronomer NPC
+/// (`src/area/3/area3.c::astro1_driver`).
+pub const CDR_ASTRO1: u16 = 32;
 pub const DRD_SIMPLEBADDYDRIVER: u32 = 0x0100_0013;
 pub const DRD_CLARADRIVER: u32 = 0x0100_0059;
 pub const DRD_SKELLYDRIVER: u32 = 0x0100_006a;
@@ -322,6 +326,7 @@ pub enum CharacterDriverState {
     Moonie(MoonieDriverData),
     Vampire(VampireDriverData),
     Vampire2(Vampire2DriverData),
+    Astro1(Astro1DriverData),
 }
 /// C `bank_driver_parse` from `src/module/bank.c`. The C driver defaults
 /// opening hours to 6..23 before parsing (`bank_driver` lines 304-309).
@@ -1011,7 +1016,8 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::Superior(_)
             | CharacterDriverState::Moonie(_)
             | CharacterDriverState::Vampire(_)
-            | CharacterDriverState::Vampire2(_),
+            | CharacterDriverState::Vampire2(_)
+            | CharacterDriverState::Astro1(_),
         ) => SimpleBaddyDriverData::default(),
         None => SimpleBaddyDriverData::default(),
     };
@@ -3357,6 +3363,7 @@ pub use crate::world::npc::area2::vampire2::Vampire2DriverData;
 pub use crate::world::npc::area22::lab2_undead::{
     apply_lab2_undead_create_message, parse_lab2_undead_driver_args, Lab2UndeadDriverData,
 };
+pub use crate::world::npc::area3::astro1::Astro1DriverData;
 pub use crate::world::npc::area3::clara::{
     clara_dialogue_step, clara_replay_state_after_text_analysis,
     clara_state_after_swamp_monster_death, ClaraDialogueContext, ClaraDialogueOutcome,

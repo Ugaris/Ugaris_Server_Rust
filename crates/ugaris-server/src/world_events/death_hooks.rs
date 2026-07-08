@@ -499,6 +499,41 @@ pub(crate) fn apply_dungeonmaster_death_from_hurt_event(
     true
 }
 
+/// C `ch_died_driver`'s area-3 immortal-quest-NPC dispatch (`area3.c:
+/// 2884-2919`): `CDR_SEYMOUR`/`CDR_LAMPGHOST`/`CDR_KELLY`/`CDR_ASTRO1`/
+/// `CDR_ASTRO2`/`CDR_THOMAS`/`CDR_SIRJONES`/`CDR_CARLOS`/`CDR_SUPERMAX`/
+/// `CDR_KASSIM` all route to the same `immortal_dead(cn, co)`
+/// (`area3.c:2596-2598`), the identical `charlog`-only bug line already
+/// ported for `CDR_GATE_WELCOME`/`CDR_DUNGEONMASTER` above - same text,
+/// same immortal-so-unreachable-in-practice caveat. Only `CDR_ASTRO1` is
+/// ported so far; extend this array as the sibling area-3 NPCs are
+/// ported.
+pub(crate) fn apply_area3_immortal_death_from_hurt_event(
+    world: &World,
+    event: LegacyHurtEvent,
+) -> bool {
+    if !event.outcome.killed {
+        return false;
+    }
+    let Some(target) = world.characters.get(&event.target_id) else {
+        return false;
+    };
+    const AREA3_IMMORTAL_DRIVERS: [u16; 1] = [CDR_ASTRO1];
+    if !AREA3_IMMORTAL_DRIVERS.contains(&target.driver) {
+        return false;
+    }
+    debug!(
+        target: "client_log",
+        "{}",
+        format_client_log_message(
+            &target.name,
+            target.id.0,
+            "I JUST DIED! I'M SUPPOSED TO BE IMMORTAL!"
+        )
+    );
+    true
+}
+
 /// C `ch_died_driver`/`CDR_ASTURIN` dispatch (`gwendylon.c:6105-6107`) ->
 /// `asturin_dead` (`:4535-4542`). C's `set_data(co, DRD_AREA1_PPD, ...)`
 /// succeeds for *any* live character `co` (the generic per-character

@@ -502,7 +502,8 @@ impl World {
                 | CharacterDriverState::Superior(_)
                 | CharacterDriverState::Moonie(_)
                 | CharacterDriverState::Vampire(_)
-                | CharacterDriverState::Vampire2(_) => None,
+                | CharacterDriverState::Vampire2(_)
+                | CharacterDriverState::Astro1(_) => None,
             });
         let Some(target_id) = target_id else {
             return false;
