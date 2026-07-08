@@ -31,38 +31,56 @@
 //! `farmy_ppd` blob via `PlayerRuntime::farmy_soldier_type`/`_rank`/`_base`/
 //! `_profile`/`_exp`/`_cn`/`_serial` (`player/areas_misc.rs`).
 //!
-//! This module additionally ports [`World::army_follow_driver`] (C
-//! `army_follow_driver`, `fdemon.c:633-655`) and [`World::
-//! fdemon_army_tick`] (the `MIS_FOLLOW`/leader-lost-disintegration slice of
-//! C `fdemon_army`, `fdemon.c:1327-1532`) - enough for a recruited soldier
-//! to actually follow its leader around. The real spawning
-//! (`take_soldiers`/`drop_soldiers`, needing `ZoneLoader`) lives in
-//! `ugaris-server`'s `area8_army.rs`, matching the `pents.rs`/`world/
+//! This module additionally ports [`World::army_follow_driver`]/
+//! [`World::army_back_driver`]/[`World::army_front_driver`] (C
+//! `army_follow_driver`/`army_back_driver`/`army_front_driver`,
+//! `fdemon.c:633-673`), [`World::fdemon_army_process_text_messages`] (the
+//! `NT_TEXT` mission-command reception half of C `fdemon_army`,
+//! `fdemon.c:1370-1423`, minus the emote-reaction dispatch), and
+//! [`World::fdemon_army_tick`] (the mission-dispatch/leader-lost-
+//! disintegration slice of C `fdemon_army`, `fdemon.c:1327-1532`) - enough
+//! for a recruited soldier to follow, hold position ("back"), stay close
+//! ("retreat"), or walk ahead of ("front") its leader on command. The real
+//! spawning (`take_soldiers`/`drop_soldiers`, needing `ZoneLoader`) lives
+//! in `ugaris-server`'s `area8_army.rs`, matching the `pents.rs`/`world/
 //! pents.rs` split precedent.
 //!
 //! Deviations/gaps still open in this slice (documented, not silent):
-//! - `MIS_BACK`/`MIS_FRONT`/`MIS_BEHIND` (`army_back_driver`/
-//!   `army_front_driver`/`army_behind_driver`) are not ported - a soldier
-//!   whose mission is set to one of these (not yet reachable: nothing sets
-//!   `FarmyData::mission` to anything but `MIS_FOLLOW` yet, since the
-//!   `"follow"/"back"/"retreat"/"front"/"behind"` `NT_TEXT` command
-//!   reception in `fdemon_army`'s own message loop is also not ported)
-//!   would simply stand still.
+//! - `MIS_BEHIND` (`army_behind_driver`, `fdemon.c:688-705`) is not
+//!   ported: it needs a live map-tile character lookup plus `do_attack`
+//!   combat (attacking whatever the leader is facing), unlike the other
+//!   three missions' pure movement. The `"behind"` `NT_TEXT` command is
+//!   still accepted and sets `FarmyData::mission = MIS_BEHIND` (matching
+//!   C's own reply text), but [`World::fdemon_army_tick`] then does
+//!   nothing for it - the soldier simply stands still until commanded
+//!   elsewhere.
 //! - Combat: `fight_driver_update`/`do_heal`/`do_bless`/
 //!   `fight_driver_attack_visible` (self-defense, the heal/bless support-
 //!   caster behavior gated on `V_HEAL`/`V_BLESS`) are not ported - a
 //!   soldier will follow but never fight back if attacked.
 //! - The whole `struct emote` personality/chat system (`do_emote`/
 //!   `got_emote`, `fdemon.c:781-1325`) is not ported - `FarmyData` omits
-//!   the `emote` field entirely; `regenerate_driver`/`spell_self_driver`
-//!   are likewise not called per-soldier (regen already applies generically
-//!   to every character - see `world/regen.rs` - so HP/endurance/mana
-//!   recovery still works without this).
+//!   the `emote` field entirely, the `NT_TEXT` handler's `res >= 20`
+//!   emote-reaction dispatch and case `7`'s emote-stats debug dump are
+//!   both skipped; `regenerate_driver`/`spell_self_driver` are likewise
+//!   not called per-soldier (regen already applies generically to every
+//!   character - see `world/regen.rs` - so HP/endurance/mana recovery
+//!   still works without this).
 //! - C's `NT_CREATE`'s `if (ch[cn].arg) ch[cn].arg = NULL;` has no Rust
 //!   equivalent (same precedent as every other simple NPC in this
 //!   codebase).
 
-use crate::{character_driver::CharacterDriverState, world::*};
+use crate::{
+    character_driver::{analyse_text_qa, CharacterDriverState, TextAnalysisOutcome, NT_TEXT},
+    world::*,
+};
+
+use super::FDEMON_QA;
+
+/// C `analyse_text_driver`'s own `char_dist(cn, co) > 12` early-out
+/// (`fdemon.c:209-211`), same range every other area-8 driver's `NT_TEXT`
+/// handling reproduces (see `fdemon_boss.rs`'s `FDEMON_BOSS_TALK_RANGE`).
+const FDEMON_ARMY_TALK_RANGE: i32 = 12;
 
 /// C `#define MAXSOLDIER 3` (`fdemon.c:322`).
 pub const MAXSOLDIER: usize = 3;
@@ -543,6 +561,241 @@ impl World {
         }
     }
 
+    /// C `army_back_driver(cn, dat)` (`fdemon.c:675-686`): if the soldier
+    /// is still standing at the guard post recorded when the "back"
+    /// command was issued (`dat->opt1`/`dat->opt2`), take exactly one
+    /// step in the direction opposite its current facing (C `(ch[cn].dir
+    /// + 3) % 8 + 1`, see [`opposite_direction`]) and return `true`
+    /// immediately on success. Otherwise (already moved off the guard
+    /// post, or the backward step is blocked) fall back to a timeout:
+    /// after 5 seconds with no progress revert the mission to
+    /// `MIS_FOLLOW` and return `false`; before that, idle for half a
+    /// second and return whether the idle was queued (C `return
+    /// do_idle(cn, TICKS/2)`).
+    pub fn army_back_driver(&mut self, character_id: CharacterId, area_id: u16) -> bool {
+        let Some(character) = self.characters.get(&character_id) else {
+            return false;
+        };
+        let Some(CharacterDriverState::FdemonArmy(dat)) = character.driver_state.clone() else {
+            return false;
+        };
+
+        if i32::from(character.x) == dat.opt1 && i32::from(character.y) == dat.opt2 {
+            let direction = opposite_direction(character.dir);
+            let weather_movement_percent = self.settings.weather_movement_percent;
+            let earthmud_extra_cost = self.earthmud_extra_movement_cost(character_id);
+            let walked = Direction::try_from(direction).is_ok_and(|direction| {
+                self.characters
+                    .get_mut(&character_id)
+                    .is_some_and(|character| {
+                        do_walk(
+                            character,
+                            &mut self.map,
+                            direction as u8,
+                            area_id,
+                            weather_movement_percent,
+                            earthmud_extra_cost,
+                        )
+                        .is_ok()
+                    })
+            });
+            if walked {
+                return true;
+            }
+        }
+
+        if self.tick.0 as i64 - dat.timer > TICKS_PER_SECOND as i64 * 5 {
+            if let Some(CharacterDriverState::FdemonArmy(dat)) = self
+                .characters
+                .get_mut(&character_id)
+                .and_then(|character| character.driver_state.as_mut())
+            {
+                dat.mission = MIS_FOLLOW;
+            }
+            false
+        } else {
+            self.characters
+                .get_mut(&character_id)
+                .is_some_and(|character| do_idle(character, TICKS_PER_SECOND as i32 / 2).is_ok())
+        }
+    }
+
+    /// C `army_front_driver(cn, dat, dist)` (`fdemon.c:657-673`): walks
+    /// one step toward a point 4 tiles ahead of the leader in its current
+    /// facing direction (C `dx2offset(ch[co].dir,...)`, [`Direction::
+    /// delta`]-equivalent, times 4, added to the leader's position).
+    /// Returns whether a walk action was queued (C `return 1`/`return
+    /// 0`): `false` if the leader isn't visible, the soldier is already
+    /// within `dist` tiles of the target point, or no path is found.
+    pub fn army_front_driver(
+        &mut self,
+        character_id: CharacterId,
+        dist: i32,
+        area_id: u16,
+    ) -> bool {
+        let Some(character) = self.characters.get(&character_id) else {
+            return false;
+        };
+        let Some(CharacterDriverState::FdemonArmy(dat)) = character.driver_state.clone() else {
+            return false;
+        };
+        let Some(leader) = self.characters.get(&dat.leader_cn) else {
+            return false;
+        };
+
+        let daylight = self.date.daylight;
+        if !char_see_char(character, leader, &self.map, daylight) {
+            return false;
+        }
+        let Ok(leader_direction) = Direction::try_from(leader.dir) else {
+            return false;
+        };
+        let (dx, dy) = leader_direction.delta();
+        let target_x = i32::from(leader.x) + i32::from(dx) * 4;
+        let target_y = i32::from(leader.y) + i32::from(dy) * 4;
+        if target_x < 0 || target_y < 0 {
+            return false;
+        }
+
+        let manhattan =
+            (i32::from(character.x) - target_x).abs() + (i32::from(character.y) - target_y).abs();
+        if manhattan <= dist {
+            return false;
+        }
+
+        self.setup_walk_toward(
+            character_id,
+            target_x as usize,
+            target_y as usize,
+            2,
+            area_id,
+            false,
+        )
+    }
+
+    /// C `fdemon_army`'s `NT_TEXT` message branch (`fdemon.c:1370-1423`),
+    /// minus the `res >= 20` emote-reaction dispatch (`got_emote`) and
+    /// case `7`'s emote-stats debug dump - both meaningless without the
+    /// (unported) emote system, see the module doc comment. Only platoon
+    /// members (the leader or a fellow recruited soldier, C
+    /// `find_platoon`) can address this soldier at all; only the
+    /// leader's own speech can issue a mission command.
+    pub fn fdemon_army_process_text_messages(&mut self, soldier_id: CharacterId) {
+        let Some(soldier_name) = self.characters.get(&soldier_id).map(|c| c.name.clone()) else {
+            return;
+        };
+        let messages = self
+            .characters
+            .get_mut(&soldier_id)
+            .map(|character| std::mem::take(&mut character.driver_messages))
+            .unwrap_or_default();
+
+        let daylight = self.date.daylight;
+        for message in messages {
+            if message.message_type != NT_TEXT {
+                continue;
+            }
+            let speaker_id = CharacterId(message.dat3 as u32);
+            if speaker_id == soldier_id {
+                continue;
+            }
+            let Some(text) = message.text.as_deref() else {
+                continue;
+            };
+
+            let Some(CharacterDriverState::FdemonArmy(dat)) = self
+                .characters
+                .get(&soldier_id)
+                .and_then(|character| character.driver_state.clone())
+            else {
+                continue;
+            };
+            // C `if ((friend = find_platoon(co, dat)) == -1) { remove_
+            // message(...); continue; }` - only platoon members (leader
+            // or fellow soldiers) may address this soldier.
+            if !dat.platoon.contains(&speaker_id) {
+                continue;
+            }
+
+            let (Some(soldier), Some(speaker)) = (
+                self.characters.get(&soldier_id),
+                self.characters.get(&speaker_id),
+            ) else {
+                continue;
+            };
+            // C `analyse_text_driver`'s own `char_dist(cn, co) > 12` /
+            // `!char_see_char(cn, co)` early-outs (`fdemon.c:209-215`).
+            if char_dist(soldier, speaker) > FDEMON_ARMY_TALK_RANGE
+                || !char_see_char(soldier, speaker, &self.map, daylight)
+            {
+                continue;
+            }
+            let speaker_name = speaker.name.clone();
+            let speaker_military_points = speaker.military_points;
+            let (soldier_x, soldier_y) = (soldier.x, soldier.y);
+
+            let outcome = analyse_text_qa(text, &soldier_name, &speaker_name, FDEMON_QA);
+
+            // C `if (co != dat->leader_cn) { remove_message(...); continue; }`
+            // - only the leader's own speech may issue a mission command;
+            // a fellow soldier's matching text is dropped here (C's own
+            // `find_platoon` check above already filters out anyone not
+            // on the platoon at all).
+            if speaker_id != dat.leader_cn {
+                continue;
+            }
+
+            let rank_name =
+                army_rank_name(army_rank_for_points(speaker_military_points)).to_string();
+
+            match outcome {
+                TextAnalysisOutcome::Matched(2) => {
+                    self.npc_say(soldier_id, &format!("Sir! Yes, Sir, {rank_name}, Sir!"));
+                    self.set_fdemon_army_mission(soldier_id, MIS_FOLLOW);
+                }
+                TextAnalysisOutcome::Matched(3) => {
+                    self.npc_say(soldier_id, &format!("Will do, {rank_name}."));
+                    let tick = self.tick.0 as i64;
+                    if let Some(CharacterDriverState::FdemonArmy(dat)) = self
+                        .characters
+                        .get_mut(&soldier_id)
+                        .and_then(|character| character.driver_state.as_mut())
+                    {
+                        dat.mission = MIS_BACK;
+                        dat.opt1 = i32::from(soldier_x);
+                        dat.opt2 = i32::from(soldier_y);
+                        dat.timer = tick;
+                    }
+                }
+                TextAnalysisOutcome::Matched(4) => {
+                    self.npc_say(soldier_id, &format!("Aye Aye {rank_name}, Sir."));
+                    self.set_fdemon_army_mission(soldier_id, MIS_RETREAT);
+                }
+                TextAnalysisOutcome::Matched(5) => {
+                    self.npc_say(soldier_id, &format!("So be it, {rank_name}."));
+                    self.set_fdemon_army_mission(soldier_id, MIS_FRONT);
+                }
+                TextAnalysisOutcome::Matched(6) => {
+                    self.npc_say(soldier_id, &format!("I'll go rub his back, {rank_name}."));
+                    self.set_fdemon_army_mission(soldier_id, MIS_BEHIND);
+                }
+                TextAnalysisOutcome::Said(_)
+                | TextAnalysisOutcome::Matched(_)
+                | TextAnalysisOutcome::NoMatch => {}
+            }
+        }
+    }
+
+    fn set_fdemon_army_mission(&mut self, soldier_id: CharacterId, mission: i32) {
+        if let Some(CharacterDriverState::FdemonArmy(dat)) = self
+            .characters
+            .get_mut(&soldier_id)
+            .and_then(|character| character.driver_state.as_mut())
+        {
+            dat.mission = mission;
+        }
+    }
+
     /// Every live `CDR_FDEMON_ARMY` character (C `ch_driver`'s
     /// `CDR_FDEMON_ARMY` case, `fdemon.c:3021,3070,3084` - only its
     /// `CDT_DRIVER` `fdemon_army(cn, ret, lastact)` tick call is ported
@@ -560,11 +813,14 @@ impl World {
     }
 
     /// C `fdemon_army(cn, ret, lastact)` (`fdemon.c:1327-1532`) - the
-    /// `MIS_FOLLOW`/leader-lost-disintegration slice only, see the module
-    /// doc comment for the deferred combat/other-mission/emote portions.
-    /// Returns `true` if the soldier disintegrated (leader lost - C's
-    /// `remove_destroy_char(cn)`), matching [`World::remove_character`]'s
-    /// own "did it exist" contract for the caller.
+    /// leader-lost-disintegration guard plus both mission-dispatch
+    /// `switch (dat->mission)` blocks (`FOLLOW`/`BACK`/`RETREAT`/`FRONT`;
+    /// `BEHIND` is a documented no-op, see the module doc comment), minus
+    /// the combat/heal/bless self-defense fallback that sits between them
+    /// in C and the trailing emote/regen/idle tail (also documented
+    /// gaps). Returns `true` if the soldier disintegrated (leader lost -
+    /// C's `remove_destroy_char(cn)`), matching [`World::
+    /// remove_character`]'s own "did it exist" contract for the caller.
     pub fn fdemon_army_tick(&mut self, character_id: CharacterId, area_id: u16) -> bool {
         let Some(character) = self.characters.get(&character_id) else {
             return false;
@@ -588,39 +844,82 @@ impl World {
             return true;
         }
 
-        if dat.mission == MIS_FOLLOW {
-            if self.army_follow_driver(character_id, 10, area_id) {
+        // C's first `switch (dat->mission)` block (`fdemon.c:1447-1481`).
+        match dat.mission {
+            MIS_FOLLOW => {
+                if self.army_follow_driver(character_id, 10, area_id) {
+                    if let Some(CharacterDriverState::FdemonArmy(dat)) = self
+                        .characters
+                        .get_mut(&character_id)
+                        .and_then(|character| character.driver_state.as_mut())
+                    {
+                        dat.closeup = true;
+                    }
+                    return false;
+                }
+            }
+            MIS_BACK => {
+                if self.army_back_driver(character_id, area_id) {
+                    return false;
+                }
+            }
+            MIS_RETREAT => {
+                if self.army_follow_driver(character_id, 3, area_id) {
+                    return false;
+                }
+            }
+            MIS_BEHIND => {
+                // `army_behind_driver` is not ported - see the module doc
+                // comment; the soldier stands still until commanded
+                // elsewhere.
+            }
+            MIS_FRONT => {
+                if self.army_front_driver(character_id, 10, area_id) {
+                    return false;
+                }
+            }
+            _ => {}
+        }
+
+        // C's combat/heal/bless/self-defense fallback
+        // (`fight_driver_update`/`do_heal`/`do_bless`/
+        // `fight_driver_attack_visible`) between the two mission-dispatch
+        // blocks is not ported - see the module doc comment.
+
+        // C's second `switch (dat->mission)` block (`fdemon.c:1500-1514`)
+        // only has `FOLLOW`/`FRONT` cases.
+        match dat.mission {
+            MIS_FOLLOW => {
+                if self.army_follow_driver(character_id, 3, area_id) {
+                    return false;
+                }
                 if let Some(CharacterDriverState::FdemonArmy(dat)) = self
                     .characters
                     .get_mut(&character_id)
                     .and_then(|character| character.driver_state.as_mut())
                 {
-                    dat.closeup = true;
+                    dat.closeup = false;
                 }
-                return false;
             }
-
-            // C's combat/heal/bless/self-defense fallback
-            // (`fight_driver_update`/`do_heal`/`do_bless`/
-            // `fight_driver_attack_visible`) between the two
-            // `army_follow_driver` calls is not ported - see the module
-            // doc comment.
-            if self.army_follow_driver(character_id, 3, area_id) {
-                return false;
+            MIS_FRONT => {
+                if self.army_front_driver(character_id, 3, area_id) {
+                    return false;
+                }
             }
-            if let Some(CharacterDriverState::FdemonArmy(dat)) = self
-                .characters
-                .get_mut(&character_id)
-                .and_then(|character| character.driver_state.as_mut())
-            {
-                dat.closeup = false;
-            }
+            _ => {}
         }
 
         // Emotes/regen/`do_idle` tail not ported - see the module doc
         // comment (regen already applies generically to every character).
         false
     }
+}
+
+/// C `(ch[cn].dir + 3) % 8 + 1` (`fdemon.c:676`): the direction opposite
+/// `dir` - used by [`World::army_back_driver`] to step backward from a
+/// held guard post.
+fn opposite_direction(dir: u8) -> u8 {
+    (u32::from(dir) + 3) as u8 % 8 + 1
 }
 
 // Tests for this module's pure functions live in `world::tests::

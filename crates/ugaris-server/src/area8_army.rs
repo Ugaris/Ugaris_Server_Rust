@@ -277,12 +277,18 @@ fn spawn_army_soldier(
 }
 
 /// C `ch_driver`'s `CDR_FDEMON_ARMY` case, run once per live soldier per
-/// tick (`world::npc::area8::fdemon_army::fdemon_army_tick`'s `MIS_FOLLOW`/
-/// leader-lost slice - see that function's own doc comment for the
-/// deferred combat/other-mission/emote portions).
+/// tick: the `NT_TEXT` mission-command reception
+/// (`world::npc::area8::fdemon_army::fdemon_army_process_text_messages`,
+/// C `fdemon_army`'s message loop, `fdemon.c:1338-1431`) followed by the
+/// mission-dispatch/leader-lost tick
+/// (`world::npc::area8::fdemon_army::fdemon_army_tick`, C `fdemon.c:1433-
+/// 1532`) - matching C's own per-character ordering (message loop first,
+/// then "do something"). See `fdemon_army_tick`'s own doc comment for the
+/// deferred combat/`MIS_BEHIND`/emote portions.
 pub(crate) fn apply_fdemon_army_tick(world: &mut World, area_id: u16) -> usize {
     let mut disintegrated = 0;
     for character_id in world.fdemon_army_character_ids() {
+        world.fdemon_army_process_text_messages(character_id);
         if world.fdemon_army_tick(character_id, area_id) {
             disintegrated += 1;
         }

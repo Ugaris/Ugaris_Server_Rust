@@ -4,8 +4,9 @@ use crate::{
     world::npc::area8::fdemon_army::{
         assign_profile, finalize_soldier_exp_and_level, plan_soldier_recruitment,
         scale_soldier_skill, scale_soldier_values, soldier_base_strength, soldier_equipment_items,
-        FarmyData, MIS_FOLLOW, SOLDIER_PROFILES, SOLDIER_TYPE_MAGE, SOLDIER_TYPE_WARRIOR, WN_ARMS,
-        WN_BODY, WN_HEAD, WN_LEGS, WN_RHAND,
+        FarmyData, MAXSOLDIER, MIS_BACK, MIS_BEHIND, MIS_FOLLOW, MIS_FRONT, MIS_RETREAT,
+        SOLDIER_PROFILES, SOLDIER_TYPE_MAGE, SOLDIER_TYPE_WARRIOR, WN_ARMS, WN_BODY, WN_HEAD,
+        WN_LEGS, WN_RHAND,
     },
 };
 
@@ -156,6 +157,385 @@ fn fdemon_army_tick_follows_leader_of_the_same_group() {
     assert!(!world.fdemon_army_tick(soldier_id, 1));
     let moved = world.characters.get(&soldier_id).unwrap();
     assert!(moved.action != 0 || moved.x != 80);
+}
+
+#[test]
+fn army_back_driver_steps_backward_once_from_the_held_guard_post() {
+    let mut world = World::default();
+    let mut soldier = soldier_npc(2, 100, 100, CharacterId(1));
+    soldier.dir = Direction::Right as u8; // opposite is Left -> x decreases.
+    let Some(CharacterDriverState::FdemonArmy(dat)) = soldier.driver_state.as_mut() else {
+        panic!("expected FdemonArmy driver state");
+    };
+    dat.mission = MIS_BACK;
+    dat.opt1 = 100;
+    dat.opt2 = 100;
+    let soldier_id = soldier.id;
+    world.characters.insert(soldier_id, soldier);
+
+    assert!(world.army_back_driver(soldier_id, 1));
+    let moved = world.characters.get(&soldier_id).unwrap();
+    assert!(moved.action != 0 || moved.x != 100);
+}
+
+#[test]
+fn army_back_driver_idles_while_off_post_within_the_timeout() {
+    let mut world = World::default();
+    world.tick = crate::tick::Tick(100);
+    let mut soldier = soldier_npc(2, 90, 100, CharacterId(1));
+    let Some(CharacterDriverState::FdemonArmy(dat)) = soldier.driver_state.as_mut() else {
+        panic!("expected FdemonArmy driver state");
+    };
+    dat.mission = MIS_BACK;
+    dat.opt1 = 100; // soldier has already moved off its guard post.
+    dat.opt2 = 100;
+    dat.timer = 95; // 5 ticks ago, well under the 5-second (120-tick) timeout.
+    let soldier_id = soldier.id;
+    world.characters.insert(soldier_id, soldier);
+
+    assert!(world.army_back_driver(soldier_id, 1));
+    let unchanged = world.characters.get(&soldier_id).unwrap();
+    let Some(CharacterDriverState::FdemonArmy(dat)) = unchanged.driver_state else {
+        panic!("expected FdemonArmy driver state");
+    };
+    assert_eq!(dat.mission, MIS_BACK);
+    assert_ne!(
+        unchanged.duration, 0,
+        "do_idle should have queued an action"
+    );
+}
+
+#[test]
+fn army_back_driver_reverts_to_follow_after_the_timeout() {
+    let mut world = World::default();
+    world.tick = crate::tick::Tick(1_000);
+    let mut soldier = soldier_npc(2, 90, 100, CharacterId(1));
+    let Some(CharacterDriverState::FdemonArmy(dat)) = soldier.driver_state.as_mut() else {
+        panic!("expected FdemonArmy driver state");
+    };
+    dat.mission = MIS_BACK;
+    dat.opt1 = 100;
+    dat.opt2 = 100;
+    dat.timer = 0; // far in the past - over the 5-second timeout.
+    let soldier_id = soldier.id;
+    world.characters.insert(soldier_id, soldier);
+
+    assert!(!world.army_back_driver(soldier_id, 1));
+    let reverted = world.characters.get(&soldier_id).unwrap();
+    let Some(CharacterDriverState::FdemonArmy(dat)) = reverted.driver_state else {
+        panic!("expected FdemonArmy driver state");
+    };
+    assert_eq!(dat.mission, MIS_FOLLOW);
+}
+
+#[test]
+fn army_front_driver_walks_toward_the_point_ahead_of_a_visible_leader() {
+    let mut world = World::default();
+    let mut leader = leader_npc(1, 100, 100);
+    leader.dir = Direction::Right as u8;
+    world.characters.insert(leader.id, leader);
+    // Front target is (104, 100); soldier starts far from it.
+    let soldier = soldier_npc(2, 80, 100, CharacterId(1));
+    let soldier_id = soldier.id;
+    world.characters.insert(soldier_id, soldier);
+
+    assert!(world.army_front_driver(soldier_id, 10, 1));
+    let moved = world.characters.get(&soldier_id).unwrap();
+    assert!(moved.action != 0 || moved.x != 80);
+}
+
+#[test]
+fn army_front_driver_stops_when_already_within_dist_of_the_target() {
+    let mut world = World::default();
+    let mut leader = leader_npc(1, 100, 100);
+    leader.dir = Direction::Right as u8;
+    world.characters.insert(leader.id, leader);
+    // Front target is (104, 100); manhattan distance from (102,100) is 2 <= dist(10).
+    let soldier = soldier_npc(2, 102, 100, CharacterId(1));
+    let soldier_id = soldier.id;
+    world.characters.insert(soldier_id, soldier);
+
+    assert!(!world.army_front_driver(soldier_id, 10, 1));
+    let unmoved = world.characters.get(&soldier_id).unwrap();
+    assert_eq!((unmoved.x, unmoved.y), (102, 100));
+}
+
+#[test]
+fn army_front_driver_returns_false_when_leader_not_visible() {
+    let mut world = World::default();
+    let mut leader = leader_npc(1, 120, 100);
+    leader.dir = Direction::Right as u8;
+    world.characters.insert(leader.id, leader);
+
+    let mut soldier = soldier_npc(2, 80, 100, CharacterId(1));
+    soldier.flags.remove(CharacterFlags::INFRARED);
+    let soldier_id = soldier.id;
+    world.characters.insert(soldier_id, soldier);
+
+    assert!(!world.army_front_driver(soldier_id, 10, 1));
+}
+
+#[test]
+fn fdemon_army_tick_dispatches_mis_back_via_army_back_driver() {
+    let mut world = World::default();
+    let leader = leader_npc(1, 100, 100);
+    world.characters.insert(leader.id, leader);
+
+    let mut soldier = soldier_npc(2, 100, 100, CharacterId(1));
+    soldier.dir = Direction::Right as u8;
+    let Some(CharacterDriverState::FdemonArmy(dat)) = soldier.driver_state.as_mut() else {
+        panic!("expected FdemonArmy driver state");
+    };
+    dat.mission = MIS_BACK;
+    dat.opt1 = 100;
+    dat.opt2 = 100;
+    let soldier_id = soldier.id;
+    world.characters.insert(soldier_id, soldier);
+
+    assert!(!world.fdemon_army_tick(soldier_id, 1));
+    let moved = world.characters.get(&soldier_id).unwrap();
+    assert!(moved.action != 0 || moved.x != 100);
+}
+
+#[test]
+fn fdemon_army_tick_dispatches_mis_retreat_via_a_closer_follow_distance() {
+    let mut world = World::default();
+    let leader = leader_npc(1, 100, 100);
+    world.characters.insert(leader.id, leader);
+
+    let mut soldier = soldier_npc(2, 80, 100, CharacterId(1));
+    let Some(CharacterDriverState::FdemonArmy(dat)) = soldier.driver_state.as_mut() else {
+        panic!("expected FdemonArmy driver state");
+    };
+    dat.mission = MIS_RETREAT;
+    let soldier_id = soldier.id;
+    world.characters.insert(soldier_id, soldier);
+
+    assert!(!world.fdemon_army_tick(soldier_id, 1));
+    let moved = world.characters.get(&soldier_id).unwrap();
+    assert!(moved.action != 0 || moved.x != 80);
+}
+
+#[test]
+fn fdemon_army_tick_dispatches_mis_front_via_army_front_driver() {
+    let mut world = World::default();
+    let mut leader = leader_npc(1, 100, 100);
+    leader.dir = Direction::Right as u8;
+    world.characters.insert(leader.id, leader);
+
+    let mut soldier = soldier_npc(2, 80, 100, CharacterId(1));
+    let Some(CharacterDriverState::FdemonArmy(dat)) = soldier.driver_state.as_mut() else {
+        panic!("expected FdemonArmy driver state");
+    };
+    dat.mission = MIS_FRONT;
+    let soldier_id = soldier.id;
+    world.characters.insert(soldier_id, soldier);
+
+    assert!(!world.fdemon_army_tick(soldier_id, 1));
+    let moved = world.characters.get(&soldier_id).unwrap();
+    assert!(moved.action != 0 || moved.x != 80);
+}
+
+#[test]
+fn fdemon_army_tick_mis_behind_is_a_documented_no_op() {
+    let mut world = World::default();
+    let leader = leader_npc(1, 100, 100);
+    world.characters.insert(leader.id, leader);
+
+    let mut soldier = soldier_npc(2, 80, 100, CharacterId(1));
+    let Some(CharacterDriverState::FdemonArmy(dat)) = soldier.driver_state.as_mut() else {
+        panic!("expected FdemonArmy driver state");
+    };
+    dat.mission = MIS_BEHIND;
+    let soldier_id = soldier.id;
+    world.characters.insert(soldier_id, soldier);
+
+    assert!(!world.fdemon_army_tick(soldier_id, 1));
+    let unmoved = world.characters.get(&soldier_id).unwrap();
+    assert_eq!((unmoved.x, unmoved.y), (80, 100));
+    assert_eq!(unmoved.action, 0);
+}
+
+#[test]
+fn text_commands_are_ignored_from_a_speaker_outside_the_platoon() {
+    let mut world = World::default();
+    let leader = leader_npc(1, 100, 100);
+    world.characters.insert(leader.id, leader);
+    let soldier = soldier_npc(2, 100, 100, CharacterId(1));
+    let soldier_id = soldier.id;
+    world.characters.insert(soldier_id, soldier);
+    let stranger = leader_npc(3, 100, 100);
+    world.characters.insert(stranger.id, stranger);
+
+    world
+        .characters
+        .get_mut(&soldier_id)
+        .unwrap()
+        .push_driver_text_message(CharacterId(3), "follow");
+
+    world.fdemon_army_process_text_messages(soldier_id);
+
+    let unchanged = world.characters.get(&soldier_id).unwrap();
+    let Some(CharacterDriverState::FdemonArmy(dat)) = unchanged.driver_state else {
+        panic!("expected FdemonArmy driver state");
+    };
+    assert_eq!(dat.mission, MIS_FOLLOW);
+    assert!(world.drain_pending_area_texts().is_empty());
+}
+
+#[test]
+fn text_commands_are_ignored_from_a_platoon_member_that_is_not_the_leader() {
+    let mut world = World::default();
+    let mut leader = leader_npc(1, 100, 100);
+    leader.id = CharacterId(1);
+    world.characters.insert(leader.id, leader);
+    let mut soldier = soldier_npc(2, 100, 100, CharacterId(1));
+    let Some(CharacterDriverState::FdemonArmy(dat)) = soldier.driver_state.as_mut() else {
+        panic!("expected FdemonArmy driver state");
+    };
+    // Slot 0 holds a fellow soldier, slot MAXSOLDIER holds the leader.
+    dat.platoon[0] = CharacterId(3);
+    dat.platoon[MAXSOLDIER] = CharacterId(1);
+    let soldier_id = soldier.id;
+    world.characters.insert(soldier_id, soldier);
+    let fellow_soldier = soldier_npc(3, 100, 100, CharacterId(1));
+    world.characters.insert(fellow_soldier.id, fellow_soldier);
+
+    world
+        .characters
+        .get_mut(&soldier_id)
+        .unwrap()
+        .push_driver_text_message(CharacterId(3), "back");
+
+    world.fdemon_army_process_text_messages(soldier_id);
+
+    let unchanged = world.characters.get(&soldier_id).unwrap();
+    let Some(CharacterDriverState::FdemonArmy(dat)) = unchanged.driver_state else {
+        panic!("expected FdemonArmy driver state");
+    };
+    assert_eq!(dat.mission, MIS_FOLLOW);
+}
+
+#[test]
+fn text_command_out_of_talk_range_is_ignored() {
+    let mut world = World::default();
+    let leader = leader_npc(1, 200, 100); // dist 100 > 12 talk range.
+    world.characters.insert(leader.id, leader);
+    let mut soldier = soldier_npc(2, 100, 100, CharacterId(1));
+    let Some(CharacterDriverState::FdemonArmy(dat)) = soldier.driver_state.as_mut() else {
+        panic!("expected FdemonArmy driver state");
+    };
+    dat.platoon[MAXSOLDIER] = CharacterId(1);
+    let soldier_id = soldier.id;
+    world.characters.insert(soldier_id, soldier);
+
+    world
+        .characters
+        .get_mut(&soldier_id)
+        .unwrap()
+        .push_driver_text_message(CharacterId(1), "front");
+
+    world.fdemon_army_process_text_messages(soldier_id);
+
+    let unchanged = world.characters.get(&soldier_id).unwrap();
+    let Some(CharacterDriverState::FdemonArmy(dat)) = unchanged.driver_state else {
+        panic!("expected FdemonArmy driver state");
+    };
+    assert_eq!(dat.mission, MIS_FOLLOW);
+}
+
+#[test]
+fn leader_command_sets_the_matching_mission_and_replies() {
+    let mut world = World::default();
+    let mut leader = leader_npc(1, 100, 100);
+    leader.military_points = 1; // rank 1 -> "Private".
+    world.characters.insert(leader.id, leader);
+    let mut soldier = soldier_npc(2, 100, 100, CharacterId(1));
+    let Some(CharacterDriverState::FdemonArmy(dat)) = soldier.driver_state.as_mut() else {
+        panic!("expected FdemonArmy driver state");
+    };
+    dat.platoon[MAXSOLDIER] = CharacterId(1);
+    let soldier_id = soldier.id;
+    world.characters.insert(soldier_id, soldier);
+
+    world
+        .characters
+        .get_mut(&soldier_id)
+        .unwrap()
+        .push_driver_text_message(CharacterId(1), "front");
+
+    world.fdemon_army_process_text_messages(soldier_id);
+
+    let updated = world.characters.get(&soldier_id).unwrap();
+    let Some(CharacterDriverState::FdemonArmy(dat)) = updated.driver_state else {
+        panic!("expected FdemonArmy driver state");
+    };
+    assert_eq!(dat.mission, MIS_FRONT);
+    let texts = world.drain_pending_area_texts();
+    assert_eq!(texts.len(), 1);
+    assert!(texts[0].message.contains("So be it, Private."));
+}
+
+#[test]
+fn leader_back_command_records_the_current_position_and_timer() {
+    let mut world = World::default();
+    world.tick = crate::tick::Tick(500);
+    let leader = leader_npc(1, 100, 100);
+    world.characters.insert(leader.id, leader);
+    let mut soldier = soldier_npc(2, 100, 100, CharacterId(1));
+    let Some(CharacterDriverState::FdemonArmy(dat)) = soldier.driver_state.as_mut() else {
+        panic!("expected FdemonArmy driver state");
+    };
+    dat.platoon[MAXSOLDIER] = CharacterId(1);
+    let soldier_id = soldier.id;
+    world.characters.insert(soldier_id, soldier);
+
+    world
+        .characters
+        .get_mut(&soldier_id)
+        .unwrap()
+        .push_driver_text_message(CharacterId(1), "back");
+
+    world.fdemon_army_process_text_messages(soldier_id);
+
+    let updated = world.characters.get(&soldier_id).unwrap();
+    let Some(CharacterDriverState::FdemonArmy(dat)) = updated.driver_state else {
+        panic!("expected FdemonArmy driver state");
+    };
+    assert_eq!(dat.mission, MIS_BACK);
+    assert_eq!(dat.opt1, 100);
+    assert_eq!(dat.opt2, 100);
+    assert_eq!(dat.timer, 500);
+}
+
+#[test]
+fn leader_retreat_and_behind_commands_set_the_matching_mission() {
+    for (word, expected) in [("retreat", MIS_RETREAT), ("behind", MIS_BEHIND)] {
+        let mut world = World::default();
+        let leader = leader_npc(1, 100, 100);
+        world.characters.insert(leader.id, leader);
+        let mut soldier = soldier_npc(2, 100, 100, CharacterId(1));
+        let Some(CharacterDriverState::FdemonArmy(dat)) = soldier.driver_state.as_mut() else {
+            panic!("expected FdemonArmy driver state");
+        };
+        dat.platoon[MAXSOLDIER] = CharacterId(1);
+        let soldier_id = soldier.id;
+        world.characters.insert(soldier_id, soldier);
+
+        world
+            .characters
+            .get_mut(&soldier_id)
+            .unwrap()
+            .push_driver_text_message(CharacterId(1), word);
+
+        world.fdemon_army_process_text_messages(soldier_id);
+
+        let updated = world.characters.get(&soldier_id).unwrap();
+        let Some(CharacterDriverState::FdemonArmy(dat)) = updated.driver_state else {
+            panic!("expected FdemonArmy driver state");
+        };
+        assert_eq!(dat.mission, expected, "word {word:?}");
+    }
 }
 
 // The remaining tests exercise `fdemon_army`'s pure helpers (no `World`
