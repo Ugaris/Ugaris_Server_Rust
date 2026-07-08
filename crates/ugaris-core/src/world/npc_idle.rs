@@ -523,7 +523,8 @@ impl World {
                 | CharacterDriverState::Engrave(_)
                 | CharacterDriverState::FdemonArmy(_)
                 | CharacterDriverState::Islena(_)
-                | CharacterDriverState::PalaceGuard(_) => None,
+                | CharacterDriverState::PalaceGuard(_)
+                | CharacterDriverState::GolemKeyhold(_) => None,
             });
         let Some(target_id) = target_id else {
             return false;

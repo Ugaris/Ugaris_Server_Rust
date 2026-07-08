@@ -376,7 +376,22 @@ pub(crate) async fn dispatch_keyassembly_outcome(
             ));
             *blocked += 1;
         }
-        ugaris_core::item_driver::ItemDriverOutcome::MineKeyDoor { .. } => {
+        ugaris_core::item_driver::ItemDriverOutcome::MineKeyDoorOpened {
+            character_id,
+            golem_nr,
+            room_x,
+            room_y,
+            ..
+        } => {
+            crate::mine::spawn_keyholder_golem(
+                world,
+                zone_loader,
+                runtime,
+                character_id,
+                golem_nr,
+                room_x,
+                room_y,
+            );
             *executed += 1;
         }
         ugaris_core::item_driver::ItemDriverOutcome::ArkhataKeyNeedsCursor {

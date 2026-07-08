@@ -384,6 +384,85 @@ async fn spawn_rare_golem_boosts_level_and_hp_but_leaves_endurance_mana_untouche
 }
 
 // ============================================================================
+// `spawn_keyholder_golem` (C `keyholder_door`'s golem-spawn tail,
+// `mine.c:1196-1208`).
+// ============================================================================
+
+fn keyholder_golem_loader() -> ZoneLoader {
+    let mut loader = ZoneLoader::new();
+    loader
+        .load_character_templates_str(
+            r#"
+                keyholder_golem3:
+                  name="Gold Golem"
+                  description="An ancient golem made of stone and gold."
+                  sprite=258
+                  flag=CF_INFRARED
+                  V_HP=85
+                  V_ENDURANCE=10
+                  V_MANA=0
+                  driver=107
+                ;
+                "#,
+        )
+        .unwrap();
+    loader
+}
+
+#[tokio::test]
+async fn spawn_keyholder_golem_sets_stats_dir_post_and_victim_from_template() {
+    let mut world = World::default();
+    world.map = ugaris_core::map::MapGrid::new(20, 20);
+    let mut loader = keyholder_golem_loader();
+    let mut runtime = ServerRuntime::default();
+    runtime.set_next_character_id(70);
+    let player_id = CharacterId(1);
+
+    spawn_keyholder_golem(&mut world, &mut loader, &mut runtime, player_id, 3, 3, 5);
+
+    let golem = world.characters.get(&CharacterId(70)).unwrap();
+    // C `2 + (n%3)*8 + 5, 231 + (n/3)*8 + 3` vs. the player's own
+    // `2 + (n%3)*8 + 1, 231 + (n/3)*8 + 3` (`mine.c:1187,1204-1207`): 4
+    // tiles east of the player's teleport target, same row.
+    assert_eq!((golem.x, golem.y), (7, 5));
+    assert_eq!(golem.name, "Gold Golem");
+    assert_eq!(golem.dir, Direction::LeftUp as u8);
+    assert_eq!(golem.hp, 85 * POWERSCALE);
+    assert_eq!(golem.endurance, 10 * POWERSCALE);
+    assert_eq!(golem.mana, 0);
+    assert_eq!((golem.rest_x, golem.rest_y), (7, 5));
+    match &golem.driver_state {
+        Some(CharacterDriverState::GolemKeyhold(data)) => {
+            assert_eq!(data.victim, Some(player_id));
+        }
+        other => panic!("expected GolemKeyhold driver state, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn spawn_keyholder_golem_does_nothing_for_unknown_template() {
+    let mut world = World::default();
+    world.map = ugaris_core::map::MapGrid::new(20, 20);
+    let mut loader = keyholder_golem_loader();
+    let mut runtime = ServerRuntime::default();
+    runtime.set_next_character_id(70);
+
+    // Only `keyholder_golem3` exists in the loader; door `golem_nr: 9`
+    // has no matching template.
+    spawn_keyholder_golem(
+        &mut world,
+        &mut loader,
+        &mut runtime,
+        CharacterId(1),
+        9,
+        3,
+        5,
+    );
+
+    assert!(world.characters.is_empty());
+}
+
+// ============================================================================
 // `apply_mine_wall_reward` end to end (C `handle_mining_result`,
 // `mine.c:222-279`).
 // ============================================================================

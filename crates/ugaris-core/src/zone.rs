@@ -9,16 +9,17 @@ use crate::{
         parse_clubmaster_driver_args, ArenaFighterDriverData, ArenaMasterDriverData,
         Astro2DriverData, BrithildieDriverData, CamhermitDriverData, CarlosDriverData,
         CharacterDriverState, DungeonmasterDriverData, ForestRangerDriverData, GateFightDriverData,
-        GateWelcomeDriverData, GreeterDriverData, GwendylonDriverData, JanitorDriverData,
-        JessicaDriverData, JiuDriverData, KassimDriverData, KellyDriverData, NookDriverData,
-        ReskinDriverData, SeymourDriverData, SirJonesDriverData, SuperiorDriverData,
-        SupermaxDriverData, TerionDriverData, ThomasDriverData, TraderDriverData, YoakinDriverData,
-        ARENA_FIGHTER_REST_POS, CDR_ARENAFIGHTER, CDR_ARENAMANAGER, CDR_ARENAMASTER, CDR_ASTRO2,
-        CDR_BRITHILDIE, CDR_CAMHERMIT, CDR_CARLOS, CDR_CLANCLERK, CDR_CLANMASTER, CDR_CLUBMASTER,
-        CDR_DUNGEONMASTER, CDR_FOREST_RANGER, CDR_GATE_FIGHT, CDR_GATE_WELCOME, CDR_GREETER,
-        CDR_GWENDYLON, CDR_JANITOR, CDR_JESSICA, CDR_JIU, CDR_KASSIM, CDR_KELLY, CDR_LAB2UNDEAD,
-        CDR_NOOK, CDR_RESKIN, CDR_SEYMOUR, CDR_SIMPLEBADDY, CDR_SIRJONES, CDR_SUPERIOR,
-        CDR_SUPERMAX, CDR_TERION, CDR_THOMAS, CDR_TRADER, CDR_YOAKIN, NT_CREATE,
+        GateWelcomeDriverData, GolemKeyholdDriverData, GreeterDriverData, GwendylonDriverData,
+        JanitorDriverData, JessicaDriverData, JiuDriverData, KassimDriverData, KellyDriverData,
+        NookDriverData, ReskinDriverData, SeymourDriverData, SirJonesDriverData,
+        SuperiorDriverData, SupermaxDriverData, TerionDriverData, ThomasDriverData,
+        TraderDriverData, YoakinDriverData, ARENA_FIGHTER_REST_POS, CDR_ARENAFIGHTER,
+        CDR_ARENAMANAGER, CDR_ARENAMASTER, CDR_ASTRO2, CDR_BRITHILDIE, CDR_CAMHERMIT, CDR_CARLOS,
+        CDR_CLANCLERK, CDR_CLANMASTER, CDR_CLUBMASTER, CDR_DUNGEONMASTER, CDR_FOREST_RANGER,
+        CDR_GATE_FIGHT, CDR_GATE_WELCOME, CDR_GOLEMKEYHOLDER, CDR_GREETER, CDR_GWENDYLON,
+        CDR_JANITOR, CDR_JESSICA, CDR_JIU, CDR_KASSIM, CDR_KELLY, CDR_LAB2UNDEAD, CDR_NOOK,
+        CDR_RESKIN, CDR_SEYMOUR, CDR_SIMPLEBADDY, CDR_SIRJONES, CDR_SUPERIOR, CDR_SUPERMAX,
+        CDR_TERION, CDR_THOMAS, CDR_TRADER, CDR_YOAKIN, NT_CREATE,
     },
     entity::{
         Character, CharacterFlags, Item, ItemFlags, CHARACTER_VALUE_COUNT, INVENTORY_SIZE,
@@ -658,6 +659,20 @@ impl ZoneLoader {
             // `set_data`, same as `CDR_GATE_WELCOME` above.
             character.driver_state = Some(CharacterDriverState::GateFight(
                 GateFightDriverData::default(),
+            ));
+            character.push_driver_message(NT_CREATE, 0, 0, 0);
+        }
+        if template.driver == CDR_GOLEMKEYHOLDER {
+            // C `keyhold_fight_driver` reuses `struct gate_fight_driver_
+            // data` and is zero-initialized by `set_data` the same way
+            // `CDR_GATE_FIGHT` is above (`mine.c:1211-1220`); this NPC is
+            // never statically placed by any zone file - it is only ever
+            // created at runtime by `keyholder_door`
+            // (`ugaris-server::mine::spawn_keyholder_golem`), which also
+            // sets `victim`/`rest_x`/`rest_y` after this returns (see
+            // `world::npc::area12::golemkeyholder`'s module doc comment).
+            character.driver_state = Some(CharacterDriverState::GolemKeyhold(
+                GolemKeyholdDriverData::default(),
             ));
             character.push_driver_message(NT_CREATE, 0, 0, 0);
         }

@@ -599,7 +599,7 @@ impl World {
                 item_id,
                 character_id,
                 cursor_item_id,
-                ..
+                golem_nr,
             } => match self.first_free_mine_keyholder_room() {
                 Some((target_x, target_y))
                     if self.teleport_character(character_id, target_x, target_y, false) =>
@@ -607,7 +607,13 @@ impl World {
                     if self.character_holds_cursor_item(character_id, cursor_item_id) {
                         self.destroy_item(cursor_item_id);
                     }
-                    outcome
+                    ItemDriverOutcome::MineKeyDoorOpened {
+                        item_id,
+                        character_id,
+                        golem_nr,
+                        room_x: target_x,
+                        room_y: target_y,
+                    }
                 }
                 _ => ItemDriverOutcome::MineKeyDoorBusy {
                     item_id,

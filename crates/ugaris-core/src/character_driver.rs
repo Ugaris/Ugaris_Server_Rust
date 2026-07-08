@@ -65,6 +65,12 @@ pub const CDR_FDEMON_BOSS: u16 = 45;
 pub const CDR_FDEMON_ARMY: u16 = 44;
 pub const CDR_LQNPC: u16 = 74;
 pub const CDR_JANITOR: u16 = 85;
+/// C `#define CDR_GOLEMKEYHOLDER 107` (`src/system/drvlib.h:155`, comment
+/// "mines: key to second mine area"): the boss golem spawned into a
+/// private mine-vault room by `keyholder_door`/`IDR_MINEKEYDOOR`
+/// (`src/area/12/mine.c::keyholder_door`), see
+/// `world::npc::area12::golemkeyholder`'s module doc comment.
+pub const CDR_GOLEMKEYHOLDER: u16 = 107;
 pub const CDR_TEUFELDEMON: u16 = 114;
 pub const CDR_TEUFELGAMBLER: u16 = 115;
 pub const CDR_TEUFELQUEST: u16 = 116;
@@ -420,6 +426,7 @@ pub enum CharacterDriverState {
     FdemonArmy(FarmyData),
     Islena(IslenaDriverData),
     PalaceGuard(PalaceGuardDriverData),
+    GolemKeyhold(GolemKeyholdDriverData),
 }
 /// C `bank_driver_parse` from `src/module/bank.c`. The C driver defaults
 /// opening hours to 6..23 before parsing (`bank_driver` lines 304-309).
@@ -1193,7 +1200,8 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::Engrave(_)
             | CharacterDriverState::FdemonArmy(_)
             | CharacterDriverState::Islena(_)
-            | CharacterDriverState::PalaceGuard(_),
+            | CharacterDriverState::PalaceGuard(_)
+            | CharacterDriverState::GolemKeyhold(_),
         ) => SimpleBaddyDriverData::default(),
         None => SimpleBaddyDriverData::default(),
     };
@@ -3568,6 +3576,7 @@ pub use crate::world::npc::area11::islena::IslenaDriverData;
 pub use crate::world::npc::area11::palace_guard::{
     parse_palace_guard_driver_args, PalaceGuardDriverData,
 };
+pub use crate::world::npc::area12::golemkeyholder::GolemKeyholdDriverData;
 pub use crate::world::npc::area13::dungeon_master::{
     DungeonfighterDriverData, DungeonmasterDriverData, DUNGEONMASTER_QA, DUNGEON_SLOT_COUNT,
 };

@@ -844,6 +844,7 @@ pub(crate) async fn process_completed_action_outcomes(
                             | ugaris_core::item_driver::ItemDriverOutcome::MineKeyDoorNeedsGold { .. }
                             | ugaris_core::item_driver::ItemDriverOutcome::MineKeyDoorBusy { .. }
                             | ugaris_core::item_driver::ItemDriverOutcome::MineKeyDoor { .. }
+                            | ugaris_core::item_driver::ItemDriverOutcome::MineKeyDoorOpened { .. }
                             | ugaris_core::item_driver::ItemDriverOutcome::ArkhataKeyNeedsCursor { .. }
                             | ugaris_core::item_driver::ItemDriverOutcome::ArkhataKeyDoesNotFit { .. }
                             | ugaris_core::item_driver::ItemDriverOutcome::ArkhataKeyAssemble { .. }

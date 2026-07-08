@@ -725,7 +725,7 @@ Ordered by player progression; the C file is the oracle.
 - [x] **Area 11 - `src/area/11/palace.c`** - palace guards, Islena fight
   driver (door/bomb/cap items ported). *(done - `palace_islena` and
   `palace_guard` both ported; details in PORTING_LEDGER.md)*
-- [~] **Area 12 - `src/area/12/mine.c`** - keyholder golems, miners. Also
+- [x] **Area 12 - `src/area/12/mine.c`** - keyholder golems, miners. Also
   wire `achievement_add_silver_mined`/`_gold_mined` from the
   `handle_mining_result` reward cascade using the existing `award_*`
   helper pattern in `crates/ugaris-server/src/achievement.rs`
@@ -750,12 +750,15 @@ Ordered by player progression; the C file is the oracle.
   already-ported `World::give_exp`/`give_military_pts`/`achievement::
   give_money` helpers; `dispatch_minewall_outcome`/`apply_mine_wall_
   reward` now take an `area_id` parameter for these two branches' `give_
-  exp`/`give_military_pts` calls. Still unported: `CDR_GOLEMKEYHOLDER`
-  (`keyhold_fight_driver`, the locked-treasure-room boss spawned by
-  `keyholder_door`/`IDR_MINEKEYDOOR` - the door/room-teleport mechanic
-  itself is already ported, only the actual golem character/fight AI is
-  missing, see `world/item_outcomes.rs`'s `MineKeyDoor` handling). This
-  is the only remaining gap for Area 12.
+  exp`/`give_military_pts` calls. `CDR_GOLEMKEYHOLDER`/`keyhold_fight_
+  driver` (the locked-treasure-room boss golem `keyholder_door`/
+  `IDR_MINEKEYDOOR` spawns) is now also ported (`world/npc/area12/
+  golemkeyholder.rs`, byte-for-byte identical to the already-ported
+  `gate_fight_driver` except for the self-destruct timeout and victim
+  assignment, see the module doc comment); the door's own outcome was
+  reshaped into a new `MineKeyDoorOpened` variant carrying the picked
+  room coordinates out to `ugaris-server::mine::spawn_keyholder_golem`.
+  This closes Area 12.
 - [ ] **Area 13 - `src/area/13/dungeon.c` + `dungeon_tab.c`** - dungeon
   master/fighter drivers, clan jewel raid protocol.
 - [ ] **Area 14 - `src/area/14/random.c`** - remaining shrine effects
@@ -837,6 +840,10 @@ Keep entries to at most three lines: date, task, one-line result.
 Anything longer belongs in `PORTING_LEDGER.md`; historical verbose
 notes live in `PROGRESS_ARCHIVE.md`.
 
+- 2026-07-08: Area 12 CLOSED: ported `CDR_GOLEMKEYHOLDER`/`keyhold_fight_
+  driver` (`world/npc/area12/golemkeyholder.rs`, reused `gate_fight`'s
+  shape) + `mine::spawn_keyholder_golem`. 2872 core + 1130 server tests
+  pass, clean build/boot-smoke (area 12).
 - 2026-07-08: Area 12 `handle_orb_find`/`handle_artifact_find` ported
   (`mine.rs::apply_mine_orb_find`/`apply_mine_artifact_find`), closing every
   gap but `CDR_GOLEMKEYHOLDER`. 2865 core + 1128 server tests pass, clean

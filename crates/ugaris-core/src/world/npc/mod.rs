@@ -6,6 +6,7 @@
 pub mod aclerk;
 pub mod area1;
 pub mod area11;
+pub mod area12;
 pub mod area13;
 pub mod area17;
 pub mod area2;
@@ -32,6 +33,8 @@ pub use aclerk::*;
 pub use area1::*;
 #[allow(unused_imports)]
 pub use area11::*;
+#[allow(unused_imports)]
+pub use area12::*;
 #[allow(unused_imports)]
 pub use area13::*;
 #[allow(unused_imports)]

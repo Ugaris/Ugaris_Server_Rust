@@ -456,6 +456,21 @@ pub enum ItemDriverOutcome {
         item_id: ItemId,
         character_id: CharacterId,
     },
+    /// Synthesized only by `World::apply_item_driver_outcome` (never by
+    /// the pure `mine_key_door_driver`): the door opened successfully and
+    /// the player was teleported into `(room_x, room_y)` - carries the
+    /// room coordinates so `ugaris-server` can spawn `CDR_GOLEMKEYHOLDER`
+    /// at the matching golem position (`room_x + 4, room_y`, C
+    /// `keyholder_door`'s `2 + (n%3)*8 + 5, 231 + (n/3)*8 + 3` vs. the
+    /// player's `2 + (n%3)*8 + 1, 231 + (n/3)*8 + 3`, `mine.c:1187,1204-
+    /// 1207`).
+    MineKeyDoorOpened {
+        item_id: ItemId,
+        character_id: CharacterId,
+        golem_nr: u8,
+        room_x: u16,
+        room_y: u16,
+    },
     StafferSpecDoorToggle {
         item_id: ItemId,
         character_id: CharacterId,

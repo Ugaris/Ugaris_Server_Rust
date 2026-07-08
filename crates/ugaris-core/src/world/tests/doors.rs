@@ -1181,7 +1181,12 @@ fn world_mine_key_door_consumes_gold_and_teleports_to_first_free_room() {
 
     assert!(matches!(
         outcome,
-        ItemDriverOutcome::MineKeyDoor { golem_nr: 3, .. }
+        ItemDriverOutcome::MineKeyDoorOpened {
+            golem_nr: 3,
+            room_x: 3,
+            room_y: 234,
+            ..
+        }
     ));
     let character = world.characters.get(&CharacterId(1)).unwrap();
     assert_eq!((character.x, character.y), (3, 234));

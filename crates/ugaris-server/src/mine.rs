@@ -728,3 +728,58 @@ pub(crate) fn spawn_rare_golem(
     }
     true
 }
+
+/// C `keyholder_door`'s golem-spawn tail (`mine.c:1196-1208`), called from
+/// `tick_item_use_keyassembly::dispatch_keyassembly_outcome` once
+/// `World::apply_item_driver_outcome` has already teleported the player
+/// into the room and returned `MineKeyDoorOpened { golem_nr, room_x,
+/// room_y, .. }`. `room_x`/`room_y` are the player's own teleport target
+/// (`2 + (n%3)*8 + 1, 231 + (n/3)*8 + 3`); the golem spawns 4 tiles east
+/// of that, at `2 + (n%3)*8 + 5, 231 + (n/3)*8 + 3` (`mine.c:1187,1204-
+/// 1207`).
+pub(crate) fn spawn_keyholder_golem(
+    world: &mut World,
+    loader: &mut ZoneLoader,
+    runtime: &mut ServerRuntime,
+    player_id: CharacterId,
+    golem_nr: u8,
+    room_x: u16,
+    room_y: u16,
+) {
+    let template = format!("keyholder_golem{golem_nr}");
+    let golem_id = runtime.allocate_character_id();
+    let Ok((mut golem, inventory_items)) =
+        loader.instantiate_character_template(&template, golem_id)
+    else {
+        return;
+    };
+    let golem_x = room_x + 4;
+    let golem_y = room_y;
+    // C `ch[co].dir = DX_LEFTUP;` (`mine.c:1203`).
+    golem.dir = Direction::LeftUp as u8;
+    golem.hp = i32::from(golem.values[0][CharacterValue::Hp as usize]) * POWERSCALE;
+    golem.endurance = i32::from(golem.values[0][CharacterValue::Endurance as usize]) * POWERSCALE;
+    golem.mana = i32::from(golem.values[0][CharacterValue::Mana as usize]) * POWERSCALE;
+    // C `ch[co].tmpx/tmpy` (`mine.c:1204-1205`), read back by
+    // `keyhold_fight_driver`'s `secure_move_driver(cn, ch[cn].tmpx,
+    // ch[cn].tmpy, ...)` "return to post" call: no dedicated `tmpx`/`tmpy`
+    // field exists yet, so `rest_x`/`rest_y` stand in, same substitution
+    // `gate_enter_test_spawn_room` already made for `CDR_GATE_FIGHT`.
+    golem.rest_x = golem_x;
+    golem.rest_y = golem_y;
+    // C never sends the golem an explicit victim message (unlike
+    // `CDR_GATE_FIGHT`'s `NT_NPC`/`NTID_GATEKEEPER`) - see
+    // `world::npc::area12::golemkeyholder`'s module doc comment for why
+    // setting `victim` directly here reproduces the same observable
+    // "attacks the summoning player" behavior.
+    golem.driver_state = Some(CharacterDriverState::GolemKeyhold(GolemKeyholdDriverData {
+        victim: Some(player_id),
+        ..Default::default()
+    }));
+    if !world.spawn_character(golem, usize::from(golem_x), usize::from(golem_y)) {
+        return;
+    }
+    for item in inventory_items {
+        world.items.insert(item.id, item);
+    }
+}

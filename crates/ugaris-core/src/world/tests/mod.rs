@@ -38,6 +38,7 @@ mod fdemon_boss;
 mod forest_ranger;
 mod gate_fight;
 mod gatekeeper;
+mod golemkeyholder;
 mod greeter;
 mod guiwynn;
 mod gwendylon;
