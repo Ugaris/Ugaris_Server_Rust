@@ -259,6 +259,10 @@ pub const CDR_CARLOS: u16 = 90;
 /// the engraver"): the jewelry engraver (`src/area/3/area3.c::
 /// kassim_driver`).
 pub const CDR_KASSIM: u16 = 156;
+/// C `#define CDR_SUPERMAX 98` (`src/system/drvlib.h:146`, "past-maxes-
+/// raiser"): the NPC who raises attributes/skills/spells past
+/// `skillmax` for a gold+exp fee (`src/area/3/area3.c::supermax_driver`).
+pub const CDR_SUPERMAX: u16 = 98;
 pub const DRD_SIMPLEBADDYDRIVER: u32 = 0x0100_0013;
 pub const DRD_CLARADRIVER: u32 = 0x0100_0059;
 pub const DRD_SKELLYDRIVER: u32 = 0x0100_006a;
@@ -366,6 +370,7 @@ pub enum CharacterDriverState {
     Kelly(KellyDriverData),
     Carlos(CarlosDriverData),
     Kassim(KassimDriverData),
+    Supermax(SupermaxDriverData),
     /// C `struct engrave_data` (`src/area/3/area3.c:318-320`), stored via
     /// `set_data(co, DRD_ENGRAVE_DATA, ...)` on the *player* mid-
     /// transaction with Kassim, not on Kassim himself. Same "player, not
@@ -1069,6 +1074,7 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::Kelly(_)
             | CharacterDriverState::Carlos(_)
             | CharacterDriverState::Kassim(_)
+            | CharacterDriverState::Supermax(_)
             | CharacterDriverState::Engrave(_),
         ) => SimpleBaddyDriverData::default(),
         None => SimpleBaddyDriverData::default(),
@@ -3427,6 +3433,7 @@ pub use crate::world::npc::area3::kassim::{EngraveDriverData, KassimDriverData};
 pub use crate::world::npc::area3::kelly::KellyDriverData;
 pub use crate::world::npc::area3::seymour::SeymourDriverData;
 pub use crate::world::npc::area3::sir_jones::SirJonesDriverData;
+pub use crate::world::npc::area3::supermax::SupermaxDriverData;
 pub use crate::world::npc::area3::thomas::ThomasDriverData;
 pub use crate::world::npc::area30::clanclerk::{parse_clanclerk_driver_args, ClanclerkDriverData};
 pub use crate::world::npc::area30::clanmaster::{

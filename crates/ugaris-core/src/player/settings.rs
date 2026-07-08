@@ -416,4 +416,43 @@ impl PlayerRuntime {
         }
         write_i32(&mut self.misc_ppd, MISC_PPD_COMPLAINT_DATE_OFFSET, value);
     }
+
+    /// C `struct misc_ppd::supermax_state` read (`supermax_driver`,
+    /// `src/area/3/area3.c`). `0` (matching a freshly zeroed C `struct
+    /// misc_ppd`) means the greeting sequence has never started.
+    pub fn supermax_state(&self) -> i32 {
+        if self.misc_ppd.len() < LEGACY_MISC_PPD_SIZE {
+            return 0;
+        }
+        read_i32(&self.misc_ppd, MISC_PPD_SUPERMAX_STATE_OFFSET)
+    }
+
+    pub fn set_supermax_state(&mut self, value: i32) {
+        if self.misc_ppd.len() < LEGACY_MISC_PPD_SIZE {
+            self.misc_ppd.resize(LEGACY_MISC_PPD_SIZE, 0);
+        }
+        write_i32(&mut self.misc_ppd, MISC_PPD_SUPERMAX_STATE_OFFSET, value);
+    }
+
+    /// C `struct misc_ppd::supermax_gold` read (`supermax_driver`'s
+    /// `case 6:` "You spent %d gold already" reply).
+    pub fn supermax_gold(&self) -> u32 {
+        if self.misc_ppd.len() < LEGACY_MISC_PPD_SIZE {
+            return 0;
+        }
+        read_i32(&self.misc_ppd, MISC_PPD_SUPERMAX_GOLD_OFFSET).max(0) as u32
+    }
+
+    /// C `ppd->supermax_gold += 2000 * 100;` (`area3.c:2405`).
+    pub fn add_supermax_gold(&mut self, amount: u32) {
+        if self.misc_ppd.len() < LEGACY_MISC_PPD_SIZE {
+            self.misc_ppd.resize(LEGACY_MISC_PPD_SIZE, 0);
+        }
+        let current = self.supermax_gold();
+        write_i32(
+            &mut self.misc_ppd,
+            MISC_PPD_SUPERMAX_GOLD_OFFSET,
+            current.saturating_add(amount) as i32,
+        );
+    }
 }

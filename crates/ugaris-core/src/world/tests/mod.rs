@@ -84,6 +84,7 @@ mod speed;
 mod spells;
 mod steal;
 mod superior;
+mod supermax;
 mod teleport;
 mod terion;
 mod text;

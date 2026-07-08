@@ -31,7 +31,7 @@ use ugaris_core::world::{
     Astro2OutcomeEvent, Astro2PlayerFacts, CarlosOutcomeEvent, CarlosPlayerFacts,
     KassimOutcomeEvent, KassimPlayerFacts, KellyOutcomeEvent, KellyPlayerFacts,
     SeymourOutcomeEvent, SeymourPlayerFacts, SirJonesOutcomeEvent, SirJonesPlayerFacts,
-    ThomasOutcomeEvent, ThomasPlayerFacts,
+    SupermaxOutcomeEvent, SupermaxPlayerFacts, ThomasOutcomeEvent, ThomasPlayerFacts,
 };
 
 pub(crate) fn thomas_player_facts(
@@ -823,6 +823,58 @@ pub(crate) fn apply_kassim_events(
                     continue;
                 };
                 player.set_area3_kassim_item_wait_starttime(value);
+                applied += 1;
+            }
+        }
+    }
+    applied
+}
+
+pub(crate) fn supermax_player_facts(
+    runtime: &ServerRuntime,
+) -> HashMap<CharacterId, SupermaxPlayerFacts> {
+    runtime
+        .players
+        .values()
+        .filter_map(|player| {
+            let character_id = player.character_id?;
+            Some((
+                character_id,
+                SupermaxPlayerFacts {
+                    supermax_state: player.supermax_state(),
+                    supermax_gold: player.supermax_gold(),
+                },
+            ))
+        })
+        .collect()
+}
+
+/// Applies each [`SupermaxOutcomeEvent`] queued by
+/// `World::process_supermax_actions`. Neither event touches `ZoneLoader`
+/// or achievements - the skill raise/lower itself happens directly in
+/// `World` (see `world::supermax`'s own module doc comment).
+pub(crate) fn apply_supermax_events(
+    runtime: &mut ServerRuntime,
+    events: Vec<SupermaxOutcomeEvent>,
+) -> usize {
+    let mut applied = 0;
+    for event in events {
+        match event {
+            SupermaxOutcomeEvent::UpdateSupermaxState {
+                player_id,
+                new_state,
+            } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.set_supermax_state(new_state);
+                applied += 1;
+            }
+            SupermaxOutcomeEvent::AddSupermaxGold { player_id, amount } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.add_supermax_gold(amount);
                 applied += 1;
             }
         }

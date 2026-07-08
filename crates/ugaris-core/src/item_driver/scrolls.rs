@@ -178,3 +178,24 @@ pub(crate) fn skill_raise_cost_factor(value: usize) -> i16 {
         _ => 0,
     }
 }
+
+/// C `supermax_canraise` (`src/system/skill.c:103-144`): which skills
+/// `supermax_driver` (`src/area/3/area3.c`) will raise past `skillmax`,
+/// and the `V_MAX`-multiplier weight (`2` for the four attributes, `1`
+/// for the fighting/misc/spell skills, `0` for everything else -
+/// notably `V_EMPTY`(34) and `V_DEMON`(38) are excluded even though
+/// they fall inside the `11..=40` skill range).
+pub(crate) fn supermax_canraise(value: usize) -> i32 {
+    match value {
+        3..=6 => 2,
+        11..=33 | 35..=37 | 39 | 40 => 1,
+        _ => 0,
+    }
+}
+
+/// C `supermax_cost` (`src/system/skill.c:146-156`).
+pub(crate) fn supermax_cost(character: &Character, value: usize, current: i16) -> u32 {
+    let seyan = character.flags.contains(CharacterFlags::WARRIOR)
+        && character.flags.contains(CharacterFlags::MAGE);
+    (supermax_canraise(value) as u32).saturating_mul(3_000_000) + raise_cost(value, current, seyan)
+}

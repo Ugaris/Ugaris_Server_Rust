@@ -418,7 +418,7 @@ pub fn show_values_lines(character: &Character, items: &HashMap<ItemId, Item>) -
 /// (`entity.rs`, whose wording also diverges at "Armor"/"Armor Value",
 /// "Ancient Knowledge"/"Ancient Power", "Resist Cold"/"Cold
 /// Resistance" - this dump line must match C letter-for-letter).
-fn full_skill_name(value: CharacterValue) -> &'static str {
+pub(crate) fn full_skill_name(value: CharacterValue) -> &'static str {
     use CharacterValue::*;
     match value {
         Hp => "Hitpoints",

@@ -507,8 +507,8 @@ pub(crate) fn apply_dungeonmaster_death_from_hurt_event(
 /// ported for `CDR_GATE_WELCOME`/`CDR_DUNGEONMASTER` above - same text,
 /// same immortal-so-unreachable-in-practice caveat. `CDR_ASTRO1`/
 /// `CDR_ASTRO2`/`CDR_THOMAS`/`CDR_SIRJONES`/`CDR_SEYMOUR`/`CDR_KELLY`/
-/// `CDR_CARLOS`/`CDR_KASSIM` are ported so far; extend this array as the
-/// sibling area-3 NPCs are ported.
+/// `CDR_CARLOS`/`CDR_KASSIM`/`CDR_SUPERMAX` are ported so far; extend
+/// this array as the sibling area-3 NPCs are ported.
 pub(crate) fn apply_area3_immortal_death_from_hurt_event(
     world: &World,
     event: LegacyHurtEvent,
@@ -519,7 +519,7 @@ pub(crate) fn apply_area3_immortal_death_from_hurt_event(
     let Some(target) = world.characters.get(&event.target_id) else {
         return false;
     };
-    const AREA3_IMMORTAL_DRIVERS: [u16; 8] = [
+    const AREA3_IMMORTAL_DRIVERS: [u16; 9] = [
         CDR_ASTRO1,
         CDR_ASTRO2,
         CDR_THOMAS,
@@ -528,6 +528,7 @@ pub(crate) fn apply_area3_immortal_death_from_hurt_event(
         CDR_KELLY,
         CDR_CARLOS,
         CDR_KASSIM,
+        CDR_SUPERMAX,
     ];
     if !AREA3_IMMORTAL_DRIVERS.contains(&target.driver) {
         return false;

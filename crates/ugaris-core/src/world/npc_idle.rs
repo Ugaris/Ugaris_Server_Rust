@@ -511,6 +511,7 @@ impl World {
                 | CharacterDriverState::Kelly(_)
                 | CharacterDriverState::Carlos(_)
                 | CharacterDriverState::Kassim(_)
+                | CharacterDriverState::Supermax(_)
                 | CharacterDriverState::Engrave(_) => None,
             });
         let Some(target_id) = target_id else {

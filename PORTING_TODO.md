@@ -483,15 +483,19 @@ Ordered by player progression; the C file is the oracle.
   inscription text, plus new `kassim_seen_timer`/
   `kassim_item_wait_starttime` `PlayerRuntime` accessors and a new
   `explain`(9) `AREA3_QA` entry.
-  Still unported, in suggested order:
-  `supermax_driver` (needs unported `skillmax`/`supermax_canraise`/
-  `supermax_cost` helpers from `tool.c`), `lampghost_driver`/`_respawn`/
-  `_dead` (needs a new global `lamp[250]`-equivalent registry shared with
-  the already-ported `onofflight_driver`; do last - most architecturally
-  distinct driver in the file). `supermax_driver` still needs the
-  `list`/`money`/~86-entry raise-lower-skill block added to `AREA3_QA`
-  (deferred rather than guessing the `V_*` skill-id mapping ahead of
-  time - see that table's own doc comment).
+  `supermax_driver` (the past-maxes raiser: greeting sequence, `list`/
+  `money`/`raise <skill>`/`lower <skill>` commands) is now also ported
+  (`world/npc/area3/supermax.rs`, `CDR_SUPERMAX`), sharing `AREA3_QA`
+  plus its own 82 new entries (`list`(5)/`money`(6) and the 80-row
+  raise/lower block keyed on `CharacterValue as i32 + 100/200`); new
+  `supermax_canraise`/`supermax_cost` helpers added to
+  `item_driver::scrolls` alongside the existing `skillmax`/`raise_cost`,
+  and new `supermax_state`/`supermax_gold` `PlayerRuntime` accessors
+  (C's global `misc_ppd`, not the area-3-specific `area3_ppd`).
+  Still unported: `lampghost_driver`/`_respawn`/`_dead` (needs a new
+  global `lamp[250]`-equivalent registry shared with the already-ported
+  `onofflight_driver`; do last - most architecturally distinct driver in
+  the file, and the only one remaining).
 - [ ] **Area 4 - `src/area/4/pents.c`** - pentagram quest NPCs + demon
   wave logic beyond the ported item boundary. Also wire the achievement
   calls this file's reward mechanic makes in C (`achievement_add_pents`,
@@ -822,4 +826,8 @@ notes live in `PROGRESS_ARCHIVE.md`.
   charge, `IF_ENGRAVED` item write), plus a new `CharacterDriverState::
   Engrave` variant and 2 new `PlayerRuntime` timer accessors. 2639 core +
   1101 server tests pass, clean build/boot-smoke.
+- 2026-07-08: Area 3: ported `supermax_driver` (past-maxes raiser:
+  greeting sequence, `list`/`money`/`raise`/`lower` commands), plus new
+  `supermax_canraise`/`supermax_cost` core helpers and 82 new `AREA3_QA`
+  entries. 2653 core + 1101 server tests pass, clean build/boot-smoke.
 

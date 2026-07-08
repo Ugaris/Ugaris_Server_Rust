@@ -609,6 +609,7 @@ impl World {
             | CharacterDriverState::Kelly(_)
             | CharacterDriverState::Carlos(_)
             | CharacterDriverState::Kassim(_)
+            | CharacterDriverState::Supermax(_)
             | CharacterDriverState::Engrave(_) => None,
         }
     }

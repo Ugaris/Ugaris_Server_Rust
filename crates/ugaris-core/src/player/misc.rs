@@ -824,6 +824,16 @@ pub(crate) const TWOCITY_PPD_ALCHEMIST_STATE_OFFSET: usize = 28 * 4;
 
 pub(crate) const MISC_PPD_COMPLAINT_DATE_OFFSET: usize = 4;
 
+/// C `struct misc_ppd::supermax_state` (`src/common/misc_ppd.h:28`): the
+/// `supermax_driver` (`src/area/3/area3.c`) greeting-sequence counter
+/// (0..3, plateauing at 4 once the full greeting has played).
+pub(crate) const MISC_PPD_SUPERMAX_STATE_OFFSET: usize = 12;
+
+/// C `struct misc_ppd::supermax_gold` (`src/common/misc_ppd.h:29`):
+/// cumulative gold this player has paid `supermax_driver` for
+/// past-max raises.
+pub(crate) const MISC_PPD_SUPERMAX_GOLD_OFFSET: usize = 16;
+
 pub(crate) const MISC_PPD_SWAPPED_OFFSET: usize = 20;
 
 pub(crate) const MISC_PPD_TREEDONE_OFFSET: usize = 24;
