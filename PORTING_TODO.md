@@ -442,11 +442,18 @@ Ordered by player progression; the C file is the oracle.
   quest flow (lamps themselves are ported).
   REMAINING: `astro1_driver` (ambient moon-telescope monologue, no
   dialogue/quest/item interaction) is ported (`world/npc/area3/astro1.rs`,
-  `CDR_ASTRO1`), establishing the file's NPC scaffolding. Still unported,
-  in suggested order: `thomas_driver`+`sir_jones_driver` (share
-  `crypt_state`; cross-reference the already-ported `CDR_VAMPIRE`/
-  `CDR_VAMPIRE2` death hooks, which already gate on `area3_crypt_state`),
-  `astro2_driver` (quest 16, lost astronomer notes), `seymour_driver`
+  `CDR_ASTRO1`), establishing the file's NPC scaffolding. `thomas_driver`+
+  `sir_jones_driver` (the crypt entrance guard + the crypt quest chain
+  itself, sharing `crypt_state`/`crypt_bonus`) are now also ported
+  (`world/npc/area3/thomas.rs`+`sir_jones.rs`, `CDR_THOMAS`/
+  `CDR_SIRJONES`), cross-referencing the already-ported `CDR_VAMPIRE`/
+  `CDR_VAMPIRE2` death hooks that gate on `area3_crypt_state`; a new
+  shared `AREA3_QA` table (`world/npc/area3/mod.rs`) carries only the 13
+  canned-greeting/repeat/restart/aye/nay entries these two drivers need -
+  the `list`/`money`/`shortcut to caligar`/`explain`/`engrave:`/~86-entry
+  raise-lower-skill block remain for `kassim_driver`/`supermax_driver`.
+  Still unported, in suggested order: `astro2_driver` (quest 16, lost
+  astronomer notes), `seymour_driver`
   (quest 10-12, Aston entry NPC, needs an army-rank-grant deviation),
   `kelly_driver` (biggest chain, quests 13-15/54/60, needs new
   `kelly_found1-3`/`kelly_found_cnt`/`crypt_bonus` `PlayerRuntime`
@@ -766,4 +773,8 @@ notes live in `PROGRESS_ARCHIVE.md`.
   9-remaining-driver breakdown, ported the simplest (`astro1_driver`,
   ambient monologue, `world/npc/area3/astro1.rs`). 2558 core + 1101
   server tests pass, clean build/boot-smoke.
+- 2026-07-08: Area 3: ported `thomas_driver`+`sir_jones_driver` (crypt
+  entrance guard + full 16-state crypt quest chain), plus a new shared
+  `AREA3_QA` table. 2575 core + 1101 server tests pass, clean
+  build/boot-smoke (area 1 and area 3 zone data both verified).
 

@@ -1273,7 +1273,11 @@ pub(crate) fn guiwynn_player_facts(
 }
 
 /// C `create_money_item`'s sprite ladder (`src/system/tool.c:2222-2253`).
-fn create_money_item_sprite(amount: u32) -> i32 {
+/// `pub(crate)` (not module-private) since `world::sir_jones`'s crypt
+/// reward (`area3.rs::apply_sir_jones_events`) reuses it too - the same
+/// plain-`give_char_item`-carried-money-item shape as `LogainOutcomeEvent::
+/// QuestDone`'s reward above, not area-1-specific.
+pub(crate) fn create_money_item_sprite(amount: u32) -> i32 {
     if amount > 9_999_999 {
         109
     } else if amount > 999_999 {

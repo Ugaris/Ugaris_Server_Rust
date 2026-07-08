@@ -10,12 +10,13 @@ use crate::{
         BrithildieDriverData, CamhermitDriverData, CharacterDriverState, DungeonmasterDriverData,
         ForestRangerDriverData, GateFightDriverData, GateWelcomeDriverData, GreeterDriverData,
         GwendylonDriverData, JanitorDriverData, JessicaDriverData, JiuDriverData, NookDriverData,
-        ReskinDriverData, SuperiorDriverData, TerionDriverData, TraderDriverData, YoakinDriverData,
-        ARENA_FIGHTER_REST_POS, CDR_ARENAFIGHTER, CDR_ARENAMANAGER, CDR_ARENAMASTER,
-        CDR_BRITHILDIE, CDR_CAMHERMIT, CDR_CLANCLERK, CDR_CLANMASTER, CDR_CLUBMASTER,
-        CDR_DUNGEONMASTER, CDR_FOREST_RANGER, CDR_GATE_FIGHT, CDR_GATE_WELCOME, CDR_GREETER,
-        CDR_GWENDYLON, CDR_JANITOR, CDR_JESSICA, CDR_JIU, CDR_LAB2UNDEAD, CDR_NOOK, CDR_RESKIN,
-        CDR_SIMPLEBADDY, CDR_SUPERIOR, CDR_TERION, CDR_TRADER, CDR_YOAKIN, NT_CREATE,
+        ReskinDriverData, SirJonesDriverData, SuperiorDriverData, TerionDriverData,
+        ThomasDriverData, TraderDriverData, YoakinDriverData, ARENA_FIGHTER_REST_POS,
+        CDR_ARENAFIGHTER, CDR_ARENAMANAGER, CDR_ARENAMASTER, CDR_BRITHILDIE, CDR_CAMHERMIT,
+        CDR_CLANCLERK, CDR_CLANMASTER, CDR_CLUBMASTER, CDR_DUNGEONMASTER, CDR_FOREST_RANGER,
+        CDR_GATE_FIGHT, CDR_GATE_WELCOME, CDR_GREETER, CDR_GWENDYLON, CDR_JANITOR, CDR_JESSICA,
+        CDR_JIU, CDR_LAB2UNDEAD, CDR_NOOK, CDR_RESKIN, CDR_SIMPLEBADDY, CDR_SIRJONES, CDR_SUPERIOR,
+        CDR_TERION, CDR_THOMAS, CDR_TRADER, CDR_YOAKIN, NT_CREATE,
     },
     entity::{
         Character, CharacterFlags, Item, ItemFlags, CHARACTER_VALUE_COUNT, INVENTORY_SIZE,
@@ -635,6 +636,20 @@ impl ZoneLoader {
             // args to read here, same as `CDR_GATE_WELCOME` above.
             character.driver_state =
                 Some(CharacterDriverState::Yoakin(YoakinDriverData::default()));
+        }
+        if template.driver == CDR_THOMAS {
+            // C never parses zone-file args into `struct
+            // thomas_driver_data` (`set_data` zero-initializes it) - no
+            // args to read here, same as `CDR_GATE_WELCOME` above.
+            character.driver_state =
+                Some(CharacterDriverState::Thomas(ThomasDriverData::default()));
+        }
+        if template.driver == CDR_SIRJONES {
+            // C never parses zone-file args into `struct
+            // sir_jones_driver_data` (`set_data` zero-initializes it) - no
+            // args to read here, same as `CDR_GATE_WELCOME` above.
+            character.driver_state =
+                Some(CharacterDriverState::SirJones(SirJonesDriverData::default()));
         }
         if template.driver == CDR_TERION {
             // C never parses zone-file args into `struct

@@ -63,6 +63,14 @@ impl PlayerRuntime {
         self.write_area3_i32(AREA3_PPD_CRYPT_STATE_OFFSET, state);
     }
 
+    pub fn area3_crypt_bonus(&self) -> i32 {
+        self.read_area3_i32(AREA3_PPD_CRYPT_BONUS_OFFSET)
+    }
+
+    pub fn set_area3_crypt_bonus(&mut self, bonus: i32) {
+        self.write_area3_i32(AREA3_PPD_CRYPT_BONUS_OFFSET, bonus);
+    }
+
     pub fn area3_william_state(&self) -> i32 {
         self.read_area3_i32(AREA3_PPD_WILLIAM_STATE_OFFSET)
     }

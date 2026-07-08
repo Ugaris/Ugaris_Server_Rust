@@ -633,6 +633,8 @@ pub(crate) const AREA3_PPD_ASTRO2_STATE_OFFSET: usize = 6 * 4;
 
 pub(crate) const AREA3_PPD_CRYPT_STATE_OFFSET: usize = 7 * 4;
 
+pub(crate) const AREA3_PPD_CRYPT_BONUS_OFFSET: usize = 8 * 4;
+
 pub(crate) const AREA3_PPD_CLARA_STATE_OFFSET: usize = 9 * 4;
 
 pub(crate) const AREA3_PPD_IMP_STATE_OFFSET: usize = 10 * 4;

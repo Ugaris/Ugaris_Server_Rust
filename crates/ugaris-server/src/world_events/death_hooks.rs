@@ -505,9 +505,9 @@ pub(crate) fn apply_dungeonmaster_death_from_hurt_event(
 /// `CDR_KASSIM` all route to the same `immortal_dead(cn, co)`
 /// (`area3.c:2596-2598`), the identical `charlog`-only bug line already
 /// ported for `CDR_GATE_WELCOME`/`CDR_DUNGEONMASTER` above - same text,
-/// same immortal-so-unreachable-in-practice caveat. Only `CDR_ASTRO1` is
-/// ported so far; extend this array as the sibling area-3 NPCs are
-/// ported.
+/// same immortal-so-unreachable-in-practice caveat. `CDR_ASTRO1`/
+/// `CDR_THOMAS`/`CDR_SIRJONES` are ported so far; extend this array as
+/// the sibling area-3 NPCs are ported.
 pub(crate) fn apply_area3_immortal_death_from_hurt_event(
     world: &World,
     event: LegacyHurtEvent,
@@ -518,7 +518,7 @@ pub(crate) fn apply_area3_immortal_death_from_hurt_event(
     let Some(target) = world.characters.get(&event.target_id) else {
         return false;
     };
-    const AREA3_IMMORTAL_DRIVERS: [u16; 1] = [CDR_ASTRO1];
+    const AREA3_IMMORTAL_DRIVERS: [u16; 3] = [CDR_ASTRO1, CDR_THOMAS, CDR_SIRJONES];
     if !AREA3_IMMORTAL_DRIVERS.contains(&target.driver) {
         return false;
     }

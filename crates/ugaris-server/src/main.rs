@@ -10,6 +10,7 @@
 
 mod achievement;
 mod area1;
+mod area3;
 mod area_apply;
 mod auction;
 mod chests;
@@ -76,6 +77,7 @@ mod zone;
 
 pub(crate) use achievement::*;
 pub(crate) use area1::*;
+pub(crate) use area3::*;
 pub(crate) use area_apply::*;
 pub(crate) use chests::*;
 pub(crate) use commands_admin::*;
@@ -145,8 +147,9 @@ use ugaris_core::{
         CDR_BREDEL, CDR_BRITHILDIE, CDR_CALIGARSKELLY, CDR_CAMERON_FORESTMONSTER, CDR_CAMHERMIT,
         CDR_DUNGEONMASTER, CDR_GATE_FIGHT, CDR_GATE_WELCOME, CDR_GREETER, CDR_GUIWYNN, CDR_JAMES,
         CDR_JESSICA, CDR_LAB2UNDEAD, CDR_LOGAIN, CDR_LOSTCON, CDR_LQNPC, CDR_LYDIA, CDR_MERCHANT,
-        CDR_NOOK, CDR_PALACEISLENA, CDR_RIVERBEAST, CDR_SIMPLEBADDY, CDR_SWAMPMONSTER, CDR_TERION,
-        CDR_TEUFELRAT, CDR_VAMPIRE, CDR_VAMPIRE2, NTID_GATEKEEPER, NT_NPC,
+        CDR_NOOK, CDR_PALACEISLENA, CDR_RIVERBEAST, CDR_SIMPLEBADDY, CDR_SIRJONES,
+        CDR_SWAMPMONSTER, CDR_TERION, CDR_TEUFELRAT, CDR_THOMAS, CDR_VAMPIRE, CDR_VAMPIRE2,
+        NTID_GATEKEEPER, NT_NPC,
     },
     clan::{ClanRelations, ClanTreasuryEvent},
     direction::Direction,
