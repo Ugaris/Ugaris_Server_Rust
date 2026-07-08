@@ -33,6 +33,7 @@ mod effects;
 mod exp;
 mod exterminate;
 mod fdemon;
+mod fdemon_army;
 mod fdemon_boss;
 mod forest_ranger;
 mod gate_fight;

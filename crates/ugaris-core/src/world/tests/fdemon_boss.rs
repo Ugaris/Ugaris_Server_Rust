@@ -331,8 +331,10 @@ fn text_messages_detect_repeat_within_talk_range() {
         .unwrap()
         .push_driver_text_message(CharacterId(3), "repeat");
 
-    let repeats = world.fdemon_boss_process_text_messages(CharacterId(1));
-    assert_eq!(repeats, vec![CharacterId(2)]);
+    let outcome = world.fdemon_boss_process_text_messages(CharacterId(1));
+    assert_eq!(outcome.repeat_requests, vec![CharacterId(2)]);
+    assert!(outcome.take_requests.is_empty());
+    assert!(outcome.drop_requests.is_empty());
     assert!(world
         .characters
         .get(&CharacterId(1))
@@ -355,8 +357,8 @@ fn text_messages_reply_to_ordinary_small_talk() {
         .unwrap()
         .push_driver_text_message(CharacterId(2), "hello");
 
-    let repeats = world.fdemon_boss_process_text_messages(CharacterId(1));
-    assert!(repeats.is_empty());
+    let outcome = world.fdemon_boss_process_text_messages(CharacterId(1));
+    assert!(outcome.repeat_requests.is_empty());
     let texts = world.drain_pending_area_texts();
     assert_eq!(texts.len(), 1);
     assert!(texts[0].message.contains("Hello, Hero!"));
@@ -376,8 +378,8 @@ fn text_messages_answer_name_question_with_own_name() {
         .unwrap()
         .push_driver_text_message(CharacterId(2), "who are you");
 
-    let repeats = world.fdemon_boss_process_text_messages(CharacterId(1));
-    assert!(repeats.is_empty());
+    let outcome = world.fdemon_boss_process_text_messages(CharacterId(1));
+    assert!(outcome.repeat_requests.is_empty());
     let texts = world.drain_pending_area_texts();
     assert_eq!(texts.len(), 1);
     assert!(texts[0].message.contains("I'm Commander."));

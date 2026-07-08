@@ -48,13 +48,16 @@ pub const CDR_TESTER: u16 = 77;
 /// those specific spawns are assigned `CDR_SIMPLEBADDY` directly at spawn
 /// time instead (see `zone.rs`'s `CDR_FDEMON_DEMON` branch) - only the
 /// non-190-sprite "Fire Demon" trash mobs actually run under this id.
-/// `CDR_FDEMON_ARMY = 44` (the recruitable-soldier driver in the same C
-/// file) is not ported yet - see the Area 8 task in `PORTING_TODO.md`.
 pub const CDR_FDEMON_DEMON: u16 = 46;
 /// C `#define CDR_FDEMON_BOSS 45` (`src/system/drvlib.h`): the underground
 /// army Commander mission-giver (`src/area/8/fdemon.c::fdemon_boss`), see
 /// `world::npc::area8::fdemon_boss`'s module doc comment.
 pub const CDR_FDEMON_BOSS: u16 = 45;
+/// C `#define CDR_FDEMON_ARMY 44` (`src/system/drvlib.h`): the
+/// recruitable-soldier companion driver (`src/area/8/fdemon.c::
+/// fdemon_army`), see `world::npc::area8::fdemon_army`'s module doc
+/// comment.
+pub const CDR_FDEMON_ARMY: u16 = 44;
 pub const CDR_LQNPC: u16 = 74;
 pub const CDR_JANITOR: u16 = 85;
 pub const CDR_TEUFELDEMON: u16 = 114;
@@ -409,6 +412,7 @@ pub enum CharacterDriverState {
     /// transaction with Kassim, not on Kassim himself. Same "player, not
     /// NPC" precedent as [`CharacterDriverState::ClanFound`].
     Engrave(EngraveDriverData),
+    FdemonArmy(FarmyData),
 }
 /// C `bank_driver_parse` from `src/module/bank.c`. The C driver defaults
 /// opening hours to 6..23 before parsing (`bank_driver` lines 304-309).
@@ -1124,7 +1128,8 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::Kassim(_)
             | CharacterDriverState::Supermax(_)
             | CharacterDriverState::Tester(_)
-            | CharacterDriverState::Engrave(_),
+            | CharacterDriverState::Engrave(_)
+            | CharacterDriverState::FdemonArmy(_),
         ) => SimpleBaddyDriverData::default(),
         None => SimpleBaddyDriverData::default(),
     };
@@ -3494,6 +3499,7 @@ pub use crate::world::npc::area32::military::{
     MilitaryAdvisorDriverData, MilitaryMasterDriverData, MILITARY_QA,
 };
 pub use crate::world::npc::area4::tester::TesterDriverData;
+pub use crate::world::npc::area8::fdemon_army::FarmyData;
 pub use crate::world::npc::arena::{
     parse_arena_manager_driver_args, ArenaContender, ArenaFighterDriverData,
     ArenaManagerDriverData, ArenaMasterDriverData, ARENA_FIGHTER_MASTER_POS,

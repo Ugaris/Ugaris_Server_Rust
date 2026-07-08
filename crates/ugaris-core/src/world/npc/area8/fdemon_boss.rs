@@ -384,20 +384,29 @@ impl World {
         }
     }
 
-    /// C `fdemon_boss`'s `NT_TEXT` branch (`fdemon.c:1780-1863`, the
-    /// "repeat" half only - see module doc comment for the deferred
-    /// "take"/"drop" tail), wired through the generic `analyse_text_qa`
-    /// matcher (same pattern as `world/trader.rs::trader_qa_reply`/
-    /// `gatekeeper.rs::gate_welcome_handle_text_message`). Drains every
-    /// queued `NT_TEXT` message for `boss_id` (real ones, delivered by
-    /// `ugaris-server`'s player-speech fan-out - see module doc comment),
-    /// replies to ordinary small talk directly, and returns the list of
-    /// speakers whose message matched "repeat" (C's `analyse_text_driver`
-    /// return code `8`) for the caller to apply [`fdemon_boss_repeat_reset`]
-    /// to (needs that speaker's `PlayerRuntime`-resident `farmy_ppd`).
-    pub fn fdemon_boss_process_text_messages(&mut self, boss_id: CharacterId) -> Vec<CharacterId> {
+    /// C `fdemon_boss`'s `NT_TEXT` branch (`fdemon.c:1780-1863` for
+    /// "repeat", `:1871-1881` for "take"/"drop"), wired through the
+    /// generic `analyse_text_qa` matcher for small talk (same pattern as
+    /// `world/trader.rs::trader_qa_reply`/`gatekeeper.rs::
+    /// gate_welcome_handle_text_message`). Drains every queued `NT_TEXT`
+    /// message for `boss_id` (real ones, delivered by `ugaris-server`'s
+    /// player-speech fan-out - see module doc comment) and returns the
+    /// speakers whose message matched each of the three commands, for the
+    /// caller (`ugaris-server`'s `area8.rs`, the only layer with both
+    /// `ZoneLoader` and `PlayerRuntime`) to apply.
+    ///
+    /// C's "take"/"drop" `strcasestr` scan is a raw substring search over
+    /// the *entire* message text with its own independent `char_dist(cn,
+    /// co) < 16` gate (no `char_see_char`/12-tile small-talk-range gate at
+    /// all, unlike "repeat") - ported as a separate check up front, not
+    /// folded into the `analyse_text_qa` small-talk match below.
+    pub fn fdemon_boss_process_text_messages(
+        &mut self,
+        boss_id: CharacterId,
+    ) -> FdemonBossTextOutcome {
+        let mut outcome = FdemonBossTextOutcome::default();
         let Some(boss_name) = self.characters.get(&boss_id).map(|c| c.name.clone()) else {
-            return Vec::new();
+            return outcome;
         };
         let messages = self
             .characters
@@ -406,7 +415,6 @@ impl World {
             .unwrap_or_default();
 
         let daylight = self.date.daylight;
-        let mut repeat_requests = Vec::new();
         for message in messages {
             if message.message_type != NT_TEXT {
                 continue;
@@ -424,6 +432,18 @@ impl World {
             ) else {
                 continue;
             };
+
+            // C `fdemon.c:1871-1881`: raw substring match, `char_dist < 16`
+            // only (no `char_see_char`/12-tile gate).
+            if char_dist(boss, speaker) < FDEMON_BOSS_SIGHT_RANGE {
+                let lower = text.to_ascii_lowercase();
+                if lower.contains("take") {
+                    outcome.take_requests.push(speaker_id);
+                } else if lower.contains("drop") {
+                    outcome.drop_requests.push(speaker_id);
+                }
+            }
+
             // C `analyse_text_driver`'s own `char_dist(cn, co) > 12` /
             // `!char_see_char(cn, co)` early-outs (`fdemon.c:209-215`).
             if char_dist(boss, speaker) > FDEMON_BOSS_TALK_RANGE
@@ -444,13 +464,22 @@ impl World {
                     self.npc_say(boss_id, &format!("I'm {boss_name}."));
                 }
                 TextAnalysisOutcome::Matched(8) => {
-                    repeat_requests.push(speaker_id);
+                    outcome.repeat_requests.push(speaker_id);
                 }
                 TextAnalysisOutcome::Matched(_) | TextAnalysisOutcome::NoMatch => {}
             }
         }
-        repeat_requests
+        outcome
     }
+}
+
+/// Result of [`World::fdemon_boss_process_text_messages`]: which speakers
+/// matched each of the three commands this tick.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct FdemonBossTextOutcome {
+    pub repeat_requests: Vec<CharacterId>,
+    pub take_requests: Vec<CharacterId>,
+    pub drop_requests: Vec<CharacterId>,
 }
 
 /// C `fdemon_boss`'s `NT_TEXT` "repeat" stage-reset ladder (`fdemon.c:

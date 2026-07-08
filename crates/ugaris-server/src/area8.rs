@@ -3,10 +3,15 @@
 //! world::npc::area8::fdemon_boss`'s per-tick dialogue chain, which cannot
 //! reach `PlayerRuntime` itself (see that module's own doc comment for the
 //! full split rationale - same class of split as `FdemonLoaderChanged`'s
-//! dispatch in `tick_item_use_edemon_fdemon.rs`).
+//! dispatch in `tick_item_use_edemon_fdemon.rs`). Also wires the
+//! `"take"`/`"drop"` soldier commands (C `fdemon.c:1871-1881`) into
+//! `area8_army::take_soldiers`/`drop_soldiers`.
 
 use super::*;
 use ugaris_core::world::{fdemon_boss_repeat_reset, FdemonBossPlayerFacts};
+
+/// C `fdemon.c:1873`: `ppd->boss_stage >= 1 && ppd->boss_stage <= 30`.
+const TAKE_SOLDIERS_STAGE_RANGE: std::ops::RangeInclusive<i32> = 1..=30;
 
 /// C's `boss_timer` comparisons use `realtime` (wall-clock seconds); this
 /// port substitutes `World::tick` (game ticks, `TICKS_PER_SECOND` per real
@@ -25,12 +30,14 @@ const FDEMON_BOSS_TIMER_THROTTLE_TICKS: i64 =
 pub(crate) fn apply_fdemon_boss_tick(
     world: &mut World,
     runtime: &mut ServerRuntime,
+    zone_loader: &mut ZoneLoader,
     config: &ServerConfig,
 ) -> usize {
     let mut applied = 0;
     let area_id = u32::from(config.area_id);
     for boss_id in world.fdemon_boss_character_ids() {
-        for player_id in world.fdemon_boss_process_text_messages(boss_id) {
+        let text_outcome = world.fdemon_boss_process_text_messages(boss_id);
+        for player_id in text_outcome.repeat_requests {
             let Some(player) = runtime.player_for_character_mut(player_id) else {
                 continue;
             };
@@ -41,6 +48,28 @@ pub(crate) fn apply_fdemon_boss_tick(
                 player.set_farmy_boss_timer(new_timer);
                 applied += 1;
             }
+        }
+
+        // C `fdemon.c:1871-1881`.
+        for player_id in text_outcome.take_requests {
+            let Some(boss_stage) = runtime
+                .player_for_character(player_id)
+                .map(|player| player.farmy_boss_stage())
+            else {
+                continue;
+            };
+            if TAKE_SOLDIERS_STAGE_RANGE.contains(&boss_stage) {
+                crate::area8_army::drop_soldiers(world, runtime, player_id);
+                crate::area8_army::take_soldiers(world, zone_loader, runtime, player_id);
+            } else if let Some(name) = world.characters.get(&player_id).map(|c| c.name.clone()) {
+                world.npc_say(
+                    boss_id,
+                    &format!("You cannot take soldiers at this time, {name}."),
+                );
+            }
+        }
+        for player_id in text_outcome.drop_requests {
+            crate::area8_army::drop_soldiers(world, runtime, player_id);
         }
 
         let now_ticks = world.tick.0 as i32;

@@ -637,14 +637,28 @@ Ordered by player progression; the C file is the oracle.
   (`soldier_equipment_items`), and exp/level recompute
   (`calc_exp` in `world/exp.rs`, C `skill.c:174-196`, plus
   `finalize_soldier_exp_and_level` composing it with the already-ported
-  `exp2level`). Still needed: the actual `take_soldiers`/`drop_soldiers`
-  character spawning (`ZoneLoader::instantiate_character_template
-  ("army1s"/"army2s", ..)`, `drop_char` placement), the `CDR_FDEMON_ARMY`
-  driver id + `CharacterDriverState` variant + `army_follow_driver`/
-  `army_front_driver`/`army_back_driver`/`army_behind_driver` formation AI,
-  `find_platoon`/`platoon_exp`'s soldier-exp half, the `do_emote`/
-  `got_emote` emote engine, and the `it_driver` item triggers
-  (`it[in].drdata[6]` 1-6) that call `take_soldiers`/`drop_soldiers`.
+  `exp2level`). Fourth slice done: `take_soldiers`/`drop_soldiers` spawning
+  is now fully wired end to end (`ugaris-server`'s new `area8_army.rs`,
+  needing `ZoneLoader`/`ServerRuntime::allocate_character_id`) - saying
+  "take"/"drop" to the Commander (boss `NT_TEXT` handling extended in
+  `area8.rs`, with the `boss_stage 1..=30` gate and "cannot take soldiers"
+  message) actually spawns/despawns real `army1s`/`army2s` soldier
+  characters, fully equipped and stat-scaled via the previously-ported
+  pure helpers. The new `CDR_FDEMON_ARMY` driver id + `CharacterDriverState
+  ::FdemonArmy(FarmyData)` variant plus `World::army_follow_driver`/
+  `fdemon_army_tick` (`world/npc/area8/fdemon_army.rs`) port the
+  `MIS_FOLLOW`/leader-lost-disintegration slice of the per-soldier tick, so
+  recruited soldiers now actually follow their leader around (wired into
+  `tick_npc::area8::fdemon_boss_driver_89`). Still needed: `army_front_
+  driver`/`army_back_driver`/`army_behind_driver` (the other 4 missions),
+  combat/heal/bless self-defense (`fight_driver_update`/`do_heal`/
+  `do_bless`/`fight_driver_attack_visible`), the `do_emote`/`got_emote`
+  personality/chat engine (`FarmyData` omits the `emote` field entirely),
+  `platoon_exp`'s now-reachable-but-still-unported soldier-exp/promotion
+  loop, the "follow"/"back"/"retreat"/"front"/"behind" `NT_TEXT` command
+  reception in `fdemon_army`'s own message loop (mission is permanently
+  `MIS_FOLLOW` until that's ported), and the `it_driver` item triggers
+  (`it[in].drdata[6]` 1-6) that also call `take_soldiers`/`drop_soldiers`.
 - [ ] **Area 10 - `src/area/10/ice.c`** - ice NPCs, ice demon curse
   integration (curse spell side is ported).
 - [ ] **Area 11 - `src/area/11/palace.c`** - palace guards, Islena fight
@@ -1025,4 +1039,9 @@ notes live in `PROGRESS_ARCHIVE.md`.
   recompute (`fdemon_army::finalize_soldier_exp_and_level`). Spawning/
   driver id/formation-AI/emotes still remain. 2771 core + 1108 server
   tests pass, clean build.
+- 2026-07-08: Area 8 `CDR_FDEMON_ARMY` fourth slice: wired real
+  `take_soldiers`/`drop_soldiers` spawning (`area8_army.rs`) plus the
+  `MIS_FOLLOW`/leader-lost tick (`army_follow_driver`/`fdemon_army_tick`)
+  - soldiers now spawn/despawn on "take"/"drop" and follow their leader.
+  2778 core + 1111 server tests pass, clean build/boot-smoke.
 

@@ -30,6 +30,39 @@
 //! `cn`/`serial`) PPD fields already round-trip through the legacy
 //! `farmy_ppd` blob via `PlayerRuntime::farmy_soldier_type`/`_rank`/`_base`/
 //! `_profile`/`_exp`/`_cn`/`_serial` (`player/areas_misc.rs`).
+//!
+//! This module additionally ports [`World::army_follow_driver`] (C
+//! `army_follow_driver`, `fdemon.c:633-655`) and [`World::
+//! fdemon_army_tick`] (the `MIS_FOLLOW`/leader-lost-disintegration slice of
+//! C `fdemon_army`, `fdemon.c:1327-1532`) - enough for a recruited soldier
+//! to actually follow its leader around. The real spawning
+//! (`take_soldiers`/`drop_soldiers`, needing `ZoneLoader`) lives in
+//! `ugaris-server`'s `area8_army.rs`, matching the `pents.rs`/`world/
+//! pents.rs` split precedent.
+//!
+//! Deviations/gaps still open in this slice (documented, not silent):
+//! - `MIS_BACK`/`MIS_FRONT`/`MIS_BEHIND` (`army_back_driver`/
+//!   `army_front_driver`/`army_behind_driver`) are not ported - a soldier
+//!   whose mission is set to one of these (not yet reachable: nothing sets
+//!   `FarmyData::mission` to anything but `MIS_FOLLOW` yet, since the
+//!   `"follow"/"back"/"retreat"/"front"/"behind"` `NT_TEXT` command
+//!   reception in `fdemon_army`'s own message loop is also not ported)
+//!   would simply stand still.
+//! - Combat: `fight_driver_update`/`do_heal`/`do_bless`/
+//!   `fight_driver_attack_visible` (self-defense, the heal/bless support-
+//!   caster behavior gated on `V_HEAL`/`V_BLESS`) are not ported - a
+//!   soldier will follow but never fight back if attacked.
+//! - The whole `struct emote` personality/chat system (`do_emote`/
+//!   `got_emote`, `fdemon.c:781-1325`) is not ported - `FarmyData` omits
+//!   the `emote` field entirely; `regenerate_driver`/`spell_self_driver`
+//!   are likewise not called per-soldier (regen already applies generically
+//!   to every character - see `world/regen.rs` - so HP/endurance/mana
+//!   recovery still works without this).
+//! - C's `NT_CREATE`'s `if (ch[cn].arg) ch[cn].arg = NULL;` has no Rust
+//!   equivalent (same precedent as every other simple NPC in this
+//!   codebase).
+
+use crate::{character_driver::CharacterDriverState, world::*};
 
 /// C `#define MAXSOLDIER 3` (`fdemon.c:322`).
 pub const MAXSOLDIER: usize = 3;
@@ -404,265 +437,194 @@ pub fn plan_soldier_recruitment(
     plans
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+/// C `#define MIS_FOLLOW 1` .. `#define MIS_FRONT 5` (`fdemon.c:627-631`).
+pub const MIS_FOLLOW: i32 = 1;
+pub const MIS_BACK: i32 = 2;
+pub const MIS_RETREAT: i32 = 3;
+pub const MIS_BEHIND: i32 = 4;
+pub const MIS_FRONT: i32 = 5;
 
-    #[test]
-    fn profile_table_has_fourteen_entries_matching_c() {
-        assert_eq!(SOLDIER_PROFILES.len(), 14);
-        assert_eq!(SOLDIER_PROFILES[0].name, "Bert");
-        assert_eq!(SOLDIER_PROFILES[0].sprite, 158);
-        assert_eq!(SOLDIER_PROFILES[13].name, "Beth");
-        assert_eq!(SOLDIER_PROFILES[13].sprite, 188);
-    }
+/// C `struct farmy_data` (`fdemon.c:370-382`), minus the `emote` field -
+/// see the module doc comment for why the emote system is deferred.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct FarmyData {
+    pub leader_cn: CharacterId,
+    pub lx: u16,
+    pub ly: u16,
+    pub mission: i32,
+    pub opt1: i32,
+    pub opt2: i32,
+    pub timer: i64,
+    pub closeup: bool,
+    /// C `int platoon[MAXSOLDIER + 1]`: slots `0..MAXSOLDIER` are the
+    /// platoon's soldier character ids (`CharacterId(0)` for an empty
+    /// slot), slot `MAXSOLDIER` is the leader.
+    pub platoon: [CharacterId; MAXSOLDIER + 1],
+}
 
-    #[test]
-    fn assign_profile_carries_the_four_tendency_fields() {
-        let emote = assign_profile(4); // Carl: cuddly 25, angst 5, bore 5, bigmouth 15
-        assert_eq!(emote.cuddly, 25);
-        assert_eq!(emote.angst, 5);
-        assert_eq!(emote.bore, 5);
-        assert_eq!(emote.bigmouth, 15);
-    }
-
-    #[test]
-    fn soldier_base_strength_matches_c_formula() {
-        assert_eq!(soldier_base_strength(1), 47);
-        assert_eq!(soldier_base_strength(4), 59);
-    }
-
-    #[test]
-    fn rank_zero_recruits_nobody() {
-        let plans = plan_soldier_recruitment(0, true, true, [0; 3], [0; 3], |_| 0);
-        assert!(plans.iter().all(Option::is_none));
-    }
-
-    #[test]
-    fn rank_one_recruits_only_slot_zero_with_gendered_profile_range() {
-        // Male: profile = RANDOM(14) / 2 + 7, i.e. upper half of the table.
-        let plans = plan_soldier_recruitment(
-            1,
-            /* is_warrior */ true,
-            /* is_male */ true,
-            [0; 3],
-            [0; 3],
-            |below| {
-                assert_eq!(below, 14);
-                5
-            },
-        );
-        assert_eq!(plans[1], None);
-        assert_eq!(plans[2], None);
-        let slot0 = plans[0].expect("slot 0 should be recruitable at rank 1");
-        assert_eq!(slot0.slot, 0);
-        // is_warrior true -> mage (C: `if (ch[cn].flags & CF_WARRIOR) type=2`).
-        assert_eq!(slot0.soldier_type, SOLDIER_TYPE_MAGE);
-        assert_eq!(slot0.profile, 5 / 2 + 7);
-
-        // Female: profile = RANDOM(14) / 2, lower half.
-        let plans = plan_soldier_recruitment(1, true, false, [0; 3], [0; 3], |below| {
-            assert_eq!(below, 14);
-            9
-        });
-        assert_eq!(plans[0].unwrap().profile, 9 / 2);
-    }
-
-    #[test]
-    fn rank_five_recruits_slot_one_avoiding_slot_zero_profile() {
-        // Slot 0 already recruited with profile 9 (upper half) in a
-        // previous call; is_male=false here means slot 1's own roll is also
-        // `RANDOM(7) + 7` (upper half), so a same-value roll can collide.
-        let existing_type = [SOLDIER_TYPE_MAGE, 0, 0];
-        let existing_profile = [9, 0, 0];
-        // First roll (2 -> pro=9) collides with slot 0's profile (9),
-        // second roll (5 -> pro=12) doesn't.
-        let mut calls = 0u32;
-        let rolls = [2u32, 5u32];
-        let plans =
-            plan_soldier_recruitment(5, false, false, existing_type, existing_profile, |below| {
-                assert_eq!(below, 7);
-                let v = rolls[calls as usize];
-                calls += 1;
-                v
-            });
-        assert_eq!(plans[0], None); // already occupied, not re-planned
-        let slot1 = plans[1].expect("slot 1 should be recruitable at rank 5");
-        assert_eq!(slot1.profile, 12);
-        assert_eq!(calls, 2, "must re-roll past the colliding profile");
-        // is_warrior false -> mage for slot 1 (C: `else type=2`).
-        assert_eq!(slot1.soldier_type, SOLDIER_TYPE_MAGE);
-        assert_eq!(plans[2], None);
-    }
-
-    #[test]
-    fn rank_seven_recruits_slot_two_full_range_avoiding_both_prior_slots() {
-        let existing_type = [SOLDIER_TYPE_WARRIOR, SOLDIER_TYPE_MAGE, 0];
-        let existing_profile = [1, 9, 0];
-        let rolls = [1u32, 9u32, 4u32];
-        let mut calls = 0usize;
-        let plans =
-            plan_soldier_recruitment(7, true, true, existing_type, existing_profile, |below| {
-                assert_eq!(below, 14);
-                let v = rolls[calls];
-                calls += 1;
-                v
-            });
-        assert_eq!(plans[0], None);
-        assert_eq!(plans[1], None);
-        let slot2 = plans[2].expect("slot 2 should be recruitable at rank 7");
-        assert_eq!(slot2.profile, 4);
-        assert_eq!(slot2.soldier_type, SOLDIER_TYPE_WARRIOR);
-        assert_eq!(calls, 3, "must re-roll past both colliding profiles");
-    }
-
-    #[test]
-    fn scale_soldier_skill_matches_c_three_branch_formula() {
-        assert_eq!(scale_soldier_skill(1, 47), Some(23)); // 47/2 = 23 (int div)
-        assert_eq!(scale_soldier_skill(2, 47), Some(42)); // 47-5
-        assert_eq!(scale_soldier_skill(3, 47), Some(47));
-        assert_eq!(scale_soldier_skill(0, 47), None);
-        assert_eq!(scale_soldier_skill(4, 47), None);
-    }
-
-    #[test]
-    fn scale_soldier_values_applies_army1s_markers_and_leaves_others_untouched() {
-        // A slice of the real army1s template markers (fdemon.chr):
-        // V_HP=2, V_ENDURANCE=1, V_MANA=0, V_ARMORSKILL=3, V_SWORD=3.
-        let template_markers = [2, 1, 0, 3, 3];
-        let base = soldier_base_strength(1); // 47
-        let mut current = [999, 999, 999, 999, 999];
-        scale_soldier_values(&template_markers, base, &mut current);
-        assert_eq!(current[0], 42); // marker 2 -> base-5
-        assert_eq!(current[1], 23); // marker 1 -> base/2
-        assert_eq!(current[2], 999); // marker 0 -> untouched
-        assert_eq!(current[3], 47); // marker 3 -> base
-        assert_eq!(current[4], 47); // marker 3 -> base
-    }
-
-    #[test]
-    fn soldier_equipment_items_warrior_gets_five_piece_armor_skill_tiered_kit() {
-        let items = soldier_equipment_items(SOLDIER_TYPE_WARRIOR, 23, 47, 999);
-        assert_eq!(
-            items,
-            vec![
-                (WN_ARMS, "sleeves3q1".to_string()),
-                (WN_BODY, "armor3q1".to_string()),
-                (WN_HEAD, "helmet3q1".to_string()),
-                (WN_LEGS, "leggings3q1".to_string()),
-                (WN_RHAND, "sword5q1".to_string()),
-            ]
-        );
-    }
-
-    #[test]
-    fn soldier_equipment_items_mage_gets_only_a_dagger_skill_tiered_dagger() {
-        let items = soldier_equipment_items(SOLDIER_TYPE_MAGE, 999, 999, 12);
-        assert_eq!(items, vec![(WN_RHAND, "dagger2q1".to_string())]);
-    }
-
-    #[test]
-    fn finalize_soldier_exp_and_level_recomputes_exp_used_and_level_from_scaled_values() {
-        use crate::entity::{Character, CharacterFlags};
-        use crate::ids::CharacterId;
-
-        let base = soldier_base_strength(1); // 47
-        let mut character = Character {
-            id: CharacterId(1),
-            serial: 1,
-            name: "Soldier".into(),
-            description: String::new(),
-            flags: CharacterFlags::USED,
-            sprite: 0,
-            c1: 0,
-            c2: 0,
-            c3: 0,
-            driver: 0,
-            group: 0,
-            clan: 0,
-            clan_rank: 0,
-            clan_serial: 0,
-            staff_code: String::new(),
-            speed_mode: Default::default(),
-            x: 0,
-            y: 0,
-            rest_area: 0,
-            rest_x: 0,
-            rest_y: 0,
-            tox: 0,
-            toy: 0,
-            dir: 0,
-            action: 0,
-            duration: 0,
-            step: 0,
-            act1: 0,
-            act2: 0,
-            hp: 0,
-            mana: 0,
-            endurance: 0,
-            lifeshield: 0,
-            level: 1,
-            exp: 999,
-            exp_used: 999,
-            military_points: 0,
-            military_normal_exp: 0,
-            gold: 0,
-            karma: 0,
-            creation_time: 0,
-            saves: 0,
-            got_saved: 0,
-            deaths: 0,
-            regen_ticker: 0,
-            last_regen: 0,
-            cursor_item: None,
-            current_container: None,
-            values: Character::empty_values(),
-            professions: Character::empty_professions(),
-            inventory: Character::empty_inventory(),
-            driver_state: None,
-            driver_messages: Vec::new(),
-            driver_memory: crate::character_driver::DriverMemory::default(),
-            template_key: String::new(),
-            respawn_ticks: 0,
-            merchant: None,
-            class: 0,
-            dungeonfighter: None,
-            fight_driver: None,
-        };
-        // A slice of army1s's template markers (V_HP=2, V_ENDURANCE=1,
-        // V_SWORD=3), same fixture as `scale_soldier_values_...` above.
-        let template_markers = [2, 1, 0, 3, 3];
-        let mut scaled = [0i32; 5];
-        scale_soldier_values(&template_markers, base, &mut scaled);
-        for (v, value) in scaled.iter().enumerate() {
-            character.values[1][v] = *value as i16;
+impl Default for FarmyData {
+    fn default() -> Self {
+        FarmyData {
+            leader_cn: CharacterId(0),
+            lx: 0,
+            ly: 0,
+            mission: MIS_FOLLOW,
+            opt1: 0,
+            opt2: 0,
+            timer: 0,
+            closeup: false,
+            platoon: [CharacterId(0); MAXSOLDIER + 1],
         }
-        // values[1][..5] = [42(-5), 23(/2), 0(untouched), 47(base), 47(base)]
-
-        finalize_soldier_exp_and_level(&mut character);
-
-        let expected_exp = crate::world::calc_exp(&character);
-        assert_eq!(character.exp, expected_exp);
-        assert_eq!(character.exp_used, expected_exp);
-        assert_eq!(character.level, crate::world::exp2level(expected_exp));
-        assert!(
-            character.exp > 0,
-            "scaled skill values must produce nonzero exp"
-        );
-    }
-
-    #[test]
-    fn already_occupied_slots_are_never_replanned_regardless_of_rank() {
-        let existing_type = [
-            SOLDIER_TYPE_WARRIOR,
-            SOLDIER_TYPE_MAGE,
-            SOLDIER_TYPE_WARRIOR,
-        ];
-        let existing_profile = [0, 1, 2];
-        let plans =
-            plan_soldier_recruitment(20, true, true, existing_type, existing_profile, |_| {
-                panic!("no RNG rolls expected when every slot is already occupied")
-            });
-        assert!(plans.iter().all(Option::is_none));
     }
 }
+
+impl World {
+    /// C `army_follow_driver(cn, dat, dist)` (`fdemon.c:633-655`): walks
+    /// one step toward the leader (`min_dist=2` once the leader is
+    /// visible, matching C's fixed `pathfinder(...,2,...)` call - `dist`
+    /// only gates the "already close enough, don't move" early-out) or
+    /// toward the last-known leader position (`min_dist=0`) when the
+    /// leader isn't currently visible. Returns whether a walk action was
+    /// queued (C's `return 1`/`return 0`).
+    pub fn army_follow_driver(
+        &mut self,
+        character_id: CharacterId,
+        dist: i32,
+        area_id: u16,
+    ) -> bool {
+        let Some(character) = self.characters.get(&character_id) else {
+            return false;
+        };
+        let Some(CharacterDriverState::FdemonArmy(dat)) = character.driver_state.clone() else {
+            return false;
+        };
+        let Some(leader) = self.characters.get(&dat.leader_cn) else {
+            return false;
+        };
+
+        let daylight = self.date.daylight;
+        if char_see_char(character, leader, &self.map, daylight) {
+            let (lx, ly) = (leader.x, leader.y);
+            let (cx, cy) = (character.x, character.y);
+            if let Some(CharacterDriverState::FdemonArmy(dat)) = self
+                .characters
+                .get_mut(&character_id)
+                .and_then(|character| character.driver_state.as_mut())
+            {
+                dat.lx = lx;
+                dat.ly = ly;
+            }
+            let manhattan =
+                (i32::from(cx) - i32::from(lx)).abs() + (i32::from(cy) - i32::from(ly)).abs();
+            if manhattan <= dist {
+                return false;
+            }
+            self.setup_walk_toward(
+                character_id,
+                usize::from(lx),
+                usize::from(ly),
+                2,
+                area_id,
+                false,
+            )
+        } else {
+            let (cx, cy) = (character.x, character.y);
+            if cx == dat.lx && cy == dat.ly {
+                return false;
+            }
+            self.setup_walk_toward(
+                character_id,
+                usize::from(dat.lx),
+                usize::from(dat.ly),
+                0,
+                area_id,
+                false,
+            )
+        }
+    }
+
+    /// Every live `CDR_FDEMON_ARMY` character (C `ch_driver`'s
+    /// `CDR_FDEMON_ARMY` case, `fdemon.c:3021,3070,3084` - only its
+    /// `CDT_DRIVER` `fdemon_army(cn, ret, lastact)` tick call is ported
+    /// here).
+    pub fn fdemon_army_character_ids(&self) -> Vec<CharacterId> {
+        self.characters
+            .values()
+            .filter(|character| {
+                character.driver == crate::character_driver::CDR_FDEMON_ARMY
+                    && character.flags.contains(CharacterFlags::USED)
+                    && !character.flags.contains(CharacterFlags::DEAD)
+            })
+            .map(|character| character.id)
+            .collect()
+    }
+
+    /// C `fdemon_army(cn, ret, lastact)` (`fdemon.c:1327-1532`) - the
+    /// `MIS_FOLLOW`/leader-lost-disintegration slice only, see the module
+    /// doc comment for the deferred combat/other-mission/emote portions.
+    /// Returns `true` if the soldier disintegrated (leader lost - C's
+    /// `remove_destroy_char(cn)`), matching [`World::remove_character`]'s
+    /// own "did it exist" contract for the caller.
+    pub fn fdemon_army_tick(&mut self, character_id: CharacterId, area_id: u16) -> bool {
+        let Some(character) = self.characters.get(&character_id) else {
+            return false;
+        };
+        let Some(CharacterDriverState::FdemonArmy(dat)) = character.driver_state.clone() else {
+            return false;
+        };
+        let group = character.group;
+
+        // C `if (dat->leader_cn) { if (!(ch[dat->leader_cn].flags) ||
+        // ch[dat->leader_cn].group != ch[cn].group) { remove_destroy_char
+        // (cn); return; } ... }` - `dat->leader_cn` is always set at spawn
+        // time by `take_soldiers` in this port (see `area8_army.rs`), so
+        // the `if (dat->leader_cn)` outer guard is unreachable here.
+        let leader_lost = match self.characters.get(&dat.leader_cn) {
+            None => true,
+            Some(leader) => leader.group != group,
+        };
+        if leader_lost {
+            self.remove_character(character_id);
+            return true;
+        }
+
+        if dat.mission == MIS_FOLLOW {
+            if self.army_follow_driver(character_id, 10, area_id) {
+                if let Some(CharacterDriverState::FdemonArmy(dat)) = self
+                    .characters
+                    .get_mut(&character_id)
+                    .and_then(|character| character.driver_state.as_mut())
+                {
+                    dat.closeup = true;
+                }
+                return false;
+            }
+
+            // C's combat/heal/bless/self-defense fallback
+            // (`fight_driver_update`/`do_heal`/`do_bless`/
+            // `fight_driver_attack_visible`) between the two
+            // `army_follow_driver` calls is not ported - see the module
+            // doc comment.
+            if self.army_follow_driver(character_id, 3, area_id) {
+                return false;
+            }
+            if let Some(CharacterDriverState::FdemonArmy(dat)) = self
+                .characters
+                .get_mut(&character_id)
+                .and_then(|character| character.driver_state.as_mut())
+            {
+                dat.closeup = false;
+            }
+        }
+
+        // Emotes/regen/`do_idle` tail not ported - see the module doc
+        // comment (regen already applies generically to every character).
+        false
+    }
+}
+
+// Tests for this module's pure functions live in `world::tests::
+// fdemon_army` (alongside the `World`-based `army_follow_driver`/
+// `fdemon_army_tick` tests) - same "no in-file test module" convention as
+// every other area-8 NPC file (`fdemon_boss.rs`/`fdemon_demon.rs`), to
+// keep this driver/parser/QA file under the ~800-line guideline.

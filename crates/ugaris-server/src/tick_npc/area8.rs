@@ -41,7 +41,7 @@ pub(crate) async fn fdemon_demon_driver_88(
 pub(crate) async fn fdemon_boss_driver_89(
     world: &mut World,
     runtime: &mut ServerRuntime,
-    _zone_loader: &mut ZoneLoader,
+    zone_loader: &mut ZoneLoader,
     config: &ServerConfig,
     _args: &Args,
     _completed_actions: &[WorldActionCompletion],
@@ -60,12 +60,26 @@ pub(crate) async fn fdemon_boss_driver_89(
     // C `ch_driver`'s `CDR_FDEMON_BOSS` case (`src/area/8/fdemon.c:3024-
     // 3026`) - the underground army Commander's mission-giver dialogue
     // chain. See `world::npc::area8::fdemon_boss`'s module doc comment.
-    let fdemon_boss_applied = crate::area8::apply_fdemon_boss_tick(world, runtime, config);
+    let fdemon_boss_applied =
+        crate::area8::apply_fdemon_boss_tick(world, runtime, zone_loader, config);
     if fdemon_boss_applied != 0 {
         info!(
             fdemon_boss_applied,
             tick = world.tick.0,
             "applied fdemon-boss dialogue events"
+        );
+    }
+
+    // C `ch_driver`'s `CDR_FDEMON_ARMY` case (`src/area/8/fdemon.c:3021`) -
+    // recruited soldiers' `MIS_FOLLOW`/leader-lost tick. See `world::
+    // npc::area8::fdemon_army::fdemon_army_tick`'s module doc comment.
+    let fdemon_army_disintegrated =
+        crate::area8_army::apply_fdemon_army_tick(world, config.area_id);
+    if fdemon_army_disintegrated != 0 {
+        info!(
+            fdemon_army_disintegrated,
+            tick = world.tick.0,
+            "fdemon-army soldiers disintegrated (leader lost)"
         );
     }
 }
