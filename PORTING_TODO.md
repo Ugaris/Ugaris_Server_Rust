@@ -759,8 +759,11 @@ Ordered by player progression; the C file is the oracle.
   reshaped into a new `MineKeyDoorOpened` variant carrying the picked
   room coordinates out to `ugaris-server::mine::spawn_keyholder_golem`.
   This closes Area 12.
-- [ ] **Area 13 - `src/area/13/dungeon.c` + `dungeon_tab.c`** - dungeon
-  master/fighter drivers, clan jewel raid protocol.
+- [x] **Area 13 - `src/area/13/dungeon.c` + `dungeon_tab.c`** - dungeon
+  master/fighter drivers, clan jewel raid protocol. *(already fully
+  ported across earlier "Clan system"/P0.5/cross-area-transfer
+  iterations; audited function-by-function against C in iteration 79 -
+  no gaps found. Details in PORTING_LEDGER.md.)*
 - [ ] **Area 14 - `src/area/14/random.c`** - remaining shrine effects
   (indecisiveness/bribes/welding) + questlog resend after shrines.
 - [ ] **Area 15 - `src/area/15/swamp.c`** - Clara dialogue runtime (state
@@ -840,6 +843,10 @@ Keep entries to at most three lines: date, task, one-line result.
 Anything longer belongs in `PORTING_LEDGER.md`; historical verbose
 notes live in `PROGRESS_ARCHIVE.md`.
 
+- 2026-07-08: Area 13 CLOSED: function-by-function audit of `dungeon.c`/
+  `dungeon_tab.c` against the Rust tree found it already fully ported by
+  earlier "Clan system"/P0.5/cross-area-transfer iterations - no gap
+  found. No code changes; checkbox marked `[x]`.
 - 2026-07-08: Area 12 CLOSED: ported `CDR_GOLEMKEYHOLDER`/`keyhold_fight_
   driver` (`world/npc/area12/golemkeyholder.rs`, reused `gate_fight`'s
   shape) + `mine::spawn_keyholder_golem`. 2872 core + 1130 server tests

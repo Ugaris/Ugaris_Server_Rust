@@ -2712,15 +2712,42 @@
         "error: could not compile `ugaris-core` (lib) due to 3 previous errors",
         "error: could not compile `ugaris-server` (bin \"ugaris-server\") due to 1 previous error"
       ]
+    },
+    {
+      "iteration": 79,
+      "startedAt": "2026-07-08T17:03:29.216Z",
+      "endedAt": "2026-07-08T17:07:37.247Z",
+      "durationMs": 246894,
+      "agent": "opencode",
+      "model": "anthropic/claude-sonnet-5",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "PORTING_TODO.md"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "No code gaps were found. I updated the paperwork: marked the checkbox `[x]` in `PORTING_TODO.md`, added a 3-line progress log entry, and appended a closing note to the existing `PORTING_LEDGER.md` row",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&1 | grep -E \"FAILED|error\\[|error:|warning:\" | head -50",
+        "test error::tests::error_constants_match_legacy_header ... ok",
+        "test error::tests::error_strings_match_legacy_table ... ok",
+        "test error::tests::out_of_range_errors_use_c_fallback_string ... ok",
+        "7472: - Iteration 225 wired the last remaining `attempt_cross_area_transfer` call site the iteration-224 note flagged as missing: the dungeon-master eviction rescue (`crates/ugaris-core/src/world/dung",
+        "7516:- 2026-07-07: continued the P0.5 \"Finish main() phase decomposition\" task with its third completed-action-outcome family slice: the dungeon family (`src/area/13/dungeon.c`) - 7 contiguous `ItemDr",
+        "114:| `src/system/club.c` / `club.h` (+ `src/system/database/database_clubs.c` for reference) | `crates/ugaris-core/src/club.rs`, `crates/ugaris-core/src/world/clanmaster.rs` | Iteration 136: first se",
+        "115:| `src/system/clubmaster.c` | `crates/ugaris-core/src/character_driver.rs`, `crates/ugaris-core/src/world/clubmaster.rs`, `crates/ugaris-core/src/zone.rs`, `crates/ugaris-server/src/achievement.rs"
+      ]
     }
   ],
-  "totalDurationMs": 107380941,
+  "totalDurationMs": 107627835,
   "struggleIndicators": {
     "repeatedErrors": {
       "Everything builds cleanly, all tests pass (2380 core + 1091 server, zero failures, zero warnings), f": 1,
       "Verification: `cargo fmt --all`, `cargo test --workspace` (2380 ugaris-core + 1091 ugaris-server, al": 1,
       "test result: ok. 1089 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.09s": 1,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 78,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 79,
       "The arguments provided to the tool are invalid: Invalid input for tool read: JSON parsing failed: Te": 16,
       "Error message: JSON Parse error: Property name must be a string literal": 13,
       "error: could not compile `ugaris-core` (lib) due to 4 previous errors": 2,
@@ -2730,14 +2757,14 @@
       "All 1091 server tests still pass (same count as before), no failures. Let's check for warnings speci": 1,
       "1. Health check: `cargo test --workspace` was already green (2380 core + 78 db + 3 net + 45 protocol": 1,
       "\u001b[0m$ \u001b[0mcargo test --workspace 2>&1 | grep -E \"FAILED|error|test result\"": 2,
-      "test error::tests::error_constants_match_legacy_header ... ok": 33,
-      "test error::tests::error_strings_match_legacy_table ... ok": 33,
-      "test error::tests::out_of_range_errors_use_c_fallback_string ... ok": 32,
+      "test error::tests::error_constants_match_legacy_header ... ok": 34,
+      "test error::tests::error_strings_match_legacy_table ... ok": 34,
+      "test error::tests::out_of_range_errors_use_c_fallback_string ... ok": 33,
       "test world::tests::dungeon_master::attack_command_failure_says_error_and_never_charges_or_queues ...": 23,
       "test result: ok. 2380 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.19s": 3,
       "test result: ok. 78 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 35,
       "test result: ok. 1091 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.09s": 17,
-      "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&": 50,
+      "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&": 51,
       "test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s": 24,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 30,
       "test result: ok. 45 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 27,
@@ -2937,7 +2964,7 @@
       "**Verification**: 7 new focused tests, `cargo fmt --all` clean, `cargo test --workspace` (2711 core ": 1,
       "7514:- 2026-07-07: continued the P0.5 \"Finish main() phase decomposition\" task with its first comple": 2,
       "7515:- 2026-07-07: continued the P0.5 \"Finish main() phase decomposition\" task with its second compl": 2,
-      "7516:- 2026-07-07: continued the P0.5 \"Finish main() phase decomposition\" task with its third comple": 2,
+      "7516:- 2026-07-07: continued the P0.5 \"Finish main() phase decomposition\" task with its third comple": 3,
       "7517:- 2026-07-07: continued the P0.5 \"Finish main() phase decomposition\" task with its fourth compl": 1,
       "7519:- 2026-07-07: continued the P0.5 \"Finish main() phase decomposition\" task with its fifth comple": 1,
       "7520:- 2026-07-07: continued the P0.5 \"Finish main() phase decomposition\" task with its sixth comple": 1,
@@ -3011,7 +3038,11 @@
       "- `cargo test --workspace`: 2865 core + 81 db + 3 net + 45 protocol + 1128 server, all green, zero f": 1,
       "test result: ok. 2865 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.23s": 1,
       "- `cargo test --workspace`: 2872 core + 81 db + 3 net + 45 protocol + 1130 server, all green, zero f": 1,
-      "error: could not compile `ugaris-core` (lib) due to 3 previous errors": 1
+      "error: could not compile `ugaris-core` (lib) due to 3 previous errors": 1,
+      "No code gaps were found. I updated the paperwork: marked the checkbox `[x]` in `PORTING_TODO.md`, ad": 1,
+      "7472: - Iteration 225 wired the last remaining `attempt_cross_area_transfer` call site the iteration": 1,
+      "114:| `src/system/club.c` / `club.h` (+ `src/system/database/database_clubs.c` for reference) | `cra": 1,
+      "115:| `src/system/clubmaster.c` | `crates/ugaris-core/src/character_driver.rs`, `crates/ugaris-core/": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0
