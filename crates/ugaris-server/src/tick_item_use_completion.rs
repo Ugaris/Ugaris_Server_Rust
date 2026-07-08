@@ -1354,5 +1354,7 @@ pub(crate) async fn process_completed_action_outcomes(
                 "queued legacy sound-area specials"
             );
         }
+
+        crate::pents::process_pentagram_activations(world, runtime, achievement_repository).await;
     }
 }

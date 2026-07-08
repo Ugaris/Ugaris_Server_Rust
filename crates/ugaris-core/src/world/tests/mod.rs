@@ -67,6 +67,7 @@ mod nook;
 mod npc_fight;
 mod npc_idle;
 mod npc_messages;
+mod pents;
 mod player_driver;
 mod punish;
 mod querystats;

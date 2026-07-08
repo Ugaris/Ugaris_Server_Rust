@@ -483,11 +483,13 @@ pub struct PlayerRuntime {
     /// separate volatile-vs-persistent storage tier and the distinction
     /// has no observable effect on this debug-only feature. Backs the
     /// `/pentinfo`/`/setpentcount`/`/setpentstatus`/`/setpentbonus`/
-    /// `/resetpent` GOD debug commands; the real Area 4 pentagram-solving
-    /// gameplay (`pents.c`) that also reads/writes this same struct via
-    /// `get_pent_data` is not yet ported (see `PORTING_TODO.md`'s Area 4
-    /// task) - a future port of that gameplay should reuse these same
-    /// fields rather than duplicating them.
+    /// `/resetpent` GOD debug commands *and*, since the "Area 4" porting
+    /// task, the real `pents.c` pentagram-quest gameplay itself (C's own
+    /// `get_pent_data` reads/writes this same struct for both purposes) -
+    /// see `ugaris_core::pentagram`'s module doc comment and
+    /// `crate::pents` (`ugaris-server`) for the reward-math split. Demon
+    /// spawning/`CDR_PENTER`/`CDR_TESTER` are still unported (see
+    /// `PORTING_TODO.md`'s Area 4 task REMAINING note).
     #[serde(default)]
     pub pentagram_debug: PentagramDebugData,
     /// C `struct macro_ppd` (`command.c:585-626`, backing `DRD_MACRO_PPD`,

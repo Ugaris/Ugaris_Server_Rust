@@ -227,6 +227,13 @@ impl World {
         };
         let mut effective_context = context.clone();
         effective_context.current_tick = self.tick.0 as u32;
+        if effective_context.pent_last_solve_tick.is_none() {
+            effective_context.pent_last_solve_tick = self.pentagram_quest.last_solve_tick;
+        }
+        if effective_context.pent_demon_lord_access_seconds.is_none() {
+            effective_context.pent_demon_lord_access_seconds =
+                Some(self.settings.get_demon_lord_door_after_solve_access_time() as u32);
+        }
         if effective_context.fdemon_loader_power.is_none() {
             effective_context.fdemon_loader_power = fdemon_loader_power;
         }
@@ -737,41 +744,21 @@ impl World {
                     }
                 }
             }
-            ItemDriverOutcome::PentagramActivate { item_id, color, .. } => {
-                if let Some(before) = self.items.get(&item_id).cloned() {
-                    if let Some(item) = self.items.get_mut(&item_id) {
-                        if item.driver_data.len() <= 1 {
-                            item.driver_data.resize(2, 0);
-                        }
-                        item.driver_data[1] = 1;
-                        item.sprite += i32::from(color);
-                        item.modifier_value[0] = 100;
-                    }
-                    self.refresh_item_light_after_mutation(&before, item_id);
-                    if let Some(item) = self.items.get(&item_id) {
-                        self.queue_sound_area(usize::from(item.x), usize::from(item.y), 42);
-                    }
-                }
+            ItemDriverOutcome::PentagramActivate {
+                item_id,
+                character_id,
+                ..
+            } => {
+                self.apply_pentagram_activate(item_id, character_id);
                 outcome
             }
             ItemDriverOutcome::PentagramTimer {
-                item_id, status, ..
+                item_id,
+                status,
+                area_status,
+                ..
             } => {
-                if status != 0 {
-                    if let Some(before) = self.items.get(&item_id).cloned() {
-                        let color = before.driver_data.get(2).copied().unwrap_or_default();
-                        if let Some(item) = self.items.get_mut(&item_id) {
-                            if item.driver_data.len() <= 4 {
-                                item.driver_data.resize(5, 0);
-                            }
-                            item.driver_data[1] = 0;
-                            item.driver_data[4] = 0;
-                            item.sprite -= i32::from(color);
-                            item.modifier_value[0] = 10;
-                        }
-                        self.refresh_item_light_after_mutation(&before, item_id);
-                    }
-                }
+                self.apply_pentagram_timer(item_id, i32::from(status), i32::from(area_status));
                 outcome
             }
             ItemDriverOutcome::DungeonDoorSolved {

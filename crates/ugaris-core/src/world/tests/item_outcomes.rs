@@ -673,7 +673,7 @@ fn world_applies_pentagram_activate_and_timer_deactivate() {
         ItemDriverOutcome::PentagramActivate { .. }
     ));
     let pent = world.items.get(&ItemId(7)).unwrap();
-    assert_eq!(pent.driver_data[1], 1);
+    assert_eq!(pent.driver_data[1], 255);
     assert_eq!(pent.sprite, 1004);
     assert_eq!(pent.modifier_value[0], 100);
     assert_eq!(

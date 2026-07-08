@@ -1081,6 +1081,108 @@ pub(crate) async fn award_dragonsbane_achievement(
     .await;
 }
 
+/// C `handle_lucky_pentagram`'s `achievement_award(player_id,
+/// ACHIEVEMENT_HAPPY_GO_LUCKY, 1)` (`src/area/4/pents.c:853`), fired every
+/// time a player hits a lucky pentagram roll. Consumes the `lucky_hit`
+/// flag on `ugaris_core::pentagram::AddPentagramOutcome`, queued by
+/// `crate::pents::process_pentagram_activations`.
+pub(crate) async fn award_pentagram_lucky_achievement(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    repository: &Option<ugaris_db::PgAchievementRepository>,
+    player_id: CharacterId,
+) {
+    award_bare_achievement(
+        world,
+        runtime,
+        repository,
+        player_id,
+        AchievementType::HappyGoLucky,
+    )
+    .await;
+}
+
+/// C `handle_lucky_pentagram`'s second branch: `achievement_award(player_id,
+/// ACHIEVEMENT_FAVORED_BY_FORTUNE, 1)` (`pents.c:856-858`), fired when a
+/// player hits a second lucky pentagram within the same solve run.
+/// Consumes the `second_lucky_hit` flag on `AddPentagramOutcome`.
+pub(crate) async fn award_pentagram_favored_by_fortune_achievement(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    repository: &Option<ugaris_db::PgAchievementRepository>,
+    player_id: CharacterId,
+) {
+    award_bare_achievement(
+        world,
+        runtime,
+        repository,
+        player_id,
+        AchievementType::FavoredByFortune,
+    )
+    .await;
+}
+
+/// C `distribute_rewards_to_player`'s `if (player_data->status == 1)
+/// achievement_award(player_id, ACHIEVEMENT_FIVE_IN_A_ROW, 1)`
+/// (`pents.c:606-609`), fired for every reward-eligible player whose
+/// pentagram data had a live five-color combo at solve time. Consumes the
+/// `had_combo` flag from `ugaris_core::pentagram::distribute_rewards_reset`.
+pub(crate) async fn award_pentagram_five_in_a_row_achievement(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    repository: &Option<ugaris_db::PgAchievementRepository>,
+    player_id: CharacterId,
+) {
+    award_bare_achievement(
+        world,
+        runtime,
+        repository,
+        player_id,
+        AchievementType::FiveInARow,
+    )
+    .await;
+}
+
+/// C `distribute_rewards_to_player`'s trailing `achievement_add_pents(
+/// player_id, areaID, 1)` (`pents.c:646`), fired unconditionally for every
+/// reward-eligible player on a solve (not just the solver) - mirrors
+/// `award_enemy_killed_achievement`'s `add_demons` call for the kill-side
+/// equivalent.
+pub(crate) async fn award_pentagram_solve_achievement(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    repository: &Option<ugaris_db::PgAchievementRepository>,
+    player_id: CharacterId,
+    area_id: i32,
+) {
+    let Some(name) = world
+        .characters
+        .get(&player_id)
+        .map(|character| character.name.clone())
+    else {
+        return;
+    };
+    let now = current_unix_time();
+    let Some(player) = runtime.player_for_character_mut(player_id) else {
+        return;
+    };
+    let unlocked = ugaris_core::achievement::add_pents(
+        &mut player.achievement_data,
+        &mut player.achievement_stats,
+        area_id,
+        1,
+        &name,
+        now,
+    );
+    for ty in &unlocked {
+        let payload = achievement_unlock_payload(*ty, now);
+        for (sid, _) in runtime.sessions_for_character(player_id) {
+            runtime.send_to_session(sid, payload.clone());
+        }
+    }
+    record_achievement_firsts_and_announce(world, repository, player_id, &name, &unlocked).await;
+}
+
 /// C `give_first_kill`'s class-range congrats-message dispatch
 /// (`death.c:213-253`). `has_name` gates on `ch[co].flags & CF_HASNAME`
 /// (checked before any class range); the two subsequent `else if` chains

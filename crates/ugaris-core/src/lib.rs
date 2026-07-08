@@ -26,6 +26,7 @@ pub mod log_text;
 pub mod macro_daemon;
 pub mod map;
 pub mod path;
+pub mod pentagram;
 pub mod player;
 pub mod quest;
 pub mod scheduler;

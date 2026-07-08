@@ -42,6 +42,7 @@ pub mod npc;
 mod npc_fight;
 mod npc_idle;
 mod npc_messages;
+mod pents;
 mod player_driver;
 mod punish;
 mod querystats;
@@ -99,6 +100,7 @@ pub use npc_fight::*;
 pub(crate) use npc_idle::*;
 #[allow(unused_imports)]
 pub(crate) use npc_messages::*;
+pub use pents::*;
 pub use punish::*;
 pub use querystats::*;
 #[allow(unused_imports)]
@@ -176,7 +178,7 @@ use crate::{
         IDR_EDEMONLOADER, IDR_EDEMONSWITCH, IDR_EDEMONTUBE, IDR_FDEMONCANNON, IDR_FDEMONFARM,
         IDR_FDEMONGATE, IDR_FDEMONLIGHT, IDR_FDEMONLOADER, IDR_FLAMETHROW, IDR_FLASK,
         IDR_FORESTCHEST, IDR_LAB2_WATER, IDR_LAB3_PLANT, IDR_LABTORCH, IDR_MINEDOOR,
-        IDR_MINEGATEWAY, IDR_NIGHTLIGHT, IDR_ONOFFLIGHT, IDR_PALACEDOOR, IDR_POTION,
+        IDR_MINEGATEWAY, IDR_NIGHTLIGHT, IDR_ONOFFLIGHT, IDR_PALACEDOOR, IDR_PENT, IDR_POTION,
         IDR_RANDOMSHRINE, IDR_RECALL, IDR_STEPTRAP, IDR_SWAMPARM, IDR_SWAMPSPAWN, IDR_SWAMPWHISP,
         IDR_TORCH, IDR_TOYLIGHT, IDR_WARPKEYDOOR, IDR_WARPTELEPORT, IDR_WARPTRIALDOOR,
         IID_AREA11_PALACEKEY, IID_AREA14_SHRINEKEY, IID_AREA16_ROBBERKEY, IID_AREA16_SKELLYKEY,
@@ -335,6 +337,10 @@ pub struct World {
     /// [`World::arena_update_toplist`]; empty (no entries yet) reads back
     /// as "no rankings" via [`World::arena_toplist_entries`].
     pub arena_toplist: Vec<ArenaToplistRecord>,
+    /// C `src/area/4/pents.c`'s file-static pentagram-quest solve state
+    /// (`solve_serial`/`active_pentagrams`/`power_levels`/etc). See
+    /// [`PentagramQuestState`]'s doc comment for what is/isn't ported.
+    pub pentagram_quest: PentagramQuestState,
     pending_npc_respawns: Vec<NpcRespawnRequest>,
     pending_kill_exp: Vec<KillExpAward>,
     pending_kill_achievements: Vec<KillAchievementAward>,
@@ -551,6 +557,11 @@ pub struct World {
     /// `/allow <name>` async DB round trips - see `world/allow.rs`'s
     /// module doc comment.
     pending_allow_requests: Vec<AllowRequest>,
+    /// Pentagram activations (`IDR_PENT` `PentagramActivate` outcomes)
+    /// queued for `ugaris-server`'s `pents` module to apply the
+    /// per-player half of C's reward pipeline - see
+    /// [`pents::PentagramActivationEvent`]'s doc comment.
+    pending_pentagram_activations: Vec<PentagramActivationEvent>,
 }
 
 impl Default for Tick {
