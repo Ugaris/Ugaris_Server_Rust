@@ -369,6 +369,43 @@ impl World {
         }
     }
 
+    /// C `notify_area_shout` (`src/system/notify.c:170-195`): the same
+    /// bounding-box broadcast as [`World::notify_area`], additionally
+    /// gated per-recipient on `sector_hear_shout` (a coarser, "same shout
+    /// sector" gate than [`World::sound_area_specials`]'s own
+    /// `SoundSectors::sector_hear` line-of-sound check).
+    pub fn notify_area_shout(
+        &mut self,
+        x: u16,
+        y: u16,
+        message_type: i32,
+        dat1: i32,
+        dat2: i32,
+        dat3: i32,
+    ) {
+        const NOTIFY_SIZE: u16 = 32;
+        let min_x = x.saturating_sub(NOTIFY_SIZE);
+        let max_x = x.saturating_add(NOTIFY_SIZE);
+        let min_y = y.saturating_sub(NOTIFY_SIZE);
+        let max_y = y.saturating_add(NOTIFY_SIZE);
+        let sectors = SoundSectors::build(&self.map);
+        for character in self.characters.values_mut() {
+            if character.x >= min_x
+                && character.x <= max_x
+                && character.y >= min_y
+                && character.y <= max_y
+                && sectors.sector_hear_shout(
+                    usize::from(x),
+                    usize::from(y),
+                    usize::from(character.x),
+                    usize::from(character.y),
+                )
+            {
+                character.push_driver_message(message_type, dat1, dat2, dat3);
+            }
+        }
+    }
+
     pub fn sound_area_specials(
         &self,
         x: usize,

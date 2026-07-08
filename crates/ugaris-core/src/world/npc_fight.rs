@@ -618,7 +618,8 @@ impl World {
             | CharacterDriverState::Tester(_)
             | CharacterDriverState::Engrave(_)
             | CharacterDriverState::FdemonArmy(_)
-            | CharacterDriverState::Islena(_) => None,
+            | CharacterDriverState::Islena(_)
+            | CharacterDriverState::PalaceGuard(_) => None,
         }
     }
 

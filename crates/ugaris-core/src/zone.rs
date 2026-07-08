@@ -678,6 +678,13 @@ impl ZoneLoader {
             apply_lab2_undead_create_message(&mut character, Some(&template.args));
             self.add_lab2_undead_regenerate_spell(&mut character, &mut inventory_items);
         }
+        if template.driver == crate::character_driver::CDR_PALACEGUARD {
+            // C `palace_guard`'s `NT_CREATE` handler (`palace.c:152-163`):
+            // parsed here at spawn time instead of through the per-tick
+            // message loop, same precedent as `CDR_LAB2UNDEAD` above - see
+            // `world::npc::area11::palace_guard`'s module doc comment.
+            crate::world::apply_palace_guard_create_message(&mut character, Some(&template.args));
+        }
         if template.driver == CDR_CAMHERMIT {
             // C never parses zone-file args into `struct
             // camhermit_driver_data` (`set_data` zero-initializes it) - no

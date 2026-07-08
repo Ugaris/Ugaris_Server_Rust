@@ -36,3 +36,29 @@ pub(crate) async fn islena_driver_90(
         );
     }
 }
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn palace_guard_driver_91(
+    world: &mut World,
+    _runtime: &mut ServerRuntime,
+    _zone_loader: &mut ZoneLoader,
+    config: &ServerConfig,
+    _args: &Args,
+    _completed_actions: &[WorldActionCompletion],
+    _achievement_repository: &Option<ugaris_db::PgAchievementRepository>,
+    _character_repository: &Option<ugaris_db::PgCharacterRepository>,
+    _area_repository: &Option<ugaris_db::PgAreaRepository>,
+    _clan_repository: &Option<ugaris_db::PgClanRegistryRepository>,
+    _clan_log_repository: &Option<ugaris_db::PgClanLogRepository>,
+    _merchant_repository: &Option<ugaris_db::PgMerchantRepository>,
+    _military_master_storage_repository: &Option<ugaris_db::PgMilitaryMasterStorageRepository>,
+    _military_advisor_storage_repository: &Option<ugaris_db::PgMilitaryAdvisorStorageRepository>,
+    _notes_repository: &Option<ugaris_db::PgNotesRepository>,
+    _anticheat_repository: &Option<ugaris_db::PgAntiCheatRepository>,
+    _auction_repository: &Option<ugaris_db::PgAuctionRepository>,
+) {
+    // C `palace_guard`: area 11's palace patrol/reserve-ambush demon
+    // sentries (`src/area/11/palace.c`). No `PlayerRuntime` state
+    // involved, unlike `islena_driver_90` above.
+    world.process_palace_guard_actions(config.area_id);
+}

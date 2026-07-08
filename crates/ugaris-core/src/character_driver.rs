@@ -49,6 +49,11 @@ pub const CDR_TESTER: u16 = 77;
 /// time instead (see `zone.rs`'s `CDR_FDEMON_DEMON` branch) - only the
 /// non-190-sprite "Fire Demon" trash mobs actually run under this id.
 pub const CDR_FDEMON_DEMON: u16 = 46;
+/// C `#define CDR_PALACEGUARD 47` (`src/system/drvlib.h`): the palace
+/// patrol/reserve-ambush demon sentries (`src/area/11/palace.c::
+/// palace_guard`), see `world::npc::area11::palace_guard`'s module doc
+/// comment.
+pub const CDR_PALACEGUARD: u16 = 47;
 /// C `#define CDR_FDEMON_BOSS 45` (`src/system/drvlib.h`): the underground
 /// army Commander mission-giver (`src/area/8/fdemon.c::fdemon_boss`), see
 /// `world::npc::area8::fdemon_boss`'s module doc comment.
@@ -414,6 +419,7 @@ pub enum CharacterDriverState {
     Engrave(EngraveDriverData),
     FdemonArmy(FarmyData),
     Islena(IslenaDriverData),
+    PalaceGuard(PalaceGuardDriverData),
 }
 /// C `bank_driver_parse` from `src/module/bank.c`. The C driver defaults
 /// opening hours to 6..23 before parsing (`bank_driver` lines 304-309).
@@ -1186,7 +1192,8 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::Tester(_)
             | CharacterDriverState::Engrave(_)
             | CharacterDriverState::FdemonArmy(_)
-            | CharacterDriverState::Islena(_),
+            | CharacterDriverState::Islena(_)
+            | CharacterDriverState::PalaceGuard(_),
         ) => SimpleBaddyDriverData::default(),
         None => SimpleBaddyDriverData::default(),
     };
@@ -3558,6 +3565,9 @@ pub use crate::world::npc::area1::sanoa::SanoaDriverData;
 pub use crate::world::npc::area1::terion::TerionDriverData;
 pub use crate::world::npc::area1::yoakin::YoakinDriverData;
 pub use crate::world::npc::area11::islena::IslenaDriverData;
+pub use crate::world::npc::area11::palace_guard::{
+    parse_palace_guard_driver_args, PalaceGuardDriverData,
+};
 pub use crate::world::npc::area13::dungeon_master::{
     DungeonfighterDriverData, DungeonmasterDriverData, DUNGEONMASTER_QA, DUNGEON_SLOT_COUNT,
 };

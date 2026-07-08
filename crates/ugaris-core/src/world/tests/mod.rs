@@ -71,6 +71,7 @@ mod nook;
 mod npc_fight;
 mod npc_idle;
 mod npc_messages;
+mod palace_guard;
 mod pents;
 mod player_driver;
 mod punish;
