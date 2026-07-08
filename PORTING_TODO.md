@@ -595,8 +595,25 @@ Ordered by player progression; the C file is the oracle.
   has no `rage` field yet, same as every other `attack_skill`/`parry_skill`
   caller - see `values.rs`'s `show_values_lines` doc comment). This closes
   every `CF_EDEMON` call site and Area 6 for real.
-- [ ] **Area 8 - `src/area/8/fdemon.c`** - Fire Demon boss + farm NPCs;
+- [~] **Area 8 - `src/area/8/fdemon.c`** - Fire Demon boss + farm NPCs;
   cannon/loader items are ported.
+  REMAINING: ported `CDR_FDEMON_DEMON` (the roaming Fire Demon/Fire Golem
+  hunt AI - `world::fdemon`'s new waypoint-graph `find_waypoints`/
+  `hunt_driver`/`may_hunt_there` port plus `world::npc::area8::
+  fdemon_demon`'s gohome-hysteresis/wander driver, reusing
+  `CharacterDriverState::SimpleBaddy` wholesale for combat/messages same as
+  `CDR_PENTER`/`CDR_DUNGEONFIGHTER`) and its `fdemon_demon_dead` death hook
+  (`farmy_ppd.boss_stage` 16/17->18). The `sprite==190` "Fire Golem" boss
+  variant is spawned as plain `CDR_SIMPLEBADDY` (100% observably identical
+  to C's own unconditional tail-call, see the module doc comment) so the
+  death hook matches on `area_id==8 && sprite==190` instead of driver id.
+  Still unported: `CDR_FDEMON_ARMY` (the recruitable-soldier "take"/"drop"/
+  formation-following/emote system, `farmy_data`/`farmy_ppd.soldier[]`) and
+  `CDR_FDEMON_BOSS` (the Commander's 33-stage mission-giver dialogue
+  chain, `platoon_exp` rewards) - both large, tightly-coupled subsystems
+  around the same `farmy_ppd`/`farmy_data` structs; do these together next
+  since the boss dialogue chain is meaningless without recruitable
+  soldiers to send on missions.
 - [ ] **Area 10 - `src/area/10/ice.c`** - ice NPCs, ice demon curse
   integration (curse spell side is ported).
 - [ ] **Area 11 - `src/area/11/palace.c`** - palace guards, Islena fight
@@ -953,4 +970,10 @@ notes live in `PROGRESS_ARCHIVE.md`.
   `V_ATTACK`/`V_PARRY` stat - a cross-cutting P1 melee to-hit bug affecting
   every character, not just earth demons. 2712 core + 1108 server tests
   pass, clean build/boot-smoke.
+- 2026-07-08: Area 8 STARTED: ported `CDR_FDEMON_DEMON` (new
+  `world::fdemon` waypoint-hunt-graph module + `world::npc::area8::
+  fdemon_demon` gohome/wander driver) and its `fdemon_demon_dead` death
+  hook; `CDR_FDEMON_ARMY`/`CDR_FDEMON_BOSS` (soldier recruitment + mission
+  dialogue) remain. 2724 core + 1108 server tests pass, clean build/
+  boot-smoke (verified live against real `zones/8/fire.map` data).
 

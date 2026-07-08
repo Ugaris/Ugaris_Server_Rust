@@ -40,6 +40,18 @@ pub const CDR_PENTER: u16 = 64;
 /// `world::npc::area4::tester`'s module doc comment for why it is not
 /// player-facing.
 pub const CDR_TESTER: u16 = 77;
+/// C `#define CDR_FDEMON_DEMON 46` (`src/system/drvlib.h`): the roaming
+/// Fire Demon/Fire Golem monsters (`src/area/8/fdemon.c::fdemon_demon`),
+/// see `world::npc::area8::fdemon_demon`'s module doc comment. Its own
+/// `sprite==190` (the "Fire Golem" boss variant) branch tail-calls
+/// `char_driver(CDR_SIMPLEBADDY, ...)` unconditionally every tick, so
+/// those specific spawns are assigned `CDR_SIMPLEBADDY` directly at spawn
+/// time instead (see `zone.rs`'s `CDR_FDEMON_DEMON` branch) - only the
+/// non-190-sprite "Fire Demon" trash mobs actually run under this id.
+/// `CDR_FDEMON_ARMY = 44`/`CDR_FDEMON_BOSS = 45` (the recruitable-soldier
+/// and mission-giver drivers in the same C file) are not ported yet - see
+/// the Area 8 task in `PORTING_TODO.md`.
+pub const CDR_FDEMON_DEMON: u16 = 46;
 pub const CDR_LQNPC: u16 = 74;
 pub const CDR_JANITOR: u16 = 85;
 pub const CDR_TEUFELDEMON: u16 = 114;
@@ -848,6 +860,19 @@ pub struct SimpleBaddyDriverData {
     pub drink_inventory_potions: i32,
     #[serde(default)]
     pub enemies: Vec<SimpleBaddyEnemy>,
+    /// C `CDR_FDEMON_DEMON`'s own separate `struct fdemon_data.gohome`
+    /// slot (`fdemon.c:2670-2673`, `DRD_FDEMONDATA`) - a sticky "walk back
+    /// toward `tmpx`/`tmpy` (this port's `Character::rest_x`/`rest_y`)"
+    /// flag set once the demon strays too far from home and cleared once
+    /// it's back within range. Bolted onto this reused struct rather than
+    /// getting its own `CharacterDriverState` variant, same precedent as
+    /// `CDR_PENTER`/`CDR_DUNGEONFIGHTER` reusing `SimpleBaddy` wholesale
+    /// (see `CDR_FDEMON_DEMON`'s own doc comment); C's `dat->dir` field is
+    /// reused directly via this struct's own pre-existing `dir` field for
+    /// the same reason. Only ever read/written by
+    /// `world::npc::area8::fdemon_demon`.
+    #[serde(default)]
+    pub fdemon_gohome: bool,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct SimpleBaddyEnemy {
@@ -933,6 +958,7 @@ impl Default for SimpleBaddyDriverData {
             drinkspecial: 0,
             drink_inventory_potions: 0,
             enemies: Vec::new(),
+            fdemon_gohome: false,
         }
     }
 }

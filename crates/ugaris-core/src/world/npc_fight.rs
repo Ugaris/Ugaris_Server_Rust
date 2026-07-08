@@ -193,7 +193,7 @@ impl World {
     /// (!ppd->nomove && fight_driver_follow_invisible(cn))` gate - the
     /// always-all-`false`-suppressions NPC caller never sets `nomove`, so
     /// this preserves its behavior unchanged).
-    fn fight_driver_attack_visible_and_follow(
+    pub(crate) fn fight_driver_attack_visible_and_follow(
         &mut self,
         character_id: CharacterId,
         attacker: &Character,

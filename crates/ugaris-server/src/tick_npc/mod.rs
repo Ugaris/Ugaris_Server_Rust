@@ -12,6 +12,7 @@ pub(crate) mod area3;
 pub(crate) mod area30;
 pub(crate) mod area32;
 pub(crate) mod area4;
+pub(crate) mod area8;
 pub(crate) mod arena;
 pub(crate) mod system;
 
@@ -1779,6 +1780,26 @@ pub(crate) async fn run_all(
     )
     .await;
     area4::tester_driver_87(
+        &mut *world,
+        &mut *runtime,
+        &mut *zone_loader,
+        config,
+        args,
+        completed_actions,
+        achievement_repository,
+        character_repository,
+        area_repository,
+        clan_repository,
+        clan_log_repository,
+        merchant_repository,
+        military_master_storage_repository,
+        military_advisor_storage_repository,
+        notes_repository,
+        anticheat_repository,
+        auction_repository,
+    )
+    .await;
+    area8::fdemon_demon_driver_88(
         &mut *world,
         &mut *runtime,
         &mut *zone_loader,

@@ -27,6 +27,7 @@ mod effect_tick;
 mod effects;
 mod exp;
 mod exterminate;
+mod fdemon;
 mod helpers;
 mod hurt;
 mod item_outcomes;
@@ -81,6 +82,7 @@ pub(crate) use effect_tick::*;
 pub(crate) use effects::*;
 pub use exp::*;
 pub use exterminate::*;
+pub use fdemon::*;
 pub(crate) use helpers::*;
 pub use hurt::*;
 #[allow(unused_imports)]
@@ -341,6 +343,12 @@ pub struct World {
     /// (`solve_serial`/`active_pentagrams`/`power_levels`/etc). See
     /// [`PentagramQuestState`]'s doc comment for what is/isn't ported.
     pub pentagram_quest: PentagramQuestState,
+    /// C's file-static `struct waypoint wp[MAXWAY]`/`maxway`
+    /// (`src/area/8/fdemon.c:2492-2503`) - see [`FdemonWaypoint`]'s and
+    /// `world::fdemon`'s module doc comments. Empty means "not built yet"
+    /// (matching C's `maxway==1` sentinel, ported as index `0` being an
+    /// always-present unused sentinel once built).
+    pub fdemon_waypoints: Vec<FdemonWaypoint>,
     pending_npc_respawns: Vec<NpcRespawnRequest>,
     pending_kill_exp: Vec<KillExpAward>,
     pending_kill_achievements: Vec<KillAchievementAward>,

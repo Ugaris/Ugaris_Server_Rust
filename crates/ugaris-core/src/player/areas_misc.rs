@@ -374,6 +374,27 @@ impl PlayerRuntime {
         true
     }
 
+    /// C `fdemon_demon_dead`'s `ppd->boss_stage >= 16 && ppd->boss_stage <=
+    /// 17` branch (`fdemon.c:2875-2878`): slaying a "Fire Golem"
+    /// (`sprite==190`) advances the boss-mission stage to `18` and logs
+    /// "Well done. Now go back to the Commander." REMAINING (Area 8 task):
+    /// C also credits this to the killer's platoon *leader* when the
+    /// killer is a recruited `CDR_FDEMON_ARMY` soldier
+    /// (`dat->platoon[MAXSOLDIER]`) rather than the killer itself - not
+    /// reachable yet since soldier recruitment isn't ported, so this is
+    /// only ever called with the actual player killer's own state.
+    pub fn advance_farmy_golem_kill_stage(&mut self) -> bool {
+        let stage = self.farmy_boss_stage();
+        if !(16..=17).contains(&stage) {
+            return false;
+        }
+        if self.farmy_ppd.len() < LEGACY_FARMY_PPD_SIZE {
+            self.farmy_ppd.resize(LEGACY_FARMY_PPD_SIZE, 0);
+        }
+        write_i32(&mut self.farmy_ppd, FARMY_PPD_BOSS_STAGE_OFFSET, 18);
+        true
+    }
+
     pub fn encode_legacy_teufelrat_ppd(&self) -> Vec<u8> {
         let mut bytes = vec![0; LEGACY_TEUFELRAT_PPD_SIZE];
         write_i32(

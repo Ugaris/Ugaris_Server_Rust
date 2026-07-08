@@ -727,3 +727,46 @@ pub(crate) fn apply_vampire2_death_from_hurt_event(
     }
     true
 }
+
+/// C `ch_died_driver`'s `CDR_FDEMON_DEMON` case (`fdemon.c:3074-3076`) ->
+/// `fdemon_demon_dead` (`:2851-2879`): slaying the `sprite==190` "Fire
+/// Golem" boss variant advances the killer's `farmy_ppd.boss_stage` from
+/// `16`/`17` to `18` (see [`PlayerRuntime::advance_farmy_golem_kill_stage`]'s
+/// doc comment for the platoon-leader-credit gap this doesn't reproduce
+/// yet). Matched by `world.area_id == 8 && target.sprite == 190` rather
+/// than `target.driver == CDR_FDEMON_DEMON`: the "Fire Golem" template is
+/// spawned with `driver = CDR_SIMPLEBADDY` directly (see
+/// `zone.rs`'s `CDR_FDEMON_DEMON` branch and
+/// `world::npc::area8::fdemon_demon`'s module doc comment for why), so
+/// `sprite` is the only remaining discriminator - `area_id` (this port's
+/// one-process-per-area invariant, see `World::area_id`'s doc comment)
+/// guards against an unrelated area reusing sprite `190` for something
+/// else.
+pub(crate) fn apply_fdemon_demon_death_from_hurt_event(
+    runtime: &mut ServerRuntime,
+    world: &mut World,
+    event: LegacyHurtEvent,
+) -> bool {
+    if !event.outcome.killed || world.area_id != 8 {
+        return false;
+    }
+    let is_fire_golem_kill = world
+        .characters
+        .get(&event.target_id)
+        .zip(world.characters.get(&event.cause_id))
+        .is_some_and(|(target, killer)| {
+            target.sprite == 190 && killer.flags.contains(CharacterFlags::PLAYER)
+        });
+    if !is_fire_golem_kill {
+        return false;
+    }
+    let Some(player) = runtime.player_for_character_mut(event.cause_id) else {
+        return false;
+    };
+    if player.advance_farmy_golem_kill_stage() {
+        world.queue_system_text(event.cause_id, "Well done. Now go back to the Commander.");
+        true
+    } else {
+        false
+    }
+}

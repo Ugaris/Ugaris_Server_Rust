@@ -584,6 +584,47 @@ impl ZoneLoader {
             character.push_driver_message(NT_CREATE, 0, 0, 0);
             apply_simple_baddy_create_message(&mut character, Some(&template.args), 0);
         }
+        if template.driver == crate::character_driver::CDR_FDEMON_DEMON {
+            // C `fdemon_demon`'s own very first check (`fdemon.c:2746-2749`)
+            // is `if (ch[cn].sprite==190) { char_driver(CDR_SIMPLEBADDY,
+            // CDT_DRIVER, cn, ret, lastact); return; }` - an unconditional
+            // every-tick tail call with no other logic, so the
+            // `sprite==190` "Fire Golem" boss template (`fdemon_big1`,
+            // `ugaris_data/zones/8/fire.chr`) is 100% indistinguishable
+            // from a plain `CDR_SIMPLEBADDY` character. Assign it
+            // `CDR_SIMPLEBADDY` directly (with its real zone-file
+            // `arg="...";`, which C's own SimpleBaddy tail call parses on
+            // this same first tick) instead of `CDR_FDEMON_DEMON` here -
+            // see `world::npc::area8::fdemon_demon`'s module doc comment.
+            //
+            // The other, non-190-sprite "Fire Demon" trash-mob templates
+            // (`fdemon1s..fdemon10s`) genuinely run `CDR_FDEMON_DEMON`'s
+            // own extra hunt/gohome logic on top of a reused SimpleBaddy
+            // driver state - C's own `NT_CREATE` handler for those never
+            // parses zone-file args (`ch[cn].arg=NULL`), hardcoding
+            // `fight_driver_set_dist(cn, 0, 30, 0)` instead, and its
+            // per-tick message handling always calls
+            // `standard_message_driver(cn, msg, 1, 1)` (hardcoded
+            // `aggressive=1, helper=1`, not args-driven either).
+            character.push_driver_message(NT_CREATE, 0, 0, 0);
+            if template.sprite == 190 {
+                character.driver = CDR_SIMPLEBADDY;
+                apply_simple_baddy_create_message(&mut character, Some(&template.args), 0);
+            } else {
+                apply_simple_baddy_create_message(&mut character, None, 0);
+                if let Some(fight_driver) = character.fight_driver.as_mut() {
+                    fight_driver.start_dist = 0;
+                    fight_driver.char_dist = 30;
+                    fight_driver.stop_dist = 0;
+                }
+                if let Some(CharacterDriverState::SimpleBaddy(data)) =
+                    character.driver_state.as_mut()
+                {
+                    data.aggressive = 1;
+                    data.helper = 1;
+                }
+            }
+        }
         if template.driver == crate::character_driver::CDR_MILITARY_MASTER {
             character.driver_state = Some(CharacterDriverState::MilitaryMaster(
                 crate::character_driver::parse_military_master_driver_args(&template.args),
@@ -1873,6 +1914,80 @@ mod tests {
         assert_eq!(data.aggressive, 1);
         assert_eq!(data.startdist, 40);
         assert_eq!(data.stopdist, 80);
+    }
+
+    #[test]
+    fn fdemon_big1_sprite_190_spawns_as_plain_simplebaddy() {
+        // Mirrors `zones/8/fire.chr`'s real `fdemon_big1` entry: `driver=46`
+        // (`CDR_FDEMON_DEMON`) but `sprite=190` - C's own `fdemon_demon`
+        // unconditionally tail-calls `char_driver(CDR_SIMPLEBADDY, ...)`
+        // for this sprite every tick, so this port assigns
+        // `CDR_SIMPLEBADDY` directly at spawn (see the `CDR_FDEMON_DEMON`
+        // branch above).
+        let chars = r#"
+            fdemon_big1:
+              name="Fire Golem"
+              driver=46
+              sprite=190
+              arg="aggressive=1;helper=0;scavenger=0;startdist=20;chardist=0;stopdist=40;"
+              V_HP=35
+            ;
+        "#;
+
+        let mut loader = ZoneLoader::new();
+        loader.load_character_templates_str(chars).unwrap();
+
+        let (character, _inventory_items) = loader
+            .instantiate_character_template("fdemon_big1", CharacterId(10))
+            .unwrap();
+
+        assert_eq!(character.driver, CDR_SIMPLEBADDY);
+        assert!(character.driver_messages.is_empty());
+        let Some(CharacterDriverState::SimpleBaddy(data)) = &character.driver_state else {
+            panic!("simple baddy state missing");
+        };
+        assert_eq!(data.aggressive, 1);
+        assert_eq!(data.startdist, 20);
+        assert_eq!(data.stopdist, 40);
+    }
+
+    #[test]
+    fn fdemon_trash_mob_installs_fixed_distances_ignoring_zone_file_args() {
+        // Mirrors `zones/8/fire.chr`'s real `fdemon1s` entry: `driver=46`,
+        // `sprite=157` (not 190), with its `arg=` commented out in the real
+        // data since C's own `fdemon_demon` `NT_CREATE` handler never
+        // parses `ch[cn].arg` and hardcodes `fight_driver_set_dist(cn, 0,
+        // 30, 0)` plus `standard_message_driver(cn, msg, 1, 1)` instead.
+        let chars = r#"
+            fdemon1s:
+              name="Fire Demon"
+              driver=46
+              sprite=157
+              arg="aggressive=0;helper=0;scavenger=20;startdist=99;chardist=99;stopdist=99;"
+              V_HP=35
+            ;
+        "#;
+
+        let mut loader = ZoneLoader::new();
+        loader.load_character_templates_str(chars).unwrap();
+
+        let (character, _inventory_items) = loader
+            .instantiate_character_template("fdemon1s", CharacterId(11))
+            .unwrap();
+
+        assert_eq!(character.driver, crate::character_driver::CDR_FDEMON_DEMON);
+        assert!(character.driver_messages.is_empty());
+        let fight_driver = character.fight_driver.expect("fight driver data");
+        assert_eq!(fight_driver.start_dist, 0);
+        assert_eq!(fight_driver.char_dist, 30);
+        assert_eq!(fight_driver.stop_dist, 0);
+        let Some(CharacterDriverState::SimpleBaddy(data)) = &character.driver_state else {
+            panic!("simple baddy state missing");
+        };
+        assert_eq!(data.aggressive, 1);
+        assert_eq!(data.helper, 1);
+        // The zone-file `arg=` string above must be ignored entirely.
+        assert_ne!(data.scavenger, 20);
     }
 
     #[test]
