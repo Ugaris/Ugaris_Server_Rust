@@ -28,6 +28,7 @@ fn facts(boss_stage: i32) -> FdemonBossPlayerFacts {
         boss_stage,
         boss_counter: 0,
         boss_reported: 0,
+        soldiers: Default::default(),
     }
 }
 
@@ -175,6 +176,111 @@ fn reward_stage_announces_promotion_when_rank_increases() {
     assert!(texts
         .iter()
         .any(|t| t.message.contains("You've been promoted to")));
+}
+
+// C `platoon_exp`'s soldier-exp loop (`fdemon.c:729-751`): a fresh recruit
+// (`stored_exp: 0`, `military_points: 0`) crosses rank 1 on the very first
+// 1000-exp grant (`cbrt(1000/1000) == 1 > 0`), gets promoted, and its
+// `exp`/`exp_used` are folded/reset per C's `ch[co].exp = ch[co].exp_used`.
+#[test]
+fn soldier_exp_loop_credits_ppd_and_promotes_first_recruit() {
+    let mut world = World::default();
+    let boss = boss_npc(1, 0, 0);
+    world.characters.insert(boss.id, boss);
+    let mut player = player_at(2, 0, 0);
+    player.level = 50;
+    player.military_points = 8; // army_rank_for_points(8) == 2
+    world.characters.insert(player.id, player);
+
+    let mut soldier = character(3);
+    soldier.name = "Bert".into();
+    world.characters.insert(soldier.id, soldier);
+
+    let mut f = facts(6);
+    f.soldiers[0] = SoldierPlatoonFacts {
+        cn: 3,
+        serial: 3,
+        stored_exp: 0,
+        soldier_type: 1,
+    };
+    let update = world.fdemon_boss_greet_player(CharacterId(1), CharacterId(2), f, 8);
+
+    assert_eq!(
+        update.soldier_updates,
+        vec![SoldierPlatoonExpUpdate {
+            slot: 0,
+            new_stored_exp: 1000,
+            promoted_rank: Some(1),
+        }]
+    );
+    let soldier_after = &world.characters[&CharacterId(3)];
+    assert_eq!(soldier_after.military_points, 1); // rank^3
+    assert_eq!(soldier_after.exp, soldier_after.exp_used);
+
+    let texts = world.drain_pending_area_texts();
+    assert!(texts.iter().any(|t| t
+        .message
+        .contains("You've been promoted to Private. Congratulations, Bert!")));
+}
+
+// A soldier's promoted rank is capped one below the player's own rank -
+// C `if (rank >= plr_rank) rank = plr_rank - 1;` (`fdemon.c:743-745`).
+#[test]
+fn soldier_exp_loop_caps_promotion_one_below_player_rank() {
+    let mut world = World::default();
+    let boss = boss_npc(1, 0, 0);
+    world.characters.insert(boss.id, boss);
+    let mut player = player_at(2, 0, 0);
+    player.level = 50;
+    player.military_points = 8; // army_rank_for_points(8) == 2
+    world.characters.insert(player.id, player);
+
+    let mut soldier = character(3);
+    soldier.name = "Bert".into();
+    world.characters.insert(soldier.id, soldier);
+
+    let mut f = facts(21); // 4000 exp / 5 pts grant
+    f.soldiers[0] = SoldierPlatoonFacts {
+        cn: 3,
+        serial: 3,
+        // cbrt((50_000 + 4000)/1000) == cbrt(54) == 3, well above plr_rank
+        // (2) - gets capped to plr_rank - 1 == 1, not the raw 3.
+        stored_exp: 50_000,
+        soldier_type: 1,
+    };
+    let update = world.fdemon_boss_greet_player(CharacterId(1), CharacterId(2), f, 8);
+
+    assert_eq!(update.soldier_updates[0].promoted_rank, Some(1));
+}
+
+// C `if (!ch[co].flags || ch[co].serial != ppd->soldier[n].serial) continue;`
+// (`fdemon.c:733-735`): a stale/mismatched serial (soldier died and the
+// slot was never dropped) is silently skipped, no PPD write at all.
+#[test]
+fn soldier_exp_loop_skips_serial_mismatch_and_empty_slots() {
+    let mut world = World::default();
+    let boss = boss_npc(1, 0, 0);
+    world.characters.insert(boss.id, boss);
+    let mut player = player_at(2, 0, 0);
+    player.level = 50;
+    world.characters.insert(player.id, player);
+
+    let soldier = character(3); // serial == 3
+    world.characters.insert(soldier.id, soldier);
+
+    let mut f = facts(6);
+    f.soldiers[0] = SoldierPlatoonFacts {
+        cn: 3,
+        serial: 999, // mismatched
+        stored_exp: 0,
+        soldier_type: 1,
+    };
+    // Slot 1/2 stay at the default `cn: 0` (empty).
+    let update = world.fdemon_boss_greet_player(CharacterId(1), CharacterId(2), f, 8);
+
+    assert!(update.soldier_updates.is_empty());
+    // The mismatched soldier's own exp is untouched.
+    assert_eq!(world.characters[&CharacterId(3)].exp, 0);
 }
 
 #[test]

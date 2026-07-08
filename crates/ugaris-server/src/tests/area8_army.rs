@@ -53,7 +53,8 @@ const ARMY_CHR: &str = r#"
 
 // `V_ARMORSKILL=3`/`V_SWORD=3` markers with `rank=1` (`base=47`) both scale
 // to the "marker 3 -> base" branch, i.e. skill 47 -> tier `47/10+1=5`;
-// `V_DAGGER=3` on `army2s` scales the same way.
+// `V_DAGGER=3` on `army2s` scales the same way. Tier 6 (`rank=2`,
+// `base=51`) is also included for `reequip_soldier_for_promotion` tests.
 const ARMY_ITM: &str = r#"
     sleeves5q1: name="Sleeves" ;
     armor5q1: name="Armor" ;
@@ -61,6 +62,12 @@ const ARMY_ITM: &str = r#"
     leggings5q1: name="Leggings" ;
     sword5q1: name="Sword" ;
     dagger5q1: name="Dagger" ;
+    sleeves6q1: name="Sleeves" ;
+    armor6q1: name="Armor" ;
+    helmet6q1: name="Helmet" ;
+    leggings6q1: name="Leggings" ;
+    sword6q1: name="Sword" ;
+    dagger6q1: name="Dagger" ;
 "#;
 
 fn army_loader() -> ZoneLoader {
@@ -183,4 +190,64 @@ async fn take_soldiers_recruits_nobody_below_rank_one() {
     assert!(world.characters.get(&CharacterId(50)).is_none());
     let player = runtime.player_for_character(player_id).unwrap();
     assert_eq!(player.farmy_soldier_type(0), 0);
+}
+
+// C `update_soldier(co, n, ppd)` (`fdemon.c:394-449`), the promotion
+// re-equip half `World::fdemon_platoon_exp` can't reach without
+// `ZoneLoader` (see `area8_army.rs`'s own doc comment): rescales
+// `value[1]` at the new rank's `base` and swaps every equipped item for
+// the new tier, destroying the old ones.
+#[tokio::test]
+async fn reequip_soldier_for_promotion_rescales_stats_and_swaps_equipment() {
+    use ugaris_core::entity::CharacterValue;
+    use ugaris_core::world::npc::area8::fdemon_army::SOLDIER_TYPE_WARRIOR;
+
+    let area_id: u16 = 8;
+    let player_id = CharacterId(1);
+    let mut world = World::default();
+    world.area_id = area_id;
+
+    let mut player_character = login_character(player_id, &login_block("Hero"), area_id, 10, 10);
+    player_character.military_points = 10;
+    player_character.flags.remove(CharacterFlags::WARRIOR);
+    player_character.flags.insert(CharacterFlags::MALE);
+    assert!(world.spawn_character(player_character, 10, 10));
+
+    let mut loader = army_loader();
+    let mut runtime = ServerRuntime::default();
+    runtime.set_next_character_id(50);
+    connect_player(&mut runtime, 1, player_id);
+    crate::area8_army::take_soldiers(&mut world, &mut loader, &mut runtime, player_id);
+
+    let soldier_id = CharacterId(50);
+    let before = world.characters.get(&soldier_id).unwrap().clone();
+    // Rank 1 -> base 47 -> tier 5 (already asserted by the spawn test).
+    assert_eq!(before.values[1][CharacterValue::ArmorSkill as usize], 47);
+    let old_item_ids: Vec<ItemId> = before.inventory.iter().flatten().copied().collect();
+    assert_eq!(old_item_ids.len(), 5); // sleeves/armor/helmet/leggings/sword
+
+    crate::area8_army::reequip_soldier_for_promotion(
+        &mut world,
+        &mut loader,
+        soldier_id,
+        SOLDIER_TYPE_WARRIOR,
+        2, // base = 43 + 2*4 = 51 -> tier 6
+    );
+
+    let after = world.characters.get(&soldier_id).unwrap();
+    assert_eq!(after.values[1][CharacterValue::ArmorSkill as usize], 51);
+    assert_eq!(after.values[1][CharacterValue::Sword as usize], 51);
+    assert_eq!(after.exp, after.exp_used);
+
+    // Every old item is destroyed...
+    for item_id in &old_item_ids {
+        assert!(!world.items.contains_key(item_id));
+    }
+    // ...and replaced with 5 fresh ones at the new tier.
+    let new_item_ids: Vec<ItemId> = after.inventory.iter().flatten().copied().collect();
+    assert_eq!(new_item_ids.len(), 5);
+    for item_id in &new_item_ids {
+        assert!(world.items.contains_key(item_id));
+        assert!(!old_item_ids.contains(item_id));
+    }
 }

@@ -8,7 +8,10 @@
 //! `area8_army::take_soldiers`/`drop_soldiers`.
 
 use super::*;
-use ugaris_core::world::{fdemon_boss_repeat_reset, FdemonBossPlayerFacts};
+use ugaris_core::world::{
+    fdemon_boss_repeat_reset, npc::area8::fdemon_army::MAXSOLDIER, FdemonBossPlayerFacts,
+    SoldierPlatoonFacts,
+};
 
 /// C `fdemon.c:1873`: `ppd->boss_stage >= 1 && ppd->boss_stage <= 30`.
 const TAKE_SOLDIERS_STAGE_RANGE: std::ops::RangeInclusive<i32> = 1..=30;
@@ -82,13 +85,48 @@ pub(crate) fn apply_fdemon_boss_tick(
             {
                 continue;
             }
+            let mut soldiers = [SoldierPlatoonFacts::default(); MAXSOLDIER];
+            for (slot, soldier) in soldiers.iter_mut().enumerate() {
+                *soldier = SoldierPlatoonFacts {
+                    cn: player.farmy_soldier_cn(slot),
+                    serial: player.farmy_soldier_serial(slot),
+                    stored_exp: player.farmy_soldier_exp(slot),
+                    soldier_type: player.farmy_soldier_type(slot),
+                };
+            }
             let facts = FdemonBossPlayerFacts {
                 boss_stage: player.farmy_boss_stage(),
                 boss_counter: player.farmy_boss_counter(),
                 boss_reported: player.farmy_boss_reported(),
+                soldiers,
             };
 
             let update = world.fdemon_boss_greet_player(boss_id, player_id, facts, area_id);
+
+            // `World::fdemon_platoon_exp`'s soldier-exp loop (see its own
+            // doc comment): write the PPD exp delta back for every touched
+            // slot, and re-equip (`ZoneLoader`-needing `update_soldier`
+            // half) every promoted one.
+            for soldier_update in &update.soldier_updates {
+                let soldier_type = soldiers[soldier_update.slot].soldier_type;
+                let soldier_cn = soldiers[soldier_update.slot].cn;
+                if let Some(player) = runtime.player_for_character_mut(player_id) {
+                    player
+                        .set_farmy_soldier_exp(soldier_update.slot, soldier_update.new_stored_exp);
+                    if let Some(new_rank) = soldier_update.promoted_rank {
+                        player.set_farmy_soldier_rank(soldier_update.slot, new_rank);
+                    }
+                }
+                if let Some(new_rank) = soldier_update.promoted_rank {
+                    crate::area8_army::reequip_soldier_for_promotion(
+                        world,
+                        zone_loader,
+                        CharacterId(soldier_cn as u32),
+                        soldier_type,
+                        new_rank,
+                    );
+                }
+            }
 
             let Some(player) = runtime.player_for_character_mut(player_id) else {
                 continue;

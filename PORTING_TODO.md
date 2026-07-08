@@ -702,9 +702,17 @@ Ordered by player progression; the C file is the oracle.
   `player/misc.rs`) remains a documented gap. `fdemon_army.rs`'s four
   `army_*_driver` movement functions were also split into a new
   `fdemon_army_movement.rs` to stay under the ~800-line guideline after
-  this addition. Still needed: `platoon_exp`'s soldier-exp/promotion loop
-  and the emote-state cross-recruit persistence gap above - the smallest
-  remaining surface for Area 8.
+  this addition. `platoon_exp`'s soldier-exp/promotion loop (`fdemon.c:
+  729-751`) is now also ported: `World::fdemon_platoon_exp` credits each
+  live recruited soldier's PPD-tracked exp (folding back its accumulated-
+  but-unspent exp, capping promotion one rank below the player's own) via
+  new `SoldierPlatoonFacts`/`SoldierPlatoonExpUpdate` types riding on
+  `FdemonBossPlayerFacts`/`FdemonBossStageUpdate::soldier_updates`; the
+  `ZoneLoader`-needing re-equip half (`update_soldier`'s stat rescale +
+  item swap) is `area8_army::reequip_soldier_for_promotion`, applied by
+  `area8.rs` for every promoted slot. Still needed: the emote-state
+  cross-recruit persistence gap above - the last remaining surface for
+  Area 8.
 - [ ] **Area 10 - `src/area/10/ice.c`** - ice NPCs, ice demon curse
   integration (curse spell side is ported).
 - [ ] **Area 11 - `src/area/11/palace.c`** - palace guards, Islena fight
@@ -794,6 +802,11 @@ Ordered by player progression; the C file is the oracle.
 Keep entries to at most three lines: date, task, one-line result.
 Anything longer belongs in `PORTING_LEDGER.md`; historical verbose
 notes live in `PROGRESS_ARCHIVE.md`.
+
+- 2026-07-08: Area 8 `platoon_exp`'s soldier-exp/promotion loop ported
+  (`World::fdemon_platoon_exp` soldier facts/updates, `area8_army::
+  reequip_soldier_for_promotion` for the `ZoneLoader` re-equip half).
+  2831 core + 1112 server tests pass, clean build/boot-smoke.
 
 - 2026-07-08: Area 8 `CDR_FDEMON_ARMY` `do_emote`/`got_emote` personality/
   chat engine ported (new `fdemon_army_emote.rs`, `analyse_text_qa_needs_

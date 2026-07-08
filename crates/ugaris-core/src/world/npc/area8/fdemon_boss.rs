@@ -38,11 +38,23 @@
 //!   belong to the still-unported `CDR_FDEMON_ARMY` recruitment system
 //!   (`farmy_ppd.soldier[]`/`farmy_data`) - documented gap, not silent, see
 //!   `PORTING_TODO.md`'s Area 8 entry.
-//! - [`World::fdemon_platoon_exp`]'s soldier-exp loop (crediting recruited
-//!   soldiers' own exp/rank) is likewise unreachable without
-//!   `CDR_FDEMON_ARMY`; only the always-live player-exp/rank-promotion
-//!   half is ported (same class of gap already documented on
-//!   `PlayerRuntime::advance_farmy_golem_kill_stage`).
+//! - [`World::fdemon_platoon_exp`]'s soldier-exp loop (`fdemon.c:729-751`)
+//!   is now also ported: it credits each live recruited soldier's PPD-
+//!   tracked exp, folds back whatever the soldier accumulated fighting
+//!   since the last call (`ch[co].exp - ch[co].exp_used`, then zeroed),
+//!   and computes a promotion (`cbrt(exp/1000)`, capped one below the
+//!   player's own rank). The soldier-side facts (`cn`/`serial`/PPD `exp`/
+//!   `type`) come in via [`SoldierPlatoonFacts`] (same "caller supplies
+//!   `PlayerRuntime`-resident facts" split as `FdemonBossPlayerFacts`
+//!   itself) and the resulting `[SoldierPlatoonExpUpdate]` PPD deltas ride
+//!   back out on [`FdemonBossStageUpdate::soldier_updates`]. C's
+//!   `update_soldier(co, n, ppd)` re-equip call on promotion (rescaling
+//!   `value[1]`, recreating equipment) needs a throwaway character-
+//!   template instantiation for fresh markers plus real `create_item`
+//!   calls - both need `ZoneLoader`, which `World` doesn't have - so that
+//!   half lives in `ugaris-server`'s `area8_army::reequip_soldier_for_
+//!   promotion`, applied by `area8.rs` for every `Some(promoted_rank)`
+//!   update (same split as `take_soldiers`/`drop_soldiers` spawning).
 //! - C's `regenerate_driver`/`spell_self_driver` self-management calls and
 //!   the trailing `do_idle` are not ported - `fdemon_boss` has no self-
 //!   defense cascade at all in C (unlike almost every other NPC in this
@@ -60,7 +72,7 @@ use crate::{
     world::*,
 };
 
-use super::FDEMON_QA;
+use super::{fdemon_army::MAXSOLDIER, FDEMON_QA};
 
 /// Matches `world::text::notify_area`'s own broadcast radius - see module
 /// doc comment.
@@ -85,11 +97,40 @@ pub struct FdemonBossPlayerFacts {
     pub boss_stage: i32,
     pub boss_counter: i32,
     pub boss_reported: i32,
+    /// C `ppd->soldier[MAXSOLDIER]` (`fdemon.c:729-745`'s soldier-exp
+    /// loop reads `cn`/`serial`/`exp`; `type` picks the promotion re-equip
+    /// template) - see [`World::fdemon_platoon_exp`]'s doc comment.
+    pub soldiers: [SoldierPlatoonFacts; MAXSOLDIER],
+}
+
+/// One `ppd->soldier[n]` slot's facts, as read by the caller from
+/// `PlayerRuntime::farmy_soldier_cn`/`_serial`/`_exp`/`_type` - see
+/// [`World::fdemon_platoon_exp`]'s doc comment. `cn == 0` means the slot is
+/// empty (C's `if (!(co = ppd->soldier[n].cn)) continue;`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct SoldierPlatoonFacts {
+    pub cn: i32,
+    pub serial: i32,
+    pub stored_exp: i32,
+    pub soldier_type: i32,
+}
+
+/// One slot's PPD delta from [`World::fdemon_platoon_exp`]'s soldier-exp
+/// loop - the caller writes `new_stored_exp` back to `PlayerRuntime::
+/// set_farmy_soldier_exp(slot, ..)` always, and - only when
+/// `promoted_rank` is `Some` - `set_farmy_soldier_rank(slot, ..)` plus a
+/// call to `ugaris-server`'s `area8_army::reequip_soldier_for_promotion`
+/// (C's `update_soldier(co, n, ppd)` re-equip, needs `ZoneLoader`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SoldierPlatoonExpUpdate {
+    pub slot: usize,
+    pub new_stored_exp: i32,
+    pub promoted_rank: Option<i32>,
 }
 
 /// What changed for one player after a sighting - `None` fields mean
 /// "unchanged"; the caller only writes back what's `Some`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct FdemonBossStageUpdate {
     pub new_stage: Option<i32>,
     pub new_counter: Option<i32>,
@@ -98,6 +139,10 @@ pub struct FdemonBossStageUpdate {
     /// four "waiting for mission solve" stages (`5`/`8`/`11`/`14`/`17`/
     /// `20`/`23`/`26`) and case `30`'s nothing-new-found early exit.
     pub timer_touched: bool,
+    /// Every [`SoldierPlatoonExpUpdate`] produced by any [`World::
+    /// fdemon_platoon_exp`] call this stage made (usually 0 or 1 call per
+    /// invocation, since only one `match boss_stage` arm ever runs).
+    pub soldier_updates: Vec<SoldierPlatoonExpUpdate>,
 }
 
 impl World {
@@ -177,6 +222,7 @@ impl World {
             boss_stage,
             boss_counter,
             boss_reported,
+            soldiers,
         } = facts;
         let mut update = FdemonBossStageUpdate {
             timer_touched: true,
@@ -220,7 +266,9 @@ impl World {
                 update.timer_touched = false;
             }
             6 => {
-                self.fdemon_platoon_exp(boss_id, player_id, 1000, 2, area_id);
+                update.soldier_updates.extend(
+                    self.fdemon_platoon_exp(boss_id, player_id, 1000, 2, area_id, soldiers),
+                );
                 update.new_stage = Some(7);
             }
             7 => {
@@ -228,7 +276,9 @@ impl World {
                 update.new_stage = Some(8);
             }
             9 => {
-                self.fdemon_platoon_exp(boss_id, player_id, 1000, 2, area_id);
+                update.soldier_updates.extend(
+                    self.fdemon_platoon_exp(boss_id, player_id, 1000, 2, area_id, soldiers),
+                );
                 update.new_stage = Some(10);
             }
             10 => {
@@ -236,7 +286,9 @@ impl World {
                 update.new_stage = Some(11);
             }
             12 => {
-                self.fdemon_platoon_exp(boss_id, player_id, 1000, 2, area_id);
+                update.soldier_updates.extend(
+                    self.fdemon_platoon_exp(boss_id, player_id, 1000, 2, area_id, soldiers),
+                );
                 update.new_stage = Some(13);
             }
             13 => {
@@ -245,7 +297,9 @@ impl World {
                 update.new_counter = Some(0);
             }
             15 => {
-                self.fdemon_platoon_exp(boss_id, player_id, 2000, 4, area_id);
+                update.soldier_updates.extend(
+                    self.fdemon_platoon_exp(boss_id, player_id, 2000, 4, area_id, soldiers),
+                );
                 update.new_stage = Some(16);
             }
             16 => {
@@ -253,7 +307,9 @@ impl World {
                 update.new_stage = Some(17);
             }
             18 => {
-                self.fdemon_platoon_exp(boss_id, player_id, 3000, 4, area_id);
+                update.soldier_updates.extend(
+                    self.fdemon_platoon_exp(boss_id, player_id, 3000, 4, area_id, soldiers),
+                );
                 update.new_stage = Some(19);
             }
             19 => {
@@ -262,7 +318,9 @@ impl World {
                 update.new_counter = Some(0);
             }
             21 => {
-                self.fdemon_platoon_exp(boss_id, player_id, 4000, 5, area_id);
+                update.soldier_updates.extend(
+                    self.fdemon_platoon_exp(boss_id, player_id, 4000, 5, area_id, soldiers),
+                );
                 update.new_stage = Some(22);
             }
             22 => {
@@ -271,7 +329,9 @@ impl World {
                 update.new_counter = Some(0);
             }
             24 => {
-                self.fdemon_platoon_exp(boss_id, player_id, 4000, 5, area_id);
+                update.soldier_updates.extend(
+                    self.fdemon_platoon_exp(boss_id, player_id, 4000, 5, area_id, soldiers),
+                );
                 update.new_stage = Some(25);
             }
             25 => {
@@ -280,7 +340,9 @@ impl World {
                 update.new_counter = Some(0);
             }
             27 => {
-                self.fdemon_platoon_exp(boss_id, player_id, 4000, 5, area_id);
+                update.soldier_updates.extend(
+                    self.fdemon_platoon_exp(boss_id, player_id, 4000, 5, area_id, soldiers),
+                );
                 update.new_stage = Some(28);
             }
             28 | 29 => {
@@ -314,7 +376,14 @@ impl World {
                     update.timer_touched = false;
                 } else {
                     self.npc_say(boss_id, &format!("Ah, {name}. I hear you have found {cnt} new Defense Stations. So you've found {cnt2} stations now."));
-                    self.fdemon_platoon_exp(boss_id, player_id, 2000 * cnt, 2 * cnt, area_id);
+                    update.soldier_updates.extend(self.fdemon_platoon_exp(
+                        boss_id,
+                        player_id,
+                        2000 * cnt,
+                        2 * cnt,
+                        area_id,
+                        soldiers,
+                    ));
                     update.new_reported = Some(boss_counter);
                 }
             }
@@ -340,9 +409,10 @@ impl World {
         update
     }
 
-    /// C `platoon_exp(cn, cm, amount, pts, ppd)` (`fdemon.c:719-772`)'s
-    /// always-live player-reward half (see module doc comment for the
-    /// deferred soldier-exp loop).
+    /// C `platoon_exp(cn, cm, amount, pts, ppd)` (`fdemon.c:719-772`) -
+    /// both the soldier-exp loop and the always-live player-reward half.
+    /// See the module doc comment for why the promotion re-equip
+    /// (`update_soldier`) isn't applied here directly.
     pub(crate) fn fdemon_platoon_exp(
         &mut self,
         boss_id: CharacterId,
@@ -350,17 +420,83 @@ impl World {
         amount: i32,
         pts: i32,
         area_id: u32,
-    ) {
+        soldiers: [SoldierPlatoonFacts; MAXSOLDIER],
+    ) -> Vec<SoldierPlatoonExpUpdate> {
+        let mut updates = Vec::new();
         let Some(name) = self.characters.get(&player_id).map(|c| c.name.clone()) else {
-            return;
+            return updates;
         };
         self.npc_say(boss_id, &format!("Well done, {name}."));
 
-        // C's soldier-exp loop (`ppd->soldier[n]`) is unreachable: no
-        // `CDR_FDEMON_ARMY` recruits exist yet - see module doc comment.
+        // C `plr_rank = get_army_rank_int(cm);` (`fdemon.c:726`) - read
+        // once, before either the soldier loop or the player's own `pts`
+        // grant below can change it.
+        let plr_rank = self
+            .characters
+            .get(&player_id)
+            .map_or(0, |c| army_rank_for_points(c.military_points));
+
+        // C `fdemon.c:729-751`: credit each live recruited soldier's own
+        // PPD-tracked exp, fold back its accumulated-but-unspent exp, and
+        // promote it (capped one rank below the player's own).
+        for (slot, soldier) in soldiers.into_iter().enumerate() {
+            if soldier.cn == 0 {
+                continue;
+            }
+            let co = CharacterId(soldier.cn as u32);
+            let Some(character) = self.characters.get(&co) else {
+                continue;
+            };
+            if character.serial != soldier.serial as u32 {
+                continue;
+            }
+            let soldier_name = character.name.clone();
+            let unspent = i64::from(character.exp) - i64::from(character.exp_used);
+            let current_rank = army_rank_for_points(character.military_points);
+            let new_exp = i64::from(soldier.stored_exp) + i64::from(amount) + unspent;
+
+            if let Some(character) = self.characters.get_mut(&co) {
+                // C `ch[co].exp = ch[co].exp_used;` - the unspent delta is
+                // already folded into `new_exp` above.
+                character.exp = character.exp_used;
+            }
+
+            // C `rank = cbrt((ppd->soldier[n].exp / 1000));` - integer
+            // division first, exactly like C's `int / int`.
+            let mut rank = ((new_exp / 1000) as f64).cbrt() as i32;
+            if rank >= plr_rank {
+                rank = plr_rank - 1;
+            }
+
+            let mut promoted_rank = None;
+            if rank < 24 && rank > current_rank {
+                if let Some(character) = self.characters.get_mut(&co) {
+                    // C `set_army_rank(co, rank)`: no separate persisted
+                    // rank field for arbitrary characters in this port -
+                    // `military_points = rank^3` is the same "set_army_rank
+                    // via military_points" convention `area8_army::
+                    // spawn_army_soldier` already establishes.
+                    character.military_points = rank.max(1).pow(3);
+                }
+                promoted_rank = Some(rank);
+                let rank_name = army_rank_name(rank);
+                self.npc_say(
+                    boss_id,
+                    &format!(
+                        "You've been promoted to {rank_name}. Congratulations, {soldier_name}!"
+                    ),
+                );
+            }
+
+            updates.push(SoldierPlatoonExpUpdate {
+                slot,
+                new_stored_exp: new_exp as i32,
+                promoted_rank,
+            });
+        }
 
         let Some(level) = self.characters.get(&player_id).map(|c| c.level) else {
-            return;
+            return updates;
         };
         let units = (amount + 1999) / 2000;
         let exp_cap = i64::from(level_value(level)) / 5;
@@ -369,19 +505,20 @@ impl World {
         self.give_exp(player_id, i64::from(units) * per_unit_exp, area_id);
 
         let Some(character) = self.characters.get_mut(&player_id) else {
-            return;
+            return updates;
         };
-        let old_rank = army_rank_for_points(character.military_points);
         character.military_points = character.military_points.saturating_add(pts);
         let new_rank = army_rank_for_points(character.military_points);
 
-        if new_rank < 24 && new_rank > old_rank {
+        if new_rank < 24 && new_rank > plr_rank {
             let rank_name = army_rank_name(new_rank);
             self.npc_say(
                 boss_id,
                 &format!("You've been promoted to {rank_name}. Congratulations, {name}!"),
             );
         }
+
+        updates
     }
 
     /// C `fdemon_boss`'s `NT_TEXT` branch (`fdemon.c:1780-1863` for

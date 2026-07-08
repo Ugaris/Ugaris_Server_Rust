@@ -307,6 +307,86 @@ fn spawn_army_soldier(
     Some(character_id)
 }
 
+/// C `update_soldier(co, n, ppd)`'s promotion re-equip half (`fdemon.c:
+/// 394-449`), called by `area8.rs` for every [`ugaris_core::world::
+/// SoldierPlatoonExpUpdate`] with `promoted_rank: Some(..)` that `World::
+/// fdemon_platoon_exp`'s soldier-exp loop produced. Re-derives fresh
+/// template markers via a throwaway `army1s`/`army2s` instantiation
+/// (discarded immediately - matches C's `create_char`+`destroy_char`
+/// "read markers only" idiom, needed because the live soldier's own
+/// `value[1]` was already overwritten by the *previous* scaling pass, so
+/// unlike `spawn_army_soldier`'s initial equip it can't reuse the live
+/// character's own values as markers), rescales the live soldier's
+/// `value[1]` at the new rank, recomputes exp/level, and swaps its
+/// equipped items for the new tier - everything C's `update_soldier` does
+/// except `reset_name` (a purely cosmetic "resend colored name to nearby
+/// clients" cache-bust with no further observable effect, unported
+/// elsewhere in this codebase too - see `world/exp.rs`'s own doc comment).
+pub(crate) fn reequip_soldier_for_promotion(
+    world: &mut World,
+    loader: &mut ZoneLoader,
+    character_id: CharacterId,
+    soldier_type: i32,
+    new_rank: i32,
+) {
+    let template_key = if soldier_type == SOLDIER_TYPE_WARRIOR {
+        "army1s"
+    } else {
+        "army2s"
+    };
+    // Throwaway instance purely to read fresh `value[1]` markers (C's
+    // `cc = create_char(...)`); neither `army1s` nor `army2s` carries any
+    // template inventory items, so this produces no stray `Item`s to clean
+    // up - it's simply dropped.
+    let Ok((template_soldier, _no_items)) =
+        loader.instantiate_character_template(template_key, CharacterId(0))
+    else {
+        return;
+    };
+    let markers: Vec<i32> = template_soldier.values[1]
+        .iter()
+        .map(|v| i32::from(*v))
+        .collect();
+    let base = soldier_base_strength(new_rank);
+
+    let Some(soldier) = world.characters.get_mut(&character_id) else {
+        return;
+    };
+    let mut scaled: Vec<i32> = soldier.values[1].iter().map(|v| i32::from(*v)).collect();
+    scale_soldier_values(&markers, base, &mut scaled);
+    for (index, value) in scaled.into_iter().enumerate() {
+        soldier.values[1][index] = value as i16;
+    }
+    finalize_soldier_exp_and_level(soldier);
+    let armor_skill = i32::from(soldier.values[1][CharacterValue::ArmorSkill as usize]);
+    let sword_skill = i32::from(soldier.values[1][CharacterValue::Sword as usize]);
+    let dagger_skill = i32::from(soldier.values[1][CharacterValue::Dagger as usize]);
+    // C `destroy_items(co)`: every carried item (equipment slots + cursor).
+    let old_items: Vec<ItemId> = soldier.inventory.iter().flatten().copied().collect();
+    let cursor_item = soldier.cursor_item;
+
+    for item_id in old_items {
+        world.destroy_item(item_id);
+    }
+    if let Some(cursor_item) = cursor_item {
+        world.destroy_item(cursor_item);
+    }
+
+    for (slot, item_template) in
+        soldier_equipment_items(soldier_type, armor_skill, sword_skill, dagger_skill)
+    {
+        if let Ok(item) = loader.instantiate_item_template(&item_template, Some(character_id)) {
+            let item_id = item.id;
+            world.items.insert(item_id, item);
+            if let Some(soldier) = world.characters.get_mut(&character_id) {
+                soldier.inventory[slot] = Some(item_id);
+            }
+        }
+    }
+
+    world.update_character(character_id);
+}
+
 /// C `ch_driver`'s `CDR_FDEMON_ARMY` case, run once per live soldier per
 /// tick: the `NT_TEXT`/`NT_GOTHIT`/`NT_SEEHIT` message handling
 /// (`world::npc::area8::fdemon_army_combat::fdemon_army_process_messages`,
