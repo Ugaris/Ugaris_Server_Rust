@@ -6,6 +6,7 @@
 pub(crate) mod admin_tasks;
 pub(crate) mod area1;
 pub(crate) mod area13;
+pub(crate) mod area2;
 pub(crate) mod area22;
 pub(crate) mod area30;
 pub(crate) mod area32;
@@ -1476,6 +1477,86 @@ pub(crate) async fn run_all(
     )
     .await;
     area1::logain_driver_72(
+        &mut *world,
+        &mut *runtime,
+        &mut *zone_loader,
+        config,
+        args,
+        completed_actions,
+        achievement_repository,
+        character_repository,
+        area_repository,
+        clan_repository,
+        clan_log_repository,
+        merchant_repository,
+        military_master_storage_repository,
+        military_advisor_storage_repository,
+        notes_repository,
+        anticheat_repository,
+        auction_repository,
+    )
+    .await;
+    area2::superior_driver_73(
+        &mut *world,
+        &mut *runtime,
+        &mut *zone_loader,
+        config,
+        args,
+        completed_actions,
+        achievement_repository,
+        character_repository,
+        area_repository,
+        clan_repository,
+        clan_log_repository,
+        merchant_repository,
+        military_master_storage_repository,
+        military_advisor_storage_repository,
+        notes_repository,
+        anticheat_repository,
+        auction_repository,
+    )
+    .await;
+    area2::moonie_driver_74(
+        &mut *world,
+        &mut *runtime,
+        &mut *zone_loader,
+        config,
+        args,
+        completed_actions,
+        achievement_repository,
+        character_repository,
+        area_repository,
+        clan_repository,
+        clan_log_repository,
+        merchant_repository,
+        military_master_storage_repository,
+        military_advisor_storage_repository,
+        notes_repository,
+        anticheat_repository,
+        auction_repository,
+    )
+    .await;
+    area2::vampire_driver_75(
+        &mut *world,
+        &mut *runtime,
+        &mut *zone_loader,
+        config,
+        args,
+        completed_actions,
+        achievement_repository,
+        character_repository,
+        area_repository,
+        clan_repository,
+        clan_log_repository,
+        merchant_repository,
+        military_master_storage_repository,
+        military_advisor_storage_repository,
+        notes_repository,
+        anticheat_repository,
+        auction_repository,
+    )
+    .await;
+    area2::vampire2_driver_76(
         &mut *world,
         &mut *runtime,
         &mut *zone_loader,

@@ -596,7 +596,11 @@ impl World {
             | CharacterDriverState::Guiwynn(_)
             | CharacterDriverState::James(_)
             | CharacterDriverState::Balltrap(_)
-            | CharacterDriverState::Logain(_) => None,
+            | CharacterDriverState::Logain(_)
+            | CharacterDriverState::Superior(_)
+            | CharacterDriverState::Moonie(_)
+            | CharacterDriverState::Vampire(_)
+            | CharacterDriverState::Vampire2(_) => None,
         }
     }
 

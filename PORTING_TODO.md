@@ -435,8 +435,9 @@ Ordered by player progression; the C file is the oracle.
   quests, `tutorial_ppd` hints (player_driver.c has the tutorial hook -
   port together). This is the highest-value area work: new players see it
   first. *(done - details in PORTING_LEDGER.md)*
-- [ ] **Area 2 - `src/area/2/area2.c`** - remaining character drivers
-  (zombie lord, priests). Item drivers done.
+- [x] **Area 2 - `src/area/2/area2.c`** - remaining character drivers
+  (zombie lord, priests). Item drivers done. *(done - details in
+  PORTING_LEDGER.md)*
 - [ ] **Area 3 - `src/area/3/area3.c`** - palace story NPCs, lamp ghost
   quest flow (lamps themselves are ported).
 - [ ] **Area 4 - `src/area/4/pents.c`** - pentagram quest NPCs + demon
@@ -733,4 +734,9 @@ notes live in `PROGRESS_ARCHIVE.md`.
   splitter.py` with a name-keyed `ASSIGN` spec exploding the multiple
   `impl World` blocks by method name. 2534 core + 1101 server tests
   unchanged, clean build/boot-smoke.
+- 2026-07-08: Area 2 (`src/area/2/area2.c`) CLOSED: ported all four
+  character drivers (`CDR_SUPERIOR`/`CDR_MOONIE`/`CDR_VAMPIRE`/
+  `CDR_VAMPIRE2`) as one file each under `world/npc/area2/`, plus the
+  `vampire`/`vampire2_dead` crypt-quest completion death hooks. 2553 core
+  + 1101 server tests pass, clean build/boot-smoke.
 

@@ -137,12 +137,8 @@ impl World {
     /// the account depot (`DRD_DEPOT_PPD`) - that storage lives in
     /// `ugaris-server`'s `PlayerRuntime`/DB layer, not `World` (see
     /// `world::yoakin`'s module doc comment for why this gap is
-    /// acceptable for its one caller today).
-    pub(crate) fn destroy_items_by_template_id(
-        &mut self,
-        character_id: CharacterId,
-        template_id: u32,
-    ) {
+    /// acceptable for its callers today).
+    pub fn destroy_items_by_template_id(&mut self, character_id: CharacterId, template_id: u32) {
         let Some(character) = self.characters.get(&character_id) else {
             return;
         };

@@ -486,21 +486,29 @@ pub const IID_AREA25_TELEKEY: u32 = make_item_id(DEV_ID_DB, 0x000090);
 
 pub const IID_AREA25_DOORKEY: u32 = make_item_id(DEV_ID_DB, 0x000091);
 
-pub(crate) const IID_AREA2_SUN1: u32 = make_item_id(DEV_ID_DB, 0x00003A);
+pub const IID_AREA2_SUN1: u32 = make_item_id(DEV_ID_DB, 0x00003A);
 
 pub(crate) const IID_AREA8_REDCRYSTAL: u32 = make_item_id(DEV_ID_DB, 0x00004A);
 
 pub(crate) const IID_AREA8_BLOOD: u32 = make_item_id(DEV_ID_DB, 0x00004B);
 
-pub(crate) const IID_AREA2_SUN2: u32 = make_item_id(DEV_ID_DB, 0x00003B);
+pub const IID_AREA2_SUN2: u32 = make_item_id(DEV_ID_DB, 0x00003B);
 
-pub(crate) const IID_AREA2_SUN3: u32 = make_item_id(DEV_ID_DB, 0x00003C);
+pub const IID_AREA2_SUN3: u32 = make_item_id(DEV_ID_DB, 0x00003C);
 
-pub(crate) const IID_AREA2_SUN12: u32 = make_item_id(DEV_ID_DB, 0x00003D);
+pub const IID_AREA2_SUN12: u32 = make_item_id(DEV_ID_DB, 0x00003D);
 
-pub(crate) const IID_AREA2_SUN13: u32 = make_item_id(DEV_ID_DB, 0x00003E);
+pub const IID_AREA2_SUN13: u32 = make_item_id(DEV_ID_DB, 0x00003E);
 
-pub(crate) const IID_AREA2_SUN23: u32 = make_item_id(DEV_ID_DB, 0x00003F);
+pub const IID_AREA2_SUN23: u32 = make_item_id(DEV_ID_DB, 0x00003F);
+
+pub const IID_AREA2_SUN123: u32 = make_item_id(DEV_ID_DB, 0x000040);
+
+pub const IID_AREA2_DAGGERWRONG: u32 = make_item_id(DEV_ID_DB, 0x000041);
+
+pub const IID_AREA2_DAGGERRIGHT: u32 = make_item_id(DEV_ID_DB, 0x000042);
+
+pub const IID_AREA2_SMALLSPIDER: u32 = make_item_id(DEV_ID_DB, 0x000037);
 
 pub(crate) const IID_STAFF_BLUEKEY1: u32 = make_item_id(DEV_ID_WARR, 0x00000A);
 

@@ -10,12 +10,12 @@ use crate::{
         BrithildieDriverData, CamhermitDriverData, CharacterDriverState, DungeonmasterDriverData,
         ForestRangerDriverData, GateFightDriverData, GateWelcomeDriverData, GreeterDriverData,
         GwendylonDriverData, JanitorDriverData, JessicaDriverData, JiuDriverData, NookDriverData,
-        ReskinDriverData, TerionDriverData, TraderDriverData, YoakinDriverData,
+        ReskinDriverData, SuperiorDriverData, TerionDriverData, TraderDriverData, YoakinDriverData,
         ARENA_FIGHTER_REST_POS, CDR_ARENAFIGHTER, CDR_ARENAMANAGER, CDR_ARENAMASTER,
         CDR_BRITHILDIE, CDR_CAMHERMIT, CDR_CLANCLERK, CDR_CLANMASTER, CDR_CLUBMASTER,
         CDR_DUNGEONMASTER, CDR_FOREST_RANGER, CDR_GATE_FIGHT, CDR_GATE_WELCOME, CDR_GREETER,
         CDR_GWENDYLON, CDR_JANITOR, CDR_JESSICA, CDR_JIU, CDR_LAB2UNDEAD, CDR_NOOK, CDR_RESKIN,
-        CDR_SIMPLEBADDY, CDR_TERION, CDR_TRADER, CDR_YOAKIN, NT_CREATE,
+        CDR_SIMPLEBADDY, CDR_SUPERIOR, CDR_TERION, CDR_TRADER, CDR_YOAKIN, NT_CREATE,
     },
     entity::{
         Character, CharacterFlags, Item, ItemFlags, CHARACTER_VALUE_COUNT, INVENTORY_SIZE,
@@ -603,6 +603,18 @@ impl ZoneLoader {
                 GateFightDriverData::default(),
             ));
             character.push_driver_message(NT_CREATE, 0, 0, 0);
+        }
+        if template.driver == CDR_SUPERIOR {
+            // C `superior_driver`'s `NT_CREATE` handler (`area2.c:99-100`):
+            // `dat->nr = atoi(ch[cn].arg); dat->mode = M_FIGHT;` - parsed
+            // here at spawn time instead (see `world::superior`'s module
+            // doc comment).
+            let nr = template.args.trim().parse::<i32>().unwrap_or(0);
+            character.driver_state = Some(CharacterDriverState::Superior(SuperiorDriverData {
+                nr,
+                mode: crate::world::npc::area2::superior::SUPERIOR_MODE_FIGHT,
+                ..Default::default()
+            }));
         }
         if template.driver == CDR_LAB2UNDEAD {
             character.push_driver_message(NT_CREATE, 0, 0, 0);

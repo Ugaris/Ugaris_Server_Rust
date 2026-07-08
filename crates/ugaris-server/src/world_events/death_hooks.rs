@@ -540,3 +540,122 @@ pub(crate) fn apply_asturin_death_from_hurt_event(
     }
     true
 }
+
+/// C `ch_died_driver`/`CDR_VAMPIRE` dispatch (`area2.c:1039-1041`) ->
+/// `vampire_dead_driver` (`:941-965`): only completes "The Toughest
+/// Monster" (`questlog_done(co, 18)`) and destroys every sun-amulet piece
+/// the killer is still carrying while `area3_ppd.crypt_state` sits in the
+/// narrow `8..=9` window (the crypt puzzle state that means "the Vampire
+/// Lord is the next expected kill") - reuses the same `area3_crypt_state`
+/// accessor `world::vampire2`'s own death hook and the "Underground Park
+/// Shrines"/crypt puzzle (P4 area3, unported) share.
+pub(crate) fn apply_vampire_death_from_hurt_event(
+    runtime: &mut ServerRuntime,
+    world: &mut World,
+    event: LegacyHurtEvent,
+) -> bool {
+    if !event.outcome.killed {
+        return false;
+    }
+    let is_vampire_kill = world
+        .characters
+        .get(&event.target_id)
+        .zip(world.characters.get(&event.cause_id))
+        .is_some_and(|(target, killer)| {
+            target.driver == CDR_VAMPIRE && killer.flags.contains(CharacterFlags::PLAYER)
+        });
+    if !is_vampire_kill {
+        return false;
+    }
+
+    let Some(level) = world.characters.get(&event.cause_id).map(|c| c.level) else {
+        return false;
+    };
+    let level_val = level_value(level);
+    let Some(player) = runtime.player_for_character_mut(event.cause_id) else {
+        return false;
+    };
+    if !(8..=9).contains(&player.area3_crypt_state()) {
+        return false;
+    }
+    world.queue_system_text(
+        event.cause_id,
+        "Congratulations on slaying the toughest(?) creature down here!",
+    );
+    if let Some(completion) = player.quest_log.complete_legacy(18, level, level_val) {
+        let payload = legacy_questlog_payload(player);
+        world.give_exp(
+            event.cause_id,
+            completion.granted_exp,
+            u32::from(world.area_id),
+        );
+        for (session_id, _) in runtime.sessions_for_character(event.cause_id) {
+            runtime.send_to_session(session_id, payload.clone());
+        }
+    }
+    world.destroy_items_by_template_id(event.cause_id, IID_AREA2_SUN1);
+    world.destroy_items_by_template_id(event.cause_id, IID_AREA2_SUN2);
+    world.destroy_items_by_template_id(event.cause_id, IID_AREA2_SUN3);
+    world.destroy_items_by_template_id(event.cause_id, IID_AREA2_SUN12);
+    world.destroy_items_by_template_id(event.cause_id, IID_AREA2_SUN13);
+    world.destroy_items_by_template_id(event.cause_id, IID_AREA2_SUN23);
+    world.destroy_items_by_template_id(event.cause_id, IID_AREA2_SUN123);
+    if let Some(player) = runtime.player_for_character_mut(event.cause_id) {
+        player.set_area3_crypt_state(10);
+    }
+    true
+}
+
+/// C `ch_died_driver`/`CDR_VAMPIRE2` dispatch (`area2.c:1044-1046`) ->
+/// `vampire2_dead_driver` (`:967-984`): completes "The Toughestest
+/// Monster" (`questlog_done(co, 19)`) while `area3_ppd.crypt_state` sits
+/// in the `12..=14` window.
+pub(crate) fn apply_vampire2_death_from_hurt_event(
+    runtime: &mut ServerRuntime,
+    world: &mut World,
+    event: LegacyHurtEvent,
+) -> bool {
+    if !event.outcome.killed {
+        return false;
+    }
+    let is_vampire2_kill = world
+        .characters
+        .get(&event.target_id)
+        .zip(world.characters.get(&event.cause_id))
+        .is_some_and(|(target, killer)| {
+            target.driver == CDR_VAMPIRE2 && killer.flags.contains(CharacterFlags::PLAYER)
+        });
+    if !is_vampire2_kill {
+        return false;
+    }
+
+    let Some(level) = world.characters.get(&event.cause_id).map(|c| c.level) else {
+        return false;
+    };
+    let level_val = level_value(level);
+    let Some(player) = runtime.player_for_character_mut(event.cause_id) else {
+        return false;
+    };
+    if !(12..=14).contains(&player.area3_crypt_state()) {
+        return false;
+    }
+    world.queue_system_text(
+        event.cause_id,
+        "Congratulations on slaying the toughest creature down here!",
+    );
+    if let Some(completion) = player.quest_log.complete_legacy(19, level, level_val) {
+        let payload = legacy_questlog_payload(player);
+        world.give_exp(
+            event.cause_id,
+            completion.granted_exp,
+            u32::from(world.area_id),
+        );
+        for (session_id, _) in runtime.sessions_for_character(event.cause_id) {
+            runtime.send_to_session(session_id, payload.clone());
+        }
+    }
+    if let Some(player) = runtime.player_for_character_mut(event.cause_id) {
+        player.set_area3_crypt_state(15);
+    }
+    true
+}

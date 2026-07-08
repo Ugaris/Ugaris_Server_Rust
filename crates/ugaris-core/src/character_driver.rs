@@ -208,6 +208,21 @@ pub const CDR_DUNGEONMASTER: u16 = 51;
 /// module doc comment lists what's still REMAINING (the SimpleBaddy-AI
 /// tail call and `fighter_dead`).
 pub const CDR_DUNGEONFIGHTER: u16 = 52;
+/// C `#define CDR_SUPERIOR 26` (`src/system/drvlib.h`, "superior zombie
+/// driver in area 2"): the four named crypt guardians
+/// (`src/area/2/area2.c::superior_driver`).
+pub const CDR_SUPERIOR: u16 = 26;
+/// C `#define CDR_MOONIE 31` (`src/system/drvlib.h`, "stop to eat
+/// spiders"): the spider-eating companion NPC
+/// (`src/area/2/area2.c::moonie_driver`).
+pub const CDR_MOONIE: u16 = 31;
+/// C `#define CDR_VAMPIRE 34` (`src/system/drvlib.h`, "special NPC in area
+/// 2"): the Vampire Lord boss NPC (`src/area/2/area2.c::vampire_driver`).
+pub const CDR_VAMPIRE: u16 = 34;
+/// C `#define CDR_VAMPIRE2 38` (`src/system/drvlib.h`, "special NPC in
+/// area 2"): the Vampire Lord 2 boss NPC
+/// (`src/area/2/area2.c::vampire2_driver`).
+pub const CDR_VAMPIRE2: u16 = 38;
 pub const DRD_SIMPLEBADDYDRIVER: u32 = 0x0100_0013;
 pub const DRD_CLARADRIVER: u32 = 0x0100_0059;
 pub const DRD_SKELLYDRIVER: u32 = 0x0100_006a;
@@ -303,6 +318,10 @@ pub enum CharacterDriverState {
     James(JamesDriverData),
     Balltrap(BalltrapDriverData),
     Logain(LogainDriverData),
+    Superior(SuperiorDriverData),
+    Moonie(MoonieDriverData),
+    Vampire(VampireDriverData),
+    Vampire2(Vampire2DriverData),
 }
 /// C `bank_driver_parse` from `src/module/bank.c`. The C driver defaults
 /// opening hours to 6..23 before parsing (`bank_driver` lines 304-309).
@@ -988,7 +1007,11 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::Guiwynn(_)
             | CharacterDriverState::James(_)
             | CharacterDriverState::Balltrap(_)
-            | CharacterDriverState::Logain(_),
+            | CharacterDriverState::Logain(_)
+            | CharacterDriverState::Superior(_)
+            | CharacterDriverState::Moonie(_)
+            | CharacterDriverState::Vampire(_)
+            | CharacterDriverState::Vampire2(_),
         ) => SimpleBaddyDriverData::default(),
         None => SimpleBaddyDriverData::default(),
     };
@@ -3327,6 +3350,10 @@ pub use crate::world::npc::area13::dungeon_master::{
     DungeonfighterDriverData, DungeonmasterDriverData, DUNGEONMASTER_QA, DUNGEON_SLOT_COUNT,
 };
 pub use crate::world::npc::area17::two_skelly::TwoSkellyDriverData;
+pub use crate::world::npc::area2::moonie::MoonieDriverData;
+pub use crate::world::npc::area2::superior::SuperiorDriverData;
+pub use crate::world::npc::area2::vampire::VampireDriverData;
+pub use crate::world::npc::area2::vampire2::Vampire2DriverData;
 pub use crate::world::npc::area22::lab2_undead::{
     apply_lab2_undead_create_message, parse_lab2_undead_driver_args, Lab2UndeadDriverData,
 };
