@@ -741,15 +741,21 @@ Ordered by player progression; the C file is the oracle.
   athlete-reduction quirks). New `crates/ugaris-core/src/world/mining.rs`
   (pure roll/amount/cave-in math) + `crates/ugaris-server/src/mine.rs`
   (`ZoneLoader`/achievement glue), wired from `tick_item_use_minewall.rs`
-  when a wall's `MineWallDig` outcome carries `opened: true`. Still
-  unported: `handle_orb_find` (orb-of-skill reward, `create_orb_with_value`)
-  and `handle_artifact_find` (the 12-flavor relic table with exp/gold/
-  military-point tiers) - both rare branches (5 and 200 out of the
-  100,000-wide roll respectively); and `CDR_GOLEMKEYHOLDER`
+  when a wall's `MineWallDig` outcome carries `opened: true`. `handle_
+  orb_find` (the 5-in-100,000 orb-of-skill reward) and `handle_artifact_
+  find` (the 200-in-100,000 12-flavor relic table with exp/silver/
+  military-point tiers) are now also ported (`mine.rs::apply_mine_orb_
+  find`/`apply_mine_artifact_find`), reusing `World::give_char_item`/
+  `grant_created_orb`'s `"empty_orb"` template convention and the
+  already-ported `World::give_exp`/`give_military_pts`/`achievement::
+  give_money` helpers; `dispatch_minewall_outcome`/`apply_mine_wall_
+  reward` now take an `area_id` parameter for these two branches' `give_
+  exp`/`give_military_pts` calls. Still unported: `CDR_GOLEMKEYHOLDER`
   (`keyhold_fight_driver`, the locked-treasure-room boss spawned by
   `keyholder_door`/`IDR_MINEKEYDOOR` - the door/room-teleport mechanic
   itself is already ported, only the actual golem character/fight AI is
-  missing, see `world/item_outcomes.rs`'s `MineKeyDoor` handling).
+  missing, see `world/item_outcomes.rs`'s `MineKeyDoor` handling). This
+  is the only remaining gap for Area 12.
 - [ ] **Area 13 - `src/area/13/dungeon.c` + `dungeon_tab.c`** - dungeon
   master/fighter drivers, clan jewel raid protocol.
 - [ ] **Area 14 - `src/area/14/random.c`** - remaining shrine effects
@@ -830,6 +836,11 @@ Ordered by player progression; the C file is the oracle.
 Keep entries to at most three lines: date, task, one-line result.
 Anything longer belongs in `PORTING_LEDGER.md`; historical verbose
 notes live in `PROGRESS_ARCHIVE.md`.
+
+- 2026-07-08: Area 12 `handle_orb_find`/`handle_artifact_find` ported
+  (`mine.rs::apply_mine_orb_find`/`apply_mine_artifact_find`), closing every
+  gap but `CDR_GOLEMKEYHOLDER`. 2865 core + 1128 server tests pass, clean
+  build, boot-smoke ok.
 
 - 2026-07-08: Area 10 (`ice.c`) closed - C's `ch_driver` is empty (all
   NPCs plain `CDR_SIMPLEBADDY`); found/fixed a real `CF_IDEMON`

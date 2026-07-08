@@ -44,6 +44,9 @@ fn metal_loader() -> ZoneLoader {
                     driver=61
                     arg="0201000000"
                 ;
+                empty_orb:
+                    name="Empty Orb"
+                ;
                 "#,
         )
         .unwrap();
@@ -61,7 +64,10 @@ fn mine_wall(id: u32, silver_base: u8, gold_base: u8, tier: u8) -> ugaris_core::
 /// `apply_mine_wall_reward` tests can deterministically force a branch
 /// without depending on the LCG's internal formula.
 fn find_seed_for_event(event: MiningEvent) -> u32 {
-    for seed in 0..5000_u32 {
+    // The orb band is only 5 wide out of a 100,000-wide roll (`mining_
+    // orb_chance_base`), so a much larger search bound is needed to
+    // reliably find a hit than the other, much wider bands.
+    for seed in 0..500_000_u32 {
         let mut probe = World::default();
         probe.legacy_random_seed = seed;
         if probe.roll_mining_event() == event {
@@ -69,6 +75,28 @@ fn find_seed_for_event(event: MiningEvent) -> u32 {
         }
     }
     panic!("no seed found for {event:?} within search bound");
+}
+
+/// Like [`find_seed_for_event`], but additionally forces
+/// `apply_mine_artifact_find`'s own downstream `roll_legacy_random(100)`
+/// rarity draw (the second roll after the `MiningEvent::Artifact`
+/// classification itself, C `mine.c:430`) to land in `[rarity_min,
+/// rarity_max)`, so each rarity-tier reward branch can be tested
+/// deterministically.
+fn find_seed_for_artifact_rarity(rarity_min: i32, rarity_max: i32) -> u32 {
+    for seed in 0..200_000_u32 {
+        let mut probe = World::default();
+        probe.legacy_random_seed = seed;
+        if probe.roll_mining_event() != MiningEvent::Artifact {
+            continue;
+        }
+        let _artifact_index = probe.roll_legacy_random(12);
+        let rarity = probe.roll_legacy_random(100) as i32;
+        if rarity >= rarity_min && rarity < rarity_max {
+            return seed;
+        }
+    }
+    panic!("no seed found for artifact rarity [{rarity_min}, {rarity_max}) within search bound");
 }
 
 // ============================================================================
@@ -374,6 +402,7 @@ async fn apply_mine_wall_reward_silver_branch_grants_item_and_achievement() {
         &mut loader,
         &mut runtime,
         &None,
+        12,
         ItemId(9),
         character_id,
         &mut feedback,
@@ -407,6 +436,7 @@ async fn apply_mine_wall_reward_golem_branch_spawns_a_character() {
         &mut loader,
         &mut runtime,
         &None,
+        12,
         ItemId(9),
         character_id,
         &mut feedback,
@@ -431,6 +461,7 @@ async fn apply_mine_wall_reward_cavein_branch_reduces_endurance() {
         &mut loader,
         &mut runtime,
         &None,
+        12,
         ItemId(9),
         character_id,
         &mut feedback,
@@ -439,4 +470,176 @@ async fn apply_mine_wall_reward_cavein_branch_reduces_endurance() {
 
     assert!(!feedback.is_empty());
     assert!(world.characters[&character_id].endurance < 1_000_000);
+}
+
+// ============================================================================
+// `apply_mine_orb_find` (C `handle_orb_find`, `mine.c:328-360`).
+// ============================================================================
+
+#[tokio::test]
+async fn apply_mine_wall_reward_orb_branch_grants_a_named_orb_on_cursor() {
+    let character_id = CharacterId(7);
+    let (mut world, mut runtime) = connected_player(character_id, 1);
+    let mut loader = metal_loader();
+    world.items.insert(ItemId(9), mine_wall(9, 3, 0, 1));
+
+    world.legacy_random_seed = find_seed_for_event(MiningEvent::Orb);
+    let mut feedback = Vec::new();
+    apply_mine_wall_reward(
+        &mut world,
+        &mut loader,
+        &mut runtime,
+        &None,
+        12,
+        ItemId(9),
+        character_id,
+        &mut feedback,
+    )
+    .await;
+
+    // The orb itself lands on the (guaranteed-empty, since digging
+    // requires it) cursor via the plain `World::give_char_item`.
+    let character = &world.characters[&character_id];
+    let orb_id = character
+        .cursor_item
+        .expect("orb should be placed on the cursor");
+    let orb = &world.items[&orb_id];
+    assert!(orb.name.starts_with("Orb of 5 "));
+    assert_eq!(orb.driver_data[1], 5);
+
+    let texts = world.drain_pending_system_text_bytes();
+    assert_eq!(texts.len(), 2);
+    assert_eq!(texts[0].character_id, character_id);
+    let first = String::from_utf8_lossy(&texts[0].message);
+    assert!(first.contains("Odds bodkins!"));
+    assert!(first.contains("mystical orb of cerulean radiance"));
+    let second = String::from_utf8_lossy(&texts[1].message);
+    assert!(second.starts_with("Thou hast received: "));
+    assert!(second.contains("+5"));
+}
+
+// ============================================================================
+// `apply_mine_artifact_find` (C `handle_artifact_find`, `mine.c:405-504`).
+// ============================================================================
+
+fn artifact_test_setup(character_id: CharacterId) -> (World, ServerRuntime) {
+    let (mut world, runtime) = connected_player(character_id, 1);
+    world.characters.get_mut(&character_id).unwrap().level = 30;
+    world.items.insert(ItemId(9), mine_wall(9, 3, 0, 1));
+    (world, runtime)
+}
+
+#[tokio::test]
+async fn apply_mine_wall_reward_artifact_common_branch_grants_a_pittance_of_exp() {
+    let character_id = CharacterId(7);
+    let (mut world, mut runtime) = artifact_test_setup(character_id);
+    let mut loader = metal_loader();
+
+    world.legacy_random_seed = find_seed_for_artifact_rarity(0, 50);
+    let mut feedback = Vec::new();
+    apply_mine_wall_reward(
+        &mut world,
+        &mut loader,
+        &mut runtime,
+        &None,
+        12,
+        ItemId(9),
+        character_id,
+        &mut feedback,
+    )
+    .await;
+
+    // level_value(30) / 750 = 113521 / 750 = 151.
+    assert_eq!(world.characters[&character_id].exp, 151);
+    let texts = world.drain_pending_system_text_bytes();
+    assert!(texts
+        .iter()
+        .any(|t| String::from_utf8_lossy(&t.message).contains("unearthed a relic from the")));
+    assert!(texts
+        .iter()
+        .any(|t| String::from_utf8_lossy(&t.message).contains("but a pittance")));
+}
+
+#[tokio::test]
+async fn apply_mine_wall_reward_artifact_uncommon_branch_grants_silver() {
+    let character_id = CharacterId(7);
+    let (mut world, mut runtime) = artifact_test_setup(character_id);
+    let mut loader = metal_loader();
+
+    world.legacy_random_seed = find_seed_for_artifact_rarity(50, 80);
+    let mut feedback = Vec::new();
+    apply_mine_wall_reward(
+        &mut world,
+        &mut loader,
+        &mut runtime,
+        &None,
+        12,
+        ItemId(9),
+        character_id,
+        &mut feedback,
+    )
+    .await;
+
+    assert!(world.characters[&character_id].gold > 0);
+    let texts = world.drain_pending_system_text_bytes();
+    assert!(texts
+        .iter()
+        .any(|t| String::from_utf8_lossy(&t.message).contains("gold coins")));
+}
+
+#[tokio::test]
+async fn apply_mine_wall_reward_artifact_rare_branch_grants_military_points() {
+    let character_id = CharacterId(7);
+    let (mut world, mut runtime) = artifact_test_setup(character_id);
+    let mut loader = metal_loader();
+
+    world.legacy_random_seed = find_seed_for_artifact_rarity(80, 95);
+    let mut feedback = Vec::new();
+    apply_mine_wall_reward(
+        &mut world,
+        &mut loader,
+        &mut runtime,
+        &None,
+        12,
+        ItemId(9),
+        character_id,
+        &mut feedback,
+    )
+    .await;
+
+    // min(level / 3, 10) = min(10, 10) = 10.
+    assert_eq!(world.characters[&character_id].military_points, 10);
+    let texts = world.drain_pending_system_text_bytes();
+    assert!(texts
+        .iter()
+        .any(|t| String::from_utf8_lossy(&t.message).contains("Huzzah!")));
+}
+
+#[tokio::test]
+async fn apply_mine_wall_reward_artifact_very_rare_branch_grants_exp_and_gold() {
+    let character_id = CharacterId(7);
+    let (mut world, mut runtime) = artifact_test_setup(character_id);
+    let mut loader = metal_loader();
+
+    world.legacy_random_seed = find_seed_for_artifact_rarity(95, 100);
+    let mut feedback = Vec::new();
+    apply_mine_wall_reward(
+        &mut world,
+        &mut loader,
+        &mut runtime,
+        &None,
+        12,
+        ItemId(9),
+        character_id,
+        &mut feedback,
+    )
+    .await;
+
+    // level_value(30) / 250 = 113521 / 250 = 454.
+    assert_eq!(world.characters[&character_id].exp, 454);
+    assert!(world.characters[&character_id].gold > 0);
+    let texts = world.drain_pending_system_text_bytes();
+    assert!(texts
+        .iter()
+        .any(|t| String::from_utf8_lossy(&t.message).contains("By Ishtar's light!")));
 }

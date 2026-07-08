@@ -1096,6 +1096,7 @@ pub(crate) async fn process_completed_action_outcomes(
                                     &mut zone_loader,
                                     &mut runtime,
                                     &achievement_repository,
+                                    config.area_id,
                                     outcome,
                                     &mut feedback,
                                     &mut executed,

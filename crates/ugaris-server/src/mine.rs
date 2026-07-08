@@ -2,17 +2,20 @@
 //! reward cascade (`handle_mining_result`, wired from
 //! `tick_item_use_minewall::dispatch_minewall_outcome` whenever a
 //! `MineWallDig` outcome carries `opened: true`): the parts that need
-//! `ZoneLoader` (instantiating "silver"/"gold" stack items and golem
+//! `ZoneLoader` (instantiating "silver"/"gold"/orb stack items and golem
 //! characters) or `PlayerRuntime`/achievement-repository access (military
-//! mission silver tracking, the mined-amount achievement ladders). The
-//! pure event-roll/amount-roll/cave-in math lives in `ugaris-core`'s
-//! `world/mining.rs`.
-//!
-//! The orb (`handle_orb_find`) and artifact-relic (`handle_artifact_find`)
-//! branches are not ported yet - see `PORTING_TODO.md`'s Area 12 entry.
+//! mission silver tracking, the mined-amount achievement ladders, the
+//! gold-earned/exp/military-point tails of the orb and artifact-relic
+//! branches). The pure event-roll/amount-roll/cave-in math lives in
+//! `ugaris-core`'s `world/mining.rs`.
 
 use super::*;
 use ugaris_core::legacy::INVENTORY_START_INVENTORY;
+use ugaris_core::text::{
+    expand_color_sentinels, COL_STR_AQUA, COL_STR_DARK_GRAY, COL_STR_HIDDEN_LINK,
+    COL_STR_LIGHT_BLUE, COL_STR_LIGHT_GREEN, COL_STR_LIME, COL_STR_PINK, COL_STR_RESET,
+    COL_STR_TAN, COL_STR_YELLOW,
+};
 use ugaris_core::world::{CaveInResult, MilitaryMissionSilverProgress, MiningEvent};
 
 /// C `handle_mining_result`'s dispatch tail (`mine.c:229-275`): rolls the
@@ -24,6 +27,7 @@ pub(crate) async fn apply_mine_wall_reward(
     zone_loader: &mut ZoneLoader,
     runtime: &mut ServerRuntime,
     achievement_repository: &Option<ugaris_db::PgAchievementRepository>,
+    area_id: u16,
     item_id: ItemId,
     character_id: CharacterId,
     feedback: &mut Vec<(CharacterId, String)>,
@@ -56,13 +60,26 @@ pub(crate) async fn apply_mine_wall_reward(
         MiningEvent::Golem => {
             apply_mine_golem_spawn(world, zone_loader, runtime, item_id, character_id, feedback);
         }
+        MiningEvent::Orb => {
+            apply_mine_orb_find(world, zone_loader, character_id);
+        }
         MiningEvent::CaveIn => {
             apply_mine_cave_in(world, item_id, character_id, feedback);
         }
-        // C `handle_orb_find`/`handle_artifact_find` - not ported yet
-        // (see this module's doc comment); C's own fall-through
-        // ("nothing of value") is also a documented no-op.
-        MiningEvent::Orb | MiningEvent::Artifact | MiningEvent::Nothing => {}
+        MiningEvent::Artifact => {
+            apply_mine_artifact_find(
+                world,
+                runtime,
+                achievement_repository,
+                area_id,
+                character_id,
+            )
+            .await;
+        }
+        // C's own fall-through ("nothing of value") is also a documented
+        // no-op (the message text is commented out in C itself - "too
+        // spammy").
+        MiningEvent::Nothing => {}
     }
 }
 
@@ -168,6 +185,240 @@ pub(crate) fn apply_mine_cave_in(
                 ));
             }
         }
+    }
+}
+
+/// C `handle_orb_find` (`mine.c:328-360`): rolls one of five skills
+/// (`V_IMMUNITY`/`V_ATTACK`/`V_PARRY`/`V_FLASH`/`V_MAGICSHIELD`) and
+/// instantiates a `+5` orb of it via the same `"empty_orb"` template/
+/// `drdata` layout as `create_orb_with_value`/[`grant_created_orb`],
+/// placed with the plain (non-"smart") [`World::give_char_item`] -
+/// digging requires an empty cursor (see `world/mining.rs`'s module doc
+/// comment), so this always lands on the cursor in practice, matching
+/// C's `give_char_item(cn, in2)`. A real C quirk reproduced exactly: the
+/// success/failure message branches purely on whether `in2` (item
+/// creation) succeeded, *not* on `give_char_item`'s own return value -
+/// if placement somehow failed (both cursor and inventory full), C still
+/// reports success and orphans the item; here the orb is still added to
+/// `world.items` (so it exists exactly as it would in C, just
+/// unreachable) even if `give_char_item` returns `false`.
+fn apply_mine_orb_find(world: &mut World, loader: &mut ZoneLoader, character_id: CharacterId) {
+    // C's local `skills[]` table (`mine.c:329-336`). Every one of its
+    // display names is identical to the shared `CHARACTER_VALUE_NAMES`
+    // entry for that skill (including `V_FLASH`'s "Lightning"), so no
+    // separate name table is needed - `CHARACTER_VALUE_NAMES[skill as
+    // usize]` serves both this function's own message text and the
+    // orb's `create_orb_with_value`-style item name.
+    const ORB_SKILLS: [CharacterValue; 5] = [
+        CharacterValue::Immunity,
+        CharacterValue::Attack,
+        CharacterValue::Parry,
+        CharacterValue::Flash,
+        CharacterValue::MagicShield,
+    ];
+    let skill = ORB_SKILLS[world.roll_legacy_random(ORB_SKILLS.len() as u32) as usize];
+    let value_name = CHARACTER_VALUE_NAMES[skill as usize];
+
+    let Ok(mut orb) = loader.instantiate_item_template("empty_orb", Some(character_id)) else {
+        world.queue_system_text(
+            character_id,
+            "Alas! Though fortune smiled upon thee, some foul magic hath intervened. The orb slipped through thy fingers like sand.".to_string(),
+        );
+        return;
+    };
+    orb.name = format!("Orb of 5 {value_name}");
+    ensure_drdata_len(&mut orb, 2);
+    orb.driver_data[0] = skill as u8;
+    orb.driver_data[1] = 5;
+    let orb_id = orb.id;
+    world.add_item(orb);
+    world.give_char_item(character_id, orb_id);
+
+    world.queue_system_text_bytes(
+        character_id,
+        expand_color_sentinels(&format!(
+            "{COL_STR_TAN}Odds bodkins!{COL_STR_RESET} Thou art blessed by Ishtar's fortune this day! Amidst the common stones, thou hast unearthed a {COL_STR_PINK}mystical orb of cerulean radiance{COL_STR_RESET}. Though its purpose eludes thee, 'tis surely a prize worth keeping. The orb now resides in thy possession."
+        )),
+    );
+    world.queue_system_text_bytes(
+        character_id,
+        expand_color_sentinels(&format!(
+            "Thou hast received: {COL_STR_LIGHT_BLUE}Orb of {value_name}{COL_STR_RESET} +5"
+        )),
+    );
+}
+
+/// C `Sirname(cn)` (`src/system/tool.c:1538-1546`) - same local-copy
+/// precedent as `world/npc/area11/islena.rs::islena_sirname` (no shared
+/// helper exists yet, and this is the only other call site).
+fn mine_sirname(character: &Character) -> &'static str {
+    if character.flags.contains(CharacterFlags::MALE) {
+        "Sir"
+    } else if character.flags.contains(CharacterFlags::FEMALE) {
+        "Lady"
+    } else {
+        "Neuter"
+    }
+}
+
+/// C `handle_artifact_find`'s `ye_olde_artifacts[]` table (`mine.c:406-
+///427`), transcribed digit-for-digit including its embedded `COL_*`
+/// markers (via the `COL_STR_*` sentinel convention, expanded at the
+/// call site).
+fn mine_artifact_description(index: usize) -> String {
+    match index {
+        0 => format!(
+            "a {COL_STR_PINK}petrified trencher{COL_STR_RESET} from the {COL_STR_LIGHT_BLUE}Age of Seyan I{COL_STR_RESET}"
+        ),
+        1 => format!(
+            "an {COL_STR_PINK}ancient Astonian soldier's ration box{COL_STR_RESET}, still bearing a most questionable Luctim-infused fruit{COL_STR_RESET}"
+        ),
+        2 => format!(
+            "a {COL_STR_PINK}fossilized wedge of Cristalim cheese{COL_STR_RESET}, nigh indistinguishable from common stone"
+        ),
+        3 => format!(
+            "a {COL_STR_PINK}prehistoric Seyan'Du training tool{COL_STR_RESET}, or mayhap 'tis but a pointy stick{COL_STR_RESET}"
+        ),
+        4 => format!(
+            "the {COL_STR_PINK}Empire's most ancient scrying orb{COL_STR_RESET}, hewn from solid Elohil crystal{COL_STR_RESET}"
+        ),
+        5 => format!(
+            "a {COL_STR_PINK}stone tablet{COL_STR_RESET} bearing the inscription 'Gone to Battle Demons{COL_STR_RESET}'"
+        ),
+        6 => format!(
+            "a perfectly preserved {COL_STR_PINK}Ishtar follower's beard-trimming implement{COL_STR_RESET} (verily, 'tis but a magically sharpened rock{COL_STR_RESET})"
+        ),
+        7 => format!(
+            "the {COL_STR_PINK}first Astonian multi-tool{COL_STR_RESET}, in truth naught but a {COL_STR_LIGHT_GREEN}rock tied to a stick{COL_STR_RESET} with enchanted twine"
+        ),
+        8 => format!(
+            "an {COL_STR_PINK}antique Labyrinth explorer's helm{COL_STR_RESET}, or perchance merely a {COL_STR_HIDDEN_LINK}bowl-shaped rock{COL_STR_RESET}"
+        ),
+        9 => format!(
+            "the {COL_STR_PINK}oldest known pair of Mage's robes{COL_STR_RESET}, now {COL_STR_DARK_GRAY}perfectly crystallized{COL_STR_RESET} by ancient magicks"
+        ),
+        10 => format!(
+            "a {COL_STR_PINK}mystical amulet{COL_STR_RESET} that grants the power of {COL_STR_AQUA}excessive resistance to Demon rhinorrhea{COL_STR_RESET}"
+        ),
+        _ => format!(
+            "the {COL_STR_PINK}lost treasure map{COL_STR_RESET} to the fabled {COL_STR_LIGHT_GREEN}Vault of Eternal Luctim{COL_STR_RESET}"
+        ),
+    }
+}
+
+/// C `handle_artifact_find` (`mine.c:405-504`): picks one of 12 ye-olde-
+/// artifact flavor descriptions, then rolls a rarity tier deciding the
+/// reward (50% a pittance of exp, 30% 50-4950 silver, 15% up to 10
+/// military points, 5% both a larger exp grant and 150-9950 silver -
+/// note the "gold" local variable throughout is actually a silver
+/// amount, matching C's own `give_money(cn, gold, ...)`/`gold / 100`
+/// display convention), plus an independent 5% chance for a trailing
+/// self-aware punchline. The commented-out 30%-chance "extra lines"
+/// block (`mine.c:477-493`) stays a no-op, matching C's own disabled
+/// code.
+async fn apply_mine_artifact_find(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    achievement_repository: &Option<ugaris_db::PgAchievementRepository>,
+    area_id: u16,
+    character_id: CharacterId,
+) {
+    let Some(character) = world.characters.get(&character_id) else {
+        return;
+    };
+    let level = character.level;
+
+    let artifact_index = world.roll_legacy_random(12) as usize;
+    let artifact = mine_artifact_description(artifact_index);
+    let rarity = world.roll_legacy_random(100) as i32;
+
+    world.queue_system_text_bytes(
+        character_id,
+        expand_color_sentinels(&format!(
+            "{COL_STR_TAN}Hark!{COL_STR_RESET} Thou hast unearthed a relic from the {COL_STR_LIGHT_BLUE}Age of Seyan{COL_STR_RESET}! It appeareth to be {artifact}."
+        )),
+    );
+
+    if rarity < 50 {
+        let exp = level_value(level) / 750;
+        world.give_exp(character_id, i64::from(exp), u32::from(area_id));
+        world.queue_system_text_bytes(
+            character_id,
+            expand_color_sentinels(&format!(
+                "Ishtar smiles upon thy discovery, granting thee {COL_STR_LIGHT_GREEN}experience{COL_STR_RESET}, though 'tis but a pittance compared to the Labyrinth Quest."
+            )),
+        );
+    } else if rarity < 80 {
+        let silver = 50 + world.roll_legacy_random(50) * 100;
+        let mut feedback_bytes = Vec::new();
+        achievement::give_money(
+            world,
+            runtime,
+            achievement_repository,
+            character_id,
+            silver,
+            &mut feedback_bytes,
+        )
+        .await;
+        for (recipient, message) in feedback_bytes {
+            world.queue_system_text_bytes(recipient, message);
+        }
+        world.queue_system_text_bytes(
+            character_id,
+            expand_color_sentinels(&format!(
+                "The coffers of ancient Aston favor thee! Thou findest {COL_STR_YELLOW} {} gold coins{COL_STR_RESET} amidst the ruins of the Empire.",
+                silver / 100
+            )),
+        );
+    } else if rarity < 95 {
+        let pts = (i32::try_from(level).unwrap_or(0) / 3).min(10);
+        world.give_military_pts(character_id, pts, 1, u32::from(area_id));
+        let name = mine_sirname(&world.characters[&character_id]);
+        world.queue_system_text_bytes(
+            character_id,
+            expand_color_sentinels(&format!(
+                "{COL_STR_TAN}Huzzah!{COL_STR_RESET} The {COL_STR_LIGHT_BLUE}Seyan'Du{COL_STR_RESET} would be most proud of thine achievement this day, {COL_STR_LIGHT_GREEN}{name}{COL_STR_RESET}. Verily, finding such {artifact} is a feat worthy of the Imperial records... or at least a whisper in the Labyrinth's echoing halls."
+            )),
+        );
+    } else {
+        let exp = level_value(level) / 250;
+        let silver = 150 + world.roll_legacy_random(100) * 100;
+        world.give_exp(character_id, i64::from(exp), u32::from(area_id));
+        let mut feedback_bytes = Vec::new();
+        achievement::give_money(
+            world,
+            runtime,
+            achievement_repository,
+            character_id,
+            silver,
+            &mut feedback_bytes,
+        )
+        .await;
+        for (recipient, message) in feedback_bytes {
+            world.queue_system_text_bytes(recipient, message);
+        }
+        world.queue_system_text_bytes(
+            character_id,
+            // C's source has a stray non-ASCII byte (`0xED`) mid-word here
+            // ("Cristal\xEDm") - reproduced as U+00ED ('i' with acute,
+            // matching the other artifact entries' "Cristalim" spelling)
+            // since the raw byte alone isn't valid standalone UTF-8 and
+            // this is flavor text, not a formula/constant.
+            expand_color_sentinels(&format!(
+                "{COL_STR_LIME}By Ishtar's light!{COL_STR_RESET} 'Tis a discovery most extraordinary! Thou receivest {COL_STR_LIGHT_GREEN}experience{COL_STR_RESET} and {COL_STR_YELLOW}{} gold{COL_STR_RESET}, as if blessed by the Cristal\u{ed}m himself!",
+                silver / 100
+            )),
+        );
+    }
+
+    if world.roll_legacy_random(100) < 5 {
+        let name = mine_sirname(&world.characters[&character_id]);
+        world.queue_system_text_bytes(
+            character_id,
+            expand_color_sentinels(&format!(
+                "{COL_STR_TAN}Psst!{COL_STR_RESET} Between thee and me, good {name}, methinks the Mage who enchanted these artifacts had imbibed too much of Ishtar's mystical brew."
+            )),
+        );
     }
 }
 
