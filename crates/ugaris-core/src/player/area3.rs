@@ -134,14 +134,34 @@ impl PlayerRuntime {
     }
 
     /// Backs `cmd_showppd`'s `/showppd <name> area3` branch
-    /// (`src/system/command.c:339-346`); no gameplay driver reads/writes
-    /// this yet.
+    /// (`src/system/command.c:339-346`), plus `kassim_driver`
+    /// (`src/area/3/area3.c::kassim_driver`, ported as
+    /// `crate::world::npc::area3::kassim::process_kassim_actions`).
     pub fn area3_kassim_state(&self) -> i32 {
         self.read_area3_i32(AREA3_PPD_KASSIM_STATE_OFFSET)
     }
 
     pub fn set_area3_kassim_state(&mut self, state: i32) {
         self.write_area3_i32(AREA3_PPD_KASSIM_STATE_OFFSET, state);
+    }
+
+    /// C `struct area3_ppd::kassim_seen_timer` (`src/area/3/area3.h:35`).
+    pub fn area3_kassim_seen_timer(&self) -> i32 {
+        self.read_area3_i32(AREA3_PPD_KASSIM_SEEN_TIMER_OFFSET)
+    }
+
+    pub fn set_area3_kassim_seen_timer(&mut self, value: i32) {
+        self.write_area3_i32(AREA3_PPD_KASSIM_SEEN_TIMER_OFFSET, value);
+    }
+
+    /// C `struct area3_ppd::kassim_item_wait_starttime`
+    /// (`src/area/3/area3.h:36`).
+    pub fn area3_kassim_item_wait_starttime(&self) -> i32 {
+        self.read_area3_i32(AREA3_PPD_KASSIM_ITEM_WAIT_STARTTIME_OFFSET)
+    }
+
+    pub fn set_area3_kassim_item_wait_starttime(&mut self, value: i32) {
+        self.write_area3_i32(AREA3_PPD_KASSIM_ITEM_WAIT_STARTTIME_OFFSET, value);
     }
 
     /// Snapshot of the `area3_ppd` fields consumed by

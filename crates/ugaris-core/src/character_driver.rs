@@ -255,6 +255,10 @@ pub const CDR_KELLY: u16 = 30;
 /// staff quest (quest 20) and the Imperial Vault ritual quest (quest 61)
 /// (`src/area/3/area3.c::carlos_driver`).
 pub const CDR_CARLOS: u16 = 90;
+/// C `#define CDR_KASSIM 156` (`src/system/drvlib.h:208`, "Aston: Kassim
+/// the engraver"): the jewelry engraver (`src/area/3/area3.c::
+/// kassim_driver`).
+pub const CDR_KASSIM: u16 = 156;
 pub const DRD_SIMPLEBADDYDRIVER: u32 = 0x0100_0013;
 pub const DRD_CLARADRIVER: u32 = 0x0100_0059;
 pub const DRD_SKELLYDRIVER: u32 = 0x0100_006a;
@@ -361,6 +365,12 @@ pub enum CharacterDriverState {
     Seymour(SeymourDriverData),
     Kelly(KellyDriverData),
     Carlos(CarlosDriverData),
+    Kassim(KassimDriverData),
+    /// C `struct engrave_data` (`src/area/3/area3.c:318-320`), stored via
+    /// `set_data(co, DRD_ENGRAVE_DATA, ...)` on the *player* mid-
+    /// transaction with Kassim, not on Kassim himself. Same "player, not
+    /// NPC" precedent as [`CharacterDriverState::ClanFound`].
+    Engrave(EngraveDriverData),
 }
 /// C `bank_driver_parse` from `src/module/bank.c`. The C driver defaults
 /// opening hours to 6..23 before parsing (`bank_driver` lines 304-309).
@@ -1057,7 +1067,9 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::SirJones(_)
             | CharacterDriverState::Seymour(_)
             | CharacterDriverState::Kelly(_)
-            | CharacterDriverState::Carlos(_),
+            | CharacterDriverState::Carlos(_)
+            | CharacterDriverState::Kassim(_)
+            | CharacterDriverState::Engrave(_),
         ) => SimpleBaddyDriverData::default(),
         None => SimpleBaddyDriverData::default(),
     };
@@ -3411,6 +3423,7 @@ pub use crate::world::npc::area3::clara::{
     clara_state_after_swamp_monster_death, ClaraDialogueContext, ClaraDialogueOutcome,
     ClaraDriverData,
 };
+pub use crate::world::npc::area3::kassim::{EngraveDriverData, KassimDriverData};
 pub use crate::world::npc::area3::kelly::KellyDriverData;
 pub use crate::world::npc::area3::seymour::SeymourDriverData;
 pub use crate::world::npc::area3::sir_jones::SirJonesDriverData;

@@ -10,14 +10,14 @@ use crate::{
         Astro2DriverData, BrithildieDriverData, CamhermitDriverData, CarlosDriverData,
         CharacterDriverState, DungeonmasterDriverData, ForestRangerDriverData, GateFightDriverData,
         GateWelcomeDriverData, GreeterDriverData, GwendylonDriverData, JanitorDriverData,
-        JessicaDriverData, JiuDriverData, KellyDriverData, NookDriverData, ReskinDriverData,
-        SeymourDriverData, SirJonesDriverData, SuperiorDriverData, TerionDriverData,
-        ThomasDriverData, TraderDriverData, YoakinDriverData, ARENA_FIGHTER_REST_POS,
-        CDR_ARENAFIGHTER, CDR_ARENAMANAGER, CDR_ARENAMASTER, CDR_ASTRO2, CDR_BRITHILDIE,
-        CDR_CAMHERMIT, CDR_CARLOS, CDR_CLANCLERK, CDR_CLANMASTER, CDR_CLUBMASTER,
+        JessicaDriverData, JiuDriverData, KassimDriverData, KellyDriverData, NookDriverData,
+        ReskinDriverData, SeymourDriverData, SirJonesDriverData, SuperiorDriverData,
+        TerionDriverData, ThomasDriverData, TraderDriverData, YoakinDriverData,
+        ARENA_FIGHTER_REST_POS, CDR_ARENAFIGHTER, CDR_ARENAMANAGER, CDR_ARENAMASTER, CDR_ASTRO2,
+        CDR_BRITHILDIE, CDR_CAMHERMIT, CDR_CARLOS, CDR_CLANCLERK, CDR_CLANMASTER, CDR_CLUBMASTER,
         CDR_DUNGEONMASTER, CDR_FOREST_RANGER, CDR_GATE_FIGHT, CDR_GATE_WELCOME, CDR_GREETER,
-        CDR_GWENDYLON, CDR_JANITOR, CDR_JESSICA, CDR_JIU, CDR_KELLY, CDR_LAB2UNDEAD, CDR_NOOK,
-        CDR_RESKIN, CDR_SEYMOUR, CDR_SIMPLEBADDY, CDR_SIRJONES, CDR_SUPERIOR, CDR_TERION,
+        CDR_GWENDYLON, CDR_JANITOR, CDR_JESSICA, CDR_JIU, CDR_KASSIM, CDR_KELLY, CDR_LAB2UNDEAD,
+        CDR_NOOK, CDR_RESKIN, CDR_SEYMOUR, CDR_SIMPLEBADDY, CDR_SIRJONES, CDR_SUPERIOR, CDR_TERION,
         CDR_THOMAS, CDR_TRADER, CDR_YOAKIN, NT_CREATE,
     },
     entity::{
@@ -679,6 +679,13 @@ impl ZoneLoader {
             // args to read here, same as `CDR_GATE_WELCOME` above.
             character.driver_state =
                 Some(CharacterDriverState::Carlos(CarlosDriverData::default()));
+        }
+        if template.driver == CDR_KASSIM {
+            // C never parses zone-file args into `struct
+            // kassim_driver_data` (`set_data` zero-initializes it) - no
+            // args to read here, same as `CDR_GATE_WELCOME` above.
+            character.driver_state =
+                Some(CharacterDriverState::Kassim(KassimDriverData::default()));
         }
         if template.driver == CDR_TERION {
             // C never parses zone-file args into `struct

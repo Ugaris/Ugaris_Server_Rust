@@ -29,8 +29,9 @@ use crate::achievement::{award_dragonsbane_achievement, award_swap_money_convert
 use ugaris_core::quest::quest_exp::MONEY_AREA3_MOONIES;
 use ugaris_core::world::{
     Astro2OutcomeEvent, Astro2PlayerFacts, CarlosOutcomeEvent, CarlosPlayerFacts,
-    KellyOutcomeEvent, KellyPlayerFacts, SeymourOutcomeEvent, SeymourPlayerFacts,
-    SirJonesOutcomeEvent, SirJonesPlayerFacts, ThomasOutcomeEvent, ThomasPlayerFacts,
+    KassimOutcomeEvent, KassimPlayerFacts, KellyOutcomeEvent, KellyPlayerFacts,
+    SeymourOutcomeEvent, SeymourPlayerFacts, SirJonesOutcomeEvent, SirJonesPlayerFacts,
+    ThomasOutcomeEvent, ThomasPlayerFacts,
 };
 
 pub(crate) fn thomas_player_facts(
@@ -762,6 +763,67 @@ pub(crate) async fn apply_carlos_events(
                     }
                     applied += 1;
                 }
+            }
+        }
+    }
+    applied
+}
+
+pub(crate) fn kassim_player_facts(
+    runtime: &ServerRuntime,
+) -> HashMap<CharacterId, KassimPlayerFacts> {
+    runtime
+        .players
+        .values()
+        .filter_map(|player| {
+            let character_id = player.character_id?;
+            Some((
+                character_id,
+                KassimPlayerFacts {
+                    kassim_state: player.area3_kassim_state(),
+                    kassim_seen_timer: player.area3_kassim_seen_timer(),
+                    kassim_item_wait_starttime: player.area3_kassim_item_wait_starttime(),
+                },
+            ))
+        })
+        .collect()
+}
+
+/// Applies each [`KassimOutcomeEvent`] queued by
+/// `World::process_kassim_actions`. Unlike Sir Jones's/Astro2's item
+/// rewards, none of Kassim's events touch `ZoneLoader` or achievements -
+/// the gold charge and the item engraving itself both happen directly in
+/// `World` (see `world::kassim`'s own module doc comment).
+pub(crate) fn apply_kassim_events(
+    runtime: &mut ServerRuntime,
+    events: Vec<KassimOutcomeEvent>,
+) -> usize {
+    let mut applied = 0;
+    for event in events {
+        match event {
+            KassimOutcomeEvent::UpdateKassimState {
+                player_id,
+                new_state,
+            } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.set_area3_kassim_state(new_state);
+                applied += 1;
+            }
+            KassimOutcomeEvent::UpdateSeenTimer { player_id, value } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.set_area3_kassim_seen_timer(value);
+                applied += 1;
+            }
+            KassimOutcomeEvent::UpdateItemWaitStart { player_id, value } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.set_area3_kassim_item_wait_starttime(value);
+                applied += 1;
             }
         }
     }

@@ -247,3 +247,38 @@ pub(crate) async fn carlos_driver_83(
         );
     }
 }
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn kassim_driver_84(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    _zone_loader: &mut ZoneLoader,
+    config: &ServerConfig,
+    _args: &Args,
+    _completed_actions: &[WorldActionCompletion],
+    _achievement_repository: &Option<ugaris_db::PgAchievementRepository>,
+    _character_repository: &Option<ugaris_db::PgCharacterRepository>,
+    _area_repository: &Option<ugaris_db::PgAreaRepository>,
+    _clan_repository: &Option<ugaris_db::PgClanRegistryRepository>,
+    _clan_log_repository: &Option<ugaris_db::PgClanLogRepository>,
+    _merchant_repository: &Option<ugaris_db::PgMerchantRepository>,
+    _military_master_storage_repository: &Option<ugaris_db::PgMilitaryMasterStorageRepository>,
+    _military_advisor_storage_repository: &Option<ugaris_db::PgMilitaryAdvisorStorageRepository>,
+    _notes_repository: &Option<ugaris_db::PgNotesRepository>,
+    _anticheat_repository: &Option<ugaris_db::PgAntiCheatRepository>,
+    _auction_repository: &Option<ugaris_db::PgAuctionRepository>,
+) {
+    // C `kassim_driver`: Aston's jewelry engraver NPC
+    // (`src/area/3/area3.c`).
+    let kassim_facts = kassim_player_facts(runtime);
+    let kassim_events =
+        world.process_kassim_actions(&kassim_facts, current_unix_time() as i32, config.area_id);
+    let kassim_events_applied = apply_kassim_events(runtime, kassim_events);
+    if kassim_events_applied != 0 {
+        info!(
+            kassim_events_applied,
+            tick = world.tick.0,
+            "applied kassim dialogue events"
+        );
+    }
+}

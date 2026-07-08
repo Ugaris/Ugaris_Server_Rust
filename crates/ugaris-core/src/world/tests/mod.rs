@@ -46,6 +46,7 @@ mod james;
 mod janitor;
 mod jessica;
 mod jiu;
+mod kassim;
 mod kelly;
 mod lab2_undead;
 mod lastseen;

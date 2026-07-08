@@ -474,18 +474,24 @@ Ordered by player progression; the C file is the oracle.
   `PlayerRuntime` accessor, `AchievementType::Dragonsbane` award wrapper,
   and 8 `IID_CARLOS_DOOR`/`IID_STAFF_DRAGON*`/`IID_MAX_*` item-id
   constants were added alongside it.
+  `kassim_driver` (the jewelry engraver, `world/npc/area3/kassim.rs`,
+  `CDR_KASSIM`) is now also ported: full state machine (greeting/
+  inscription-text/item-wait/engrave), `engrave: <text>` command parsing,
+  gold charge + `IF_ENGRAVED`/item-description writes, and idle
+  mutterings; a new `CharacterDriverState::Engrave` variant (same
+  "player, not NPC" precedent as `ClanFound`) carries the pending
+  inscription text, plus new `kassim_seen_timer`/
+  `kassim_item_wait_starttime` `PlayerRuntime` accessors and a new
+  `explain`(9) `AREA3_QA` entry.
   Still unported, in suggested order:
-  `kassim_driver` (engraving service; needs a new per-player transient
-  `DRD_ENGRAVE_DATA`-equivalent driver-state slot, same precedent as
-  `ClanFoundData`), `supermax_driver` (needs unported `skillmax`/
-  `supermax_canraise`/`supermax_cost` helpers from `tool.c`),
-  `lampghost_driver`/`_respawn`/`_dead` (needs a new global `lamp[250]`-
-  equivalent registry shared with the already-ported `onofflight_driver`;
-  do last - most architecturally distinct driver in the file). These
-  remaining 3 still need the `list`/`money`/`explain`/`engrave: `/~86-entry
-  raise-lower-skill block added to `AREA3_QA` (deferred rather than
-  guessing the `V_*` skill-id mapping ahead of time - see that table's own
-  doc comment).
+  `supermax_driver` (needs unported `skillmax`/`supermax_canraise`/
+  `supermax_cost` helpers from `tool.c`), `lampghost_driver`/`_respawn`/
+  `_dead` (needs a new global `lamp[250]`-equivalent registry shared with
+  the already-ported `onofflight_driver`; do last - most architecturally
+  distinct driver in the file). `supermax_driver` still needs the
+  `list`/`money`/~86-entry raise-lower-skill block added to `AREA3_QA`
+  (deferred rather than guessing the `V_*` skill-id mapping ahead of
+  time - see that table's own doc comment).
 - [ ] **Area 4 - `src/area/4/pents.c`** - pentagram quest NPCs + demon
   wave logic beyond the ported item boundary. Also wire the achievement
   calls this file's reward mechanic makes in C (`achievement_add_pents`,
@@ -811,4 +817,9 @@ notes live in `PROGRESS_ARCHIVE.md`.
   unconditional `Dragonsbane` achievement), plus `staffer_carlos2_state`
   and 8 new item-id constants. 2629 core + 1101 server tests pass, clean
   build/boot-smoke.
+- 2026-07-08: Area 3: ported `kassim_driver` (jewelry engraver: greeting/
+  inscription/item-wait/engrave state machine, `engrave:` command, gold
+  charge, `IF_ENGRAVED` item write), plus a new `CharacterDriverState::
+  Engrave` variant and 2 new `PlayerRuntime` timer accessors. 2639 core +
+  1101 server tests pass, clean build/boot-smoke.
 

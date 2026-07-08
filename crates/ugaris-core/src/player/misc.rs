@@ -650,8 +650,18 @@ pub(crate) const AREA3_PPD_WILLIAM_STATE_OFFSET: usize = 13 * 4;
 pub(crate) const AREA3_PPD_HERMIT_STATE_OFFSET: usize = 14 * 4;
 
 // Backs `cmd_showppd`'s `/showppd <name> area3` branch
-// (`src/system/command.c:339-346`), the only `area3_ppd` field it reads.
+// (`src/system/command.c:339-346`), plus `kassim_driver`
+// (`src/area/3/area3.c::kassim_driver`).
 pub(crate) const AREA3_PPD_KASSIM_STATE_OFFSET: usize = 15 * 4;
+
+/// C `struct area3_ppd::kassim_seen_timer` (`src/area/3/area3.h:35`):
+/// wall-clock `realtime` seconds at Kassim's last processed `NT_CHAR`.
+pub(crate) const AREA3_PPD_KASSIM_SEEN_TIMER_OFFSET: usize = 16 * 4;
+
+/// C `struct area3_ppd::kassim_item_wait_starttime` (`src/area/3/
+/// area3.h:36`): wall-clock `realtime` seconds when Kassim started
+/// waiting for the item to engrave.
+pub(crate) const AREA3_PPD_KASSIM_ITEM_WAIT_STARTTIME_OFFSET: usize = 17 * 4;
 
 // `struct area1_ppd` field offsets (`src/area/1/area1.h:24-75`), in
 // declaration order (0-based `int` index * 4). Only the fields consumed by
