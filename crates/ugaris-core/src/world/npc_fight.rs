@@ -857,7 +857,10 @@ impl World {
             character_value(target, CharacterValue::Tactics),
             character_value_present(target, CharacterValue::Tactics) != 0,
             attacker.flags.contains(CharacterFlags::IDEMON),
-            character_value(attacker, CharacterValue::Demon),
+            // C: freeze_value (tool.c) reads the caster's V_DEMON from value[1]
+            // (the base/present value, not the sunlight/combat-reducible current
+            // value[0]).
+            character_value_present(attacker, CharacterValue::Demon),
             character_value(target, CharacterValue::Cold),
         )
     }
@@ -1051,7 +1054,8 @@ impl World {
                 character_value(target, CharacterValue::Tactics),
                 target_has_tactics,
                 attacker.flags.contains(CharacterFlags::IDEMON),
-                character_value(&attacker, CharacterValue::Demon),
+                // C: freeze_value (tool.c) reads the caster's V_DEMON from value[1].
+                character_value_present(&attacker, CharacterValue::Demon),
                 character_value(target, CharacterValue::Cold),
             ) < -10;
         let flash_spacing = character_value_present(&attacker, CharacterValue::Flash) != 0
@@ -2276,7 +2280,8 @@ impl World {
                 character_value(target, CharacterValue::Tactics),
                 target_has_tactics,
                 attacker.flags.contains(CharacterFlags::IDEMON),
-                character_value(&attacker, CharacterValue::Demon),
+                // C: freeze_value (tool.c) reads the caster's V_DEMON from value[1].
+                character_value_present(&attacker, CharacterValue::Demon),
                 character_value(target, CharacterValue::Cold),
             );
             if modifier < -10 {

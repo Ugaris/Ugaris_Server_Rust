@@ -319,6 +319,41 @@ fn simple_baddy_fight_tasks_honor_legacy_nofreeze_gate() {
 }
 
 #[test]
+fn simple_baddy_freeze_modifier_uses_ice_demons_base_not_current_value_like_c() {
+    // C: freeze_value (tool.c:2166-2192) reads the caster's CF_IDEMON bonus
+    // from `ch[cn].value[1][V_DEMON]` (the base/"present" value), not
+    // `value[0]` (the current value, which update_char caps at
+    // min(current, present) and which sunlight/combat can reduce). Two
+    // otherwise-identical ice demons whose current V_DEMON differs from
+    // their base V_DEMON must still see the same freeze modifier, matching
+    // the base value.
+    let mut world = World::default();
+    let mut npc = character(1);
+    npc.flags.insert(CharacterFlags::IDEMON);
+    // Current (value[0]) V_DEMON is much lower than base (value[1]) -
+    // simulating a demon whose current value has been reduced (e.g. by
+    // update_char's cap or the earth-demon power-level mechanic).
+    npc.values[0][CharacterValue::Demon as usize] = 0;
+    npc.values[1][CharacterValue::Demon as usize] = 30;
+
+    let mut target = character(2);
+    target.values[0][CharacterValue::Cold as usize] = 40;
+
+    world.spawn_character(npc, 10, 10);
+    world.spawn_character(target, 12, 10);
+
+    let attacker = world.characters.get(&CharacterId(1)).unwrap().clone();
+    let target = world.characters.get(&CharacterId(2)).unwrap();
+
+    let modifier = world.simple_baddy_freeze_modifier(&attacker, target);
+
+    // C: str += (40 - 30) * 10 = +100 bonus term, using value[1]=30. Using
+    // value[0]=0 instead would have produced a much larger (+400) bonus.
+    let base = -(200 + 0 * 11 - 0 * 11);
+    assert_eq!(modifier, base + (40 - 30) * 10);
+}
+
+#[test]
 fn simple_baddy_fight_tasks_honor_legacy_noheal_gate() {
     let mut world = World::default();
     let mut npc = character(1);

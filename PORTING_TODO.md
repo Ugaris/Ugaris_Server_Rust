@@ -717,8 +717,11 @@ Ordered by player progression; the C file is the oracle.
   `take_soldiers`/`drop_soldiers`/`spawn_army_soldier` so a soldier's
   personality/relationship state survives a drop/re-recruit cycle. Area 8
   is now fully ported.
-- [ ] **Area 10 - `src/area/10/ice.c`** - ice NPCs, ice demon curse
-  integration (curse spell side is ported).
+- [x] **Area 10 - `src/area/10/ice.c`** - ice NPCs, ice demon curse
+  integration (curse spell side is ported). *(done - C's own `ch_driver`
+  is empty, all NPCs are plain `CDR_SIMPLEBADDY`; found and fixed a real
+  `CF_IDEMON` freeze-modifier bug in `npc_fight.rs` combat AI; details in
+  PORTING_LEDGER.md)*
 - [ ] **Area 11 - `src/area/11/palace.c`** - palace guards, Islena fight
   driver (door/bomb/cap items ported).
 - [ ] **Area 12 - `src/area/12/mine.c`** - keyholder golems, miners. Also
@@ -806,6 +809,10 @@ Ordered by player progression; the C file is the oracle.
 Keep entries to at most three lines: date, task, one-line result.
 Anything longer belongs in `PORTING_LEDGER.md`; historical verbose
 notes live in `PROGRESS_ARCHIVE.md`.
+
+- 2026-07-08: Area 10 (`ice.c`) closed - C's `ch_driver` is empty (all
+  NPCs plain `CDR_SIMPLEBADDY`); found/fixed a real `CF_IDEMON`
+  freeze-modifier bug in `npc_fight.rs`. 2833 core + 1113 server tests pass.
 
 - 2026-07-08: Area 8 `CDR_FDEMON_ARMY` emote-state cross-recruit persistence
   closed (`PlayerRuntime::farmy_soldier_emote`, wired into `area8_army.rs`).
