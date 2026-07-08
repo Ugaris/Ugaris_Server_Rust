@@ -1183,6 +1183,28 @@ pub(crate) async fn award_pentagram_solve_achievement(
     record_achievement_firsts_and_announce(world, repository, player_id, &name, &unlocked).await;
 }
 
+/// C `handle_demon_death`'s `achievement_award(killer_id,
+/// ACHIEVEMENT_DEMON_LORDS_DEMISE, 1)` (`src/area/4/pents.c:1402`), fired
+/// when a player lands the killing blow on a `CDR_PENTER` demon whose
+/// class fell in the demon-lord power-reduction range. Consumes a
+/// `CharacterId` queued by `World::apply_penter_demon_death`, drained by
+/// `crate::pents::process_penter_demon_lords_demise_awards`.
+pub(crate) async fn award_pentagram_demon_lords_demise_achievement(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    repository: &Option<ugaris_db::PgAchievementRepository>,
+    player_id: CharacterId,
+) {
+    award_bare_achievement(
+        world,
+        runtime,
+        repository,
+        player_id,
+        AchievementType::DemonLordsDemise,
+    )
+    .await;
+}
+
 /// C `give_first_kill`'s class-range congrats-message dispatch
 /// (`death.c:213-253`). `has_name` gates on `ch[co].flags & CF_HASNAME`
 /// (checked before any class range); the two subsequent `else if` chains

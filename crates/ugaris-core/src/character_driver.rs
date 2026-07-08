@@ -28,6 +28,13 @@ pub const CDR_SWAMPMONSTER: u16 = 56;
 pub const CDR_PALACEISLENA: u16 = 57;
 pub const CDR_TWOSKELLY: u16 = 70;
 pub const CDR_TRADER: u16 = 72;
+/// C `#define CDR_PENTER 64` (`src/system/drvlib.h`): pentagram-quest
+/// guardian demons (`src/area/4/pents.c::demon_character_driver`). Its own
+/// tail call is `char_driver(CDR_SIMPLEBADDY, ...)`, so `CDR_PENTER`
+/// characters reuse the SimpleBaddy AI end-to-end - see the
+/// `character.driver == CDR_SIMPLEBADDY` gates widened alongside
+/// `CDR_DUNGEONFIGHTER` in `world/npc_fight.rs`/`world/npc_idle.rs`.
+pub const CDR_PENTER: u16 = 64;
 pub const CDR_LQNPC: u16 = 74;
 pub const CDR_JANITOR: u16 = 85;
 pub const CDR_TEUFELDEMON: u16 = 114;

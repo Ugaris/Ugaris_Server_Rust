@@ -14,17 +14,27 @@
 //! bonus/text feedback here where `World`, `ServerRuntime`, and the DB
 //! achievement repository are all available.
 //!
-//! Not ported: demon spawning/`CDR_PENTER`/`CDR_TESTER` (so a solve never
-//! actually spawns guardian demons yet) and the `pentagram_record` DB
+//! Demon spawning (`spawn_demons_at_pentagram`) is orchestrated here too:
+//! `World::drain_pending_pentagram_demon_spawns` queues a planned spawn
+//! per activation/timer-reset/random-tick, and
+//! [`process_pentagram_demon_spawns`] instantiates each `penterN` zone
+//! template (needs `ZoneLoader`, which `World` doesn't have - same split
+//! as the edemon/fdemon gate spawns in `crate::spawns`), drops it at the
+//! pentagram, and calls back into `World` to finish the elite/lesser
+//! mutation, loot-table roll, and slot bookkeeping. Not ported: the
+//! `CDR_TESTER` QA-bot character driver and the `pentagram_record` DB
 //! persistence (in-memory only, like `World::arena_toplist`) - see
 //! `ugaris_core::world::pents`'s module doc comment.
 
 use super::*;
 use crate::achievement::{
-    award_pentagram_favored_by_fortune_achievement, award_pentagram_five_in_a_row_achievement,
-    award_pentagram_lucky_achievement, award_pentagram_solve_achievement,
+    award_pentagram_demon_lords_demise_achievement, award_pentagram_favored_by_fortune_achievement,
+    award_pentagram_five_in_a_row_achievement, award_pentagram_lucky_achievement,
+    award_pentagram_solve_achievement,
 };
-use ugaris_core::world::{level_value, PentagramActivationEvent};
+use ugaris_core::world::{
+    level_value, DemonType, PentagramActivationEvent, PentagramDemonSpawnRequest,
+};
 
 /// Drains `World::drain_pending_pentagram_activations` and applies the
 /// per-player half of C's pipeline for each queued activation. Call once
@@ -303,4 +313,102 @@ async fn distribute_pentagram_reward(
             "The current record is {record} pentagrammas in one run, held by {holder}. You have {pent_cnt} pentagrammas so far."
         ),
     );
+}
+
+/// Drains `World::drain_pending_pentagram_demon_spawns` and instantiates
+/// each planned demon from its `penterN` zone template. Call once per
+/// tick, alongside [`process_pentagram_activations`].
+pub(crate) fn process_pentagram_demon_spawns(
+    world: &mut World,
+    loader: &mut ZoneLoader,
+    runtime: &mut ServerRuntime,
+) {
+    for request in world.drain_pending_pentagram_demon_spawns() {
+        spawn_demons_at_pentagram(world, loader, runtime, request);
+    }
+}
+
+/// C `spawn_demons_at_pentagram` (`pents.c:1004-1091`): fills up to
+/// `World::pentagram_max_spawns` empty/stale slots (see
+/// `World::pentagram_spawn_slot_is_stale`) with newly created `penterN`
+/// demons, stopping early - matching C's `break` - the moment a template
+/// instantiation or map placement fails.
+fn spawn_demons_at_pentagram(
+    world: &mut World,
+    loader: &mut ZoneLoader,
+    runtime: &mut ServerRuntime,
+    request: PentagramDemonSpawnRequest,
+) {
+    let PentagramDemonSpawnRequest {
+        item_id,
+        mut spawn_count,
+        level,
+    } = request;
+    let max_spawns = world.pentagram_max_spawns(level).max(0) as usize;
+
+    for index in 0..max_spawns {
+        if spawn_count <= 0 {
+            break;
+        }
+        if !world.pentagram_spawn_slot_is_stale(item_id, index) {
+            continue;
+        }
+
+        let demon_type = world.roll_pentagram_demon_type();
+        let template = world.pentagram_demon_template_name(level);
+        let character_id = runtime.allocate_character_id();
+        let Ok((character, inventory_items)) =
+            loader.instantiate_character_template(&template, character_id)
+        else {
+            // C `if (!character_id) break;`.
+            break;
+        };
+        let serial = character.serial;
+        let original_class = character.class;
+        let demon_level = character.level;
+
+        // C `if (item_drop_char(item_id, character_id)) { ... } else {
+        // destroy_char(character_id); break; }` - the character was never
+        // added to `world.characters` on failure, so there's nothing to
+        // destroy here.
+        if world
+            .spawn_character_from_item_drop(character, item_id)
+            .is_none()
+        {
+            break;
+        }
+        for item in inventory_items {
+            world.items.insert(item.id, item);
+        }
+
+        world.finish_pentagram_demon_spawn(character_id, demon_type, original_class);
+
+        let loot_table = World::pentagram_demon_loot_table_id(
+            demon_level,
+            matches!(demon_type, DemonType::Elite),
+        );
+        world.loot_apply_to_npc(loader, character_id, loot_table);
+
+        world.apply_pentagram_spawn_result(item_id, index, character_id, serial);
+        spawn_count -= 1;
+    }
+}
+
+/// Drains `World::drain_pending_penter_demon_lords_demise_awards` and
+/// awards `ACHIEVEMENT_DEMON_LORDS_DEMISE` to each queued killer. Call
+/// once per tick, alongside [`process_pentagram_activations`].
+pub(crate) async fn process_penter_demon_lords_demise_awards(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    achievement_repository: &Option<ugaris_db::PgAchievementRepository>,
+) {
+    for player_id in world.drain_pending_penter_demon_lords_demise_awards() {
+        award_pentagram_demon_lords_demise_achievement(
+            world,
+            runtime,
+            achievement_repository,
+            player_id,
+        )
+        .await;
+    }
 }

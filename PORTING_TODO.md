@@ -525,25 +525,37 @@ Ordered by player progression; the C file is the oracle.
   `HAPPY_GO_LUCKY`/`FAVORED_BY_FORTUNE`/`achievement_add_pents`) are wired
   through `award_pentagram_*` helpers in `achievement.rs`. The
   `handle_demon_lord_door` access-time gate and the `IDR_PENT`/
-  `IDR_PENTBOSSDOOR` item drivers were already ported before this. Still
-  unported: (1) demon spawning (`spawn_demons_at_pentagram`/
-  `enhance_elite_demon`/`adjust_lesser_demon`/`enhance_demon_character`) -
-  pentagrams activate/solve/reward correctly but never spawn guardian
-  demons yet, so `handle_pentagram_interaction`'s `spawn_count` branches
-  are a no-op; (2) the `CDR_PENTER` demon character driver
-  (`process_demon_messages`'s loot-table dispatch - the referenced
-  `pent_demon_{low,mid,high}[_elite]` JSON tables don't exist under
-  `ugaris_data/loot/` yet either - plus `update_demon_profession`) and
-  `handle_demon_death`'s power-level-reduction/`DEMON_LORDS_DEMISE`
-  achievement, both meaningless until (1) lands; (3) the `CDR_TESTER` QA
-  helper NPC (`pentagram_tester_driver`, a test-only bot that auto-hunts
+  `IDR_PENTBOSSDOOR` item drivers were already ported before this.
+  (1)+(2) now CLOSED together: demon spawning (`spawn_demons_at_pentagram`/
+  `enhance_elite_demon`/`adjust_lesser_demon`/`enhance_demon_character`/
+  slot bookkeeping in the pentagram item's `driver_data[6..]`) is ported
+  in `World` (`world/pents.rs`) plus a `ugaris-server`-side `pents.rs`
+  glue (`process_pentagram_demon_spawns`) that instantiates each planned
+  `penterN` template (needs `ZoneLoader`); spawned demons get a new
+  `CDR_PENTER` driver id whose own tick AI is the `CDR_SIMPLEBADDY`
+  self-defense/idle-wander driver reused wholesale (widened
+  `character.driver == CDR_SIMPLEBADDY` gates in `world/npc_fight.rs`/
+  `world/npc_idle.rs`, same precedent as `CDR_DUNGEONFIGHTER`), so no
+  separate `demon_character_driver` dispatch was needed. The
+  `pent_demon_{low,mid,high}[_elite]` JSON loot tables already exist
+  under `ugaris_data/loot/pents/` (rolled once per spawn via
+  `loot_apply_to_npc`, matching C's `process_demon_messages`).
+  `update_demon_profession` and `handle_demon_death`'s power-level-
+  reduction/`DEMON_LORDS_DEMISE` achievement (wired through a new
+  `award_pentagram_demon_lords_demise_achievement` helper) are also
+  ported (`World::update_demon_profession`/`apply_penter_demon_death`,
+  the latter hooked into `World::kill_character_followup` so it fires
+  for every `CDR_PENTER` death regardless of whether a killer exists,
+  matching C's `ch_died_driver` semantics - unlike the `LegacyHurtEvent`-
+  based death-hook family, which only fires when there's a killer).
+  Still unported: (3) the `CDR_TESTER` QA helper NPC
+  (`pentagram_tester_driver`, a test-only bot that auto-hunts
   pentagrams/demons - lowest priority, not player-facing); (4)
   `pentagram_record` DB persistence (in-memory only right now, like
   `World::arena_toplist`, resets on restart) and the macro-daemon
   challenge-room `saved_pent_*` restore (already a documented no-op in
-  `macro_daemon.rs`). Next slice should be (1)+(2) together (spawning has
-  no player-visible effect without the driver that makes spawned demons
-  fight back / drop loot / reduce training power on a demon-lord kill).
+  `macro_daemon.rs`). Next slice should be (3) or (4), whichever a future
+  iteration judges lower-effort; neither blocks any other P4 area.
 - [ ] **Area 6 - `src/area/6/edemon.c`** - Earth Demon boss driver
   (`CDR_EDEMON*` characters); machinery items are ported.
 - [ ] **Area 8 - `src/area/8/fdemon.c`** - Fire Demon boss + farm NPCs;
@@ -881,4 +893,9 @@ notes live in `PROGRESS_ARCHIVE.md`.
   achievement call sites; demon spawning/`CDR_PENTER`/`CDR_TESTER`/DB
   record persistence remain (see checkbox REMAINING). 2680 core + 1106
   server tests pass, clean build/boot-smoke.
+- 2026-07-08: Area 4: ported demon spawning + the `CDR_PENTER` demon
+  driver (reuses `CDR_SIMPLEBADDY` AI) + `update_demon_profession` +
+  `handle_demon_death`'s power-reduction/`DEMON_LORDS_DEMISE` award; only
+  `CDR_TESTER` and `pentagram_record` DB persistence remain. 2696 core +
+  1108 server tests pass, clean build/boot-smoke.
 

@@ -1356,5 +1356,12 @@ pub(crate) async fn process_completed_action_outcomes(
         }
 
         crate::pents::process_pentagram_activations(world, runtime, achievement_repository).await;
+        crate::pents::process_pentagram_demon_spawns(world, zone_loader, runtime);
+        crate::pents::process_penter_demon_lords_demise_awards(
+            world,
+            runtime,
+            achievement_repository,
+        )
+        .await;
     }
 }

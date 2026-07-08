@@ -114,6 +114,7 @@ impl World {
         let target_class = target.class;
         let target_has_name = target.flags.contains(CharacterFlags::HASNAME);
         let target_name = target.name.clone();
+        let target_driver = target.driver;
 
         // C: if (ch[cn].flags & CF_RESPAWN) set_timer(ticker + ch[cn].respawn, respawn_callback, ...)
         if target.flags.contains(CharacterFlags::RESPAWN) && !target.template_key.is_empty() {
@@ -125,6 +126,15 @@ impl World {
             };
             let delay = target.respawn_ticks.max(1) as u64;
             self.schedule_npc_respawn(&template_key, x, y, delay);
+        }
+
+        // C `ch_died_driver`'s `CDR_PENTER` case (`pents.c:1889-1893`,
+        // `handle_demon_death`): dispatched unconditionally at every death
+        // (unlike `apply_character_death_driver`, only called below when
+        // `cause_id` is `Some`), since C's power-level reduction runs
+        // regardless of whether a killer exists.
+        if target_driver == crate::character_driver::CDR_PENTER {
+            self.apply_penter_demon_death(target_id, cause_id);
         }
 
         // C: killer experience via kill_score with hardcore/lag caps.

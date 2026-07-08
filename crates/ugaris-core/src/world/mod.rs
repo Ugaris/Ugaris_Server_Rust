@@ -142,7 +142,7 @@ use crate::{
         remove_simple_baddy_enemy as remove_simple_baddy_enemy_state, CharacterDriverMessage,
         CharacterDriverOutcome, CharacterDriverState, FightDriverData, SimpleBaddyEnemy,
         SimpleBaddyMessageOutcome, CDR_ACLERK, CDR_CAMERON_FORESTMONSTER, CDR_DUNGEONFIGHTER,
-        CDR_GATE_WELCOME, CDR_LOSTCON, CDR_MERCHANT, CDR_SIMPLEBADDY, CDR_SWAMPMONSTER,
+        CDR_GATE_WELCOME, CDR_LOSTCON, CDR_MERCHANT, CDR_PENTER, CDR_SIMPLEBADDY, CDR_SWAMPMONSTER,
         FDEMON_MSG_WAYPOINT, NTID_FDEMON, NTID_LAB2_DEAMONCHECK, NTID_LABGNOMETORCH,
         NTID_TWOCITY_PICK, NT_CHAR, NT_DEAD, NT_DIDHIT, NT_GIVE, NT_GOTHIT, NT_ITEM, NT_NPC,
         NT_SEEHIT, NT_SPELL, NT_TEXT,
@@ -562,6 +562,20 @@ pub struct World {
     /// per-player half of C's reward pipeline - see
     /// [`pents::PentagramActivationEvent`]'s doc comment.
     pending_pentagram_activations: Vec<PentagramActivationEvent>,
+    /// Planned pentagram demon spawns (C `spawn_demons_at_pentagram`
+    /// calls from `handle_pentagram_interaction`) queued for
+    /// `ugaris-server`'s `pents` module to instantiate from `penterN`
+    /// zone templates - see [`pents::PentagramDemonSpawnRequest`]'s doc
+    /// comment.
+    pending_pentagram_demon_spawns: Vec<PentagramDemonSpawnRequest>,
+    /// `CharacterId`s of players who just landed the killing blow on a
+    /// `CDR_PENTER` demon whose class fell in C's demon-lord power-
+    /// reduction range (`handle_demon_death`'s `258..=305`/`404..=411`
+    /// gate, `pents.c:1379`) - the `ACHIEVEMENT_DEMON_LORDS_DEMISE`
+    /// one-shot award needs the async DB-backed achievement repository
+    /// `World` doesn't have, same architectural split as every other
+    /// `pending_*_achievement*`-shaped queue.
+    pending_penter_demon_lords_demise_awards: Vec<CharacterId>,
 }
 
 impl Default for Tick {

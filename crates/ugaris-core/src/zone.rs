@@ -571,6 +571,19 @@ impl ZoneLoader {
             character.push_driver_message(NT_CREATE, 0, 0, 0);
             apply_simple_baddy_create_message(&mut character, Some(&template.args), 0);
         }
+        if template.driver == crate::character_driver::CDR_PENTER {
+            // C `pents.c::demon_character_driver` (`pents.c:1594-1603`):
+            // every pentagram-quest guardian demon's own tail call is
+            // `char_driver(CDR_SIMPLEBADDY, CDT_DRIVER, character_id, ret,
+            // lastact)`, reusing the SimpleBaddy driver's full idle-wander/
+            // auto-attack AI wholesale - same precedent as
+            // `CDR_DUNGEONFIGHTER` above. The `penterN` templates
+            // (`zones/4/pents.chr`) carry the same
+            // `arg="aggressive=1;helper=0;scavenger=...;"` shape
+            // SimpleBaddy's own `NT_CREATE` handler parses.
+            character.push_driver_message(NT_CREATE, 0, 0, 0);
+            apply_simple_baddy_create_message(&mut character, Some(&template.args), 0);
+        }
         if template.driver == crate::character_driver::CDR_MILITARY_MASTER {
             character.driver_state = Some(CharacterDriverState::MilitaryMaster(
                 crate::character_driver::parse_military_master_driver_args(&template.args),
