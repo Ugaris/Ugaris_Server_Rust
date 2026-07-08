@@ -2163,21 +2163,53 @@
         "7515:- 2026-07-07: continued the P0.5 \"Finish main() phase decomposition\" task with its second completed-action-outcome family slice: the chest family - 16 `ItemDriverOutcome` variants (`ChestTreasure",
         "7516:- 2026-07-07: continued the P0.5 \"Finish main() phase decomposition\" task with its third completed-action-outcome family slice: the dungeon family (`src/area/13/dungeon.c`) - 7 contiguous `ItemDr"
       ]
+    },
+    {
+      "iteration": 63,
+      "startedAt": "2026-07-08T09:23:35.095Z",
+      "endedAt": "2026-07-08T09:43:33.341Z",
+      "durationMs": 1197162,
+      "agent": "opencode",
+      "model": "anthropic/claude-sonnet-5",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "PORTING_TODO.md",
+        "crates/ugaris-core/src/player/areas_misc.rs",
+        "crates/ugaris-core/src/player/misc.rs",
+        "crates/ugaris-core/src/player/tests/areas_misc.rs",
+        "crates/ugaris-core/src/world/npc/area8/mod.rs",
+        "crates/ugaris-core/src/world/npc/area8/fdemon_army.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "Verified: `cargo fmt --all` clean, `cargo test --workspace` (2762 core + 1108 server, zero failures), `cargo build -p ugaris-server` zero warnings, boot-smoke confirmed no panics.",
+        "test result: ok. 1108 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.09s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test world::npc::area8::fdemon_army::tests::rank_five_recruits_slot_one_avoiding_slot_zero_profile ... FAILED",
+        "test result: FAILED. 7 passed; 1 failed; 0 ignored; 0 measured; 2753 filtered out; finished in 0.00s",
+        "error: test failed, to rerun pass `-p ugaris-core --lib`",
+        "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 2753 filtered out; finished in 0.00s",
+        "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 2758 filtered out; finished in 0.00s",
+        "test result: ok. 2762 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.23s",
+        "test result: ok. 81 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+      ]
     }
   ],
-  "totalDurationMs": 79868386,
+  "totalDurationMs": 81065548,
   "struggleIndicators": {
     "repeatedErrors": {
       "Everything builds cleanly, all tests pass (2380 core + 1091 server, zero failures, zero warnings), f": 1,
       "Verification: `cargo fmt --all`, `cargo test --workspace` (2380 ugaris-core + 1091 ugaris-server, al": 1,
       "test result: ok. 1089 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.09s": 1,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 62,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 63,
       "The arguments provided to the tool are invalid: Invalid input for tool read: JSON parsing failed: Te": 15,
       "Error message: JSON Parse error: Property name must be a string literal": 12,
       "error: could not compile `ugaris-core` (lib) due to 4 previous errors": 2,
       "test world::tests::brithildie::give_hands_item_back_to_giver ... FAILED": 1,
       "test result: FAILED. 17 passed; 1 failed; 0 ignored; 0 measured; 2362 filtered out; finished in 0.00": 1,
-      "error: test failed, to rerun pass `-p ugaris-core --lib`": 3,
+      "error: test failed, to rerun pass `-p ugaris-core --lib`": 4,
       "All 1091 server tests still pass (same count as before), no failures. Let's check for warnings speci": 1,
       "1. Health check: `cargo test --workspace` was already green (2380 core + 78 db + 3 net + 45 protocol": 1,
       "\u001b[0m$ \u001b[0mcargo test --workspace 2>&1 | grep -E \"FAILED|error|test result\"": 2,
@@ -2380,7 +2412,7 @@
       "- All verification green: `cargo fmt --all`, `cargo test --workspace` (2696 core + 81 db + 1108 serv": 1,
       "test result: ok. 2696 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.22s": 2,
       "test result: ok. 1108 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.12s": 1,
-      "test result: ok. 1108 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.09s": 3,
+      "test result: ok. 1108 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.09s": 4,
       "245-        return Err(DoError::Dead);": 1,
       "248-    let direction = Direction::try_from(direction).map_err(|_| DoError::IllegalDirection)?;": 1,
       "test world::tests::tester::tester_takes_an_adjacent_potion_directly ... FAILED": 1,
@@ -2397,14 +2429,20 @@
       "All green, no failures, no build warnings (matches are test names containing \"warning\", not compiler": 1,
       "- `cargo test --workspace`: 2712 core (+1 new regression test) + 81 db + 3 net + 45 protocol + 1108 ": 1,
       "test result: ok. 2711 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.23s": 1,
-      "test result: ok. 81 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 1,
+      "test result: ok. 81 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 2,
       "- **14 new focused tests**, all passing; full workspace suite green (2724 core + 1108 server + other": 1,
       ".ok_or(ZoneError::MapOutOfBounds {": 1,
       "test world::tests::fdemon::build_connects_waypoints_forty_tiles_apart ... FAILED": 1,
       "test world::tests::fdemon::add_enemy_and_hunt_driver_walks_toward_it ... FAILED": 1,
       "test world::tests::fdemon::find_way_to_waypoint_returns_first_hop ... FAILED": 1,
       "Let's fix the two failing tests by setting bright daylight:": 1,
-      "All green: 2753 core + 81 db + 1108 server tests pass, zero failures. Let's do a final boot-smoke co": 1
+      "All green: 2753 core + 81 db + 1108 server tests pass, zero failures. Let's do a final boot-smoke co": 1,
+      "Verified: `cargo fmt --all` clean, `cargo test --workspace` (2762 core + 1108 server, zero failures)": 1,
+      "test world::npc::area8::fdemon_army::tests::rank_five_recruits_slot_one_avoiding_slot_zero_profile .": 1,
+      "test result: FAILED. 7 passed; 1 failed; 0 ignored; 0 measured; 2753 filtered out; finished in 0.00s": 1,
+      "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 2753 filtered out; finished in 0.00s": 1,
+      "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 2758 filtered out; finished in 0.00s": 1,
+      "test result: ok. 2762 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.23s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

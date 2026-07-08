@@ -266,6 +266,70 @@ fn farmy_boss_stage_timer_counter_reported_accessors_round_trip() {
 }
 
 #[test]
+fn farmy_soldier_slot_accessors_round_trip_and_do_not_clobber_neighbors() {
+    let mut player = PlayerRuntime::connected(1, 0);
+    for slot in 0..3 {
+        assert_eq!(player.farmy_soldier_type(slot), 0);
+        assert_eq!(player.farmy_soldier_rank(slot), 0);
+        assert_eq!(player.farmy_soldier_base(slot), 0);
+        assert_eq!(player.farmy_soldier_profile(slot), 0);
+        assert_eq!(player.farmy_soldier_exp(slot), 0);
+        assert_eq!(player.farmy_soldier_cn(slot), 0);
+        assert_eq!(player.farmy_soldier_serial(slot), 0);
+    }
+
+    player.set_farmy_soldier_type(0, 2);
+    player.set_farmy_soldier_rank(0, 1);
+    player.set_farmy_soldier_base(0, 47);
+    player.set_farmy_soldier_profile(0, 9);
+    player.set_farmy_soldier_exp(0, 12_345);
+    player.set_farmy_soldier_cn(0, 555);
+    player.set_farmy_soldier_serial(0, 42);
+
+    player.set_farmy_soldier_type(2, 1);
+    player.set_farmy_soldier_profile(2, 3);
+
+    // Slot 0's fields don't bleed into slot 1 or slot 2.
+    assert_eq!(player.farmy_soldier_type(0), 2);
+    assert_eq!(player.farmy_soldier_rank(0), 1);
+    assert_eq!(player.farmy_soldier_base(0), 47);
+    assert_eq!(player.farmy_soldier_profile(0), 9);
+    assert_eq!(player.farmy_soldier_exp(0), 12_345);
+    assert_eq!(player.farmy_soldier_cn(0), 555);
+    assert_eq!(player.farmy_soldier_serial(0), 42);
+    assert_eq!(player.farmy_soldier_type(1), 0);
+    assert_eq!(player.farmy_soldier_profile(1), 0);
+    assert_eq!(player.farmy_soldier_type(2), 1);
+    assert_eq!(player.farmy_soldier_profile(2), 3);
+
+    // Out-of-range slots read as 0 and writes are a documented no-op.
+    assert_eq!(player.farmy_soldier_type(3), 0);
+    player.set_farmy_soldier_type(3, 99);
+    assert_eq!(player.farmy_soldier_type(3), 0);
+
+    // The soldier array sits strictly between boss_timer and boss_counter,
+    // so writing soldier fields never disturbs the already-ported boss
+    // fields, and vice versa.
+    player.set_farmy_boss_stage(7);
+    player.set_farmy_boss_counter(11);
+    assert_eq!(player.farmy_soldier_type(0), 2);
+    assert_eq!(player.farmy_boss_stage(), 7);
+    assert_eq!(player.farmy_boss_counter(), 11);
+
+    // Round-trips through the outer legacy blob.
+    let encoded = player.encode_legacy_ppd_blob(&[]);
+    let mut decoded = PlayerRuntime::connected(2, 0);
+    assert!(decoded.decode_legacy_ppd_blob(&encoded));
+    assert_eq!(decoded.farmy_soldier_type(0), 2);
+    assert_eq!(decoded.farmy_soldier_exp(0), 12_345);
+    assert_eq!(decoded.farmy_soldier_cn(0), 555);
+    assert_eq!(decoded.farmy_soldier_serial(0), 42);
+    assert_eq!(decoded.farmy_soldier_profile(2), 3);
+    assert_eq!(decoded.farmy_boss_stage(), 7);
+    assert_eq!(decoded.farmy_boss_counter(), 11);
+}
+
+#[test]
 fn teufelrat_ppd_codec_matches_legacy_rat_data_layout() {
     let mut player = PlayerRuntime::connected(1, 0);
     assert_eq!(player.add_teufel_rat_kill(80, false), (1, 64));

@@ -1,8 +1,11 @@
 //! Area 8 NPCs, one file per NPC.
 
+pub mod fdemon_army;
 pub mod fdemon_boss;
 pub mod fdemon_demon;
 
+#[allow(unused_imports)]
+pub use fdemon_army::*;
 #[allow(unused_imports)]
 pub use fdemon_boss::*;
 #[allow(unused_imports)]

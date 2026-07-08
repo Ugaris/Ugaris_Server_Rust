@@ -402,6 +402,108 @@ impl PlayerRuntime {
         write_i32(&mut self.farmy_ppd, FARMY_PPD_BOSS_REPORTED_OFFSET, value);
     }
 
+    /// Byte offset of `field` within `struct farmy_ppd::soldier[slot]`
+    /// (`src/area/8/fdemon.c:364`). `slot` is clamped to
+    /// `0..CDR_FDEMON_ARMY::MAXSOLDIER` by every caller below (out-of-range
+    /// reads return `0`, out-of-range writes are a documented no-op) so a
+    /// stray slot index can never corrupt `boss_counter`/`boss_reported`,
+    /// which sit right after the soldier array.
+    fn farmy_soldier_field_offset(slot: usize, field: usize) -> usize {
+        FARMY_SOLDIER_ARRAY_OFFSET + slot * FARMY_SOLDIER_STRIDE + field
+    }
+
+    fn farmy_soldier_field(&self, slot: usize, field: usize) -> i32 {
+        if slot >= crate::world::npc::area8::fdemon_army::MAXSOLDIER
+            || self.farmy_ppd.len() < LEGACY_FARMY_PPD_SIZE
+        {
+            return 0;
+        }
+        read_i32(
+            &self.farmy_ppd,
+            Self::farmy_soldier_field_offset(slot, field),
+        )
+    }
+
+    fn set_farmy_soldier_field(&mut self, slot: usize, field: usize, value: i32) {
+        if slot >= crate::world::npc::area8::fdemon_army::MAXSOLDIER {
+            return;
+        }
+        self.ensure_farmy_ppd_sized();
+        write_i32(
+            &mut self.farmy_ppd,
+            Self::farmy_soldier_field_offset(slot, field),
+            value,
+        );
+    }
+
+    /// C `struct soldier::type` (`0`=empty, `1`=warrior, `2`=mage;
+    /// `src/area/8/fdemon.c:347`).
+    pub fn farmy_soldier_type(&self, slot: usize) -> i32 {
+        self.farmy_soldier_field(slot, FARMY_SOLDIER_TYPE_FIELD)
+    }
+
+    pub fn set_farmy_soldier_type(&mut self, slot: usize, value: i32) {
+        self.set_farmy_soldier_field(slot, FARMY_SOLDIER_TYPE_FIELD, value);
+    }
+
+    /// C `struct soldier::rank` (army rank, `fdemon.c:349`).
+    pub fn farmy_soldier_rank(&self, slot: usize) -> i32 {
+        self.farmy_soldier_field(slot, FARMY_SOLDIER_RANK_FIELD)
+    }
+
+    pub fn set_farmy_soldier_rank(&mut self, slot: usize, value: i32) {
+        self.set_farmy_soldier_field(slot, FARMY_SOLDIER_RANK_FIELD, value);
+    }
+
+    /// C `struct soldier::base` (strength base, `43 + rank * 4`;
+    /// `fdemon.c:350,408`).
+    pub fn farmy_soldier_base(&self, slot: usize) -> i32 {
+        self.farmy_soldier_field(slot, FARMY_SOLDIER_BASE_FIELD)
+    }
+
+    pub fn set_farmy_soldier_base(&mut self, slot: usize, value: i32) {
+        self.set_farmy_soldier_field(slot, FARMY_SOLDIER_BASE_FIELD, value);
+    }
+
+    /// C `struct soldier::profile` (index into `profile[]`, `fdemon.c:351`).
+    pub fn farmy_soldier_profile(&self, slot: usize) -> i32 {
+        self.farmy_soldier_field(slot, FARMY_SOLDIER_PROFILE_FIELD)
+    }
+
+    pub fn set_farmy_soldier_profile(&mut self, slot: usize, value: i32) {
+        self.set_farmy_soldier_field(slot, FARMY_SOLDIER_PROFILE_FIELD, value);
+    }
+
+    /// C `struct soldier::exp` (`fdemon.c:353`).
+    pub fn farmy_soldier_exp(&self, slot: usize) -> i32 {
+        self.farmy_soldier_field(slot, FARMY_SOLDIER_EXP_FIELD)
+    }
+
+    pub fn set_farmy_soldier_exp(&mut self, slot: usize, value: i32) {
+        self.set_farmy_soldier_field(slot, FARMY_SOLDIER_EXP_FIELD, value);
+    }
+
+    /// C `struct soldier::cn` (live character id of the spawned soldier, `0`
+    /// when not currently spawned; `fdemon.c:354`).
+    pub fn farmy_soldier_cn(&self, slot: usize) -> i32 {
+        self.farmy_soldier_field(slot, FARMY_SOLDIER_CN_FIELD)
+    }
+
+    pub fn set_farmy_soldier_cn(&mut self, slot: usize, value: i32) {
+        self.set_farmy_soldier_field(slot, FARMY_SOLDIER_CN_FIELD, value);
+    }
+
+    /// C `struct soldier::serial` (`0` when not currently spawned, guards
+    /// against a stale `cn` being reused by an unrelated character;
+    /// `fdemon.c:355`).
+    pub fn farmy_soldier_serial(&self, slot: usize) -> i32 {
+        self.farmy_soldier_field(slot, FARMY_SOLDIER_SERIAL_FIELD)
+    }
+
+    pub fn set_farmy_soldier_serial(&mut self, slot: usize, value: i32) {
+        self.set_farmy_soldier_field(slot, FARMY_SOLDIER_SERIAL_FIELD, value);
+    }
+
     pub fn advance_farmy_blood_stage(&mut self) -> bool {
         let stage = self.farmy_boss_stage();
         if !(19..=20).contains(&stage) {

@@ -814,17 +814,41 @@ pub(crate) const FARMY_PPD_BOSS_TIMER_OFFSET: usize = 4;
 /// `likes[MAXSOLDIER+1]`/`talked[MAXSOLDIER+1]` = `2*4 ints` + `4 ints`
 /// (`answer_timer`/`answer_cn`/`answer_type`/`last_emote`) = `20 ints`), so
 /// `struct soldier` is `27 ints` = `108` bytes; `3 * 108 = 324` bytes of
-/// soldier array, giving `boss_counter` offset `8 + 324 = 332`. The soldier
-/// array itself is not yet exposed via a typed accessor (no
-/// `CDR_FDEMON_ARMY` recruitment yet); only its *size* matters here to keep
-/// `boss_counter`/`boss_reported` at their correct legacy byte offsets so
-/// this block round-trips unmodified through unrelated `PlayerRuntime`
-/// saves.
+/// soldier array, giving `boss_counter` offset `8 + 324 = 332`. The
+/// `type`/`rank`/`base`/`profile`/`exp`/`cn`/`serial` prefix of each
+/// soldier slot is now exposed via typed accessors (see
+/// `FARMY_SOLDIER_ARRAY_OFFSET`/`FARMY_SOLDIER_STRIDE` below and
+/// `PlayerRuntime::farmy_soldier_type`/etc. in `areas_misc.rs`); the
+/// embedded `struct emote` sub-fields (offsets `+28..+108` within each
+/// soldier slot) remain unexposed pending the `CDR_FDEMON_ARMY` emote
+/// engine - only their *size* matters here to keep `boss_counter`/
+/// `boss_reported` at their correct legacy byte offsets so that block
+/// round-trips unmodified through unrelated `PlayerRuntime` saves.
 pub(crate) const FARMY_PPD_BOSS_COUNTER_OFFSET: usize = 332;
 
 /// C `struct farmy_ppd::boss_reported` (`src/area/8/fdemon.c:367`, right
 /// after `boss_counter`).
 pub(crate) const FARMY_PPD_BOSS_REPORTED_OFFSET: usize = 336;
+
+/// Byte offset of `struct farmy_ppd::soldier[0]` (`src/area/8/fdemon.c:364`):
+/// right after `boss_stage`/`boss_timer` (`2 ints` = `8` bytes).
+pub(crate) const FARMY_SOLDIER_ARRAY_OFFSET: usize = 8;
+
+/// `sizeof(struct soldier)` (`src/area/8/fdemon.c:346-358`): `7 ints`
+/// (`type`/`rank`/`base`/`profile`/`exp`/`cn`/`serial`) + embedded `struct
+/// emote` (`20 ints`) = `27 ints` = `108` bytes. See
+/// `FARMY_PPD_BOSS_COUNTER_OFFSET`'s doc comment for the full breakdown.
+pub(crate) const FARMY_SOLDIER_STRIDE: usize = 108;
+
+/// Field offsets within one `struct soldier` slot (`src/area/8/fdemon.c:
+/// 346-358`), in declaration order.
+pub(crate) const FARMY_SOLDIER_TYPE_FIELD: usize = 0;
+pub(crate) const FARMY_SOLDIER_RANK_FIELD: usize = 4;
+pub(crate) const FARMY_SOLDIER_BASE_FIELD: usize = 8;
+pub(crate) const FARMY_SOLDIER_PROFILE_FIELD: usize = 12;
+pub(crate) const FARMY_SOLDIER_EXP_FIELD: usize = 16;
+pub(crate) const FARMY_SOLDIER_CN_FIELD: usize = 20;
+pub(crate) const FARMY_SOLDIER_SERIAL_FIELD: usize = 24;
 
 pub(crate) const TEUFELRAT_PPD_KILLS_OFFSET: usize = 0;
 

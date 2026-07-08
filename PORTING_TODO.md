@@ -625,7 +625,20 @@ Ordered by player progression; the C file is the oracle.
   Still unported: `CDR_FDEMON_ARMY` (the recruitable-soldier "take"/"drop"/
   formation-following/emote system, `farmy_data`/`farmy_ppd.soldier[]`) -
   the boss's own "take"/"drop" `NT_TEXT` tail and `platoon_exp`'s soldier-
-  exp loop are documented gaps pending that driver.
+  exp loop are documented gaps pending that driver. First slice of that
+  driver ported: the pure, spawning-independent `struct profile`/
+  `assign_profile`/`take_soldiers` type-and-profile eligibility logic
+  (`world::npc::area8::fdemon_army`) plus the `struct soldier` PPD field
+  accessors (`PlayerRuntime::farmy_soldier_type`/`_rank`/`_base`/
+  `_profile`/`_exp`/`_cn`/`_serial` in `player/areas_misc.rs`). Still
+  needed: the actual `take_soldiers`/`drop_soldiers` character spawning
+  (`ZoneLoader::instantiate_character_template("army1s"/"army2s", ..)`,
+  skill-tiered equipment, `drop_char` placement), the `CDR_FDEMON_ARMY`
+  driver id + `CharacterDriverState` variant + `army_follow_driver`/
+  `army_front_driver`/`army_back_driver`/`army_behind_driver` formation AI,
+  `find_platoon`/`platoon_exp`'s soldier-exp half, the `do_emote`/
+  `got_emote` emote engine, and the `it_driver` item triggers
+  (`it[in].drdata[6]` 1-6) that call `take_soldiers`/`drop_soldiers`.
 - [ ] **Area 10 - `src/area/10/ice.c`** - ice NPCs, ice demon curse
   integration (curse spell side is ported).
 - [ ] **Area 11 - `src/area/11/palace.c`** - palace guards, Islena fight
@@ -993,4 +1006,8 @@ notes live in `PROGRESS_ARCHIVE.md`.
   `IDR_FDEMONLOADER` defense-station bookkeeping; only `CDR_FDEMON_ARMY`
   remains. 2753 core + 1108 server tests pass, clean build/boot-smoke
   (verified live against real `zones/8/fire.map` data with the Commander).
+- 2026-07-08: Area 8 `CDR_FDEMON_ARMY` first slice: pure `profile[]`/
+  `assign_profile`/type-eligibility logic (`fdemon_army.rs`) + `struct
+  soldier` PPD accessors; spawning/formation-AI/emotes still remain.
+  2762 core + 1108 server tests pass, clean build/boot-smoke.
 
