@@ -664,15 +664,29 @@ Ordered by player progression; the C file is the oracle.
   `World::setup_walk_toward` (already an exact `move_driver` equivalent -
   `pathfinder` + `walk_or_use_driver`) if not already positioned, and
   attacks with `do_action::do_attack` once in position - so `MIS_BEHIND`
-  is now a fully live mission. Still needed: combat/heal/bless
-  self-defense (`fight_driver_update`/`do_heal`/`do_bless`/
-  `fight_driver_attack_visible`), the `do_emote`/`got_emote`
-  personality/chat engine (`FarmyData` omits the `emote` field entirely,
-  and the `NT_TEXT` handler's `res >= 20` emote-reaction dispatch plus its
-  own emote-stats debug command are both skipped), `platoon_exp`'s now-
-  reachable-but-still-unported soldier-exp/promotion loop, and the
-  `it_driver` item triggers (`it[in].drdata[6]` 1-6) that also call
-  `take_soldiers`/`drop_soldiers`.
+  is now a fully live mission. Combat/heal/bless self-defense
+  (`fight_driver_update`/`do_heal`/`do_bless`/`fight_driver_attack_
+  visible`) is now also ported (`world::npc::area8::fdemon_army_combat`):
+  a direct-scan replacement for `fdemon_army`'s own `NT_CHAR` handling
+  (leader tracking + bless/heal target selection, same "replace message-
+  driven sighting with a scan" precedent as `fdemon_demon`/`fdemon_boss`)
+  plus real message-driven `NT_GOTHIT`/`NT_SEEHIT` aggro tracking (the
+  previous `fdemon_army_process_text_messages` silently discarded these -
+  renamed to `fdemon_army_process_messages` and broadened) and a direct
+  call to the already-ported multi-enemy `fight_driver_attack_visible_
+  and_follow`. Also fixed a real gap this uncovered: soldier spawning
+  never seeded the driver-independent `DRD_FIGHTDRIVER` slot C's own
+  `fight_driver_set_dist(cn, 0, 20, 0)` NT_CREATE handler sets, so no
+  self-defense enemy could ever be recorded - added to `area8_army.rs`'s
+  `spawn_army_soldier`. Confirmed the previous note's `it_driver`
+  drdata[6] take/drop-soldier item triggers do not exist in the C source
+  (only `fdemon_boss`'s NT_TEXT-based take/drop, already ported) - removed
+  from this list. Still needed: the `do_emote`/`got_emote` personality/
+  chat engine (`FarmyData` omits the `emote` field entirely, and the
+  `NT_TEXT` handler's `res >= 20` emote-reaction dispatch plus its own
+  emote-stats debug command are both skipped), and `platoon_exp`'s
+  now-reachable-but-still-unported soldier-exp/promotion loop. This is
+  the entire remaining surface for Area 8.
 - [ ] **Area 10 - `src/area/10/ice.c`** - ice NPCs, ice demon curse
   integration (curse spell side is ported).
 - [ ] **Area 11 - `src/area/11/palace.c`** - palace guards, Islena fight
@@ -762,6 +776,11 @@ Ordered by player progression; the C file is the oracle.
 Keep entries to at most three lines: date, task, one-line result.
 Anything longer belongs in `PORTING_LEDGER.md`; historical verbose
 notes live in `PROGRESS_ARCHIVE.md`.
+
+- 2026-07-08: Area 8 `CDR_FDEMON_ARMY` combat: self-defense/heal/bless
+  fallback ported (new `fdemon_army_combat.rs`), plus fixed a spawn-time
+  gap (`DRD_FIGHTDRIVER` never seeded) that silently blocked it. 2812
+  core + 1111 server tests pass, clean build/boot-smoke (area 1 + 8).
 
 - 2026-07-07: Area 1 `brithildie_driver` (`CDR_BRITHILDIE`) ported:
   ambient lore NPC unlocking `QLOG_BRITHILDIE`, plus its

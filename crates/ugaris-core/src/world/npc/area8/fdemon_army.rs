@@ -47,11 +47,15 @@
 //! `ZoneLoader`) lives in `ugaris-server`'s `area8_army.rs`, matching the
 //! `pents.rs`/`world/pents.rs` split precedent.
 //!
+//! Combat (self-defense, plus the heal/bless support-caster behavior
+//! gated on `V_HEAL`/`V_BLESS`) is now also ported - see
+//! `fdemon_army_combat.rs`'s own module doc comment for the full
+//! breakdown ([`World::fdemon_army_scan_sightings`]/[`World::
+//! fdemon_army_process_messages`]/[`World::fdemon_army_try_heal`]/
+//! [`World::fdemon_army_try_bless`]) - a soldier now fights back, heals a
+//! hurt platoon-mate, and blesses a lower-ranked one.
+//!
 //! Deviations/gaps still open in this slice (documented, not silent):
-//! - Combat: `fight_driver_update`/`do_heal`/`do_bless`/
-//!   `fight_driver_attack_visible` (self-defense, the heal/bless support-
-//!   caster behavior gated on `V_HEAL`/`V_BLESS`) are not ported - a
-//!   soldier will follow but never fight back if attacked.
 //! - The whole `struct emote` personality/chat system (`do_emote`/
 //!   `got_emote`, `fdemon.c:781-1325`) is not ported - `FarmyData` omits
 //!   the `emote` field entirely, the `NT_TEXT` handler's `res >= 20`
@@ -64,17 +68,7 @@
 //!   equivalent (same precedent as every other simple NPC in this
 //!   codebase).
 
-use crate::{
-    character_driver::{analyse_text_qa, CharacterDriverState, TextAnalysisOutcome, NT_TEXT},
-    world::*,
-};
-
-use super::FDEMON_QA;
-
-/// C `analyse_text_driver`'s own `char_dist(cn, co) > 12` early-out
-/// (`fdemon.c:209-211`), same range every other area-8 driver's `NT_TEXT`
-/// handling reproduces (see `fdemon_boss.rs`'s `FDEMON_BOSS_TALK_RANGE`).
-const FDEMON_ARMY_TALK_RANGE: i32 = 12;
+use crate::{character_driver::CharacterDriverState, world::*};
 
 /// C `#define MAXSOLDIER 3` (`fdemon.c:322`).
 pub const MAXSOLDIER: usize = 3;
@@ -763,120 +757,11 @@ impl World {
         .is_ok()
     }
 
-    /// C `fdemon_army`'s `NT_TEXT` message branch (`fdemon.c:1370-1423`),
-    /// minus the `res >= 20` emote-reaction dispatch (`got_emote`) and
-    /// case `7`'s emote-stats debug dump - both meaningless without the
-    /// (unported) emote system, see the module doc comment. Only platoon
-    /// members (the leader or a fellow recruited soldier, C
-    /// `find_platoon`) can address this soldier at all; only the
-    /// leader's own speech can issue a mission command.
-    pub fn fdemon_army_process_text_messages(&mut self, soldier_id: CharacterId) {
-        let Some(soldier_name) = self.characters.get(&soldier_id).map(|c| c.name.clone()) else {
-            return;
-        };
-        let messages = self
-            .characters
-            .get_mut(&soldier_id)
-            .map(|character| std::mem::take(&mut character.driver_messages))
-            .unwrap_or_default();
-
-        let daylight = self.date.daylight;
-        for message in messages {
-            if message.message_type != NT_TEXT {
-                continue;
-            }
-            let speaker_id = CharacterId(message.dat3 as u32);
-            if speaker_id == soldier_id {
-                continue;
-            }
-            let Some(text) = message.text.as_deref() else {
-                continue;
-            };
-
-            let Some(CharacterDriverState::FdemonArmy(dat)) = self
-                .characters
-                .get(&soldier_id)
-                .and_then(|character| character.driver_state.clone())
-            else {
-                continue;
-            };
-            // C `if ((friend = find_platoon(co, dat)) == -1) { remove_
-            // message(...); continue; }` - only platoon members (leader
-            // or fellow soldiers) may address this soldier.
-            if !dat.platoon.contains(&speaker_id) {
-                continue;
-            }
-
-            let (Some(soldier), Some(speaker)) = (
-                self.characters.get(&soldier_id),
-                self.characters.get(&speaker_id),
-            ) else {
-                continue;
-            };
-            // C `analyse_text_driver`'s own `char_dist(cn, co) > 12` /
-            // `!char_see_char(cn, co)` early-outs (`fdemon.c:209-215`).
-            if char_dist(soldier, speaker) > FDEMON_ARMY_TALK_RANGE
-                || !char_see_char(soldier, speaker, &self.map, daylight)
-            {
-                continue;
-            }
-            let speaker_name = speaker.name.clone();
-            let speaker_military_points = speaker.military_points;
-            let (soldier_x, soldier_y) = (soldier.x, soldier.y);
-
-            let outcome = analyse_text_qa(text, &soldier_name, &speaker_name, FDEMON_QA);
-
-            // C `if (co != dat->leader_cn) { remove_message(...); continue; }`
-            // - only the leader's own speech may issue a mission command;
-            // a fellow soldier's matching text is dropped here (C's own
-            // `find_platoon` check above already filters out anyone not
-            // on the platoon at all).
-            if speaker_id != dat.leader_cn {
-                continue;
-            }
-
-            let rank_name =
-                army_rank_name(army_rank_for_points(speaker_military_points)).to_string();
-
-            match outcome {
-                TextAnalysisOutcome::Matched(2) => {
-                    self.npc_say(soldier_id, &format!("Sir! Yes, Sir, {rank_name}, Sir!"));
-                    self.set_fdemon_army_mission(soldier_id, MIS_FOLLOW);
-                }
-                TextAnalysisOutcome::Matched(3) => {
-                    self.npc_say(soldier_id, &format!("Will do, {rank_name}."));
-                    let tick = self.tick.0 as i64;
-                    if let Some(CharacterDriverState::FdemonArmy(dat)) = self
-                        .characters
-                        .get_mut(&soldier_id)
-                        .and_then(|character| character.driver_state.as_mut())
-                    {
-                        dat.mission = MIS_BACK;
-                        dat.opt1 = i32::from(soldier_x);
-                        dat.opt2 = i32::from(soldier_y);
-                        dat.timer = tick;
-                    }
-                }
-                TextAnalysisOutcome::Matched(4) => {
-                    self.npc_say(soldier_id, &format!("Aye Aye {rank_name}, Sir."));
-                    self.set_fdemon_army_mission(soldier_id, MIS_RETREAT);
-                }
-                TextAnalysisOutcome::Matched(5) => {
-                    self.npc_say(soldier_id, &format!("So be it, {rank_name}."));
-                    self.set_fdemon_army_mission(soldier_id, MIS_FRONT);
-                }
-                TextAnalysisOutcome::Matched(6) => {
-                    self.npc_say(soldier_id, &format!("I'll go rub his back, {rank_name}."));
-                    self.set_fdemon_army_mission(soldier_id, MIS_BEHIND);
-                }
-                TextAnalysisOutcome::Said(_)
-                | TextAnalysisOutcome::Matched(_)
-                | TextAnalysisOutcome::NoMatch => {}
-            }
-        }
-    }
-
-    fn set_fdemon_army_mission(&mut self, soldier_id: CharacterId, mission: i32) {
+    /// C `fdemon_army`'s `NT_TEXT`/`NT_GOTHIT`/`NT_SEEHIT` message
+    /// handling lives in `fdemon_army_combat.rs`'s [`World::
+    /// fdemon_army_process_messages`] (moved there to keep this file
+    /// under the ~800-line guideline).
+    pub(crate) fn set_fdemon_army_mission(&mut self, soldier_id: CharacterId, mission: i32) {
         if let Some(CharacterDriverState::FdemonArmy(dat)) = self
             .characters
             .get_mut(&soldier_id)
@@ -903,15 +788,24 @@ impl World {
     }
 
     /// C `fdemon_army(cn, ret, lastact)` (`fdemon.c:1327-1532`) - the
-    /// leader-lost-disintegration guard plus both mission-dispatch
+    /// leader-lost-disintegration guard, both mission-dispatch
     /// `switch (dat->mission)` blocks (`FOLLOW`/`BACK`/`RETREAT`/`FRONT`/
-    /// `BEHIND`, the last via [`World::army_behind_driver`]), minus
-    /// the combat/heal/bless self-defense fallback that sits between them
-    /// in C and the trailing emote/regen/idle tail (also documented
-    /// gaps). Returns `true` if the soldier disintegrated (leader lost -
-    /// C's `remove_destroy_char(cn)`), matching [`World::
+    /// `BEHIND`, the last via [`World::army_behind_driver`]), and the
+    /// combat/heal/bless self-defense fallback that sits between them
+    /// (`fdemon_army_combat.rs`'s [`World::fdemon_army_scan_sightings`]/
+    /// [`World::fdemon_army_try_heal`]/[`World::fdemon_army_try_bless`]
+    /// plus a direct [`World::fight_driver_attack_visible_and_follow`]
+    /// call) - minus the trailing emote/regen/idle tail (documented gap,
+    /// see the module doc comment; regen already applies generically to
+    /// every character). Returns `true` if the soldier disintegrated
+    /// (leader lost - C's `remove_destroy_char(cn)`), matching [`World::
     /// remove_character`]'s own "did it exist" contract for the caller.
     pub fn fdemon_army_tick(&mut self, character_id: CharacterId, area_id: u16) -> bool {
+        // C's own `NT_CHAR` handling (`fdemon_army_scan_sightings`, see
+        // its own doc comment) runs first, same as C's message loop
+        // running before the leader-lost check reads `dat->leader_cn`.
+        let (bless_target, heal_target) = self.fdemon_army_scan_sightings(character_id);
+
         let Some(character) = self.characters.get(&character_id) else {
             return false;
         };
@@ -971,10 +865,36 @@ impl World {
             _ => {}
         }
 
-        // C's combat/heal/bless/self-defense fallback
-        // (`fight_driver_update`/`do_heal`/`do_bless`/
-        // `fight_driver_attack_visible`) between the two mission-dispatch
-        // blocks is not ported - see the module doc comment.
+        // C's combat/heal/bless/self-defense fallback (`fdemon.c:1484-
+        // 1497`): `fight_driver_update(cn)` is folded into `fight_driver_
+        // attack_visible_and_follow`'s own first step below (same
+        // convention `fdemon_demon.rs`'s attack call already uses).
+        if let Some(heal_target) = heal_target {
+            if self.fdemon_army_try_heal(character_id, heal_target) {
+                return false;
+            }
+        }
+        if let Some(bless_target) = bless_target {
+            if self.fdemon_army_try_bless(character_id, bless_target) {
+                return false;
+            }
+        }
+        if !dat.closeup {
+            if let Some(character) = self.characters.get(&character_id).cloned() {
+                let mut seed = self.legacy_random_seed;
+                let attacked = self.fight_driver_attack_visible_and_follow(
+                    character_id,
+                    &character,
+                    area_id,
+                    FightDriverSuppressions::default(),
+                    &mut |below| legacy_random_below_from_seed(&mut seed, below),
+                );
+                self.legacy_random_seed = seed;
+                if attacked {
+                    return false;
+                }
+            }
+        }
 
         // C's second `switch (dat->mission)` block (`fdemon.c:1500-1514`)
         // only has `FOLLOW`/`FRONT` cases.

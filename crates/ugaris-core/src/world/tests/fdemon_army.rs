@@ -28,6 +28,15 @@ fn soldier_npc(id: u32, x: u16, y: u16, leader_cn: CharacterId) -> Character {
         mission: MIS_FOLLOW,
         ..FarmyData::default()
     }));
+    // C `fdemon_army`'s own `NT_CREATE` handler: `fight_driver_set_dist(cn,
+    // 0, 20, 0)` (`fdemon.c:1346`) - see `area8_army.rs::spawn_army_
+    // soldier`'s own matching initialization.
+    soldier.fight_driver = Some(crate::character_driver::FightDriverData {
+        start_dist: 0,
+        char_dist: 20,
+        stop_dist: 0,
+        ..crate::character_driver::FightDriverData::default()
+    });
     soldier
 }
 
@@ -481,7 +490,7 @@ fn text_commands_are_ignored_from_a_speaker_outside_the_platoon() {
         .unwrap()
         .push_driver_text_message(CharacterId(3), "follow");
 
-    world.fdemon_army_process_text_messages(soldier_id);
+    world.fdemon_army_process_messages(soldier_id);
 
     let unchanged = world.characters.get(&soldier_id).unwrap();
     let Some(CharacterDriverState::FdemonArmy(dat)) = unchanged.driver_state else {
@@ -515,7 +524,7 @@ fn text_commands_are_ignored_from_a_platoon_member_that_is_not_the_leader() {
         .unwrap()
         .push_driver_text_message(CharacterId(3), "back");
 
-    world.fdemon_army_process_text_messages(soldier_id);
+    world.fdemon_army_process_messages(soldier_id);
 
     let unchanged = world.characters.get(&soldier_id).unwrap();
     let Some(CharacterDriverState::FdemonArmy(dat)) = unchanged.driver_state else {
@@ -543,7 +552,7 @@ fn text_command_out_of_talk_range_is_ignored() {
         .unwrap()
         .push_driver_text_message(CharacterId(1), "front");
 
-    world.fdemon_army_process_text_messages(soldier_id);
+    world.fdemon_army_process_messages(soldier_id);
 
     let unchanged = world.characters.get(&soldier_id).unwrap();
     let Some(CharacterDriverState::FdemonArmy(dat)) = unchanged.driver_state else {
@@ -572,7 +581,7 @@ fn leader_command_sets_the_matching_mission_and_replies() {
         .unwrap()
         .push_driver_text_message(CharacterId(1), "front");
 
-    world.fdemon_army_process_text_messages(soldier_id);
+    world.fdemon_army_process_messages(soldier_id);
 
     let updated = world.characters.get(&soldier_id).unwrap();
     let Some(CharacterDriverState::FdemonArmy(dat)) = updated.driver_state else {
@@ -604,7 +613,7 @@ fn leader_back_command_records_the_current_position_and_timer() {
         .unwrap()
         .push_driver_text_message(CharacterId(1), "back");
 
-    world.fdemon_army_process_text_messages(soldier_id);
+    world.fdemon_army_process_messages(soldier_id);
 
     let updated = world.characters.get(&soldier_id).unwrap();
     let Some(CharacterDriverState::FdemonArmy(dat)) = updated.driver_state else {
@@ -636,7 +645,7 @@ fn leader_retreat_and_behind_commands_set_the_matching_mission() {
             .unwrap()
             .push_driver_text_message(CharacterId(1), word);
 
-        world.fdemon_army_process_text_messages(soldier_id);
+        world.fdemon_army_process_messages(soldier_id);
 
         let updated = world.characters.get(&soldier_id).unwrap();
         let Some(CharacterDriverState::FdemonArmy(dat)) = updated.driver_state else {
@@ -844,4 +853,327 @@ fn already_occupied_slots_are_never_replanned_regardless_of_rank() {
         panic!("no RNG rolls expected when every slot is already occupied")
     });
     assert!(plans.iter().all(Option::is_none));
+}
+
+// --- Combat (`fdemon_army_combat.rs`) ---
+
+#[test]
+fn fdemon_army_scan_sightings_updates_leader_from_visible_player_groupmate() {
+    let mut world = World::default();
+    let mut new_leader = leader_npc(3, 82, 100);
+    new_leader.group = 5;
+    world.characters.insert(new_leader.id, new_leader);
+
+    // Old `leader_cn` (1) is never inserted - the scan should still find
+    // and adopt the newly visible player groupmate (C `dat->leader_cn =
+    // co;`, unconditional whenever a same-group `CF_PLAYER` is sighted).
+    let mut soldier = soldier_npc(2, 80, 100, CharacterId(1));
+    soldier.group = 5;
+    let soldier_id = soldier.id;
+    world.characters.insert(soldier_id, soldier);
+
+    let (bless, heal) = world.fdemon_army_scan_sightings(soldier_id);
+    assert_eq!(bless, None);
+    assert_eq!(heal, None);
+    let Some(CharacterDriverState::FdemonArmy(dat)) =
+        world.characters.get(&soldier_id).unwrap().driver_state
+    else {
+        panic!("expected FdemonArmy driver state");
+    };
+    assert_eq!(dat.leader_cn, CharacterId(3));
+}
+
+#[test]
+fn fdemon_army_scan_sightings_selects_bless_target_for_lower_ranked_groupmate() {
+    let mut world = World::default();
+    let mut soldier = soldier_npc(2, 80, 100, CharacterId(1));
+    soldier.group = 5;
+    soldier.mana = 10 * POWERSCALE;
+    soldier.values[0][CharacterValue::Bless as usize] = 40;
+    soldier.values[1][CharacterValue::Bless as usize] = 40;
+    let soldier_id = soldier.id;
+    world.characters.insert(soldier_id, soldier);
+
+    let mut friend = character(3);
+    friend.group = 5;
+    friend.x = 81;
+    friend.y = 100;
+    friend.values[1][CharacterValue::Bless as usize] = 5; // lower than 40.
+    world.characters.insert(friend.id, friend);
+
+    let (bless, heal) = world.fdemon_army_scan_sightings(soldier_id);
+    assert_eq!(bless, Some(CharacterId(3)));
+    assert_eq!(heal, None);
+}
+
+#[test]
+fn fdemon_army_scan_sightings_skips_bless_when_target_already_has_higher_or_equal_level() {
+    let mut world = World::default();
+    let mut soldier = soldier_npc(2, 80, 100, CharacterId(1));
+    soldier.group = 5;
+    soldier.mana = 10 * POWERSCALE;
+    soldier.values[0][CharacterValue::Bless as usize] = 40;
+    soldier.values[1][CharacterValue::Bless as usize] = 40;
+    let soldier_id = soldier.id;
+    world.characters.insert(soldier_id, soldier);
+
+    let mut friend = character(3);
+    friend.group = 5;
+    friend.x = 81;
+    friend.y = 100;
+    friend.values[1][CharacterValue::Bless as usize] = 40; // not lower.
+    world.characters.insert(friend.id, friend);
+
+    let (bless, _heal) = world.fdemon_army_scan_sightings(soldier_id);
+    assert_eq!(bless, None);
+}
+
+#[test]
+fn fdemon_army_scan_sightings_selects_heal_target_for_hurt_groupmate() {
+    let mut world = World::default();
+    let mut soldier = soldier_npc(2, 80, 100, CharacterId(1));
+    soldier.group = 5;
+    soldier.mana = 10 * POWERSCALE;
+    soldier.values[0][CharacterValue::Heal as usize] = 40;
+    let soldier_id = soldier.id;
+    world.characters.insert(soldier_id, soldier);
+
+    let mut friend = character(3);
+    friend.group = 5;
+    friend.x = 81;
+    friend.y = 100;
+    friend.values[1][CharacterValue::Hp as usize] = 30;
+    friend.hp = 5 * POWERSCALE; // well below 30 * POWERSCALE / 3 = 10 * POWERSCALE.
+    world.characters.insert(friend.id, friend);
+
+    let (bless, heal) = world.fdemon_army_scan_sightings(soldier_id);
+    assert_eq!(bless, None);
+    assert_eq!(heal, Some(CharacterId(3)));
+}
+
+#[test]
+fn fdemon_army_scan_sightings_skips_heal_when_target_hp_is_not_low_enough() {
+    let mut world = World::default();
+    let mut soldier = soldier_npc(2, 80, 100, CharacterId(1));
+    soldier.group = 5;
+    soldier.mana = 10 * POWERSCALE;
+    soldier.values[0][CharacterValue::Heal as usize] = 40;
+    let soldier_id = soldier.id;
+    world.characters.insert(soldier_id, soldier);
+
+    let mut friend = character(3);
+    friend.group = 5;
+    friend.x = 81;
+    friend.y = 100;
+    friend.values[1][CharacterValue::Hp as usize] = 30;
+    friend.hp = 30 * POWERSCALE; // full health.
+    world.characters.insert(friend.id, friend);
+
+    let (_bless, heal) = world.fdemon_army_scan_sightings(soldier_id);
+    assert_eq!(heal, None);
+}
+
+#[test]
+fn fdemon_army_scan_sightings_adds_visible_non_group_enemy_to_the_fight_driver() {
+    let mut world = World::default();
+    let soldier = soldier_npc(2, 80, 100, CharacterId(1));
+    let soldier_id = soldier.id;
+    world.characters.insert(soldier_id, soldier);
+
+    let mut enemy = character(3);
+    enemy.group = 99; // different from the soldier's default group (0).
+    enemy.x = 81;
+    enemy.y = 100;
+    world.characters.insert(enemy.id, enemy);
+
+    let (bless, heal) = world.fdemon_army_scan_sightings(soldier_id);
+    assert_eq!(bless, None);
+    assert_eq!(heal, None);
+    let recorded = world.simple_baddy_recorded_enemy_ids(soldier_id);
+    assert_eq!(recorded, vec![CharacterId(3)]);
+}
+
+#[test]
+fn fdemon_army_scan_sightings_returns_nothing_without_a_driver_state() {
+    let mut world = World::default();
+    let mut soldier = character(2);
+    soldier.driver = CDR_FDEMON_ARMY;
+    soldier.x = 80;
+    soldier.y = 100;
+    let soldier_id = soldier.id;
+    world.characters.insert(soldier_id, soldier);
+
+    assert_eq!(world.fdemon_army_scan_sightings(soldier_id), (None, None));
+}
+
+#[test]
+fn fdemon_army_try_heal_heals_the_target_and_spends_mana() {
+    let mut world = World::default();
+    let mut soldier = soldier_npc(2, 80, 100, CharacterId(1));
+    soldier.mana = 10 * POWERSCALE;
+    soldier.values[0][CharacterValue::Heal as usize] = 40;
+    let soldier_id = soldier.id;
+    world.characters.insert(soldier_id, soldier);
+
+    let mut friend = character(3);
+    // `do_heal`'s own missing-hp calculation reads `values[0]` (C's
+    // `ch[co].value[0][V_HP]`, the base max-hp), distinct from the
+    // `values[1]` (present) the eligibility scan compares against.
+    friend.values[0][CharacterValue::Hp as usize] = 30;
+    friend.hp = 5 * POWERSCALE;
+    let friend_id = friend.id;
+    world.characters.insert(friend_id, friend);
+
+    assert!(world.fdemon_army_try_heal(soldier_id, friend_id));
+    let caster = world.characters.get(&soldier_id).unwrap();
+    assert!(caster.mana < 10 * POWERSCALE);
+    assert_ne!(caster.action, 0);
+}
+
+#[test]
+fn fdemon_army_try_bless_blesses_the_target_and_spends_mana() {
+    let mut world = World::default();
+    let mut soldier = soldier_npc(2, 80, 100, CharacterId(1));
+    soldier.mana = 10 * POWERSCALE;
+    soldier.values[0][CharacterValue::Bless as usize] = 40;
+    let soldier_id = soldier.id;
+    world.characters.insert(soldier_id, soldier);
+
+    let mut friend = character(3);
+    friend.flags |= CharacterFlags::PLAYERLIKE;
+    let friend_id = friend.id;
+    friend.values[1][CharacterValue::Bless as usize] = 0;
+    world.characters.insert(friend_id, friend);
+
+    assert!(world.fdemon_army_try_bless(soldier_id, friend_id));
+    let caster = world.characters.get(&soldier_id).unwrap();
+    assert_eq!(caster.mana, 8 * POWERSCALE);
+}
+
+#[test]
+fn fdemon_army_process_messages_gothit_adds_the_attacker_as_an_enemy() {
+    let mut world = World::default();
+    let mut soldier = soldier_npc(2, 80, 100, CharacterId(1));
+    soldier.push_driver_message(NT_GOTHIT, 3, 0, 0);
+    let soldier_id = soldier.id;
+    world.characters.insert(soldier_id, soldier);
+
+    let mut attacker = character(3);
+    attacker.group = 99;
+    attacker.x = 81;
+    attacker.y = 100;
+    world.characters.insert(attacker.id, attacker);
+
+    world.fdemon_army_process_messages(soldier_id);
+
+    let recorded = world.simple_baddy_recorded_enemy_ids(soldier_id);
+    assert_eq!(recorded, vec![CharacterId(3)]);
+    let soldier = world.characters.get(&soldier_id).unwrap();
+    assert!(soldier.driver_messages.is_empty());
+}
+
+#[test]
+fn fdemon_army_process_messages_gothit_ignores_a_same_group_attacker() {
+    let mut world = World::default();
+    let mut soldier = soldier_npc(2, 80, 100, CharacterId(1));
+    soldier.group = 5;
+    soldier.push_driver_message(NT_GOTHIT, 3, 0, 0);
+    let soldier_id = soldier.id;
+    world.characters.insert(soldier_id, soldier);
+
+    let mut attacker = character(3);
+    attacker.group = 5; // same group - never a valid enemy.
+    world.characters.insert(attacker.id, attacker);
+
+    world.fdemon_army_process_messages(soldier_id);
+
+    assert!(world.simple_baddy_recorded_enemy_ids(soldier_id).is_empty());
+}
+
+#[test]
+fn fdemon_army_process_messages_seehit_helps_a_platoon_mate_being_attacked() {
+    let mut world = World::default();
+    let mut soldier = soldier_npc(2, 80, 100, CharacterId(1));
+    soldier.group = 5;
+    soldier.push_driver_message(NT_SEEHIT, 3, 4, 0); // attacker=3, victim=4.
+    let soldier_id = soldier.id;
+    world.characters.insert(soldier_id, soldier);
+
+    let mut attacker = character(3);
+    attacker.group = 99;
+    attacker.x = 81;
+    attacker.y = 100;
+    world.characters.insert(attacker.id, attacker);
+
+    let mut victim = character(4);
+    victim.group = 5; // our platoon-mate.
+    victim.x = 81;
+    victim.y = 101;
+    world.characters.insert(victim.id, victim);
+
+    world.fdemon_army_process_messages(soldier_id);
+
+    let recorded = world.simple_baddy_recorded_enemy_ids(soldier_id);
+    assert_eq!(recorded, vec![CharacterId(3)]);
+}
+
+#[test]
+fn fdemon_army_tick_attacks_a_visible_enemy_when_close_enough_to_the_leader() {
+    let mut world = World::default();
+    let mut leader = leader_npc(1, 82, 100);
+    leader.group = 5;
+    world.characters.insert(leader.id, leader);
+
+    // Within `army_follow_driver`'s `dist=10` of the leader, so the first
+    // mission-dispatch switch's `MIS_FOLLOW` arm does not queue a move
+    // and execution reaches the combat fallback.
+    let mut soldier = soldier_npc(2, 80, 100, CharacterId(1));
+    soldier.group = 5;
+    let soldier_id = soldier.id;
+    world.characters.insert(soldier_id, soldier);
+
+    let mut enemy = character(3);
+    enemy.group = 99;
+    enemy.x = 81;
+    enemy.y = 100;
+    world.characters.insert(enemy.id, enemy);
+    world.map.tile_mut(81, 100).unwrap().character = 3;
+
+    assert!(!world.fdemon_army_tick(soldier_id, 1));
+    let attacker = world.characters.get(&soldier_id).unwrap();
+    assert_ne!(attacker.action, 0, "an attack action should be queued");
+    assert_eq!(attacker.act1, 3);
+}
+
+#[test]
+fn fdemon_army_tick_heals_a_hurt_groupmate_before_attacking() {
+    let mut world = World::default();
+    let mut leader = leader_npc(1, 82, 100);
+    leader.group = 5;
+    world.characters.insert(leader.id, leader);
+
+    let mut soldier = soldier_npc(2, 80, 100, CharacterId(1));
+    soldier.group = 5;
+    soldier.mana = 10 * POWERSCALE;
+    soldier.values[0][CharacterValue::Heal as usize] = 40;
+    let soldier_id = soldier.id;
+    world.characters.insert(soldier_id, soldier);
+
+    let mut hurt_friend = character(3);
+    hurt_friend.group = 5;
+    hurt_friend.x = 81;
+    hurt_friend.y = 100;
+    // `values[1]` gates the scan's eligibility check (C's `value[1][V_HP]`);
+    // `values[0]` is what `do_heal` itself reads for the missing-hp
+    // calculation (C's `value[0][V_HP]`) - see `fdemon_army_try_heal_
+    // heals_the_target_and_spends_mana`'s own comment.
+    hurt_friend.values[0][CharacterValue::Hp as usize] = 30;
+    hurt_friend.values[1][CharacterValue::Hp as usize] = 30;
+    hurt_friend.hp = 5 * POWERSCALE;
+    world.characters.insert(hurt_friend.id, hurt_friend);
+
+    assert!(!world.fdemon_army_tick(soldier_id, 1));
+    let caster = world.characters.get(&soldier_id).unwrap();
+    assert!(caster.mana < 10 * POWERSCALE, "heal should spend mana");
+    assert_eq!(caster.act1, 3);
 }

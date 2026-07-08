@@ -1,6 +1,7 @@
 //! Area 8 NPCs, one file per NPC.
 
 pub mod fdemon_army;
+pub mod fdemon_army_combat;
 pub mod fdemon_boss;
 pub mod fdemon_demon;
 

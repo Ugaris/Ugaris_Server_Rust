@@ -11,7 +11,7 @@
 
 use super::*;
 use ugaris_core::{
-    character_driver::{CharacterDriverState, CDR_FDEMON_ARMY},
+    character_driver::{CharacterDriverState, FightDriverData, CDR_FDEMON_ARMY},
     world::npc::area8::fdemon_army::{
         finalize_soldier_exp_and_level, plan_soldier_recruitment, scale_soldier_values,
         soldier_base_strength, soldier_equipment_items, FarmyData, MAXSOLDIER, MIS_FOLLOW,
@@ -259,6 +259,19 @@ fn spawn_army_soldier(
         mission: MIS_FOLLOW,
         ..FarmyData::default()
     }));
+    // C `fdemon_army`'s own `NT_CREATE` handler: `fight_driver_set_dist(cn,
+    // 0, 20, 0)` (`fdemon.c:1346`) - seeds the driver-independent
+    // `DRD_FIGHTDRIVER` slot's distance config so the combat fallback's
+    // `fight_driver_add_enemy`-based sighting/self-defense (`world::npc::
+    // area8::fdemon_army_combat`) has somewhere to record enemies at all;
+    // same "seed `DRD_FIGHTDRIVER` from a driver's own NT_CREATE args"
+    // precedent `apply_simple_baddy_create_message` already establishes.
+    soldier.fight_driver = Some(FightDriverData {
+        start_dist: 0,
+        char_dist: 20,
+        stop_dist: 0,
+        ..FightDriverData::default()
+    });
 
     if !world.spawn_character(soldier, usize::from(x), usize::from(y)) {
         return None;
@@ -277,18 +290,18 @@ fn spawn_army_soldier(
 }
 
 /// C `ch_driver`'s `CDR_FDEMON_ARMY` case, run once per live soldier per
-/// tick: the `NT_TEXT` mission-command reception
-/// (`world::npc::area8::fdemon_army::fdemon_army_process_text_messages`,
+/// tick: the `NT_TEXT`/`NT_GOTHIT`/`NT_SEEHIT` message handling
+/// (`world::npc::area8::fdemon_army_combat::fdemon_army_process_messages`,
 /// C `fdemon_army`'s message loop, `fdemon.c:1338-1431`) followed by the
-/// mission-dispatch/leader-lost tick
+/// mission-dispatch/self-defense/leader-lost tick
 /// (`world::npc::area8::fdemon_army::fdemon_army_tick`, C `fdemon.c:1433-
 /// 1532`) - matching C's own per-character ordering (message loop first,
 /// then "do something"). See `fdemon_army_tick`'s own doc comment for the
-/// deferred combat/`MIS_BEHIND`/emote portions.
+/// deferred emote/soldier-exp portions.
 pub(crate) fn apply_fdemon_army_tick(world: &mut World, area_id: u16) -> usize {
     let mut disintegrated = 0;
     for character_id in world.fdemon_army_character_ids() {
-        world.fdemon_army_process_text_messages(character_id);
+        world.fdemon_army_process_messages(character_id);
         if world.fdemon_army_tick(character_id, area_id) {
             disintegrated += 1;
         }
