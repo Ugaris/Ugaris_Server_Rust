@@ -22,6 +22,22 @@
 
 use super::*;
 
+/// C: every successful `shrine_*` function in `random.c`
+/// (`shrine_indecisiveness`/`_bribes`/`_welding`/`_edge`/`_kindness`/
+/// `_vitality`/`_death`/`_braveness`/`_security`/`_jobless`/`_continuity`)
+/// calls `sendquestlog(cn, ch[cn].player)` as its last line, right after
+/// `shrine_set` - never on an early-return/blocked path. Reuses the same
+/// resend pattern as `mine.rs::apply_military_mission_silver_check`.
+fn resend_random_shrine_questlog(runtime: &mut ServerRuntime, character_id: CharacterId) {
+    let Some(player) = runtime.player_for_character_mut(character_id) else {
+        return;
+    };
+    let payload = legacy_questlog_payload(player);
+    for (session_id, _) in runtime.sessions_for_character(character_id) {
+        runtime.send_to_session(session_id, payload.clone());
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn dispatch_shrine_outcome(
     world: &mut World,
@@ -149,6 +165,7 @@ pub(crate) fn dispatch_shrine_outcome(
                                 if saves == 1 { "" } else { "s" }
                             ),
                         ));
+                        resend_random_shrine_questlog(runtime, character_id);
                         *executed += 1;
                     }
                     RandomShrineSecurityApplyResult::SecureAlready => {
@@ -186,6 +203,7 @@ pub(crate) fn dispatch_shrine_outcome(
                             character_id,
                             "A bored voice says: 'Thou shalt be jobless.'".to_string(),
                         ));
+                        resend_random_shrine_questlog(runtime, character_id);
                         *executed += 1;
                     }
                     RandomShrineJoblessApplyResult::AlreadyJobless => {
@@ -220,6 +238,7 @@ pub(crate) fn dispatch_shrine_outcome(
                             "A booming voice declares: 'Living on the edge has its merits - and its dangers!'".to_string(),
                         ));
                         feedback.push((character_id, "Thou hast no saves left.".to_string()));
+                        resend_random_shrine_questlog(runtime, character_id);
                         *executed += 1;
                     }
                     RandomShrineEdgeApplyResult::AlreadyOnEdge => {
@@ -258,6 +277,7 @@ pub(crate) fn dispatch_shrine_outcome(
                             character_id,
                             "A tender voice whispers: 'Mayest thou find other ways to amuse thyself. Thou art not a killer henceforth.'".to_string(),
                         ));
+                        resend_random_shrine_questlog(runtime, character_id);
                         *executed += 1;
                     }
                     RandomShrineKindnessApplyResult::AlreadyKind => {
@@ -281,6 +301,7 @@ pub(crate) fn dispatch_shrine_outcome(
                 if let Some(character) = world.characters.get_mut(&character_id) {
                     character.saves = 0;
                 }
+                resend_random_shrine_questlog(runtime, character_id);
                 feedback.push((character_id, "You hear a manical laugh.".to_string()));
                 world.apply_legacy_hurt(character_id, None, i32::MAX / 4, 1, 100, 100);
                 *executed += 1;
@@ -305,6 +326,7 @@ pub(crate) fn dispatch_shrine_outcome(
                         // `update_char(cn)`.
                         world.give_exp(character_id, i64::from(cost), u32::from(config.area_id));
                         world.update_character(character_id);
+                        resend_random_shrine_questlog(runtime, character_id);
                         *executed += 1;
                     }
                     RandomShrineVitalityApplyResult::NoExp => {
@@ -346,6 +368,7 @@ pub(crate) fn dispatch_shrine_outcome(
                             character_id,
                             "A triumphant voice says: 'Thou art brave indeed!'".to_string(),
                         ));
+                        resend_random_shrine_questlog(runtime, character_id);
                         *executed += 1;
                     }
                     RandomShrineBravenessApplyResult::Coward => {
@@ -394,6 +417,7 @@ pub(crate) fn dispatch_shrine_outcome(
                                 ));
                             }
                         }
+                        resend_random_shrine_questlog(runtime, character_id);
                         *executed += 1;
                     }
                     RandomShrineContinuityApplyResult::AlreadyVisited { opens_gate } => {
@@ -422,6 +446,86 @@ pub(crate) fn dispatch_shrine_outcome(
                             character_id,
                             "A steady voice says: 'Thou must visit mine younger brother first.'"
                                 .to_string(),
+                        ));
+                        *blocked += 1;
+                    }
+                }
+            }
+            ugaris_core::item_driver::RandomShrineKind::Indecisiveness => {
+                let result = match (
+                    runtime.player_for_character_mut(character_id),
+                    world.characters.get_mut(&character_id),
+                ) {
+                    (Some(player), Some(character)) => {
+                        apply_random_shrine_indecisiveness(player, character, shrine_type)
+                    }
+                    _ => {
+                        *failed += 1;
+                        return;
+                    }
+                };
+                match result {
+                    RandomShrineIndecisivenessApplyResult::Used => {
+                        resend_random_shrine_questlog(runtime, character_id);
+                        *executed += 1;
+                    }
+                    RandomShrineIndecisivenessApplyResult::NoExp => {
+                        feedback.push((
+                            character_id,
+                            "A indecisive voice says: 'Thou canst lower thy skills as long as thou has /noexp turned on.'".to_string(),
+                        ));
+                        *blocked += 1;
+                    }
+                }
+            }
+            ugaris_core::item_driver::RandomShrineKind::Bribes => {
+                let result = match (
+                    runtime.player_for_character_mut(character_id),
+                    world.characters.get_mut(&character_id),
+                ) {
+                    (Some(player), Some(character)) => {
+                        apply_random_shrine_bribes(player, character, shrine_type, level)
+                    }
+                    _ => {
+                        *failed += 1;
+                        return;
+                    }
+                };
+                match result {
+                    RandomShrineBribesApplyResult::Used {
+                        gold: _,
+                        exp,
+                        almost_empty,
+                    } => {
+                        // C `shrine_bribes` (`random.c:1836`) grants
+                        // `val / 4` via `give_exp(cn, val / 4)`.
+                        world.give_exp(character_id, i64::from(exp), u32::from(config.area_id));
+                        feedback.push((
+                            character_id,
+                            "You feel a hand reach into your pocket and touch your purse."
+                                .to_string(),
+                        ));
+                        feedback.push((
+                            character_id,
+                            format!(
+                                "Shocked, you reach for your purse and find it {}empty.",
+                                if almost_empty { "almost " } else { "" }
+                            ),
+                        ));
+                        resend_random_shrine_questlog(runtime, character_id);
+                        *executed += 1;
+                    }
+                    RandomShrineBribesApplyResult::NoExp => {
+                        feedback.push((
+                            character_id,
+                            "A golden voice says: 'Thou canst bribe for more experience as long as thou has /noexp turned on.'".to_string(),
+                        ));
+                        *blocked += 1;
+                    }
+                    RandomShrineBribesApplyResult::NotEnoughGold => {
+                        feedback.push((
+                            character_id,
+                            "You feel a hand reach into your pocket and touch your purse. A second later, it is removed with a sneer.".to_string(),
                         ));
                         *blocked += 1;
                     }

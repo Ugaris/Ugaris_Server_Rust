@@ -226,6 +226,118 @@ fn random_shrine_continuity_level_99_opens_gate_for_new_or_repeat_use() {
 }
 
 #[test]
+fn random_shrine_indecisiveness_lowers_raisable_skills_three_times_and_marks_ppd() {
+    let mut player = PlayerRuntime::connected(1, 0);
+    // `login_character` seeds Hp/Endurance/Mana/Speed at 50; Hp/Endurance/
+    // Mana (skill_start 10, raisable) get lowered 3x each (50 -> 47),
+    // Speed (skill_raise_cost_factor 0, unraisable via `lower_value`) is
+    // untouched, matching C `shrine_indecisiveness`'s `lower_value` no-op.
+    let mut character = login_character(CharacterId(7), &login_block("Ralph"), 14, 10, 10);
+
+    let result = apply_random_shrine_indecisiveness(&mut player, &mut character, 3);
+
+    assert_eq!(result, RandomShrineIndecisivenessApplyResult::Used);
+    assert_eq!(character.values[1][CharacterValue::Hp as usize], 47);
+    assert_eq!(character.values[1][CharacterValue::Endurance as usize], 47);
+    assert_eq!(character.values[1][CharacterValue::Mana as usize], 47);
+    assert_eq!(character.values[1][CharacterValue::Speed as usize], 50);
+    assert!(player.has_used_random_shrine(3));
+}
+
+#[test]
+fn random_shrine_indecisiveness_blocks_without_marking_when_noexp() {
+    let mut player = PlayerRuntime::connected(1, 0);
+    let mut character = login_character(CharacterId(7), &login_block("Ralph"), 14, 10, 10);
+    character.flags.insert(CharacterFlags::NOEXP);
+    let hp_before = character.values[1][CharacterValue::Hp as usize];
+
+    let result = apply_random_shrine_indecisiveness(&mut player, &mut character, 4);
+
+    assert_eq!(result, RandomShrineIndecisivenessApplyResult::NoExp);
+    assert_eq!(character.values[1][CharacterValue::Hp as usize], hp_before);
+    assert!(!player.has_used_random_shrine(4));
+}
+
+#[test]
+fn random_shrine_bribes_takes_partial_gold_for_legacy_exp_and_marks_ppd() {
+    let mut player = PlayerRuntime::connected(1, 0);
+    let mut character = login_character(CharacterId(7), &login_block("Ralph"), 14, 10, 10);
+    character.level = 10;
+    let level_value = level_value(15);
+    let want = level_value * 4 / 3;
+    character.gold = want + 500;
+
+    let result = apply_random_shrine_bribes(&mut player, &mut character, 13, 20);
+
+    assert_eq!(
+        result,
+        RandomShrineBribesApplyResult::Used {
+            gold: want,
+            exp: want / 4,
+            almost_empty: true,
+        }
+    );
+    assert_eq!(character.gold, 500);
+    assert!(character
+        .flags
+        .contains(CharacterFlags::ITEMS | CharacterFlags::UPDATE));
+    assert!(player.has_used_random_shrine(13));
+}
+
+#[test]
+fn random_shrine_bribes_takes_all_gold_when_below_want_and_marks_ppd() {
+    let mut player = PlayerRuntime::connected(1, 0);
+    let mut character = login_character(CharacterId(7), &login_block("Ralph"), 14, 10, 10);
+    character.level = 10;
+    let level_value = level_value(15);
+    let need = level_value * 4 / 10;
+    character.gold = need; // above `need`, below `want` -> fully emptied
+
+    let result = apply_random_shrine_bribes(&mut player, &mut character, 14, 20);
+
+    assert_eq!(
+        result,
+        RandomShrineBribesApplyResult::Used {
+            gold: need,
+            exp: need / 4,
+            almost_empty: false,
+        }
+    );
+    assert_eq!(character.gold, 0);
+    assert!(player.has_used_random_shrine(14));
+}
+
+#[test]
+fn random_shrine_bribes_blocks_without_marking_when_gold_below_need() {
+    let mut player = PlayerRuntime::connected(1, 0);
+    let mut character = login_character(CharacterId(7), &login_block("Ralph"), 14, 10, 10);
+    character.level = 10;
+    let level_value = level_value(15);
+    let need = level_value * 4 / 10;
+    character.gold = need.saturating_sub(1);
+
+    let result = apply_random_shrine_bribes(&mut player, &mut character, 15, 20);
+
+    assert_eq!(result, RandomShrineBribesApplyResult::NotEnoughGold);
+    assert_eq!(character.gold, need.saturating_sub(1));
+    assert!(!player.has_used_random_shrine(15));
+}
+
+#[test]
+fn random_shrine_bribes_blocks_without_marking_when_noexp() {
+    let mut player = PlayerRuntime::connected(1, 0);
+    let mut character = login_character(CharacterId(7), &login_block("Ralph"), 14, 10, 10);
+    character.flags.insert(CharacterFlags::NOEXP);
+    character.gold = 1_000_000;
+
+    let result = apply_random_shrine_bribes(&mut player, &mut character, 16, 20);
+
+    assert_eq!(result, RandomShrineBribesApplyResult::NoExp);
+    assert_eq!(character.gold, 1_000_000);
+    assert!(!player.has_used_random_shrine(16));
+}
+
+#[test]
 fn pick_berry_runtime_grants_template_and_marks_flower_ppd() {
     let mut world = World::default();
     world.add_character(login_character(

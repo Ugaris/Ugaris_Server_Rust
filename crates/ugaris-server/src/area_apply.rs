@@ -426,6 +426,23 @@ pub(crate) enum RandomShrineContinuityApplyResult {
     NeedYoungerBrother,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RandomShrineIndecisivenessApplyResult {
+    Used,
+    NoExp,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RandomShrineBribesApplyResult {
+    Used {
+        gold: u32,
+        exp: u32,
+        almost_empty: bool,
+    },
+    NoExp,
+    NotEnoughGold,
+}
+
 pub(crate) fn apply_random_shrine_security(
     player: &mut PlayerRuntime,
     character: &mut Character,
@@ -636,6 +653,81 @@ pub(crate) fn apply_random_shrine_continuity(
     RandomShrineContinuityApplyResult::Used {
         exp,
         opens_gate: shrine_level == 99,
+    }
+}
+
+/// C `shrine_indecisiveness` (`random.c:1780-1802`): lowers every raisable
+/// value 3 times, but only for values that haven't already been raised
+/// past `skillmax` (C: `if (ch[cn].value[1][n] > skillmax(cn)) continue;`).
+/// `lower_value` itself no-ops (returns `None`) once a value hits its
+/// `skill_start` floor or if the value isn't raisable at all, matching
+/// C's own internal `lower_value` guards.
+pub(crate) fn apply_random_shrine_indecisiveness(
+    player: &mut PlayerRuntime,
+    character: &mut Character,
+    shrine_type: u8,
+) -> RandomShrineIndecisivenessApplyResult {
+    if character.flags.contains(CharacterFlags::NOEXP) {
+        return RandomShrineIndecisivenessApplyResult::NoExp;
+    }
+
+    for value in 0..CHARACTER_VALUE_NAMES.len() {
+        if bare_value(character, value) > skillmax(character) {
+            continue;
+        }
+        lower_value(character, value);
+        lower_value(character, value);
+        lower_value(character, value);
+    }
+    player.mark_random_shrine_used(shrine_type);
+    RandomShrineIndecisivenessApplyResult::Used
+}
+
+/// C `shrine_bribes` (`random.c:1804-1843`): pickpockets gold for exp.
+/// `almost_empty` mirrors C's `want < val ? "almost " : ""` feedback-text
+/// selector (the caller formats the actual sentence); it's true when the
+/// shrine only takes part of the player's gold (`want`), false when it
+/// takes everything the player has (`val` was already `<= want`).
+pub(crate) fn apply_random_shrine_bribes(
+    player: &mut PlayerRuntime,
+    character: &mut Character,
+    shrine_type: u8,
+    shrine_level: u8,
+) -> RandomShrineBribesApplyResult {
+    if character.flags.contains(CharacterFlags::NOEXP) {
+        return RandomShrineBribesApplyResult::NoExp;
+    }
+
+    let level = character
+        .level
+        .saturating_add(5)
+        .min(u32::from(shrine_level));
+    let want = level_value(level).saturating_mul(4) / 3;
+    let need = level_value(level).saturating_mul(4) / 10;
+
+    let mut val = character.gold;
+    if val < need {
+        return RandomShrineBribesApplyResult::NotEnoughGold;
+    }
+
+    let almost_empty = want < val;
+    val = val.min(want);
+
+    character.gold = character.gold.saturating_sub(val);
+    character
+        .flags
+        .insert(CharacterFlags::ITEMS | CharacterFlags::UPDATE);
+    let exp = val / 4;
+    // C `shrine_bribes` (`random.c:1836`) grants `val / 4` via
+    // `give_exp(cn, val / 4)`, not a raw mutation; the caller applies it
+    // through `World::give_exp` once this function's `&mut Character`
+    // borrow has ended.
+    player.mark_random_shrine_used(shrine_type);
+
+    RandomShrineBribesApplyResult::Used {
+        gold: val,
+        exp,
+        almost_empty,
     }
 }
 

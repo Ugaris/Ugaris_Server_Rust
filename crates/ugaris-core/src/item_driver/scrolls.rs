@@ -110,7 +110,12 @@ pub(crate) fn raise_value(character: &mut Character, value: usize) -> Option<u32
     Some(cost)
 }
 
-pub(crate) fn lower_value(character: &mut Character, value: usize) -> Option<u32> {
+/// `pub` (not `pub(crate)`, unlike its siblings in this module): the
+/// area-14 `shrine_indecisiveness` port (`ugaris-server::area_apply::
+/// apply_random_shrine_indecisiveness`) needs to call this from the
+/// `ugaris-server` crate, mirroring C `lower_value` (`skill.c:270`) being
+/// called directly from `random.c:1795-1797`.
+pub fn lower_value(character: &mut Character, value: usize) -> Option<u32> {
     if character.flags.contains(CharacterFlags::NOEXP)
         || value >= CHARACTER_VALUE_COUNT
         || skill_raise_cost_factor(value) == 0
@@ -132,7 +137,8 @@ pub(crate) fn lower_value(character: &mut Character, value: usize) -> Option<u32
     Some(cost)
 }
 
-pub(crate) fn bare_value(character: &Character, value: usize) -> i16 {
+/// `pub`: see `lower_value`'s doc comment above for why.
+pub fn bare_value(character: &Character, value: usize) -> i16 {
     character
         .values
         .get(1)
@@ -141,7 +147,8 @@ pub(crate) fn bare_value(character: &Character, value: usize) -> i16 {
         .unwrap_or_default()
 }
 
-pub(crate) fn skillmax(character: &Character) -> i16 {
+/// `pub`: see `lower_value`'s doc comment above for why.
+pub fn skillmax(character: &Character) -> i16 {
     if !character.flags.contains(CharacterFlags::ARCH) {
         return 50;
     }

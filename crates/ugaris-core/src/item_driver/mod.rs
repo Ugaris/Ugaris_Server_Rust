@@ -93,6 +93,10 @@ pub(crate) use orbs::*;
 pub(crate) use potions::*;
 pub(crate) use saltmine::*;
 pub(crate) use scrolls::*;
+// Explicit `pub` re-export of the 3 `scrolls` helpers `shrine_indecisiveness`
+// (`random.c:1780-1802`) needs cross-crate: the rest of `scrolls` stays
+// `pub(crate)` (item-driver-internal), see `lower_value`'s doc comment.
+pub use scrolls::{bare_value, lower_value, skillmax};
 pub(crate) use sewers::*;
 pub(crate) use shrines::*;
 pub use teleports::*;
