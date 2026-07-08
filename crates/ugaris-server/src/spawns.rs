@@ -42,6 +42,20 @@ pub(crate) fn respawn_npc_character(
     else {
         return false;
     };
+    // C `ch_respawn_driver`'s `CDR_LAMPGHOST` case -> `lampghost_respawn`
+    // (`area3.c:2729-2739`): refuse to respawn while the palace lamp
+    // puzzle's target tile is still lit (`map[m].light > 4`), so the
+    // ghosts only reappear once the lights have actually gone out.
+    if character.driver == CDR_LAMPGHOST {
+        let light = world
+            .map
+            .tile(usize::from(request.x), usize::from(request.y))
+            .map(|tile| tile.light)
+            .unwrap_or(0);
+        if light > 4 {
+            return false;
+        }
+    }
     character.dir = ugaris_core::direction::Direction::RightDown as u8;
     character.hp = i32::from(character.values[0][ugaris_core::entity::CharacterValue::Hp as usize])
         * ugaris_core::entity::POWERSCALE;

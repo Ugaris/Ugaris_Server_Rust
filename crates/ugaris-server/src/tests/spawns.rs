@@ -567,3 +567,70 @@ fn respawn_npc_character_rolls_its_templates_spawn_mode_loot_table() {
     assert_eq!(carried_item.name, "Bronze Chip");
     assert_eq!(carried_item.carried_by, Some(CharacterId(300)));
 }
+
+fn lampghost_loader() -> ZoneLoader {
+    let mut loader = ZoneLoader::new();
+    loader
+        .load_character_templates_str(
+            r#"
+                lampghost:
+                  name="Lamp Ghost"
+                  driver=25
+                  V_HP=10
+                ;
+            "#,
+        )
+        .unwrap();
+    loader
+}
+
+/// C `ch_respawn_driver`'s `CDR_LAMPGHOST` case -> `lampghost_respawn`
+/// (`area3.c:2729-2739`): `if (map[m].light > 4) return 2;` blocks the
+/// respawn (and, via `respawn_callback`'s `== 1` check, gets retried) while
+/// the target tile is still lit.
+#[test]
+fn respawn_npc_character_refuses_lampghost_while_palace_is_lit() {
+    let mut loader = lampghost_loader();
+    let mut world = World::default();
+    world.map.tile_mut(20, 20).unwrap().light = 5;
+    let mut runtime = ServerRuntime::default();
+    runtime.set_next_character_id(300);
+    let request = ugaris_core::world::NpcRespawnRequest {
+        slot: 0,
+        template_key: "lampghost".to_string(),
+        x: 20,
+        y: 20,
+    };
+
+    assert!(!respawn_npc_character(
+        &mut world,
+        &mut loader,
+        &mut runtime,
+        &request,
+    ));
+    assert!(world.characters.get(&CharacterId(300)).is_none());
+}
+
+#[test]
+fn respawn_npc_character_allows_lampghost_once_palace_is_dark() {
+    let mut loader = lampghost_loader();
+    let mut world = World::default();
+    world.map.tile_mut(20, 20).unwrap().light = 4;
+    let mut runtime = ServerRuntime::default();
+    runtime.set_next_character_id(300);
+    let request = ugaris_core::world::NpcRespawnRequest {
+        slot: 0,
+        template_key: "lampghost".to_string(),
+        x: 20,
+        y: 20,
+    };
+
+    assert!(respawn_npc_character(
+        &mut world,
+        &mut loader,
+        &mut runtime,
+        &request,
+    ));
+    let npc = world.characters.get(&CharacterId(300)).unwrap();
+    assert_eq!(npc.driver, CDR_LAMPGHOST);
+}

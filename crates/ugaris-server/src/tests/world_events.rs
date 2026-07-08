@@ -1,6 +1,7 @@
 use super::*;
 use ugaris_core::character_driver::{
-    ArenaFighterDriverData, ArenaMasterDriverData, CDR_ARENAFIGHTER, CDR_ARENAMASTER, MS_FIGHT,
+    ArenaFighterDriverData, ArenaMasterDriverData, CDR_ARENAFIGHTER, CDR_ARENAMASTER,
+    CDR_LAMPGHOST, MS_FIGHT,
 };
 use ugaris_core::world::LegacyHurtOutcome;
 
@@ -590,6 +591,45 @@ fn lethal_riverbeast_hurt_ignores_players_not_awaiting_the_kill() {
         0
     );
     assert!(world.drain_pending_system_texts().is_empty());
+}
+
+/// C `ch_died_driver`/`CDR_LAMPGHOST` -> `lampghost_dead` (`area3.c:2741-
+/// 2752`): the dying lampghost's claimed lamp is released so another
+/// lampghost (or the same one on respawn) can pick it up.
+#[test]
+fn lethal_lampghost_hurt_releases_its_lamp_claim() {
+    let mut world = World::default();
+    let mut lampghost = login_character(CharacterId(1), &login_block("Lampghost"), 1, 10, 10);
+    lampghost.flags.remove(CharacterFlags::PLAYER);
+    lampghost.driver = CDR_LAMPGHOST;
+    lampghost.hp = POWERSCALE;
+    let killer = login_character(CharacterId(2), &login_block("Killer"), 1, 11, 10);
+    world.add_character(lampghost);
+    world.add_character(killer);
+    world
+        .area3_lamp_claims
+        .insert(ItemId(9), (CharacterId(1), 5));
+    // An unrelated claim by a different lampghost must survive untouched.
+    world
+        .area3_lamp_claims
+        .insert(ItemId(10), (CharacterId(3), 2));
+
+    let mut runtime = ServerRuntime::default();
+    world.apply_legacy_hurt(
+        CharacterId(1),
+        Some(CharacterId(2)),
+        POWERSCALE * 2,
+        1,
+        0,
+        0,
+    );
+    apply_pk_hate_from_hurt_events(&mut runtime, &mut world, 0, &ZoneLoader::new());
+
+    assert!(!world.area3_lamp_claims.contains_key(&ItemId(9)));
+    assert_eq!(
+        world.area3_lamp_claims.get(&ItemId(10)),
+        Some(&(CharacterId(3), 2))
+    );
 }
 
 #[test]

@@ -6,6 +6,7 @@ pub mod carlos;
 pub mod clara;
 pub mod kassim;
 pub mod kelly;
+pub mod lampghost;
 pub mod seymour;
 pub mod sir_jones;
 pub mod supermax;
@@ -23,6 +24,8 @@ pub use clara::*;
 pub use kassim::*;
 #[allow(unused_imports)]
 pub use kelly::*;
+#[allow(unused_imports)]
+pub use lampghost::*;
 #[allow(unused_imports)]
 pub use seymour::*;
 #[allow(unused_imports)]

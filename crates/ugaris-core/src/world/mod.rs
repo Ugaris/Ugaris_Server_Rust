@@ -307,6 +307,12 @@ pub struct World {
     pub effects: HashMap<u32, Effect>,
     pub settings: GameSettings,
     pub area3_palace_lamps: Area3PalaceLampState,
+    /// C `struct lamp lamp[MAXLAMP]`'s `cn`/`cost` claim fields
+    /// (`area3.c:2601-2607`), keyed directly by `ItemId` instead of a
+    /// `lamp[]` slot index - see `world::npc::area3::lampghost`'s module
+    /// doc comment. `in`/registration membership is already `Item::
+    /// driver_data[6]` (see `Area3PalaceLampState`'s own doc comment).
+    pub area3_lamp_claims: HashMap<ItemId, (CharacterId, i32)>,
     pub legacy_random_seed: u32,
     pub lq_doors_initialized: bool,
     pub lq_doors: Vec<LqDoorState>,

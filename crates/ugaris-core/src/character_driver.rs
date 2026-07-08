@@ -250,6 +250,10 @@ pub const CDR_SEYMOUR: u16 = 24;
 /// Seyan'Du Sergeant who runs area 3's longest quest chain (`src/area/3/
 /// area3.c::kelly_driver`).
 pub const CDR_KELLY: u16 = 30;
+/// C `#define CDR_LAMPGHOST 25` (`src/system/drvlib.h`, "specific lamp
+/// extinguisher, area 3, palace"): the palace-light puzzle janitor NPC
+/// (`src/area/3/area3.c::lampghost_driver`).
+pub const CDR_LAMPGHOST: u16 = 25;
 /// C `#define CDR_CARLOS 90` (`src/system/drvlib.h:138`, "gives dragon-
 /// breath-quest"): the Imperial Army investigator who runs the dragon-
 /// staff quest (quest 20) and the Imperial Vault ritual quest (quest 61)
@@ -368,6 +372,7 @@ pub enum CharacterDriverState {
     SirJones(SirJonesDriverData),
     Seymour(SeymourDriverData),
     Kelly(KellyDriverData),
+    Lampghost(LampghostDriverData),
     Carlos(CarlosDriverData),
     Kassim(KassimDriverData),
     Supermax(SupermaxDriverData),
@@ -1072,6 +1077,7 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::SirJones(_)
             | CharacterDriverState::Seymour(_)
             | CharacterDriverState::Kelly(_)
+            | CharacterDriverState::Lampghost(_)
             | CharacterDriverState::Carlos(_)
             | CharacterDriverState::Kassim(_)
             | CharacterDriverState::Supermax(_)
@@ -3431,6 +3437,7 @@ pub use crate::world::npc::area3::clara::{
 };
 pub use crate::world::npc::area3::kassim::{EngraveDriverData, KassimDriverData};
 pub use crate::world::npc::area3::kelly::KellyDriverData;
+pub use crate::world::npc::area3::lampghost::LampghostDriverData;
 pub use crate::world::npc::area3::seymour::SeymourDriverData;
 pub use crate::world::npc::area3::sir_jones::SirJonesDriverData;
 pub use crate::world::npc::area3::supermax::SupermaxDriverData;

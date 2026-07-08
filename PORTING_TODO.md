@@ -438,7 +438,7 @@ Ordered by player progression; the C file is the oracle.
 - [x] **Area 2 - `src/area/2/area2.c`** - remaining character drivers
   (zombie lord, priests). Item drivers done. *(done - details in
   PORTING_LEDGER.md)*
-- [~] **Area 3 - `src/area/3/area3.c`** - palace story NPCs, lamp ghost
+- [x] **Area 3 - `src/area/3/area3.c`** - palace story NPCs, lamp ghost
   quest flow (lamps themselves are ported).
   REMAINING: `astro1_driver` (ambient moon-telescope monologue, no
   dialogue/quest/item interaction) is ported (`world/npc/area3/astro1.rs`,
@@ -492,10 +492,16 @@ Ordered by player progression; the C file is the oracle.
   `item_driver::scrolls` alongside the existing `skillmax`/`raise_cost`,
   and new `supermax_state`/`supermax_gold` `PlayerRuntime` accessors
   (C's global `misc_ppd`, not the area-3-specific `area3_ppd`).
-  Still unported: `lampghost_driver`/`_respawn`/`_dead` (needs a new
-  global `lamp[250]`-equivalent registry shared with the already-ported
-  `onofflight_driver`; do last - most architecturally distinct driver in
-  the file, and the only one remaining).
+  `lampghost_driver`/`_respawn`/`_dead` (the palace-light puzzle janitor:
+  self-defense/aggressive-sighting cascade plus a nearest-lit-lamp
+  claim/walk/extinguish job loop) is now also ported
+  (`world/npc/area3/lampghost.rs`, `CDR_LAMPGHOST`); C's `lamp[MAXLAMP]`
+  registry's `cn`/`cost` claim fields become a new `World::
+  area3_lamp_claims: HashMap<ItemId, (CharacterId, i32)>` (registration
+  membership was already `Item::driver_data[6]`), the respawn light gate
+  lives in `ugaris-server`'s `spawns::respawn_npc_character`, and the
+  claim-release death hook lives in `world_events::death_hooks::
+  apply_lampghost_death_from_hurt_event`. This closes Area 3.
 - [ ] **Area 4 - `src/area/4/pents.c`** - pentagram quest NPCs + demon
   wave logic beyond the ported item boundary. Also wire the achievement
   calls this file's reward mechanic makes in C (`achievement_add_pents`,
@@ -830,4 +836,8 @@ notes live in `PROGRESS_ARCHIVE.md`.
   greeting sequence, `list`/`money`/`raise`/`lower` commands), plus new
   `supermax_canraise`/`supermax_cost` core helpers and 82 new `AREA3_QA`
   entries. 2653 core + 1101 server tests pass, clean build/boot-smoke.
+- 2026-07-08: Area 3 CLOSED: ported `lampghost_driver`/`_respawn`/`_dead`
+  (self-defense + nearest-lit-lamp claim/walk/extinguish job loop), new
+  `World::area3_lamp_claims` registry substituting C's `lamp[]` array.
+  2663 core + 1104 server tests pass, clean build/boot-smoke.
 

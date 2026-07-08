@@ -545,6 +545,28 @@ pub(crate) fn apply_area3_immortal_death_from_hurt_event(
     true
 }
 
+/// C `ch_died_driver`/`CDR_LAMPGHOST` dispatch (`area3.c:2936-2938`) ->
+/// `lampghost_dead` (`:2741-2752`): unlike every other area-3 quest NPC's
+/// shared `immortal_dead` no-op, the lamp-extinguisher ghost releases its
+/// claimed lamp (if any) on death so another lampghost can pick it up.
+pub(crate) fn apply_lampghost_death_from_hurt_event(
+    world: &mut World,
+    event: LegacyHurtEvent,
+) -> bool {
+    if !event.outcome.killed {
+        return false;
+    }
+    let is_lampghost = world
+        .characters
+        .get(&event.target_id)
+        .is_some_and(|target| target.driver == CDR_LAMPGHOST);
+    if !is_lampghost {
+        return false;
+    }
+    world.release_lampghost_lamp_claim(event.target_id);
+    true
+}
+
 /// C `ch_died_driver`/`CDR_ASTURIN` dispatch (`gwendylon.c:6105-6107`) ->
 /// `asturin_dead` (`:4535-4542`). C's `set_data(co, DRD_AREA1_PPD, ...)`
 /// succeeds for *any* live character `co` (the generic per-character

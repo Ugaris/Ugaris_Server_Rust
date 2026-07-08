@@ -49,6 +49,7 @@ mod jiu;
 mod kassim;
 mod kelly;
 mod lab2_undead;
+mod lampghost;
 mod lastseen;
 mod light;
 mod lockname;

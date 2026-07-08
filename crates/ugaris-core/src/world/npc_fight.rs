@@ -607,6 +607,7 @@ impl World {
             | CharacterDriverState::SirJones(_)
             | CharacterDriverState::Seymour(_)
             | CharacterDriverState::Kelly(_)
+            | CharacterDriverState::Lampghost(_)
             | CharacterDriverState::Carlos(_)
             | CharacterDriverState::Kassim(_)
             | CharacterDriverState::Supermax(_)
