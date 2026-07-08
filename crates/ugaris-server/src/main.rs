@@ -819,6 +819,7 @@ async fn main() -> anyhow::Result<()> {
         anticheat_repository,
         notes_repository,
         area_repository,
+        pentagram_record_repository,
     ) = if let Some(database_url) = args.database_url.as_deref() {
         let db = ugaris_db::Database::connect(database_url, 8).await?;
         db.ping().await?;
@@ -861,11 +862,12 @@ async fn main() -> anyhow::Result<()> {
             Some(db.anticheat()),
             Some(db.notes()),
             Some(db.areas()),
+            Some(db.pentagram_record()),
         )
     } else {
         warn!("DATABASE_URL not set; starting without persistence");
         (
-            None, None, None, None, None, None, None, None, None, None, None,
+            None, None, None, None, None, None, None, None, None, None, None, None,
         )
     };
 
@@ -1004,6 +1006,12 @@ async fn main() -> anyhow::Result<()> {
             }
         }
     }
+    // C `initialize_pentagram_system`'s `load_pentagram_record` call
+    // (`pents.c:369`): load this area's lifetime pentagram-activation
+    // record before the game loop starts, so the very first solve's
+    // "you broke the record" comparison sees the persisted value instead
+    // of always starting at `0`/`"Nobody"`.
+    pents::load_pentagram_record_at_startup(&mut world, &pentagram_record_repository).await;
     let mut tick = time::interval(TickRate::default().interval());
     // C `tick_date()` (`src/system/date.c:267`) runs once before the very
     // first `tick_char()` in the game loop (`src/server.c:618`), so players
@@ -1056,6 +1064,7 @@ async fn main() -> anyhow::Result<()> {
                     &clan_log_repository,
                     &merchant_repository,
                     &auction_repository,
+                    &pentagram_record_repository,
                 )
                 .await;
                 // C `player_driver.c:1067-1070`'s autobless/autopulse
@@ -1179,6 +1188,15 @@ async fn main() -> anyhow::Result<()> {
                 // `tick_npc/` (one fn per legacy driver, grouped
                 // by area); `run_all` keeps the original order.
                 tick_npc::run_all(&mut world, &mut runtime, &mut zone_loader, &config, &args, &completed_actions, &achievement_repository, &character_repository, &area_repository, &clan_repository, &clan_log_repository, &merchant_repository, &military_master_storage_repository, &military_advisor_storage_repository, &notes_repository, &anticheat_repository, &auction_repository).await;
+
+                // C `add_scheduled_task(save_pentagram_record_scheduled,
+                // 3600 * 4, "PentagramRecords", 1)`
+                // (`database_pent_record.c:128`): re-save this area's
+                // lifetime pentagram-activation record every 4 hours.
+                if world.tick.0 % (TICKS_PER_SECOND * 3600 * 4) == 0 {
+                    pents::save_pentagram_record_scheduled(&world, &pentagram_record_repository)
+                        .await;
+                }
 
                 // Per-tick sync phase (PK hate updates, shutdown scheduler,
                 // pending text/channel broadcast drains, resource sync,

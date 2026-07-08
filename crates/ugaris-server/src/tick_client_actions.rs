@@ -25,6 +25,7 @@ pub(crate) async fn process_queued_client_actions(
     clan_log_repository: &Option<ugaris_db::PgClanLogRepository>,
     merchant_repository: &Option<ugaris_db::PgMerchantRepository>,
     auction_repository: &Option<ugaris_db::PgAuctionRepository>,
+    pentagram_record_repository: &Option<ugaris_db::PgPentagramRecordRepository>,
 ) {
     let queued = runtime.drain_actions_for_tick();
     if !queued.is_empty() {
@@ -384,6 +385,13 @@ pub(crate) async fn process_queued_client_actions(
                                 }
                             }
                         }
+                        // C `/saveall` (`command.c:7470`):
+                        // `save_pentagram_record_scheduled()`.
+                        crate::pents::save_pentagram_record_scheduled(
+                            &world,
+                            &pentagram_record_repository,
+                        )
+                        .await;
                     }
                     if let Some(merchant_id) = result.clear_merchant_store_requested {
                         // C `/clearmerchantstores` (`command.c:

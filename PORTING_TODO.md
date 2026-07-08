@@ -548,14 +548,24 @@ Ordered by player progression; the C file is the oracle.
   for every `CDR_PENTER` death regardless of whether a killer exists,
   matching C's `ch_died_driver` semantics - unlike the `LegacyHurtEvent`-
   based death-hook family, which only fires when there's a killer).
-  Still unported: (3) the `CDR_TESTER` QA helper NPC
-  (`pentagram_tester_driver`, a test-only bot that auto-hunts
-  pentagrams/demons - lowest priority, not player-facing); (4)
-  `pentagram_record` DB persistence (in-memory only right now, like
-  `World::arena_toplist`, resets on restart) and the macro-daemon
-  challenge-room `saved_pent_*` restore (already a documented no-op in
-  `macro_daemon.rs`). Next slice should be (3) or (4), whichever a future
-  iteration judges lower-effort; neither blocks any other P4 area.
+  (4) is now also CLOSED: `pentagram_record`/`pentagram_record_holder`
+  restart-persistence (C `load_pentagram_record`/
+  `save_pentagram_record_scheduled`, `database_pent_record.c`) is ported
+  via a new `ugaris-db::PgPentagramRecordRepository` mirroring C's own
+  `pentagram_record` table one-for-one (`migrations/
+  0021_pentagram_record.sql`), loaded once at startup
+  (`pents::load_pentagram_record_at_startup`) and re-saved on both of
+  C's non-shutdown call sites: the periodic `add_scheduled_task(...,
+  3600 * 4, ...)` cadence (checked inline in `main.rs`'s tick loop, not
+  threaded through `tick_npc::run_all` - deliberately avoided touching
+  its ~150-function-signature blast radius for a system-wide,
+  non-NPC concern) and `/saveall`'s explicit call
+  (`tick_client_actions.rs`). Still unported: (3) the `CDR_TESTER` QA
+  helper NPC (`pentagram_tester_driver`, a test-only bot that auto-hunts
+  pentagrams/demons - lowest priority, not player-facing) and the
+  macro-daemon challenge-room `saved_pent_*` restore (already a
+  documented no-op in `macro_daemon.rs`). Next slice should be (3);
+  neither blocks any other P4 area.
 - [ ] **Area 6 - `src/area/6/edemon.c`** - Earth Demon boss driver
   (`CDR_EDEMON*` characters); machinery items are ported.
 - [ ] **Area 8 - `src/area/8/fdemon.c`** - Fire Demon boss + farm NPCs;
@@ -898,4 +908,9 @@ notes live in `PROGRESS_ARCHIVE.md`.
   `handle_demon_death`'s power-reduction/`DEMON_LORDS_DEMISE` award; only
   `CDR_TESTER` and `pentagram_record` DB persistence remain. 2696 core +
   1108 server tests pass, clean build/boot-smoke.
+- 2026-07-08: Area 4: ported `pentagram_record` DB restart-persistence
+  (new `PgPentagramRecordRepository`, `migrations/
+  0021_pentagram_record.sql`, startup load + 4h-cadence/`/saveall`
+  saves). Only `CDR_TESTER` remains. 2696 core + 1108 server + 81 db
+  tests pass, clean build/boot-smoke.
 

@@ -21,10 +21,18 @@
 //! template (needs `ZoneLoader`, which `World` doesn't have - same split
 //! as the edemon/fdemon gate spawns in `crate::spawns`), drops it at the
 //! pentagram, and calls back into `World` to finish the elite/lesser
-//! mutation, loot-table roll, and slot bookkeeping. Not ported: the
-//! `CDR_TESTER` QA-bot character driver and the `pentagram_record` DB
-//! persistence (in-memory only, like `World::arena_toplist`) - see
-//! `ugaris_core::world::pents`'s module doc comment.
+//! mutation, loot-table roll, and slot bookkeeping.
+//!
+//! [`save_pentagram_record_scheduled`] restart-persists the lifetime
+//! "most pentagrams activated in one run" record (C
+//! `save_pentagram_record_scheduled`,
+//! `src/system/database/database_pent_record.c`) via
+//! `ugaris_db::PgPentagramRecordRepository`; the caller (`main.rs`) is
+//! responsible for the two C call sites this mirrors: the periodic
+//! `add_scheduled_task(..., 3600 * 4, ...)` cadence and `/saveall`'s
+//! explicit call (`command.c:7470`). Not ported: the `CDR_TESTER` QA-bot
+//! character driver - see `ugaris_core::world::pents`'s module doc
+//! comment.
 
 use super::*;
 use crate::achievement::{
@@ -35,6 +43,7 @@ use crate::achievement::{
 use ugaris_core::world::{
     level_value, DemonType, PentagramActivationEvent, PentagramDemonSpawnRequest,
 };
+use ugaris_db::PentagramRecordRepository as _;
 
 /// Drains `World::drain_pending_pentagram_activations` and applies the
 /// per-player half of C's pipeline for each queued activation. Call once
@@ -410,5 +419,60 @@ pub(crate) async fn process_penter_demon_lords_demise_awards(
             player_id,
         )
         .await;
+    }
+}
+
+/// C `load_pentagram_record` (`database_pent_record.c:62-90`), called
+/// once before the game loop starts (`initialize_pentagram_system`,
+/// `pents.c:369`). Leaves `world.pentagram_quest` at its `Default` (`0`/
+/// `"Nobody"`) when nothing has ever been saved for this area, matching
+/// C's `if (!load_pentagram_record(...)) { ... }` no-op fallthrough.
+pub(crate) async fn load_pentagram_record_at_startup(
+    world: &mut World,
+    repository: &Option<ugaris_db::PgPentagramRecordRepository>,
+) {
+    let Some(repository) = repository else {
+        return;
+    };
+    match repository.load(i32::from(world.area_id)).await {
+        Ok(Some(row)) => {
+            world.pentagram_quest.pentagram_record = row.record_count;
+            world.pentagram_quest.pentagram_record_holder = row.char_name;
+        }
+        Ok(None) => {}
+        Err(err) => {
+            warn!(error = %err, "failed to load pentagram record from database");
+        }
+    }
+}
+
+/// C `save_pentagram_record_scheduled` (`database_pent_record.c:134-
+/// 146`): unconditionally re-saves the current in-memory record whenever
+/// `record > 0` - C has no "did it actually change" check, so neither
+/// does this. Wired to two of its three C call sites: the periodic
+/// `add_scheduled_task(..., 3600 * 4, "PentagramRecords", 1)` cadence
+/// (caller checks `world.tick.0 % (TICKS_PER_SECOND * 3600 * 4) == 0`)
+/// and `/saveall`'s explicit call (`command.c:7470`, wired in
+/// `tick_client_actions::process_queued_client_actions`'s
+/// `result.save_all_requested` arm). The third call site,
+/// `exit_database`'s unconditional shutdown flush, has no Rust
+/// equivalent yet - no repository in this codebase has a shutdown-save
+/// routine to mirror it against.
+pub(crate) async fn save_pentagram_record_scheduled(
+    world: &World,
+    repository: &Option<ugaris_db::PgPentagramRecordRepository>,
+) {
+    if world.pentagram_quest.pentagram_record <= 0 {
+        return;
+    }
+    let Some(repository) = repository else {
+        return;
+    };
+    let row = ugaris_db::PentagramRecordRow {
+        record_count: world.pentagram_quest.pentagram_record,
+        char_name: world.pentagram_quest.pentagram_record_holder.clone(),
+    };
+    if let Err(err) = repository.save(i32::from(world.area_id), &row).await {
+        warn!(error = %err, "failed to save pentagram record to database");
     }
 }

@@ -37,15 +37,19 @@
 //! widened alongside `CDR_DUNGEONFIGHTER` in `world/npc_fight.rs`/
 //! `world/npc_idle.rs`, and `zone.rs`'s `CDR_PENTER` branch).
 //!
+//! `pentagram_record`/`pentagram_record_holder`'s restart-persistence
+//! (C `load_pentagram_record`/`save_pentagram_record_scheduled`,
+//! `src/system/database/database_pent_record.c`) lives in
+//! `ugaris-db`'s `PgPentagramRecordRepository` plus `ugaris-server`'s
+//! `pents::save_pentagram_record_if_dirty` - `World` itself has no
+//! database access (same split as every other DB-backed registry).
+//!
 //! Not ported here (tracked as a `PORTING_TODO.md` "Area 4" REMAINING
 //! gap): the `CDR_TESTER` QA-bot character driver (`pentagram_tester_
-//! driver`, a test-only helper bot - lowest priority, not player-facing),
-//! the `pentagram_record` DB load/save (`load_pentagram_record`/
-//! `save_pentagram_record_scheduled` - in-memory only, resets on restart,
-//! same as `World::arena_toplist`), and the macro-daemon challenge-room
-//! `saved_pent_*` restore (`crate::macro_daemon::macro_save_pentagram_
-//! progress`'s own doc comment already documents this as a no-op pending
-//! this task).
+//! driver`, a test-only helper bot - lowest priority, not player-facing)
+//! and the macro-daemon challenge-room `saved_pent_*` restore
+//! (`crate::macro_daemon::macro_save_pentagram_progress`'s own doc
+//! comment already documents this as a no-op pending this task).
 
 use super::*;
 

@@ -8,6 +8,7 @@ pub mod clan_log;
 pub mod merchant;
 pub mod military;
 pub mod notes;
+pub mod pentagram;
 
 use sqlx::{postgres::PgPoolOptions, PgPool};
 
@@ -42,6 +43,7 @@ pub use military::{
     PgMilitaryAdvisorStorageRepository, PgMilitaryMasterStorageRepository,
 };
 pub use notes::{NotesRepository, PgNotesRepository};
+pub use pentagram::{PentagramRecordRepository, PentagramRecordRow, PgPentagramRecordRepository};
 
 #[derive(Debug, Clone)]
 pub struct Database {
@@ -118,5 +120,9 @@ impl Database {
 
     pub fn notes(&self) -> PgNotesRepository {
         PgNotesRepository::new(self.pool.clone())
+    }
+
+    pub fn pentagram_record(&self) -> PgPentagramRecordRepository {
+        PgPentagramRecordRepository::new(self.pool.clone())
     }
 }
