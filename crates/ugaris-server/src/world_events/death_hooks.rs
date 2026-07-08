@@ -1,5 +1,5 @@
 use super::*;
-use ugaris_core::character_driver::{CDR_TWOGUARD, CDR_TWOROBBER};
+use ugaris_core::character_driver::{CDR_TWOGUARD, CDR_TWOROBBER, CDR_TWOSERVANT};
 use ugaris_core::world::{CS_ENEMY, CS_GUEST, LS_DEAD, LS_FINE};
 
 pub(crate) fn apply_lab2_undead_death_from_hurt_event(
@@ -743,6 +743,71 @@ pub(crate) fn apply_two_robber_death_from_hurt_event(
     if let Some(index) = index {
         player.set_twocity_thief_killed(index, player.twocity_thief_killed(index) + 1);
     }
+    true
+}
+
+/// C `servant_dead(cn, co)` (`src/area/17/two.c:1324-1351`): the
+/// forbidden-territory servants' death hook. Only the `nr == 4` "governor's
+/// double" applies the harsh `citizen_status`/`legal_status` punishment
+/// (matching `guard_dead`'s own fields); every other servant just says
+/// "Arrgh! GUARDS!". Both branches always call `call_guard(cn, co)`
+/// afterward - reachable via `World::two_city_call_guard` (`pub`, not
+/// `pub(crate)`, specifically for this call site - see that method's own
+/// doc comment), reading the dead servant's own `x`/`y` from `world.
+/// characters` (still present at this point, since `LegacyHurtEvent`
+/// fires before the corpse is fully removed, same precedent as `guard_
+/// dead`/`robber_dead` reading `event.target_id` back above).
+pub(crate) fn apply_two_servant_death_from_hurt_event(
+    runtime: &mut ServerRuntime,
+    world: &mut World,
+    event: LegacyHurtEvent,
+) -> bool {
+    if !event.outcome.killed {
+        return false;
+    }
+    let Some(nr) = world.characters.get(&event.target_id).and_then(|target| {
+        if target.driver != CDR_TWOSERVANT {
+            return None;
+        }
+        let Some(CharacterDriverState::TwoServant(data)) = target.driver_state.as_ref() else {
+            return None;
+        };
+        Some(data.nr)
+    }) else {
+        return false;
+    };
+    // C `if (!co) return; if (!(ch[co].flags & CF_PLAYER)) return;`
+    // (`two.c:1328-1333`).
+    let Some(killer_name) = world
+        .characters
+        .get(&event.cause_id)
+        .filter(|killer| killer.flags.contains(CharacterFlags::PLAYER))
+        .map(|killer| killer.name.clone())
+    else {
+        return false;
+    };
+
+    if nr == 4 {
+        // C `ppd = set_data(co, DRD_TWOCITY_PPD, ...); if (ppd) { ppd->
+        // citizen_status = CS_ENEMY; ppd->legal_status = LS_DEAD; say(...);
+        // }` (`two.c:1336-1345`).
+        if let Some(player) = runtime.player_for_character_mut(event.cause_id) {
+            player.set_twocity_citizen_status(CS_ENEMY);
+            player.set_twocity_legal_status(LS_DEAD);
+            world.npc_say(
+                event.target_id,
+                &format!(
+                    "Thou shalt pay dearly for this, {killer_name}. Even though I am just the governors double, he wilt have thine head just for trying to kill him!"
+                ),
+            );
+        }
+    } else {
+        // C `else { say(cn, "Arrgh! GUARDS!"); }` (`two.c:1346-1348`).
+        world.npc_say(event.target_id, "Arrgh! GUARDS!");
+    }
+
+    // C `call_guard(cn, co);` (`two.c:1350`), unconditional.
+    world.two_city_call_guard(event.target_id, event.cause_id);
     true
 }
 

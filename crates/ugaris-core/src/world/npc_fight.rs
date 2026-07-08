@@ -634,6 +634,7 @@ impl World {
             | CharacterDriverState::TwoSanwyn(_)
             | CharacterDriverState::TwoAlchemist(_)
             | CharacterDriverState::TwoBarkeeper(_)
+            | CharacterDriverState::TwoServant(_)
             | CharacterDriverState::TwoGuard(_) => None,
         }
     }

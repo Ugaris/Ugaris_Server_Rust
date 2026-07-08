@@ -23,7 +23,7 @@ use crate::{
         CDR_JIU, CDR_KASSIM, CDR_KELLY, CDR_LAB2UNDEAD, CDR_NOOK, CDR_RESKIN, CDR_SEYMOUR,
         CDR_SIMPLEBADDY, CDR_SIRJONES, CDR_SUPERIOR, CDR_SUPERMAX, CDR_SWAMPCLARA, CDR_TERION,
         CDR_THOMAS, CDR_TRADER, CDR_TWOALCHEMIST, CDR_TWOBARKEEPER, CDR_TWOGUARD, CDR_TWOSANWYN,
-        CDR_TWOSKELLY, CDR_YOAKIN, NT_CREATE,
+        CDR_TWOSERVANT, CDR_TWOSKELLY, CDR_YOAKIN, NT_CREATE,
     },
     entity::{
         Character, CharacterFlags, Item, ItemFlags, CHARACTER_VALUE_COUNT, INVENTORY_SIZE,
@@ -673,6 +673,17 @@ impl ZoneLoader {
             // `CDR_SWAMPCLARA` above.
             character.driver_state = Some(CharacterDriverState::TwoBarkeeper(
                 TwoBarkeeperDriverData::default(),
+            ));
+        }
+        if template.driver == CDR_TWOSERVANT {
+            // C `servant`'s `NT_CREATE` handler (`two.c:995-999`):
+            // `servant_parse(cn, dat)` parsed here at spawn time instead
+            // of through the per-tick message loop, same precedent as
+            // `CDR_TWOGUARD` above - see `world::npc::area17::servant`'s
+            // module doc comment. Every `palace_maid*`/similar template
+            // (`zones/17/two.chr`) carries a single `arg="nr=N;"` line.
+            character.driver_state = Some(CharacterDriverState::TwoServant(
+                crate::world::npc::area17::servant::parse_two_servant_driver_args(&template.args),
             ));
         }
         if template.driver == CDR_TWOSANWYN {

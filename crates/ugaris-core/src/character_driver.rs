@@ -60,6 +60,11 @@ pub const CDR_TWOGUARD: u16 = 62;
 /// tavern barkeeper, "guest pass" broker (`src/area/17/two.c::barkeeper`),
 /// see `world::npc::area17::barkeeper`'s module doc comment.
 pub const CDR_TWOBARKEEPER: u16 = 63;
+/// C `#define CDR_TWOSERVANT 65` (`src/system/drvlib.h`, comment "servant
+/// in forbidden territory"): the palace maids/mistress/governor's-double
+/// NPCs (`src/area/17/two.c::servant`), see `world::npc::area17::servant`'s
+/// module doc comment.
+pub const CDR_TWOSERVANT: u16 = 65;
 /// C `#define CDR_TWOROBBER 68` (`src/system/drvlib.h`, comment "robber
 /// (simple baddy with special death)"): the Exkordon forest-camp robbers
 /// (`robber1`-`robber4`/`robber_guard`/`robber_baron` templates,
@@ -413,6 +418,7 @@ pub enum CharacterDriverState {
     TwoSkelly(TwoSkellyDriverData),
     TwoAlchemist(TwoAlchemistDriverData),
     TwoBarkeeper(TwoBarkeeperDriverData),
+    TwoServant(TwoServantDriverData),
     TwoGuard(TwoGuardDriverData),
     Lab2Undead(Lab2UndeadDriverData),
     Merchant(MerchantDriverData),
@@ -1270,6 +1276,7 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::TwoSanwyn(_)
             | CharacterDriverState::TwoAlchemist(_)
             | CharacterDriverState::TwoBarkeeper(_)
+            | CharacterDriverState::TwoServant(_)
             | CharacterDriverState::TwoGuard(_),
         ) => SimpleBaddyDriverData::default(),
         None => SimpleBaddyDriverData::default(),
@@ -2093,6 +2100,7 @@ mod tests {
         assert_eq!(CDR_SWAMPMONSTER, 56);
         assert_eq!(CDR_PALACEISLENA, 57);
         assert_eq!(CDR_TWOBARKEEPER, 63);
+        assert_eq!(CDR_TWOSERVANT, 65);
         assert_eq!(CDR_TWOROBBER, 68);
         assert_eq!(CDR_TWOSANWYN, 69);
         assert_eq!(CDR_TWOSKELLY, 70);
@@ -2216,6 +2224,40 @@ mod tests {
                 current_victim: Some(CharacterId(12)),
             })
         );
+    }
+
+    #[test]
+    fn two_servant_driver_state_matches_legacy_runtime_data_shape() {
+        let mut data = TwoServantDriverData::default();
+        assert_eq!(data.last_talk_tick, 0);
+        assert_eq!(data.current_victim, None);
+        assert_eq!(data.current_state, 0);
+        assert_eq!(data.nr, 0);
+        assert_eq!(data.lastalert, 0);
+
+        data.last_talk_tick = 111;
+        data.current_victim = Some(CharacterId(12));
+        data.current_state = 1;
+        data.nr = 4;
+        data.lastalert = 222;
+        assert_eq!(
+            CharacterDriverState::TwoServant(data),
+            CharacterDriverState::TwoServant(TwoServantDriverData {
+                last_talk_tick: 111,
+                current_victim: Some(CharacterId(12)),
+                current_state: 1,
+                nr: 4,
+                lastalert: 222,
+            })
+        );
+    }
+
+    #[test]
+    fn parse_two_servant_driver_args_parses_nr() {
+        let data = crate::world::npc::area17::servant::parse_two_servant_driver_args("nr=4;");
+        assert_eq!(data.nr, 4);
+        assert_eq!(data.current_state, 0);
+        assert_eq!(data.last_talk_tick, 0);
     }
 
     #[test]
@@ -3688,6 +3730,7 @@ pub use crate::world::npc::area17::alchemist::TwoAlchemistDriverData;
 pub use crate::world::npc::area17::barkeeper::TwoBarkeeperDriverData;
 pub use crate::world::npc::area17::guard::TwoGuardDriverData;
 pub use crate::world::npc::area17::sanwyn::TwoSanwynDriverData;
+pub use crate::world::npc::area17::servant::TwoServantDriverData;
 pub use crate::world::npc::area17::two_skelly::TwoSkellyDriverData;
 pub use crate::world::npc::area2::moonie::MoonieDriverData;
 pub use crate::world::npc::area2::superior::SuperiorDriverData;

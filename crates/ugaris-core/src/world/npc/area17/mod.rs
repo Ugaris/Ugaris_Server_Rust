@@ -5,6 +5,7 @@ pub mod barkeeper;
 pub mod guard;
 mod guard_messages;
 pub mod sanwyn;
+pub mod servant;
 pub mod two_skelly;
 
 #[allow(unused_imports)]
@@ -15,6 +16,8 @@ pub use barkeeper::*;
 pub use guard::*;
 #[allow(unused_imports)]
 pub use sanwyn::*;
+#[allow(unused_imports)]
+pub use servant::*;
 #[allow(unused_imports)]
 pub use two_skelly::*;
 
@@ -44,15 +47,13 @@ pub const CS_HONOR: i32 = 3;
 /// C `struct qa qa[]` from `src/area/17/two.c:92-112` - the shared
 /// small-talk/command table `analyse_text_driver` matches against for
 /// every Two-City NPC in this file (`guard_driver`/`barkeeper`/`servant`/
-/// `thiefguard`/`thiefmaster`/`sanwyn`/`skelly`/`alchemist`). The first 8
-/// rows (through `repeat`/answer_code 2) plus `buy pass`/answer_code 13
-/// (`world::npc::area17::barkeeper`) are ported so far; the remaining
-/// `guest`/`citizen`/`honor`/`enemy`/`chat`/`bribe`/`threaten`/
-/// `pay bribe`/`pay`/`status`/`pay a fee`/`i am done` rows belong to NPCs
-/// not yet ported - add them here (never duplicate the table) when that
-/// work happens, same "one shared file-local table, many drivers"
-/// precedent as `world::npc::area16::FOREST_QA`/`world::npc::area3::
-/// AREA3_QA`.
+/// `thiefguard`/`thiefmaster`/`sanwyn`/`skelly`/`alchemist`). Every row
+/// except `status`/answer_code 14 and `pay a fee`/answer_code 15 and
+/// `i am done`/answer_code 16 (belonging to the still-unported
+/// `thiefguard`/`thiefmaster`) is ported so far - add the rest here
+/// (never duplicate the table) when that work happens, same "one shared
+/// file-local table, many drivers" precedent as `world::npc::area16::
+/// FOREST_QA`/`world::npc::area3::AREA3_QA`.
 pub const TWOCITY_QA: &[TextQaEntry] = &[
     TextQaEntry {
         words: &["how", "are", "you"],
@@ -123,6 +124,26 @@ pub const TWOCITY_QA: &[TextQaEntry] = &[
         words: &["enemy"],
         answer: None,
         answer_code: 12,
+    },
+    TextQaEntry {
+        words: &["chat"],
+        answer: None,
+        answer_code: 8,
+    },
+    TextQaEntry {
+        words: &["bribe"],
+        answer: None,
+        answer_code: 9,
+    },
+    TextQaEntry {
+        words: &["threaten"],
+        answer: None,
+        answer_code: 10,
+    },
+    TextQaEntry {
+        words: &["pay", "bribe"],
+        answer: None,
+        answer_code: 11,
     },
 ];
 
@@ -203,8 +224,12 @@ impl World {
     /// C `call_guard(cn, co)` (`two.c:219-237`): scans every live
     /// character for the nearest higher-level same-`group` character and
     /// pushes it an `NT_NPC`/`NTID_TWOCITY` alert. Shared by
-    /// `guard_driver` (ported) and the still-unported `servant_driver`
-    /// (`two.c:1050-1053`) - kept here, not in `guard.rs`, for that reason.
+    /// `guard_driver`/`servant_driver` (both ported, `two.c:1050-1053`/
+    /// `:1188`/`:1194`/`:1213`/`:1300`) and `servant_dead`'s death hook
+    /// (`ugaris-server::world_events::death_hooks::
+    /// apply_two_servant_death_from_hurt_event`, hence `pub` rather than
+    /// `pub(crate)`) - kept here, not in `guard.rs`/`servant.rs`, for
+    /// that reason.
     ///
     /// Reproduces a real C quirk digit-for-digit: the alert's packed
     /// `dat3` coordinate mixes `caller.x` with `target.y` (`ch[cn].x +
@@ -213,7 +238,7 @@ impl World {
     /// it back with the same mismatched split (`msg->dat3 % MAXMAP`/`/
     /// MAXMAP`), so the two sides agree with each other even though
     /// neither matches a real map position.
-    pub(crate) fn two_city_call_guard(&mut self, caller_id: CharacterId, target_id: CharacterId) {
+    pub fn two_city_call_guard(&mut self, caller_id: CharacterId, target_id: CharacterId) {
         let Some(caller) = self.characters.get(&caller_id).cloned() else {
             return;
         };

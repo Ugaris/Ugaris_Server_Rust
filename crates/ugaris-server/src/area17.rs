@@ -17,7 +17,8 @@ use super::*;
 use ugaris_core::world::{
     TwoAlchemistOutcomeEvent, TwoAlchemistPlayerFacts, TwoBarkeeperOutcomeEvent,
     TwoBarkeeperPlayerFacts, TwoGuardOutcomeEvent, TwoGuardPlayerFacts, TwoSanwynOutcomeEvent,
-    TwoSanwynPlayerFacts, TwoSkellyOutcomeEvent, TwoSkellyPlayerFacts, CS_GUEST, LS_CLEAN,
+    TwoSanwynPlayerFacts, TwoServantOutcomeEvent, TwoServantPlayerFacts, TwoSkellyOutcomeEvent,
+    TwoSkellyPlayerFacts, CS_GUEST, LS_CLEAN,
 };
 
 pub(crate) fn two_skelly_player_facts(
@@ -421,6 +422,53 @@ pub(crate) fn apply_two_guard_events(
             player.bank_gold = player.bank_gold.saturating_sub(need.max(0) as u32);
         }
         applied += 1;
+    }
+    applied
+}
+
+pub(crate) fn two_servant_player_facts(
+    runtime: &ServerRuntime,
+) -> HashMap<CharacterId, TwoServantPlayerFacts> {
+    runtime
+        .players
+        .values()
+        .filter_map(|player| {
+            let character_id = player.character_id?;
+            Some((
+                character_id,
+                TwoServantPlayerFacts {
+                    citizen_status: player.twocity_citizen_status(),
+                },
+            ))
+        })
+        .collect()
+}
+
+/// Applies each [`TwoServantOutcomeEvent`] queued by
+/// `World::process_two_servant_actions`: both variants create a secret-
+/// passage key via `ZoneLoader` (`create_item("palace_key1"/"palace_
+/// key2")`, `two.c:1200-1203`/`:1236-1239`/`:1250-1253`) and hand it to
+/// the player, falling back to destroying it if the inventory is full -
+/// matching C's plain `give_char_item` (not `give_char_item_smart`).
+pub(crate) fn apply_two_servant_events(
+    world: &mut World,
+    zone_loader: &mut ZoneLoader,
+    events: Vec<TwoServantOutcomeEvent>,
+) -> usize {
+    let mut applied = 0;
+    for event in events {
+        let (player_id, template) = match event {
+            TwoServantOutcomeEvent::GivePalaceKey1 { player_id } => (player_id, "palace_key1"),
+            TwoServantOutcomeEvent::GivePalaceKey2 { player_id } => (player_id, "palace_key2"),
+        };
+        if let Ok(key) = zone_loader.instantiate_item_template(template, Some(player_id)) {
+            let key_id = key.id;
+            world.add_item(key);
+            if !world.give_char_item(player_id, key_id) {
+                world.destroy_item(key_id);
+            }
+            applied += 1;
+        }
     }
     applied
 }

@@ -92,6 +92,7 @@ mod rmdeath;
 mod robber;
 mod sanoa;
 mod sanwyn;
+mod servant;
 mod seymour;
 mod sir_jones;
 mod skills;

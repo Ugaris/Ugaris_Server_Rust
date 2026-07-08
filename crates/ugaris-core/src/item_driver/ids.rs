@@ -476,6 +476,17 @@ pub const IID_AREA17_CROSS: u32 = (0x01 << 24) | 0x000074;
 
 pub const IID_AREA17_POISON: u32 = (0x01 << 24) | 0x000075;
 
+/// C `#define IID_AREA17_PALACEKEY1 MAKE_ITEMID(DEV_ID_DB, 0x000063)`
+/// (`src/common/item_id.h:158`): the secret-passage key
+/// `world::npc::area17::servant`'s "governor's mistress" (`nr == 2`) hands
+/// out via `threaten`/`pay bribe`.
+pub const IID_AREA17_PALACEKEY1: u32 = (0x01 << 24) | 0x000063;
+
+/// C `#define IID_AREA17_PALACEKEY2 MAKE_ITEMID(DEV_ID_DB, 0x000064)`
+/// (`src/common/item_id.h:159`): the store-room key
+/// `world::npc::area17::servant`'s `nr == 1` maid sells via `pay bribe`.
+pub const IID_AREA17_PALACEKEY2: u32 = (0x01 << 24) | 0x000064;
+
 /// C `#define IID_AREA17_PALACENOTE1 MAKE_ITEMID(DEV_ID_DB, 0x000066)`
 /// (`src/common/item_id.h:161`): one of the three incriminating documents
 /// `world::npc::area17::sanwyn`'s quest 29 ("The Sergeant Major's Favor")
