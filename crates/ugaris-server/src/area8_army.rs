@@ -4,18 +4,20 @@
 //! allocate_character_id` that `ugaris_core::world::World` doesn't have -
 //! same split as `pents.rs`'s `spawn_demons_at_pentagram` glue. The pure
 //! per-player recruitment planning (`plan_soldier_recruitment`) and the
-//! follow-driver/tick logic once a soldier exists both live in
-//! `ugaris_core::world::npc::area8::fdemon_army` - see that module's own
-//! doc comment for the full split rationale and remaining gaps (combat,
-//! non-follow missions, emotes).
+//! follow-driver/tick/emote logic once a soldier exists all live in
+//! `ugaris_core::world::npc::area8::fdemon_army`/`fdemon_army_combat`/
+//! `fdemon_army_emote` - see those modules' own doc comments for the full
+//! split rationale and remaining gaps (soldier exp/promotion, emote
+//! relationship state not yet surviving a drop/re-recruit cycle - see
+//! `fdemon_army_emote.rs`'s own doc comment for that one).
 
 use super::*;
 use ugaris_core::{
     character_driver::{CharacterDriverState, FightDriverData, CDR_FDEMON_ARMY},
     world::npc::area8::fdemon_army::{
-        finalize_soldier_exp_and_level, plan_soldier_recruitment, scale_soldier_values,
-        soldier_base_strength, soldier_equipment_items, FarmyData, MAXSOLDIER, MIS_FOLLOW,
-        SOLDIER_PROFILES, SOLDIER_TYPE_WARRIOR,
+        assign_profile, finalize_soldier_exp_and_level, plan_soldier_recruitment,
+        scale_soldier_values, soldier_base_strength, soldier_equipment_items, FarmyData,
+        MAXSOLDIER, MIS_FOLLOW, SOLDIER_PROFILES, SOLDIER_TYPE_WARRIOR,
     },
 };
 
@@ -254,9 +256,25 @@ fn spawn_army_soldier(
     // seymour`'s `set_army_rank(co, 1)` deviation note.
     soldier.military_points = rank.max(1).pow(3);
     soldier.driver = CDR_FDEMON_ARMY;
+    // C `take_soldiers`: `ppd->soldier[n].emote.boredom = 0; ppd->soldier[n]
+    // .emote.fear = 0; ppd->soldier[n].emote.praise = 0; dat->emote = ppd->
+    // soldier[n].emote;` (`fdemon.c:559-563`) - a freshly (re-)spawned
+    // soldier's four base personality tendencies come from its assigned
+    // profile ([`assign_profile`]); the "current"/relationship fields all
+    // start at `0` (documented cross-recruit-cycle gap, see `fdemon_army_
+    // emote.rs`'s own module doc comment - this port doesn't yet persist
+    // `ppd->soldier[n].emote` to carry those over instead).
+    let emote_base = assign_profile(profile_index);
     soldier.driver_state = Some(CharacterDriverState::FdemonArmy(FarmyData {
         leader_cn: leader_id,
         mission: MIS_FOLLOW,
+        emote: ugaris_core::world::npc::area8::fdemon_army_emote::SoldierEmote {
+            cuddly: emote_base.cuddly,
+            angst: emote_base.angst,
+            bore: emote_base.bore,
+            bigmouth: emote_base.bigmouth,
+            ..Default::default()
+        },
         ..FarmyData::default()
     }));
     // C `fdemon_army`'s own `NT_CREATE` handler: `fight_driver_set_dist(cn,

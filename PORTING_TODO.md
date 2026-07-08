@@ -681,12 +681,30 @@ Ordered by player progression; the C file is the oracle.
   `spawn_army_soldier`. Confirmed the previous note's `it_driver`
   drdata[6] take/drop-soldier item triggers do not exist in the C source
   (only `fdemon_boss`'s NT_TEXT-based take/drop, already ported) - removed
-  from this list. Still needed: the `do_emote`/`got_emote` personality/
-  chat engine (`FarmyData` omits the `emote` field entirely, and the
-  `NT_TEXT` handler's `res >= 20` emote-reaction dispatch plus its own
-  emote-stats debug command are both skipped), and `platoon_exp`'s
-  now-reachable-but-still-unported soldier-exp/promotion loop. This is
-  the entire remaining surface for Area 8.
+  from this list. Seventh slice done: the `do_emote`/`got_emote`
+  personality/chat engine (`fdemon.c:323-1325`) is now also ported
+  (`world/npc/area8/fdemon_army_emote.rs`'s new `SoldierEmote` struct +
+  `World::fdemon_army_do_emote`/`fdemon_army_got_emote`/
+  `fdemon_army_emote_stats_line`), including a real C quirk reproduced
+  digit-for-digit (`do_emote`'s `bestscore`/`bestco` are shared, never
+  reset, across its four lonely/boredom/fear/praise blocks). The `NT_TEXT`
+  handler's `res >= 20` emote-reaction dispatch and case `7`'s emote-stats
+  debug command are wired in `fdemon_army_combat.rs`; a new needs-name-
+  gated matcher (`character_driver::analyse_text_qa_needs_name` +
+  `FDEMON_ARMY_EMOTE_QA`, 40 rows) reproduces C's `qa[].needs_name` gate
+  without adding a field to the other ~300 `TextQaEntry` call sites
+  (see that function's own doc comment). `NT_DEAD`-triggered praise
+  (killing something) and the HP<50%-triggered fear/boredom shift are also
+  wired into `fdemon_army_process_messages`/`fdemon_army_tick`. Freshly
+  spawned soldiers get their four base tendencies from `assign_profile`;
+  cross-recruit-cycle persistence of the "current"/relationship fields
+  (C's `ppd->soldier[n].emote`, byte layout already reserved in
+  `player/misc.rs`) remains a documented gap. `fdemon_army.rs`'s four
+  `army_*_driver` movement functions were also split into a new
+  `fdemon_army_movement.rs` to stay under the ~800-line guideline after
+  this addition. Still needed: `platoon_exp`'s soldier-exp/promotion loop
+  and the emote-state cross-recruit persistence gap above - the smallest
+  remaining surface for Area 8.
 - [ ] **Area 10 - `src/area/10/ice.c`** - ice NPCs, ice demon curse
   integration (curse spell side is ported).
 - [ ] **Area 11 - `src/area/11/palace.c`** - palace guards, Islena fight
@@ -776,6 +794,11 @@ Ordered by player progression; the C file is the oracle.
 Keep entries to at most three lines: date, task, one-line result.
 Anything longer belongs in `PORTING_LEDGER.md`; historical verbose
 notes live in `PROGRESS_ARCHIVE.md`.
+
+- 2026-07-08: Area 8 `CDR_FDEMON_ARMY` `do_emote`/`got_emote` personality/
+  chat engine ported (new `fdemon_army_emote.rs`, `analyse_text_qa_needs_
+  name`), incl. the `bestscore` shared-across-blocks C quirk. 2828 core +
+  1111 server tests pass, clean build/boot-smoke.
 
 - 2026-07-08: Area 8 `CDR_FDEMON_ARMY` combat: self-defense/heal/bless
   fallback ported (new `fdemon_army_combat.rs`), plus fixed a spawn-time

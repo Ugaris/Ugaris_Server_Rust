@@ -50,11 +50,13 @@
 //! soldier-exp/promotion loop.
 
 use crate::{
-    character_driver::{analyse_text_qa, CharacterDriverState, TextAnalysisOutcome},
+    character_driver::{
+        analyse_text_qa, analyse_text_qa_needs_name, CharacterDriverState, TextAnalysisOutcome,
+    },
     world::*,
 };
 
-use super::FDEMON_QA;
+use super::{FDEMON_ARMY_EMOTE_QA, FDEMON_QA};
 
 /// C `analyse_text_driver`'s own `char_dist(cn, co) > 12` early-out
 /// (`fdemon.c:209-211`), same range every other area-8 driver's `NT_TEXT`
@@ -215,13 +217,14 @@ impl World {
         })
     }
 
-    /// C `fdemon_army`'s `NT_TEXT`/`NT_GOTHIT`/`NT_SEEHIT` message
-    /// handling (`fdemon.c:1338-1431`, the message loop's `NT_TEXT` case
-    /// plus the trailing unconditional `standard_message_driver(cn, msg,
-    /// 1, 1)` call for every message) - minus the `res >= 20` emote-
-    /// reaction dispatch (`got_emote`) and case `7`'s emote-stats debug
-    /// dump, both meaningless without the (unported) emote system, see
-    /// the module doc comment. `NT_CHAR` is handled separately by
+    /// C `fdemon_army`'s `NT_TEXT`/`NT_DEAD`/`NT_GOTHIT`/`NT_SEEHIT` message
+    /// handling (`fdemon.c:1338-1431`, the message loop's `NT_TEXT`/
+    /// `NT_DEAD` cases plus the trailing unconditional `standard_message_
+    /// driver(cn, msg, 1, 1)` call for every message). `NT_TEXT`'s `res >=
+    /// 20` emote-reaction dispatch (`got_emote`) and case `7`'s emote-stats
+    /// debug dump both live in [`World::fdemon_army_process_text_message`]/
+    /// [`fdemon_army_emote.rs`](super::fdemon_army_emote) now that the
+    /// emote system is ported. `NT_CHAR` is handled separately by
     /// [`World::fdemon_army_scan_sightings`] (a direct scan, not message-
     /// driven) - see that function's own doc comment for why.
     pub fn fdemon_army_process_messages(&mut self, soldier_id: CharacterId) {
@@ -254,6 +257,20 @@ impl World {
                                     add_simple_baddy_enemy_unchecked(character, target_id, 1, tick);
                             }
                             self.sort_simple_baddy_enemies_like_c(soldier_id);
+                        }
+                    }
+                }
+                NT_DEAD => {
+                    // C `if (msg->type == NT_DEAD && msg->dat2 == cn) {
+                    // dat->emote.praise += dat->emote.bigmouth; }`
+                    // (`fdemon.c:1425-1427`, `dat1`=victim, `dat2`=killer).
+                    if message.dat2 == soldier_id.0 as i32 {
+                        if let Some(CharacterDriverState::FdemonArmy(dat)) = self
+                            .characters
+                            .get_mut(&soldier_id)
+                            .and_then(|character| character.driver_state.as_mut())
+                        {
+                            dat.emote.praise += dat.emote.bigmouth;
                         }
                     }
                 }
@@ -306,9 +323,9 @@ impl World {
         // C `if ((friend = find_platoon(co, dat)) == -1) { remove_
         // message(...); continue; }` - only platoon members (leader or
         // fellow soldiers) may address this soldier.
-        if !dat.platoon.contains(&speaker_id) {
+        let Some(friend_slot) = dat.platoon.iter().position(|&id| id == speaker_id) else {
             return;
-        }
+        };
 
         let (Some(soldier), Some(speaker)) = (
             self.characters.get(&soldier_id),
@@ -328,7 +345,28 @@ impl World {
         let speaker_military_points = speaker.military_points;
         let (soldier_x, soldier_y) = (soldier.x, soldier.y);
 
-        let outcome = analyse_text_qa(text, soldier_name, &speaker_name, FDEMON_QA);
+        // C's single shared `qa[]` table holds both the `needs_name: 0`
+        // small-talk/command rows and the `needs_name: 1` emote-reaction
+        // rows in one array, tried in declaration order by one `analyse_
+        // text_driver` call; this port keeps them in two separate tables
+        // (see `character_driver::analyse_text_qa_needs_name`'s own doc
+        // comment for why) and tries the small-talk table first, matching
+        // C's row order (small talk is declared before the emote rows).
+        let outcome = match analyse_text_qa(text, soldier_name, &speaker_name, FDEMON_QA) {
+            TextAnalysisOutcome::NoMatch => {
+                analyse_text_qa_needs_name(text, soldier_name, &speaker_name, FDEMON_ARMY_EMOTE_QA)
+            }
+            matched => matched,
+        };
+
+        // C `if (res >= 20) { got_emote(cn, co, friend, res, dat); }`
+        // (`fdemon.c:1380-1382`) - runs for *any* platoon member, not just
+        // the leader, before the leader-only command gate below.
+        if let TextAnalysisOutcome::Matched(code) = outcome {
+            if code >= 20 {
+                self.fdemon_army_got_emote(soldier_id, speaker_id, friend_slot, code);
+            }
+        }
 
         // C `if (co != dat->leader_cn) { remove_message(...); continue; }`
         // - only the leader's own speech may issue a mission command; a
@@ -371,6 +409,13 @@ impl World {
             TextAnalysisOutcome::Matched(6) => {
                 self.npc_say(soldier_id, &format!("I'll go rub his back, {rank_name}."));
                 self.set_fdemon_army_mission(soldier_id, MIS_BEHIND);
+            }
+            TextAnalysisOutcome::Matched(7) => {
+                // C `case 7: say(cn, "cuddly=%d, ...", ...); break;`
+                // (`fdemon.c:1414-1421`).
+                if let Some(line) = self.fdemon_army_emote_stats_line(soldier_id) {
+                    self.npc_say(soldier_id, &line);
+                }
             }
             TextAnalysisOutcome::Said(_)
             | TextAnalysisOutcome::Matched(_)

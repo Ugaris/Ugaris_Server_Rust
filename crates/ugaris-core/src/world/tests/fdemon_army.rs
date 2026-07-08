@@ -1,12 +1,16 @@
 use super::*;
 use crate::{
     character_driver::CDR_FDEMON_ARMY,
-    world::npc::area8::fdemon_army::{
-        assign_profile, finalize_soldier_exp_and_level, plan_soldier_recruitment,
-        scale_soldier_skill, scale_soldier_values, soldier_base_strength, soldier_equipment_items,
-        FarmyData, MAXSOLDIER, MIS_BACK, MIS_BEHIND, MIS_FOLLOW, MIS_FRONT, MIS_RETREAT,
-        SOLDIER_PROFILES, SOLDIER_TYPE_MAGE, SOLDIER_TYPE_WARRIOR, WN_ARMS, WN_BODY, WN_HEAD,
-        WN_LEGS, WN_RHAND,
+    world::npc::area8::{
+        fdemon_army::{
+            assign_profile, finalize_soldier_exp_and_level, plan_soldier_recruitment,
+            scale_soldier_skill, scale_soldier_values, soldier_base_strength,
+            soldier_equipment_items, FarmyData, MAXSOLDIER, MIS_BACK, MIS_BEHIND, MIS_FOLLOW,
+            MIS_FRONT, MIS_RETREAT, SOLDIER_PROFILES, SOLDIER_TYPE_MAGE, SOLDIER_TYPE_WARRIOR,
+            WN_ARMS, WN_BODY, WN_HEAD, WN_LEGS, WN_RHAND,
+        },
+        fdemon_army_emote::SoldierEmote,
+        QA_NICEDAY, QA_YES,
     },
 };
 
@@ -1176,4 +1180,411 @@ fn fdemon_army_tick_heals_a_hurt_groupmate_before_attacking() {
     let caster = world.characters.get(&soldier_id).unwrap();
     assert!(caster.mana < 10 * POWERSCALE, "heal should spend mana");
     assert_eq!(caster.act1, 3);
+}
+
+// ---- `fdemon_army_emote.rs`: `do_emote`/`got_emote` ----
+
+#[test]
+fn fdemon_army_emote_qa_table_has_forty_entries_matching_c() {
+    use crate::world::npc::area8::FDEMON_ARMY_EMOTE_QA;
+    assert_eq!(FDEMON_ARMY_EMOTE_QA.len(), 40);
+    assert_eq!(FDEMON_ARMY_EMOTE_QA[0].words, &["yes"]);
+    assert_eq!(FDEMON_ARMY_EMOTE_QA[0].answer_code, QA_YES);
+    // C's own typo ("small" not "smell") kept verbatim.
+    assert_eq!(
+        FDEMON_ARMY_EMOTE_QA[24].words,
+        &["and", "you", "small", "like", "a", "ratling"]
+    );
+    assert_eq!(
+        FDEMON_ARMY_EMOTE_QA[39].words,
+        &["shut", "up", "you", "you", "coward"]
+    );
+    assert_eq!(
+        FDEMON_ARMY_EMOTE_QA
+            .iter()
+            .map(|entry| entry.answer_code)
+            .max(),
+        Some(49)
+    );
+}
+
+#[test]
+fn do_emote_says_lonely_small_talk_to_the_best_opposite_gender_platoon_mate() {
+    let mut world = World::default();
+    world.tick = crate::tick::Tick(1_000);
+    world.date.hour = 12; // daytime -> "nice day" line.
+
+    let mut soldier = soldier_npc(2, 100, 100, CharacterId(1));
+    soldier.flags |= CharacterFlags::MALE;
+    let Some(CharacterDriverState::FdemonArmy(dat)) = soldier.driver_state.as_mut() else {
+        panic!("expected FdemonArmy driver state");
+    };
+    dat.platoon[0] = CharacterId(3);
+    dat.platoon[MAXSOLDIER] = CharacterId(1);
+    dat.emote.lonely = 6000;
+    let soldier_id = soldier.id;
+    world.characters.insert(soldier_id, soldier);
+
+    let mut leader = leader_npc(1, 100, 100);
+    leader.flags |= CharacterFlags::MALE; // same gender as soldier - skipped.
+    world.characters.insert(leader.id, leader);
+
+    let mut fellow = character(3);
+    fellow.name = "Sarah".into();
+    fellow.flags |= CharacterFlags::FEMALE; // opposite gender - eligible.
+    world.characters.insert(fellow.id, fellow);
+
+    world.fdemon_army_do_emote(soldier_id);
+
+    let texts = world.drain_pending_area_texts();
+    assert_eq!(texts.len(), 1);
+    assert!(
+        texts[0].message.contains("nice day it is, Sarah"),
+        "unexpected message: {}",
+        texts[0].message
+    );
+    let updated = world.characters.get(&soldier_id).unwrap();
+    let Some(CharacterDriverState::FdemonArmy(dat)) = updated.driver_state else {
+        panic!("expected FdemonArmy driver state");
+    };
+    assert_eq!(dat.emote.likes[0], 1);
+    assert_eq!(dat.emote.talked[0], -1);
+    assert_eq!(dat.emote.answer_cn, 3);
+    assert_eq!(dat.emote.lonely, 3000); // halved.
+    assert_eq!(dat.emote.last_emote, 1_000);
+}
+
+#[test]
+fn do_emote_returns_without_a_message_when_lonely_finds_no_opposite_gender_candidate() {
+    let mut world = World::default();
+    let mut soldier = soldier_npc(2, 100, 100, CharacterId(1));
+    soldier.flags |= CharacterFlags::MALE;
+    let Some(CharacterDriverState::FdemonArmy(dat)) = soldier.driver_state.as_mut() else {
+        panic!("expected FdemonArmy driver state");
+    };
+    dat.platoon[MAXSOLDIER] = CharacterId(1);
+    dat.emote.lonely = 6000;
+    let soldier_id = soldier.id;
+    world.characters.insert(soldier_id, soldier);
+
+    let mut leader = leader_npc(1, 100, 100);
+    leader.flags |= CharacterFlags::MALE; // same gender - no candidate at all.
+    world.characters.insert(leader.id, leader);
+
+    world.fdemon_army_do_emote(soldier_id);
+
+    assert!(world.drain_pending_area_texts().is_empty());
+    let unchanged = world.characters.get(&soldier_id).unwrap();
+    let Some(CharacterDriverState::FdemonArmy(dat)) = unchanged.driver_state else {
+        panic!("expected FdemonArmy driver state");
+    };
+    // C `if (!bestco) return;` - `lonely` is untouched (no `/= 2` ran).
+    assert_eq!(dat.emote.lonely, 6000);
+}
+
+#[test]
+fn do_emote_carries_a_stale_leftover_target_into_a_later_block_like_c_does() {
+    // C bug (reproduced digit-for-digit, see the module doc comment):
+    // `bestscore`/`bestco`/`bestn` are declared once and never reset
+    // between `do_emote`'s four `if` blocks. If the `boredom` block's own
+    // scan never beats the `lonely` block's leftover `bestscore`, it
+    // reuses the `lonely` block's target/slot for its own message.
+    let mut world = World::default();
+    let mut soldier = soldier_npc(2, 100, 100, CharacterId(1));
+    soldier.flags |= CharacterFlags::MALE;
+    let Some(CharacterDriverState::FdemonArmy(dat)) = soldier.driver_state.as_mut() else {
+        panic!("expected FdemonArmy driver state");
+    };
+    dat.platoon[0] = CharacterId(3);
+    dat.platoon[MAXSOLDIER] = CharacterId(1);
+    dat.emote.lonely = 6000;
+    dat.emote.boredom = 20_000;
+    // `lonely` block's leftover `bestscore` (15, from `likes[0]+talked[0]`,
+    // then `likes[0]` bumped to 16 by the branch itself) beats anything
+    // `boredom`'s own `talked[n]-likes[n]` scan over the same tiny platoon
+    // can produce, so `boredom` never updates `best` and falls back to
+    // slot 0's leftover target from the `lonely` block.
+    dat.emote.likes[0] = 15;
+    dat.emote.talked[0] = 0;
+    let soldier_id = soldier.id;
+    world.characters.insert(soldier_id, soldier);
+
+    let mut leader = leader_npc(1, 100, 100);
+    leader.flags |= CharacterFlags::MALE;
+    world.characters.insert(leader.id, leader);
+    let mut fellow = character(3);
+    fellow.name = "Sarah".into();
+    fellow.flags |= CharacterFlags::FEMALE;
+    world.characters.insert(fellow.id, fellow);
+
+    world.fdemon_army_do_emote(soldier_id);
+
+    let texts = world.drain_pending_area_texts();
+    // Both blocks triggered: one `say()` from `lonely`, one from
+    // `boredom` - the second addressed to the same leftover "Sarah".
+    assert_eq!(texts.len(), 2);
+    assert!(texts[1].message.contains("Sarah"));
+}
+
+#[test]
+fn got_emote_yes_awards_likes_only_within_the_pending_answer_window() {
+    let mut world = World::default();
+    world.tick = crate::tick::Tick(100);
+    let mut soldier = soldier_npc(2, 100, 100, CharacterId(1));
+    let Some(CharacterDriverState::FdemonArmy(dat)) = soldier.driver_state.as_mut() else {
+        panic!("expected FdemonArmy driver state");
+    };
+    dat.platoon[MAXSOLDIER] = CharacterId(1);
+    dat.emote.answer_type = 1; // AT_YESNO
+    dat.emote.answer_cn = 1;
+    dat.emote.answer_timer = 90; // within TICKS_PER_SECOND*30 of tick 100.
+    let soldier_id = soldier.id;
+    world.characters.insert(soldier_id, soldier);
+    world
+        .characters
+        .insert(CharacterId(1), leader_npc(1, 100, 100));
+
+    world.fdemon_army_got_emote(soldier_id, CharacterId(1), MAXSOLDIER, QA_YES);
+
+    let updated = world.characters.get(&soldier_id).unwrap();
+    let Some(CharacterDriverState::FdemonArmy(dat)) = updated.driver_state else {
+        panic!("expected FdemonArmy driver state");
+    };
+    assert_eq!(dat.emote.likes[MAXSOLDIER], 2);
+    assert_eq!(dat.emote.talked[MAXSOLDIER], 1);
+    assert_eq!(dat.emote.answer_cn, 0);
+    assert!(world.drain_pending_area_texts().is_empty());
+}
+
+#[test]
+fn got_emote_yes_falls_back_to_a_generic_reply_when_no_question_was_pending() {
+    let mut world = World::default();
+    let mut soldier = soldier_npc(2, 100, 100, CharacterId(1));
+    let Some(CharacterDriverState::FdemonArmy(dat)) = soldier.driver_state.as_mut() else {
+        panic!("expected FdemonArmy driver state");
+    };
+    dat.platoon[MAXSOLDIER] = CharacterId(1);
+    // `answer_type` defaults to `0`, never `AT_YESNO` - mismatched.
+    let soldier_id = soldier.id;
+    world.characters.insert(soldier_id, soldier);
+    world
+        .characters
+        .insert(CharacterId(1), leader_npc(1, 100, 100));
+
+    world.fdemon_army_got_emote(soldier_id, CharacterId(1), MAXSOLDIER, QA_YES);
+
+    let texts = world.drain_pending_area_texts();
+    assert_eq!(texts.len(), 1);
+    assert!(texts[0].message.contains("Yes what, Hero?"));
+    let updated = world.characters.get(&soldier_id).unwrap();
+    let Some(CharacterDriverState::FdemonArmy(dat)) = updated.driver_state else {
+        panic!("expected FdemonArmy driver state");
+    };
+    assert_eq!(
+        dat.emote.likes[MAXSOLDIER], 0,
+        "no state change on mismatch"
+    );
+}
+
+#[test]
+fn got_emote_niceday_always_replies_and_never_checks_answer_state() {
+    let mut world = World::default();
+    let mut soldier = soldier_npc(2, 100, 100, CharacterId(1));
+    let Some(CharacterDriverState::FdemonArmy(dat)) = soldier.driver_state.as_mut() else {
+        panic!("expected FdemonArmy driver state");
+    };
+    dat.platoon[MAXSOLDIER] = CharacterId(1);
+    dat.emote.likes[MAXSOLDIER] = 5;
+    let soldier_id = soldier.id;
+    world.characters.insert(soldier_id, soldier);
+    world
+        .characters
+        .insert(CharacterId(1), leader_npc(1, 100, 100));
+
+    world.fdemon_army_got_emote(soldier_id, CharacterId(1), MAXSOLDIER, QA_NICEDAY);
+
+    let texts = world.drain_pending_area_texts();
+    assert_eq!(texts.len(), 1);
+    assert!(texts[0].message.contains("Yes, Hero."));
+    let updated = world.characters.get(&soldier_id).unwrap();
+    let Some(CharacterDriverState::FdemonArmy(dat)) = updated.driver_state else {
+        panic!("expected FdemonArmy driver state");
+    };
+    assert_eq!(dat.emote.likes[MAXSOLDIER], 6);
+    assert_eq!(dat.emote.lonely, -200);
+}
+
+#[test]
+fn fdemon_army_process_text_message_dispatches_got_emote_for_any_platoon_member() {
+    // C's `got_emote` dispatch runs before the leader-only command gate -
+    // a fellow soldier's (not the leader's) emote reply must still land.
+    let mut world = World::default();
+    let mut soldier = soldier_npc(2, 100, 100, CharacterId(1));
+    let Some(CharacterDriverState::FdemonArmy(dat)) = soldier.driver_state.as_mut() else {
+        panic!("expected FdemonArmy driver state");
+    };
+    dat.platoon[0] = CharacterId(3);
+    dat.platoon[MAXSOLDIER] = CharacterId(1);
+    let soldier_id = soldier.id;
+    world.characters.insert(soldier_id, soldier);
+    world
+        .characters
+        .insert(CharacterId(1), leader_npc(1, 100, 100));
+    let mut fellow = character(3);
+    fellow.name = "Bert2".into();
+    fellow.x = 100;
+    fellow.y = 100;
+    fellow.flags |= CharacterFlags::INFRARED;
+    world.characters.insert(fellow.id, fellow);
+
+    // Must include the soldier's own name ("Bert") to satisfy `needs_name`.
+    world
+        .characters
+        .get_mut(&soldier_id)
+        .unwrap()
+        .push_driver_text_message(CharacterId(3), "Bert, yes");
+
+    world.fdemon_army_process_messages(soldier_id);
+
+    let texts = world.drain_pending_area_texts();
+    assert_eq!(texts.len(), 1);
+    assert!(texts[0].message.contains("Yes what, Bert2?"));
+}
+
+#[test]
+fn fdemon_army_emote_stats_line_matches_the_c_format() {
+    let mut world = World::default();
+    let mut soldier = soldier_npc(2, 100, 100, CharacterId(1));
+    let Some(CharacterDriverState::FdemonArmy(dat)) = soldier.driver_state.as_mut() else {
+        panic!("expected FdemonArmy driver state");
+    };
+    dat.emote = SoldierEmote {
+        cuddly: 1,
+        lonely: 2,
+        angst: 3,
+        fear: 4,
+        bore: 5,
+        boredom: 6,
+        bigmouth: 7,
+        praise: 8,
+        likes: [9, 10, 11, 12],
+        talked: [13, 14, 15, 16],
+        ..SoldierEmote::default()
+    };
+    let soldier_id = soldier.id;
+    world.characters.insert(soldier_id, soldier);
+
+    let line = world.fdemon_army_emote_stats_line(soldier_id).unwrap();
+    assert_eq!(
+        line,
+        "cuddly=1, lonely=2, angst=3, fear=4, bore=5, boredom=6, bigmouth=7, praise=8, \
+         like=9/10/11 12, replied=13/14/15 16"
+    );
+}
+
+#[test]
+fn fdemon_army_process_messages_dead_awards_praise_when_we_are_the_killer() {
+    let mut world = World::default();
+    let mut soldier = soldier_npc(2, 100, 100, CharacterId(1));
+    let Some(CharacterDriverState::FdemonArmy(dat)) = soldier.driver_state.as_mut() else {
+        panic!("expected FdemonArmy driver state");
+    };
+    dat.emote.bigmouth = 15;
+    dat.emote.praise = 5;
+    let soldier_id = soldier.id;
+    soldier.push_driver_message(NT_DEAD, 3, soldier_id.0 as i32, 0);
+    world.characters.insert(soldier_id, soldier);
+
+    world.fdemon_army_process_messages(soldier_id);
+
+    let updated = world.characters.get(&soldier_id).unwrap();
+    let Some(CharacterDriverState::FdemonArmy(dat)) = updated.driver_state else {
+        panic!("expected FdemonArmy driver state");
+    };
+    assert_eq!(dat.emote.praise, 20);
+}
+
+#[test]
+fn fdemon_army_process_messages_dead_ignores_a_kill_by_someone_else() {
+    let mut world = World::default();
+    let mut soldier = soldier_npc(2, 100, 100, CharacterId(1));
+    let Some(CharacterDriverState::FdemonArmy(dat)) = soldier.driver_state.as_mut() else {
+        panic!("expected FdemonArmy driver state");
+    };
+    dat.emote.bigmouth = 15;
+    let soldier_id = soldier.id;
+    soldier.push_driver_message(NT_DEAD, 3, 1, 0); // killer=1, not us.
+    world.characters.insert(soldier_id, soldier);
+
+    world.fdemon_army_process_messages(soldier_id);
+
+    let updated = world.characters.get(&soldier_id).unwrap();
+    let Some(CharacterDriverState::FdemonArmy(dat)) = updated.driver_state else {
+        panic!("expected FdemonArmy driver state");
+    };
+    assert_eq!(dat.emote.praise, 0);
+}
+
+#[test]
+fn fdemon_army_tick_reduces_fear_and_boredom_below_half_hp() {
+    let mut world = World::default();
+    let mut leader = leader_npc(1, 100, 100);
+    leader.group = 5;
+    world.characters.insert(leader.id, leader);
+
+    let mut soldier = soldier_npc(2, 100, 100, CharacterId(1));
+    soldier.group = 5;
+    soldier.values[0][CharacterValue::Hp as usize] = 30;
+    soldier.hp = 5 * POWERSCALE; // well below half of 30*POWERSCALE.
+    let Some(CharacterDriverState::FdemonArmy(dat)) = soldier.driver_state.as_mut() else {
+        panic!("expected FdemonArmy driver state");
+    };
+    dat.emote.angst = 40;
+    dat.emote.boredom = 100;
+    let soldier_id = soldier.id;
+    world.characters.insert(soldier_id, soldier);
+
+    world.fdemon_army_tick(soldier_id, 1);
+
+    let updated = world.characters.get(&soldier_id).unwrap();
+    let Some(CharacterDriverState::FdemonArmy(dat)) = updated.driver_state else {
+        panic!("expected FdemonArmy driver state");
+    };
+    assert_eq!(dat.emote.fear, 40);
+    assert_eq!(dat.emote.boredom, 100 - 500 + dat.emote.bore); // -500 then `boredom += bore` tail.
+}
+
+#[test]
+fn fdemon_army_tick_accumulates_lonely_and_boredom_and_triggers_do_emote_after_10s() {
+    let mut world = World::default();
+    world.tick = crate::tick::Tick(1_000);
+    let mut leader = leader_npc(1, 100, 100);
+    leader.group = 5;
+    leader.flags |= CharacterFlags::MALE;
+    world.characters.insert(leader.id, leader);
+
+    let mut soldier = soldier_npc(2, 100, 100, CharacterId(1));
+    soldier.group = 5;
+    soldier.flags |= CharacterFlags::FEMALE;
+    let Some(CharacterDriverState::FdemonArmy(dat)) = soldier.driver_state.as_mut() else {
+        panic!("expected FdemonArmy driver state");
+    };
+    dat.platoon[MAXSOLDIER] = CharacterId(1); // opposite-gender leader - `do_emote` target.
+    dat.emote.cuddly = 100;
+    dat.emote.bore = 50;
+    dat.emote.lonely = 6000; // already above the `do_emote` threshold.
+    dat.emote.last_emote = 1_000 - (TICKS_PER_SECOND as i64 * 11); // > 10s ago.
+    let soldier_id = soldier.id;
+    world.characters.insert(soldier_id, soldier);
+
+    world.fdemon_army_tick(soldier_id, 1);
+
+    let updated = world.characters.get(&soldier_id).unwrap();
+    let Some(CharacterDriverState::FdemonArmy(dat)) = updated.driver_state else {
+        panic!("expected FdemonArmy driver state");
+    };
+    // `lonely += cuddly` (6000+100=6100) ran before `do_emote` halved it.
+    assert_eq!(dat.emote.lonely, 3050);
+    assert_eq!(dat.emote.last_emote, 1_000, "do_emote should have fired");
+    assert!(!world.drain_pending_area_texts().is_empty());
 }

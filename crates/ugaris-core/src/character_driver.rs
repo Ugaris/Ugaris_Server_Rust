@@ -539,12 +539,24 @@ pub enum TextAnalysisOutcome {
 /// (`if (w < 20) w++`), and bail out (returning `None`) if any single
 /// word exceeds 250 bytes (`if (n > 250) return 0;`).
 pub fn tokenize_text_words(text: &str, own_name: &str) -> Option<Vec<String>> {
+    tokenize_text_words_with_name_flag(text, own_name).map(|(words, _name_seen)| words)
+}
+/// [`tokenize_text_words`], plus whether `own_name` was seen as one of the
+/// dropped words (C's `name = 1` flag, set when a word equals `ch[cn].name`
+/// via `strcasecmp`, `fdemon.c:229-237`). Used by [`analyse_text_qa_needs_name`]
+/// for qa rows with `needs_name: 1` (`struct qa::needs_name`,
+/// `fdemon.c:83-88`), which only match when the speaker also addressed the
+/// target by name in the same sentence.
+fn tokenize_text_words_with_name_flag(text: &str, own_name: &str) -> Option<(Vec<String>, bool)> {
     let mut words: Vec<String> = Vec::new();
+    let mut name_seen = false;
     let mut current = String::new();
-    let flush = |current: &mut String, words: &mut Vec<String>| {
+    let flush = |current: &mut String, words: &mut Vec<String>, name_seen: &mut bool| {
         if !current.is_empty() {
             let lower = current.to_ascii_lowercase();
-            if !lower.eq_ignore_ascii_case(own_name) && words.len() < 20 {
+            if lower.eq_ignore_ascii_case(own_name) {
+                *name_seen = true;
+            } else if words.len() < 20 {
                 words.push(lower);
             }
             current.clear();
@@ -552,7 +564,9 @@ pub fn tokenize_text_words(text: &str, own_name: &str) -> Option<Vec<String>> {
     };
     for c in text.chars() {
         match c {
-            ' ' | ',' | ':' | '?' | '!' | '"' | '.' => flush(&mut current, &mut words),
+            ' ' | ',' | ':' | '?' | '!' | '"' | '.' => {
+                flush(&mut current, &mut words, &mut name_seen)
+            }
             _ => {
                 current.push(c);
                 if current.len() > 250 {
@@ -561,8 +575,8 @@ pub fn tokenize_text_words(text: &str, own_name: &str) -> Option<Vec<String>> {
             }
         }
     }
-    flush(&mut current, &mut words);
-    Some(words)
+    flush(&mut current, &mut words, &mut name_seen);
+    Some((words, name_seen))
 }
 /// Substitutes `%s` placeholders in a qa `answer` template: the first
 /// with `speaker_name`, the second with `own_name`, matching C's
@@ -596,6 +610,47 @@ pub fn analyse_text_qa(
         return TextAnalysisOutcome::NoMatch;
     };
     if words.is_empty() {
+        return TextAnalysisOutcome::NoMatch;
+    }
+    for entry in qa {
+        if entry.words.len() == words.len()
+            && entry
+                .words
+                .iter()
+                .zip(words.iter())
+                .all(|(pattern, word)| pattern.eq_ignore_ascii_case(word))
+        {
+            return match entry.answer {
+                Some(template) => {
+                    TextAnalysisOutcome::Said(format_qa_answer(template, speaker_name, own_name))
+                }
+                None => TextAnalysisOutcome::Matched(entry.answer_code),
+            };
+        }
+    }
+    TextAnalysisOutcome::NoMatch
+}
+/// [`analyse_text_qa`], but only for qa rows whose C `struct qa::needs_name`
+/// is `1` - i.e. the speaker must also have addressed the target by its own
+/// name somewhere in the same sentence (C's `if (qa[q].needs_name && !name)
+/// continue;` guard, `fdemon.c:262-264`). Every row of `CDR_FDEMON_ARMY`'s
+/// emote-reaction table (`QA_YES`..`QA_COWARD`, `fdemon.c:139-183`) has
+/// `needs_name: 1`, so - unlike C, which stores the flag per-row in the same
+/// shared `qa[]` array as the `needs_name: 0` small-talk rows - this crate
+/// keeps needs-name-gated entries in their own dedicated `qa` slice/function
+/// pair rather than adding a `needs_name` field to every one of
+/// [`TextQaEntry`]'s ~300 other call sites across every other `analyse_text_
+/// driver` table in this codebase (all of which are `needs_name: 0`).
+pub fn analyse_text_qa_needs_name(
+    text: &str,
+    own_name: &str,
+    speaker_name: &str,
+    qa: &[TextQaEntry],
+) -> TextAnalysisOutcome {
+    let Some((words, name_seen)) = tokenize_text_words_with_name_flag(text, own_name) else {
+        return TextAnalysisOutcome::NoMatch;
+    };
+    if words.is_empty() || !name_seen {
         return TextAnalysisOutcome::NoMatch;
     }
     for entry in qa {
@@ -1851,6 +1906,42 @@ mod tests {
         assert_eq!(
             analyse_text_qa(&huge_word, "Dolf", "Bob", MERCHANT_QA),
             TextAnalysisOutcome::NoMatch
+        );
+    }
+
+    const NEEDS_NAME_TEST_QA: &[TextQaEntry] = &[TextQaEntry {
+        words: &["yes"],
+        answer: None,
+        answer_code: 20,
+    }];
+
+    #[test]
+    fn analyse_text_qa_needs_name_requires_the_target_name_in_the_same_sentence() {
+        // C `if (qa[q].needs_name && !name) continue;` - the word pattern
+        // alone is not enough for a `needs_name: 1` row.
+        assert_eq!(
+            analyse_text_qa_needs_name("yes", "Bert", "Hero", NEEDS_NAME_TEST_QA),
+            TextAnalysisOutcome::NoMatch
+        );
+    }
+
+    #[test]
+    fn analyse_text_qa_needs_name_matches_once_the_target_is_addressed_by_name() {
+        assert_eq!(
+            analyse_text_qa_needs_name("Bert, yes", "Bert", "Hero", NEEDS_NAME_TEST_QA),
+            TextAnalysisOutcome::Matched(20)
+        );
+        assert_eq!(
+            analyse_text_qa_needs_name("yes Bert", "Bert", "Hero", NEEDS_NAME_TEST_QA),
+            TextAnalysisOutcome::Matched(20)
+        );
+    }
+
+    #[test]
+    fn analyse_text_qa_needs_name_is_case_insensitive_for_the_name() {
+        assert_eq!(
+            analyse_text_qa_needs_name("BERT, yes", "Bert", "Hero", NEEDS_NAME_TEST_QA),
+            TextAnalysisOutcome::Matched(20)
         );
     }
 
