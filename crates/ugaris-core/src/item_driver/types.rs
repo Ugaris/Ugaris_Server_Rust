@@ -814,6 +814,10 @@ pub enum ItemDriverOutcome {
         item_id: ItemId,
         character_id: CharacterId,
         consumed_cursor_item_id: Option<ItemId>,
+        /// C `it[in].drdata[6]` (the loader's fixed "defense station
+        /// number" tag; `0` for loaders that aren't a boss-mission gate).
+        /// Only meaningful when `consumed_cursor_item_id.is_some()`.
+        station_id: u8,
         ground_overlay_sprite: u32,
         sound_type: Option<u32>,
         schedule_after_ticks: Option<u64>,

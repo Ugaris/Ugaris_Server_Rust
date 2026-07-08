@@ -206,6 +206,25 @@ impl World {
         true
     }
 
+    /// Byte-native sibling of [`Self::npc_say`] - see [`WorldAreaTextBytes`].
+    /// Use this instead of `npc_say` when `text` embeds
+    /// `crate::text::COL_STR_RESET`-family color sentinels that must reach
+    /// the client as raw `COLOR_MARKER` bytes instead of being lossily
+    /// stripped by `String::from_utf8_lossy`.
+    pub fn npc_say_bytes(&mut self, character_id: CharacterId, text: &str) -> bool {
+        let Some(character) = self.characters.get(&character_id) else {
+            return false;
+        };
+        let message = say_message(&character.name, text);
+        self.pending_area_text_bytes.push(WorldAreaTextBytes {
+            x: character.x,
+            y: character.y,
+            max_distance: self.settings.say_dist.max(0) as u16,
+            message,
+        });
+        true
+    }
+
     /// Byte-native sibling of [`Self::npc_quiet_say`] - see
     /// [`WorldAreaTextBytes`]. Use this instead of `npc_quiet_say` when
     /// `text` embeds `crate::text::COL_STR_RESET`-family color sentinels

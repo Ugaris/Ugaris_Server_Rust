@@ -802,6 +802,30 @@ pub(crate) const STAFFER_PPD_CARLOS2_STATE_OFFSET: usize = 23 * 4;
 
 pub(crate) const FARMY_PPD_BOSS_STAGE_OFFSET: usize = 0;
 
+/// C `struct farmy_ppd::boss_timer` (`src/area/8/fdemon.c:362`, second
+/// field). `fdemon_boss`'s per-NT_CHAR-sighting throttle (`realtime -
+/// ppd->boss_timer > 5`).
+pub(crate) const FARMY_PPD_BOSS_TIMER_OFFSET: usize = 4;
+
+/// C `struct farmy_ppd::boss_counter` (`src/area/8/fdemon.c:366`): offset is
+/// `2 ints` (`boss_stage`/`boss_timer`) plus `MAXSOLDIER(3) * sizeof(struct
+/// soldier)`. `struct soldier` is `7 ints` (`type`/`rank`/`base`/`profile`/
+/// `exp`/`cn`/`serial`) plus one embedded `struct emote` (`8 ints` +
+/// `likes[MAXSOLDIER+1]`/`talked[MAXSOLDIER+1]` = `2*4 ints` + `4 ints`
+/// (`answer_timer`/`answer_cn`/`answer_type`/`last_emote`) = `20 ints`), so
+/// `struct soldier` is `27 ints` = `108` bytes; `3 * 108 = 324` bytes of
+/// soldier array, giving `boss_counter` offset `8 + 324 = 332`. The soldier
+/// array itself is not yet exposed via a typed accessor (no
+/// `CDR_FDEMON_ARMY` recruitment yet); only its *size* matters here to keep
+/// `boss_counter`/`boss_reported` at their correct legacy byte offsets so
+/// this block round-trips unmodified through unrelated `PlayerRuntime`
+/// saves.
+pub(crate) const FARMY_PPD_BOSS_COUNTER_OFFSET: usize = 332;
+
+/// C `struct farmy_ppd::boss_reported` (`src/area/8/fdemon.c:367`, right
+/// after `boss_counter`).
+pub(crate) const FARMY_PPD_BOSS_REPORTED_OFFSET: usize = 336;
+
 pub(crate) const TEUFELRAT_PPD_KILLS_OFFSET: usize = 0;
 
 pub(crate) const TEUFELRAT_PPD_SCORE_OFFSET: usize = 4;

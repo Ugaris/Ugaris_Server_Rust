@@ -518,6 +518,47 @@ fn fdemon_loader_accepts_red_crystal_and_starts_animation() {
             item_id: ItemId(7),
             character_id: CharacterId(1),
             consumed_cursor_item_id: Some(ItemId(9)),
+            station_id: 0,
+            ground_overlay_sprite: 59021,
+            sound_type: Some(41),
+            schedule_after_ticks: None,
+        }
+    );
+}
+
+#[test]
+fn fdemon_loader_outcome_carries_the_defense_station_tag() {
+    let mut character = character(1);
+    character.cursor_item = Some(ItemId(9));
+    let mut loader = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_FDEMONLOADER);
+    loader.driver_data = vec![0, 0, 0, 0, 0, 0, 4];
+    let request = ItemDriverRequest::Driver {
+        driver: IDR_FDEMONLOADER,
+        item_id: ItemId(7),
+        character_id: CharacterId(1),
+        spec: 0,
+    };
+
+    let outcome = execute_item_driver_with_context(
+        &mut character,
+        &mut loader,
+        request,
+        8,
+        false,
+        &ItemDriverContext {
+            cursor_template_id: Some(IID_AREA8_REDCRYSTAL),
+            cursor_drdata0: Some(12),
+            ..ItemDriverContext::default()
+        },
+    );
+
+    assert_eq!(
+        outcome,
+        ItemDriverOutcome::FdemonLoaderChanged {
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            consumed_cursor_item_id: Some(ItemId(9)),
+            station_id: 4,
             ground_overlay_sprite: 59021,
             sound_type: Some(41),
             schedule_after_ticks: None,
@@ -560,6 +601,7 @@ fn fdemon_loader_timer_counts_animation_and_power() {
             item_id: ItemId(7),
             character_id: CharacterId(0),
             consumed_cursor_item_id: None,
+            station_id: 0,
             ground_overlay_sprite: 59029,
             sound_type: None,
             schedule_after_ticks: Some(TICKS_PER_SECOND),

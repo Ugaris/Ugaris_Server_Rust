@@ -11,6 +11,7 @@
 mod achievement;
 mod area1;
 mod area3;
+mod area8;
 mod area_apply;
 mod auction;
 mod chests;

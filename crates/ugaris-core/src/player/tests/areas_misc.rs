@@ -236,6 +236,36 @@ fn farmy_ppd_round_trips_through_outer_blob() {
 }
 
 #[test]
+fn farmy_boss_stage_timer_counter_reported_accessors_round_trip() {
+    let mut player = PlayerRuntime::connected(1, 0);
+    assert_eq!(player.farmy_boss_stage(), 0);
+    assert_eq!(player.farmy_boss_timer(), 0);
+    assert_eq!(player.farmy_boss_counter(), 0);
+    assert_eq!(player.farmy_boss_reported(), 0);
+
+    player.set_farmy_boss_stage(5);
+    player.set_farmy_boss_timer(1_700_000);
+    player.set_farmy_boss_counter(0b1011);
+    player.set_farmy_boss_reported(0b0011);
+
+    assert_eq!(player.farmy_boss_stage(), 5);
+    assert_eq!(player.farmy_boss_timer(), 1_700_000);
+    assert_eq!(player.farmy_boss_counter(), 0b1011);
+    assert_eq!(player.farmy_boss_reported(), 0b0011);
+
+    // Round-trips through the outer legacy blob, matching the layout
+    // `PORTING_LEDGER.md` records: `boss_stage`@0, `boss_timer`@4,
+    // `soldier[3]`@8..332, `boss_counter`@332, `boss_reported`@336.
+    let encoded = player.encode_legacy_ppd_blob(&[]);
+    let mut decoded = PlayerRuntime::connected(2, 0);
+    assert!(decoded.decode_legacy_ppd_blob(&encoded));
+    assert_eq!(decoded.farmy_boss_stage(), 5);
+    assert_eq!(decoded.farmy_boss_timer(), 1_700_000);
+    assert_eq!(decoded.farmy_boss_counter(), 0b1011);
+    assert_eq!(decoded.farmy_boss_reported(), 0b0011);
+}
+
+#[test]
 fn teufelrat_ppd_codec_matches_legacy_rat_data_layout() {
     let mut player = PlayerRuntime::connected(1, 0);
     assert_eq!(player.add_teufel_rat_kill(80, false), (1, 64));

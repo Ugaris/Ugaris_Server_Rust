@@ -36,3 +36,36 @@ pub(crate) async fn fdemon_demon_driver_88(
         );
     }
 }
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn fdemon_boss_driver_89(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    _zone_loader: &mut ZoneLoader,
+    config: &ServerConfig,
+    _args: &Args,
+    _completed_actions: &[WorldActionCompletion],
+    _achievement_repository: &Option<ugaris_db::PgAchievementRepository>,
+    _character_repository: &Option<ugaris_db::PgCharacterRepository>,
+    _area_repository: &Option<ugaris_db::PgAreaRepository>,
+    _clan_repository: &Option<ugaris_db::PgClanRegistryRepository>,
+    _clan_log_repository: &Option<ugaris_db::PgClanLogRepository>,
+    _merchant_repository: &Option<ugaris_db::PgMerchantRepository>,
+    _military_master_storage_repository: &Option<ugaris_db::PgMilitaryMasterStorageRepository>,
+    _military_advisor_storage_repository: &Option<ugaris_db::PgMilitaryAdvisorStorageRepository>,
+    _notes_repository: &Option<ugaris_db::PgNotesRepository>,
+    _anticheat_repository: &Option<ugaris_db::PgAntiCheatRepository>,
+    _auction_repository: &Option<ugaris_db::PgAuctionRepository>,
+) {
+    // C `ch_driver`'s `CDR_FDEMON_BOSS` case (`src/area/8/fdemon.c:3024-
+    // 3026`) - the underground army Commander's mission-giver dialogue
+    // chain. See `world::npc::area8::fdemon_boss`'s module doc comment.
+    let fdemon_boss_applied = crate::area8::apply_fdemon_boss_tick(world, runtime, config);
+    if fdemon_boss_applied != 0 {
+        info!(
+            fdemon_boss_applied,
+            tick = world.tick.0,
+            "applied fdemon-boss dialogue events"
+        );
+    }
+}

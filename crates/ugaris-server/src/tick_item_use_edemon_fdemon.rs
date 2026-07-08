@@ -113,6 +113,35 @@ pub(crate) fn dispatch_edemon_fdemon_outcome(
             feedback.push((character_id, text.to_string()));
             *blocked += 1;
         }
+        ugaris_core::item_driver::ItemDriverOutcome::FdemonLoaderChanged {
+            character_id,
+            consumed_cursor_item_id,
+            station_id,
+            ..
+        } => {
+            if consumed_cursor_item_id.is_some() && station_id != 0 {
+                let level = world
+                    .characters
+                    .get(&character_id)
+                    .map_or(0, |character| character.level);
+                if let Some(player) = runtime.player_for_character_mut(character_id) {
+                    if let Some(report) = ugaris_core::world::fdemon_loader_station_report(
+                        station_id,
+                        player.farmy_boss_stage(),
+                        player.farmy_boss_counter(),
+                        player.farmy_boss_reported(),
+                        level,
+                    ) {
+                        player.set_farmy_boss_stage(report.new_stage);
+                        player.set_farmy_boss_counter(report.new_counter);
+                        for line in report.feedback {
+                            feedback.push((character_id, line));
+                        }
+                    }
+                }
+            }
+            *executed += 1;
+        }
         ugaris_core::item_driver::ItemDriverOutcome::FdemonFarmHarvest {
             character_id,
             template,

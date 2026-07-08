@@ -607,13 +607,25 @@ Ordered by player progression; the C file is the oracle.
   variant is spawned as plain `CDR_SIMPLEBADDY` (100% observably identical
   to C's own unconditional tail-call, see the module doc comment) so the
   death hook matches on `area_id==8 && sprite==190` instead of driver id.
+  Ported `CDR_FDEMON_BOSS` (the Commander's 33-stage mission-giver dialogue
+  chain, `world::npc::area8::fdemon_boss`): the full `boss_stage` state
+  machine (`fdemon_boss_greet_player`, a direct-sighting-scan replacement
+  for C's `NT_CHAR` loop, same precedent as `fdemon_demon`), `platoon_exp`'s
+  always-live player-exp/rank-promotion half (`fdemon_platoon_exp` - the
+  soldier-exp loop is a documented gap, unreachable without
+  `CDR_FDEMON_ARMY`), the open-ended stage-28+ Defense-Station scouting
+  phase, and the shared `NT_TEXT` "repeat" stage-reset ladder
+  (`fdemon_boss_repeat_reset`, wired through the real `driver_messages`
+  queue since player speech is already reliably delivered there). The
+  matching loader-side half - `IDR_FDEMONLOADER`'s defense-station
+  boss-mission bookkeeping (`fdemon_loader_station_report`, a new
+  `station_id` field on `FdemonLoaderChanged`) - is also now wired end to
+  end, so a player can solo the entire mission chain (crystal-insert ->
+  stage advance -> platoon exp -> next mission) without any soldiers.
   Still unported: `CDR_FDEMON_ARMY` (the recruitable-soldier "take"/"drop"/
-  formation-following/emote system, `farmy_data`/`farmy_ppd.soldier[]`) and
-  `CDR_FDEMON_BOSS` (the Commander's 33-stage mission-giver dialogue
-  chain, `platoon_exp` rewards) - both large, tightly-coupled subsystems
-  around the same `farmy_ppd`/`farmy_data` structs; do these together next
-  since the boss dialogue chain is meaningless without recruitable
-  soldiers to send on missions.
+  formation-following/emote system, `farmy_data`/`farmy_ppd.soldier[]`) -
+  the boss's own "take"/"drop" `NT_TEXT` tail and `platoon_exp`'s soldier-
+  exp loop are documented gaps pending that driver.
 - [ ] **Area 10 - `src/area/10/ice.c`** - ice NPCs, ice demon curse
   integration (curse spell side is ported).
 - [ ] **Area 11 - `src/area/11/palace.c`** - palace guards, Islena fight
@@ -976,4 +988,9 @@ notes live in `PROGRESS_ARCHIVE.md`.
   hook; `CDR_FDEMON_ARMY`/`CDR_FDEMON_BOSS` (soldier recruitment + mission
   dialogue) remain. 2724 core + 1108 server tests pass, clean build/
   boot-smoke (verified live against real `zones/8/fire.map` data).
+- 2026-07-08: Area 8: ported `CDR_FDEMON_BOSS` (Commander's 33-stage
+  mission dialogue, `platoon_exp` player reward) plus the matching
+  `IDR_FDEMONLOADER` defense-station bookkeeping; only `CDR_FDEMON_ARMY`
+  remains. 2753 core + 1108 server tests pass, clean build/boot-smoke
+  (verified live against real `zones/8/fire.map` data with the Commander).
 

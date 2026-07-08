@@ -1468,6 +1468,7 @@ impl World {
                 item_id,
                 character_id,
                 consumed_cursor_item_id,
+                station_id: _,
                 ground_overlay_sprite,
                 sound_type,
                 schedule_after_ticks,

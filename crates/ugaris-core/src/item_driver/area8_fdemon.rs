@@ -119,6 +119,7 @@ pub(crate) fn fdemon_loader_driver(
     let mut power = drdata_u16(item, 1);
     let mut animation = item.driver_data[3];
     let mut next_power = drdata_u16(item, 4);
+    let station_id = item.driver_data[6];
     let mut consumed_cursor_item_id = None;
     let mut sound_type = None;
 
@@ -205,6 +206,7 @@ pub(crate) fn fdemon_loader_driver(
         item_id: item.id,
         character_id: character.id,
         consumed_cursor_item_id,
+        station_id,
         ground_overlay_sprite: overlay,
         sound_type,
         schedule_after_ticks: (context.timer_call || character.id.0 == 0)

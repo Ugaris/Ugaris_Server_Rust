@@ -57,6 +57,142 @@ pub struct FdemonWaypoint {
     pub down: usize,
 }
 
+/// Result of [`fdemon_loader_station_report`]: the player's new `farmy_ppd`
+/// `boss_stage`/`boss_counter` plus zero or more `log_char` lines to show
+/// them, matching C's `fdemon_loader`'s handful of `log_char(cn,
+/// LOG_SYSTEM, 0, ...)` calls at each `it[in].drdata[6]` branch.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FdemonStationReport {
+    pub new_stage: i32,
+    pub new_counter: i32,
+    pub feedback: Vec<String>,
+}
+
+const FDEMON_STATION_SOLVED: &str =
+    "You've solved your mission. Now head back to the commander to claim your reward!";
+const FDEMON_STATION_SOLVED_FIRST_PART: &str =
+    "You've solved the first part of your mission. Now go find that other station.!";
+
+/// C `fdemon_loader`'s defense-station boss-mission bookkeeping
+/// (`fdemon.c:2003-2081`), run once per successful power-crystal insertion
+/// (C's `it[in2].ID == IID_AREA8_REDCRYSTAL` branch). `station_id` is C's
+/// `it[in].drdata[6]` (the loader's fixed "defense station number" tag - `0`
+/// for the majority of loaders that aren't a numbered boss-mission gate);
+/// `boss_stage`/`boss_counter`/`boss_reported` are the inserting player's
+/// current `farmy_ppd` fields (`PlayerRuntime::farmy_boss_stage`/
+/// `farmy_boss_counter`/`farmy_boss_reported`); `character_level` is that
+/// player's level (feeds `level_value(ch[cn].level) / 5`'s exp-cap warning
+/// threshold in the scouting-phase branch). Returns `None` whenever none of
+/// C's five guarded `if` blocks would have fired - i.e. `station_id` doesn't
+/// match a boss-mission gate, or the player's `boss_stage` is outside that
+/// gate's active range, or (scouting phase only) that station was already
+/// found - matching C's silent no-op in every one of those cases.
+pub fn fdemon_loader_station_report(
+    station_id: u8,
+    boss_stage: i32,
+    boss_counter: i32,
+    boss_reported: i32,
+    character_level: u32,
+) -> Option<FdemonStationReport> {
+    match station_id {
+        1 if (0..=5).contains(&boss_stage) => Some(FdemonStationReport {
+            new_stage: 6,
+            new_counter: boss_counter,
+            feedback: vec![FDEMON_STATION_SOLVED.to_string()],
+        }),
+        3 if (7..=8).contains(&boss_stage) => Some(FdemonStationReport {
+            new_stage: 9,
+            new_counter: boss_counter,
+            feedback: vec![FDEMON_STATION_SOLVED.to_string()],
+        }),
+        2 if (10..=11).contains(&boss_stage) => Some(FdemonStationReport {
+            new_stage: 12,
+            new_counter: boss_counter,
+            feedback: vec![FDEMON_STATION_SOLVED.to_string()],
+        }),
+        4 if (13..=14).contains(&boss_stage) => {
+            Some(fdemon_station_pair_report(boss_stage, boss_counter, 1))
+        }
+        5 if (13..=14).contains(&boss_stage) => {
+            Some(fdemon_station_pair_report(boss_stage, boss_counter, 2))
+        }
+        6 if (25..=26).contains(&boss_stage) => Some(FdemonStationReport {
+            new_stage: 27,
+            new_counter: boss_counter,
+            feedback: vec![FDEMON_STATION_SOLVED.to_string()],
+        }),
+        7..=35 if boss_stage >= 28 => fdemon_station_scouting_report(
+            station_id,
+            boss_stage,
+            boss_counter,
+            boss_reported,
+            character_level,
+        ),
+        _ => None,
+    }
+}
+
+/// The `it[in].drdata[6] == 4`/`== 5` "find both twin stations" branches
+/// (`fdemon.c:2021-2044`): each sets its own bit of `boss_counter`'s low
+/// two bits; once both are set, the mission solves (`boss_stage = 15`),
+/// otherwise the player just gets the "first part solved" line.
+fn fdemon_station_pair_report(boss_stage: i32, boss_counter: i32, bit: i32) -> FdemonStationReport {
+    let new_counter = boss_counter | bit;
+    if new_counter & 3 == 3 {
+        FdemonStationReport {
+            new_stage: 15,
+            new_counter,
+            feedback: vec![FDEMON_STATION_SOLVED.to_string()],
+        }
+    } else {
+        FdemonStationReport {
+            new_stage: boss_stage,
+            new_counter,
+            feedback: vec![FDEMON_STATION_SOLVED_FIRST_PART.to_string()],
+        }
+    }
+}
+
+/// The `it[in].drdata[6] >= 7 && <= 35` open-ended scouting branch
+/// (`fdemon.c:2051-2081`): each numbered station found sets its own
+/// `boss_counter` bit (once), reports the discovery, and - if the player has
+/// accumulated 3+ unreported stations worth more potential exp than their
+/// level's exp cap - nudges them to go report before finding more.
+fn fdemon_station_scouting_report(
+    station_id: u8,
+    boss_stage: i32,
+    boss_counter: i32,
+    boss_reported: i32,
+    character_level: u32,
+) -> Option<FdemonStationReport> {
+    let bit = 1i32 << (station_id - 7);
+    if boss_counter & bit != 0 {
+        return None;
+    }
+    let new_counter = boss_counter | bit;
+    let mut feedback = vec![format!("You've found Defense Station number {station_id}.")];
+
+    let unreported_cnt = (0..32)
+        .filter(|n| {
+            let b = 1i32 << n;
+            (new_counter & b) != 0 && (boss_reported & b) == 0
+        })
+        .count() as i32;
+    let exp_cap = i64::from(level_value(character_level)) / 5;
+    let potential_exp = 8000i64 * i64::from(unreported_cnt);
+    if potential_exp > exp_cap && unreported_cnt >= 3 {
+        feedback.push(format!(
+            "You have discovered {unreported_cnt} stations. Consider returning to the Commander to report your findings before discovering more."
+        ));
+    }
+
+    Some(FdemonStationReport {
+        new_stage: boss_stage,
+        new_counter,
+        feedback,
+    })
+}
+
 /// C `may_hunt_there(cn, x, y)` (`fdemon.c:2686-2702`): is `(x, y)` within
 /// hunting range of `cn`'s home (`ch[cn].tmpx`/`tmpy`, this port's
 /// `Character::rest_x`/`rest_y`)? Deliberately asymmetric bounds (up to 30

@@ -350,6 +350,58 @@ impl PlayerRuntime {
         read_i32(&self.farmy_ppd, FARMY_PPD_BOSS_STAGE_OFFSET)
     }
 
+    fn ensure_farmy_ppd_sized(&mut self) {
+        if self.farmy_ppd.len() < LEGACY_FARMY_PPD_SIZE {
+            self.farmy_ppd.resize(LEGACY_FARMY_PPD_SIZE, 0);
+        }
+    }
+
+    /// Unconditional `ppd->boss_stage = N`/`ppd->boss_stage++` write, used
+    /// by `fdemon_boss`'s dialogue-chain state machine (unlike
+    /// [`Self::advance_farmy_blood_stage`]/[`Self::advance_farmy_lava_stage`]/
+    /// [`Self::advance_farmy_golem_kill_stage`], which are each gated on a
+    /// specific incoming stage range).
+    pub fn set_farmy_boss_stage(&mut self, stage: i32) {
+        self.ensure_farmy_ppd_sized();
+        write_i32(&mut self.farmy_ppd, FARMY_PPD_BOSS_STAGE_OFFSET, stage);
+    }
+
+    pub fn farmy_boss_timer(&self) -> i32 {
+        if self.farmy_ppd.len() < LEGACY_FARMY_PPD_SIZE {
+            return 0;
+        }
+        read_i32(&self.farmy_ppd, FARMY_PPD_BOSS_TIMER_OFFSET)
+    }
+
+    pub fn set_farmy_boss_timer(&mut self, value: i32) {
+        self.ensure_farmy_ppd_sized();
+        write_i32(&mut self.farmy_ppd, FARMY_PPD_BOSS_TIMER_OFFSET, value);
+    }
+
+    pub fn farmy_boss_counter(&self) -> i32 {
+        if self.farmy_ppd.len() < LEGACY_FARMY_PPD_SIZE {
+            return 0;
+        }
+        read_i32(&self.farmy_ppd, FARMY_PPD_BOSS_COUNTER_OFFSET)
+    }
+
+    pub fn set_farmy_boss_counter(&mut self, value: i32) {
+        self.ensure_farmy_ppd_sized();
+        write_i32(&mut self.farmy_ppd, FARMY_PPD_BOSS_COUNTER_OFFSET, value);
+    }
+
+    pub fn farmy_boss_reported(&self) -> i32 {
+        if self.farmy_ppd.len() < LEGACY_FARMY_PPD_SIZE {
+            return 0;
+        }
+        read_i32(&self.farmy_ppd, FARMY_PPD_BOSS_REPORTED_OFFSET)
+    }
+
+    pub fn set_farmy_boss_reported(&mut self, value: i32) {
+        self.ensure_farmy_ppd_sized();
+        write_i32(&mut self.farmy_ppd, FARMY_PPD_BOSS_REPORTED_OFFSET, value);
+    }
+
     pub fn advance_farmy_blood_stage(&mut self) -> bool {
         let stage = self.farmy_boss_stage();
         if !(19..=20).contains(&stage) {

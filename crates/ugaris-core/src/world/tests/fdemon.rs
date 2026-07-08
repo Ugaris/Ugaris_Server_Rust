@@ -214,3 +214,130 @@ fn sighting_scan_records_a_nearby_visible_player_on_the_waypoint_graph() {
     assert_eq!(acted, 1);
     assert_ne!(world.fdemon_waypoints[1].last_enemy_tick, 0);
 }
+
+mod fdemon_loader_station_report_tests {
+    use crate::world::fdemon::fdemon_loader_station_report;
+
+    #[test]
+    fn station_one_solves_first_mission() {
+        let report = fdemon_loader_station_report(1, 3, 0, 0, 10).unwrap();
+        assert_eq!(report.new_stage, 6);
+        assert_eq!(report.new_counter, 0);
+        assert_eq!(
+            report.feedback,
+            vec![
+                "You've solved your mission. Now head back to the commander to claim your reward!"
+                    .to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn station_one_outside_stage_range_is_a_noop() {
+        assert!(fdemon_loader_station_report(1, 6, 0, 0, 10).is_none());
+        assert!(fdemon_loader_station_report(1, 30, 0, 0, 10).is_none());
+    }
+
+    #[test]
+    fn station_three_solves_second_mission() {
+        let report = fdemon_loader_station_report(3, 7, 0, 0, 10).unwrap();
+        assert_eq!(report.new_stage, 9);
+    }
+
+    #[test]
+    fn station_two_solves_third_mission() {
+        let report = fdemon_loader_station_report(2, 11, 0, 0, 10).unwrap();
+        assert_eq!(report.new_stage, 12);
+    }
+
+    #[test]
+    fn station_six_solves_sixth_mission() {
+        let report = fdemon_loader_station_report(6, 25, 0, 0, 10).unwrap();
+        assert_eq!(report.new_stage, 27);
+    }
+
+    #[test]
+    fn twin_stations_four_and_five_need_both_before_solving() {
+        // station 4 first: only the first-part message, stage unchanged.
+        let first = fdemon_loader_station_report(4, 13, 0, 0, 10).unwrap();
+        assert_eq!(first.new_stage, 13);
+        assert_eq!(first.new_counter, 1);
+        assert_eq!(
+            first.feedback,
+            vec![
+                "You've solved the first part of your mission. Now go find that other station.!"
+                    .to_string()
+            ]
+        );
+
+        // station 5 second, with counter carried over from station 4: solves.
+        let second = fdemon_loader_station_report(5, 13, first.new_counter, 0, 10).unwrap();
+        assert_eq!(second.new_stage, 15);
+        assert_eq!(second.new_counter, 3);
+        assert_eq!(
+            second.feedback,
+            vec![
+                "You've solved your mission. Now head back to the commander to claim your reward!"
+                    .to_string()
+            ]
+        );
+
+        // Order doesn't matter: station 5 first, then station 4.
+        let first_b = fdemon_loader_station_report(5, 14, 0, 0, 10).unwrap();
+        assert_eq!(first_b.new_counter, 2);
+        let second_b = fdemon_loader_station_report(4, 14, first_b.new_counter, 0, 10).unwrap();
+        assert_eq!(second_b.new_stage, 15);
+        assert_eq!(second_b.new_counter, 3);
+    }
+
+    #[test]
+    fn scouting_phase_reports_new_station_and_ignores_already_found() {
+        // station_id 7 -> bit 0.
+        let report = fdemon_loader_station_report(7, 28, 0, 0, 100).unwrap();
+        assert_eq!(report.new_stage, 28);
+        assert_eq!(report.new_counter, 1);
+        assert_eq!(
+            report.feedback,
+            vec!["You've found Defense Station number 7.".to_string()]
+        );
+
+        // Already-found station reports nothing.
+        assert!(fdemon_loader_station_report(7, 28, 1, 0, 100).is_none());
+
+        // Below the scouting-phase gate stage, no report at all.
+        assert!(fdemon_loader_station_report(7, 27, 0, 0, 100).is_none());
+    }
+
+    #[test]
+    fn scouting_phase_warns_when_unreported_stations_exceed_exp_cap() {
+        // Low level (level_value(1)/5 = (16-1)/5 = 3) means even a couple of
+        // unreported 8000-exp stations blow the cap - but the warning only
+        // fires once `unreported_cnt >= 3`.
+        let counter_with_two_found = (1 << 0) | (1 << 1); // stations 7,8 already found+unreported
+        let report = fdemon_loader_station_report(9, 28, counter_with_two_found, 0, 1).unwrap();
+        assert_eq!(report.new_counter, counter_with_two_found | (1 << 2));
+        assert_eq!(report.feedback.len(), 2);
+        assert!(report.feedback[1].starts_with("You have discovered 3 stations."));
+    }
+
+    #[test]
+    fn scouting_phase_no_warning_below_three_unreported() {
+        let report = fdemon_loader_station_report(7, 28, 0, 0, 1).unwrap();
+        assert_eq!(report.feedback.len(), 1);
+    }
+
+    #[test]
+    fn scouting_phase_no_warning_when_already_reported_stations_dont_count() {
+        // Stations 7 and 8 were already *reported* (boss_reported bits set),
+        // so finding stations 9/10/11 on top only counts the 3 new ones -
+        // this test pins that `boss_reported` truly excludes prior finds
+        // from the unreported count, using a high level to keep the cap
+        // itself from being the limiting factor.
+        let boss_reported = (1 << 0) | (1 << 1);
+        let counter = boss_reported | (1 << 2) | (1 << 3); // 7,8 reported; 9,10 found
+        let report = fdemon_loader_station_report(11, 28, counter, boss_reported, 1).unwrap();
+        // unreported = stations 9,10,11 (bits 2,3,4) = 3
+        assert_eq!(report.feedback.len(), 2);
+        assert!(report.feedback[1].starts_with("You have discovered 3 stations."));
+    }
+}

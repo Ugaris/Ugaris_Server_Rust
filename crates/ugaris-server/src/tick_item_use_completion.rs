@@ -628,6 +628,7 @@ pub(crate) async fn process_completed_action_outcomes(
                             | ugaris_core::item_driver::ItemDriverOutcome::FdemonBloodFilled { .. }
                             | ugaris_core::item_driver::ItemDriverOutcome::FdemonLavaBlocked { .. }
                             | ugaris_core::item_driver::ItemDriverOutcome::FdemonLavaActivated { .. }
+                            | ugaris_core::item_driver::ItemDriverOutcome::FdemonLoaderChanged { .. }
                             | ugaris_core::item_driver::ItemDriverOutcome::EdemonDoorToggle { .. }) => {
                                 tick_item_use_edemon_fdemon::dispatch_edemon_fdemon_outcome(
                                     &mut world,
@@ -730,7 +731,6 @@ pub(crate) async fn process_completed_action_outcomes(
                             | ugaris_core::item_driver::ItemDriverOutcome::EdemonGateSpawn { .. }
                             | ugaris_core::item_driver::ItemDriverOutcome::FdemonCannonPulse { .. }
                             | ugaris_core::item_driver::ItemDriverOutcome::FdemonGateSpawn { .. }
-                            | ugaris_core::item_driver::ItemDriverOutcome::FdemonLoaderChanged { .. }
                                | ugaris_core::item_driver::ItemDriverOutcome::FdemonWaypoint { .. }
                                 | ugaris_core::item_driver::ItemDriverOutcome::EdemonLoaderChanged { .. }
                                 | ugaris_core::item_driver::ItemDriverOutcome::FdemonFarmChanged { .. }

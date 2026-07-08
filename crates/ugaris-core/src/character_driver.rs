@@ -48,10 +48,13 @@ pub const CDR_TESTER: u16 = 77;
 /// those specific spawns are assigned `CDR_SIMPLEBADDY` directly at spawn
 /// time instead (see `zone.rs`'s `CDR_FDEMON_DEMON` branch) - only the
 /// non-190-sprite "Fire Demon" trash mobs actually run under this id.
-/// `CDR_FDEMON_ARMY = 44`/`CDR_FDEMON_BOSS = 45` (the recruitable-soldier
-/// and mission-giver drivers in the same C file) are not ported yet - see
-/// the Area 8 task in `PORTING_TODO.md`.
+/// `CDR_FDEMON_ARMY = 44` (the recruitable-soldier driver in the same C
+/// file) is not ported yet - see the Area 8 task in `PORTING_TODO.md`.
 pub const CDR_FDEMON_DEMON: u16 = 46;
+/// C `#define CDR_FDEMON_BOSS 45` (`src/system/drvlib.h`): the underground
+/// army Commander mission-giver (`src/area/8/fdemon.c::fdemon_boss`), see
+/// `world::npc::area8::fdemon_boss`'s module doc comment.
+pub const CDR_FDEMON_BOSS: u16 = 45;
 pub const CDR_LQNPC: u16 = 74;
 pub const CDR_JANITOR: u16 = 85;
 pub const CDR_TEUFELDEMON: u16 = 114;
