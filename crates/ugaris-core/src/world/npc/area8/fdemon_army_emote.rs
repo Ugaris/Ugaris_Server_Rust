@@ -32,17 +32,14 @@
 //!   falling back to a generic "didn't ask that" reply and no state change
 //!   when the pending-question context doesn't match.
 //!
-//! Not yet ported (documented gap): persisting `SoldierEmote` across a
-//! recruit/drop/re-recruit cycle (C `take_soldiers`/`drop_soldiers` copy
-//! `dat->emote` to/from `ppd->soldier[n].emote`, `fdemon.c:559-563,608-612`)
-//! - a freshly (re-)spawned soldier's [`SoldierEmote`] always starts from
-//!   [`super::assign_profile`]'s base tendencies with every "current"/
-//!   relationship field at `0`, rather than carrying over relationship
-//!   history from a prior recruitment. The legacy `DRD_FARMY_PPD` blob
-//!   layout already reserves the exact byte range for this (see
-//!   `crates/ugaris-core/src/player/misc.rs`'s `FARMY_PPD_BOSS_COUNTER_
-//!   OFFSET` doc comment), so this is a follow-up wiring task, not a
-//!   missing byte-layout fact.
+//! `SoldierEmote` now survives a recruit/drop/re-recruit cycle: C
+//! `take_soldiers`/`drop_soldiers` copy `dat->emote` to/from `ppd->
+//! soldier[n].emote` (`fdemon.c:559-563,608-612`), ported as
+//! `PlayerRuntime::farmy_soldier_emote`/`set_farmy_soldier_emote`
+//! (`crates/ugaris-core/src/player/areas_misc.rs`, byte layout in
+//! `player/misc.rs`'s `FARMY_SOLDIER_EMOTE_*_FIELD` constants) and wired
+//! into `crates/ugaris-server/src/area8_army.rs`'s `take_soldiers`/
+//! `drop_soldiers`/`spawn_army_soldier`.
 
 use crate::{character_driver::CharacterDriverState, world::*};
 

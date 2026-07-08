@@ -850,6 +850,31 @@ pub(crate) const FARMY_SOLDIER_EXP_FIELD: usize = 16;
 pub(crate) const FARMY_SOLDIER_CN_FIELD: usize = 20;
 pub(crate) const FARMY_SOLDIER_SERIAL_FIELD: usize = 24;
 
+/// Field offsets within one `struct soldier` slot's embedded `struct emote`
+/// (`src/area/8/fdemon.c:324-344`), in declaration order, starting right
+/// after the `type`/`rank`/`base`/`profile`/`exp`/`cn`/`serial` prefix
+/// (`7 ints` = `28` bytes - see `FARMY_SOLDIER_SERIAL_FIELD`). Consumed by
+/// `PlayerRuntime::farmy_soldier_emote`/`set_farmy_soldier_emote`
+/// (`areas_misc.rs`), which carry `struct emote` across a recruit/drop/
+/// re-recruit cycle (C `take_soldiers`/`drop_soldiers`,
+/// `fdemon.c:559-563,608-612`).
+pub(crate) const FARMY_SOLDIER_EMOTE_CUDDLY_FIELD: usize = 28;
+pub(crate) const FARMY_SOLDIER_EMOTE_LONELY_FIELD: usize = 32;
+pub(crate) const FARMY_SOLDIER_EMOTE_ANGST_FIELD: usize = 36;
+pub(crate) const FARMY_SOLDIER_EMOTE_FEAR_FIELD: usize = 40;
+pub(crate) const FARMY_SOLDIER_EMOTE_BORE_FIELD: usize = 44;
+pub(crate) const FARMY_SOLDIER_EMOTE_BOREDOM_FIELD: usize = 48;
+pub(crate) const FARMY_SOLDIER_EMOTE_BIGMOUTH_FIELD: usize = 52;
+pub(crate) const FARMY_SOLDIER_EMOTE_PRAISE_FIELD: usize = 56;
+/// `int likes[MAXSOLDIER + 1]`: 4 consecutive ints starting here.
+pub(crate) const FARMY_SOLDIER_EMOTE_LIKES_FIELD: usize = 60;
+/// `int talked[MAXSOLDIER + 1]`: 4 consecutive ints starting here.
+pub(crate) const FARMY_SOLDIER_EMOTE_TALKED_FIELD: usize = 76;
+pub(crate) const FARMY_SOLDIER_EMOTE_ANSWER_TIMER_FIELD: usize = 92;
+pub(crate) const FARMY_SOLDIER_EMOTE_ANSWER_CN_FIELD: usize = 96;
+pub(crate) const FARMY_SOLDIER_EMOTE_ANSWER_TYPE_FIELD: usize = 100;
+pub(crate) const FARMY_SOLDIER_EMOTE_LAST_EMOTE_FIELD: usize = 104;
+
 pub(crate) const TEUFELRAT_PPD_KILLS_OFFSET: usize = 0;
 
 pub(crate) const TEUFELRAT_PPD_SCORE_OFFSET: usize = 4;

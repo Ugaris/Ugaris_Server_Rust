@@ -330,6 +330,61 @@ fn farmy_soldier_slot_accessors_round_trip_and_do_not_clobber_neighbors() {
 }
 
 #[test]
+fn farmy_soldier_emote_round_trips_and_does_not_clobber_neighbors_or_prefix() {
+    use crate::world::npc::area8::fdemon_army_emote::SoldierEmote;
+
+    let mut player = PlayerRuntime::connected(1, 0);
+    for slot in 0..3 {
+        assert_eq!(player.farmy_soldier_emote(slot), SoldierEmote::default());
+    }
+
+    let emote0 = SoldierEmote {
+        cuddly: 20,
+        lonely: 3,
+        angst: 10,
+        fear: 4,
+        bore: 20,
+        boredom: 5,
+        bigmouth: 5,
+        praise: 6,
+        likes: [1, 2, 3, 4],
+        talked: [5, 6, 7, 8],
+        answer_timer: 1_700_000,
+        answer_cn: 55,
+        answer_type: 2,
+        last_emote: 1_600_000,
+    };
+    player.set_farmy_soldier_emote(0, &emote0);
+    // Slot-0-prefix fields (type/rank/base/...) and slot 2's emote must stay
+    // untouched by writing slot 0's emote.
+    player.set_farmy_soldier_type(0, 2);
+    player.set_farmy_soldier_cn(0, 555);
+    let emote2 = SoldierEmote {
+        cuddly: 1,
+        ..SoldierEmote::default()
+    };
+    player.set_farmy_soldier_emote(2, &emote2);
+
+    assert_eq!(player.farmy_soldier_emote(0), emote0);
+    assert_eq!(player.farmy_soldier_type(0), 2);
+    assert_eq!(player.farmy_soldier_cn(0), 555);
+    assert_eq!(player.farmy_soldier_emote(1), SoldierEmote::default());
+    assert_eq!(player.farmy_soldier_emote(2), emote2);
+
+    // Out-of-range slots read as default and writes are a documented no-op.
+    assert_eq!(player.farmy_soldier_emote(3), SoldierEmote::default());
+    player.set_farmy_soldier_emote(3, &emote0);
+    assert_eq!(player.farmy_soldier_emote(3), SoldierEmote::default());
+
+    // Round-trips through the outer legacy blob.
+    let encoded = player.encode_legacy_ppd_blob(&[]);
+    let mut decoded = PlayerRuntime::connected(2, 0);
+    assert!(decoded.decode_legacy_ppd_blob(&encoded));
+    assert_eq!(decoded.farmy_soldier_emote(0), emote0);
+    assert_eq!(decoded.farmy_soldier_emote(2), emote2);
+}
+
+#[test]
 fn teufelrat_ppd_codec_matches_legacy_rat_data_layout() {
     let mut player = PlayerRuntime::connected(1, 0);
     assert_eq!(player.add_teufel_rat_kill(80, false), (1, 64));

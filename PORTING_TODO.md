@@ -595,9 +595,9 @@ Ordered by player progression; the C file is the oracle.
   has no `rage` field yet, same as every other `attack_skill`/`parry_skill`
   caller - see `values.rs`'s `show_values_lines` doc comment). This closes
   every `CF_EDEMON` call site and Area 6 for real.
-- [~] **Area 8 - `src/area/8/fdemon.c`** - Fire Demon boss + farm NPCs;
-  cannon/loader items are ported.
-  REMAINING: ported `CDR_FDEMON_DEMON` (the roaming Fire Demon/Fire Golem
+- [x] **Area 8 - `src/area/8/fdemon.c`** - Fire Demon boss + farm NPCs;
+  cannon/loader items are ported. *(done - details in PORTING_LEDGER.md)*
+  Ported `CDR_FDEMON_DEMON` (the roaming Fire Demon/Fire Golem
   hunt AI - `world::fdemon`'s new waypoint-graph `find_waypoints`/
   `hunt_driver`/`may_hunt_there` port plus `world::npc::area8::
   fdemon_demon`'s gohome-hysteresis/wander driver, reusing
@@ -710,9 +710,13 @@ Ordered by player progression; the C file is the oracle.
   `FdemonBossPlayerFacts`/`FdemonBossStageUpdate::soldier_updates`; the
   `ZoneLoader`-needing re-equip half (`update_soldier`'s stat rescale +
   item swap) is `area8_army::reequip_soldier_for_promotion`, applied by
-  `area8.rs` for every promoted slot. Still needed: the emote-state
-  cross-recruit persistence gap above - the last remaining surface for
-  Area 8.
+  `area8.rs` for every promoted slot. Eighth (final) slice done: the
+  emote-state cross-recruit persistence gap is now closed -
+  `PlayerRuntime::farmy_soldier_emote`/`set_farmy_soldier_emote` expose the
+  previously-reserved byte range, wired into `area8_army.rs`'s
+  `take_soldiers`/`drop_soldiers`/`spawn_army_soldier` so a soldier's
+  personality/relationship state survives a drop/re-recruit cycle. Area 8
+  is now fully ported.
 - [ ] **Area 10 - `src/area/10/ice.c`** - ice NPCs, ice demon curse
   integration (curse spell side is ported).
 - [ ] **Area 11 - `src/area/11/palace.c`** - palace guards, Islena fight
@@ -802,6 +806,10 @@ Ordered by player progression; the C file is the oracle.
 Keep entries to at most three lines: date, task, one-line result.
 Anything longer belongs in `PORTING_LEDGER.md`; historical verbose
 notes live in `PROGRESS_ARCHIVE.md`.
+
+- 2026-07-08: Area 8 `CDR_FDEMON_ARMY` emote-state cross-recruit persistence
+  closed (`PlayerRuntime::farmy_soldier_emote`, wired into `area8_army.rs`).
+  Area 8 fully ported. 2832 core + 1113 server tests pass, clean build.
 
 - 2026-07-08: Area 8 `platoon_exp`'s soldier-exp/promotion loop ported
   (`World::fdemon_platoon_exp` soldier facts/updates, `area8_army::

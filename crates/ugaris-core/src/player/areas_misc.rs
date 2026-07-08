@@ -504,6 +504,84 @@ impl PlayerRuntime {
         self.set_farmy_soldier_field(slot, FARMY_SOLDIER_SERIAL_FIELD, value);
     }
 
+    /// C `struct soldier::emote` (`fdemon.c:324-344,358`): the soldier's
+    /// personality/chat-engine state, persisted across a recruit/drop/
+    /// re-recruit cycle (C `take_soldiers`/`drop_soldiers` copy `dat->
+    /// emote` to/from `ppd->soldier[n].emote`, `fdemon.c:559-563,608-612`).
+    /// Out-of-range slots return a default (`0`) emote, matching every
+    /// other `farmy_soldier_*` accessor.
+    pub fn farmy_soldier_emote(
+        &self,
+        slot: usize,
+    ) -> crate::world::npc::area8::fdemon_army_emote::SoldierEmote {
+        use crate::world::npc::area8::fdemon_army_emote::SoldierEmote;
+        SoldierEmote {
+            cuddly: self.farmy_soldier_field(slot, FARMY_SOLDIER_EMOTE_CUDDLY_FIELD),
+            lonely: self.farmy_soldier_field(slot, FARMY_SOLDIER_EMOTE_LONELY_FIELD),
+            angst: self.farmy_soldier_field(slot, FARMY_SOLDIER_EMOTE_ANGST_FIELD),
+            fear: self.farmy_soldier_field(slot, FARMY_SOLDIER_EMOTE_FEAR_FIELD),
+            bore: self.farmy_soldier_field(slot, FARMY_SOLDIER_EMOTE_BORE_FIELD),
+            boredom: self.farmy_soldier_field(slot, FARMY_SOLDIER_EMOTE_BOREDOM_FIELD),
+            bigmouth: self.farmy_soldier_field(slot, FARMY_SOLDIER_EMOTE_BIGMOUTH_FIELD),
+            praise: self.farmy_soldier_field(slot, FARMY_SOLDIER_EMOTE_PRAISE_FIELD),
+            likes: std::array::from_fn(|index| {
+                self.farmy_soldier_field(slot, FARMY_SOLDIER_EMOTE_LIKES_FIELD + index * 4)
+            }),
+            talked: std::array::from_fn(|index| {
+                self.farmy_soldier_field(slot, FARMY_SOLDIER_EMOTE_TALKED_FIELD + index * 4)
+            }),
+            answer_timer: i64::from(
+                self.farmy_soldier_field(slot, FARMY_SOLDIER_EMOTE_ANSWER_TIMER_FIELD),
+            ),
+            answer_cn: self.farmy_soldier_field(slot, FARMY_SOLDIER_EMOTE_ANSWER_CN_FIELD),
+            answer_type: self.farmy_soldier_field(slot, FARMY_SOLDIER_EMOTE_ANSWER_TYPE_FIELD),
+            last_emote: i64::from(
+                self.farmy_soldier_field(slot, FARMY_SOLDIER_EMOTE_LAST_EMOTE_FIELD),
+            ),
+        }
+    }
+
+    pub fn set_farmy_soldier_emote(
+        &mut self,
+        slot: usize,
+        emote: &crate::world::npc::area8::fdemon_army_emote::SoldierEmote,
+    ) {
+        self.set_farmy_soldier_field(slot, FARMY_SOLDIER_EMOTE_CUDDLY_FIELD, emote.cuddly);
+        self.set_farmy_soldier_field(slot, FARMY_SOLDIER_EMOTE_LONELY_FIELD, emote.lonely);
+        self.set_farmy_soldier_field(slot, FARMY_SOLDIER_EMOTE_ANGST_FIELD, emote.angst);
+        self.set_farmy_soldier_field(slot, FARMY_SOLDIER_EMOTE_FEAR_FIELD, emote.fear);
+        self.set_farmy_soldier_field(slot, FARMY_SOLDIER_EMOTE_BORE_FIELD, emote.bore);
+        self.set_farmy_soldier_field(slot, FARMY_SOLDIER_EMOTE_BOREDOM_FIELD, emote.boredom);
+        self.set_farmy_soldier_field(slot, FARMY_SOLDIER_EMOTE_BIGMOUTH_FIELD, emote.bigmouth);
+        self.set_farmy_soldier_field(slot, FARMY_SOLDIER_EMOTE_PRAISE_FIELD, emote.praise);
+        for (index, value) in emote.likes.iter().enumerate() {
+            self.set_farmy_soldier_field(slot, FARMY_SOLDIER_EMOTE_LIKES_FIELD + index * 4, *value);
+        }
+        for (index, value) in emote.talked.iter().enumerate() {
+            self.set_farmy_soldier_field(
+                slot,
+                FARMY_SOLDIER_EMOTE_TALKED_FIELD + index * 4,
+                *value,
+            );
+        }
+        self.set_farmy_soldier_field(
+            slot,
+            FARMY_SOLDIER_EMOTE_ANSWER_TIMER_FIELD,
+            emote.answer_timer as i32,
+        );
+        self.set_farmy_soldier_field(slot, FARMY_SOLDIER_EMOTE_ANSWER_CN_FIELD, emote.answer_cn);
+        self.set_farmy_soldier_field(
+            slot,
+            FARMY_SOLDIER_EMOTE_ANSWER_TYPE_FIELD,
+            emote.answer_type,
+        );
+        self.set_farmy_soldier_field(
+            slot,
+            FARMY_SOLDIER_EMOTE_LAST_EMOTE_FIELD,
+            emote.last_emote as i32,
+        );
+    }
+
     pub fn advance_farmy_blood_stage(&mut self) -> bool {
         let stage = self.farmy_boss_stage();
         if !(19..=20).contains(&stage) {

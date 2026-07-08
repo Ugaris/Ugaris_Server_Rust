@@ -469,8 +469,7 @@ pub struct FarmyData {
     pub platoon: [CharacterId; MAXSOLDIER + 1],
     /// C `struct emote emote` (`fdemon.c:378`) - the soldier's personality/
     /// chat-engine state, see `fdemon_army_emote.rs`'s own module doc
-    /// comment (including the documented cross-recruit-cycle persistence
-    /// gap).
+    /// comment.
     pub emote: super::fdemon_army_emote::SoldierEmote,
 }
 

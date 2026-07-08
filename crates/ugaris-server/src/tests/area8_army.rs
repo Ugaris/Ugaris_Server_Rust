@@ -5,6 +5,21 @@ use ugaris_core::{
     world::npc::area8::fdemon_army::MAXSOLDIER,
 };
 
+fn set_soldier_emote(
+    world: &mut World,
+    soldier_id: CharacterId,
+    mutate: impl FnOnce(&mut ugaris_core::world::npc::area8::fdemon_army_emote::SoldierEmote),
+) {
+    let Some(CharacterDriverState::FdemonArmy(dat)) = world
+        .characters
+        .get_mut(&soldier_id)
+        .and_then(|character| character.driver_state.as_mut())
+    else {
+        panic!("expected FdemonArmy driver state");
+    };
+    mutate(&mut dat.emote);
+}
+
 fn connect_player(runtime: &mut ServerRuntime, session_id: u64, character_id: CharacterId) {
     let (commands, _rx) = mpsc::channel(16);
     runtime.connect(session_id, commands, 0);
@@ -250,4 +265,113 @@ async fn reequip_soldier_for_promotion_rescales_stats_and_swaps_equipment() {
         assert!(world.items.contains_key(item_id));
         assert!(!old_item_ids.contains(item_id));
     }
+}
+
+// C `take_soldiers`/`drop_soldiers` copy `dat->emote` to/from `ppd->
+// soldier[n].emote` (`fdemon.c:559-563,608-612`): a soldier's personality/
+// relationship state survives a drop/re-recruit cycle, except the three
+// "current need" fields (`boredom`/`fear`/`praise`) which `take_soldiers`
+// always resets to `0` on every (re)spawn.
+#[tokio::test]
+async fn drop_and_retake_carries_emote_state_except_current_needs() {
+    let area_id: u16 = 8;
+    let player_id = CharacterId(1);
+    let mut world = World::default();
+    world.area_id = area_id;
+
+    let mut player_character = login_character(player_id, &login_block("Hero"), area_id, 10, 10);
+    player_character.military_points = 10;
+    player_character.flags.remove(CharacterFlags::WARRIOR);
+    player_character.flags.insert(CharacterFlags::MALE);
+    assert!(world.spawn_character(player_character, 10, 10));
+
+    let mut loader = army_loader();
+    let mut runtime = ServerRuntime::default();
+    runtime.set_next_character_id(50);
+    connect_player(&mut runtime, 1, player_id);
+
+    crate::area8_army::take_soldiers(&mut world, &mut loader, &mut runtime, player_id);
+    let soldier_id = CharacterId(50);
+    let tendencies = {
+        let Some(CharacterDriverState::FdemonArmy(dat)) =
+            world.characters.get(&soldier_id).unwrap().driver_state
+        else {
+            panic!("expected FdemonArmy driver state");
+        };
+        (
+            dat.emote.cuddly,
+            dat.emote.angst,
+            dat.emote.bore,
+            dat.emote.bigmouth,
+        )
+    };
+
+    // Simulate live gameplay having built up relationship/need state.
+    set_soldier_emote(&mut world, soldier_id, |emote| {
+        emote.likes[0] = 7;
+        emote.talked[1] = 3;
+        emote.answer_cn = 99;
+        emote.answer_type = 2;
+        emote.answer_timer = 123;
+        emote.last_emote = 456;
+        emote.boredom = 10;
+        emote.fear = 20;
+        emote.praise = 30;
+    });
+
+    crate::area8_army::drop_soldiers(&mut world, &mut runtime, player_id);
+    assert!(!world.characters.contains_key(&soldier_id));
+
+    // The PPD now carries the full emote state the live soldier had,
+    // including the "current need" fields (drop doesn't reset them - only
+    // a later `take_soldiers` respawn does).
+    let player = runtime.player_for_character(player_id).unwrap();
+    let saved = player.farmy_soldier_emote(0);
+    assert_eq!(saved.likes[0], 7);
+    assert_eq!(saved.talked[1], 3);
+    assert_eq!(saved.answer_cn, 99);
+    assert_eq!(saved.answer_type, 2);
+    assert_eq!(saved.answer_timer, 123);
+    assert_eq!(saved.last_emote, 456);
+    assert_eq!(saved.boredom, 10);
+    assert_eq!(saved.fear, 20);
+    assert_eq!(saved.praise, 30);
+
+    runtime.set_next_character_id(60);
+    crate::area8_army::take_soldiers(&mut world, &mut loader, &mut runtime, player_id);
+    let rebuilt_id = CharacterId(60);
+    let Some(CharacterDriverState::FdemonArmy(dat)) =
+        world.characters.get(&rebuilt_id).unwrap().driver_state
+    else {
+        panic!("expected FdemonArmy driver state");
+    };
+    // Relationship/tendency/pending-answer state carried over...
+    assert_eq!(dat.emote.likes[0], 7);
+    assert_eq!(dat.emote.talked[1], 3);
+    assert_eq!(dat.emote.answer_cn, 99);
+    assert_eq!(dat.emote.answer_type, 2);
+    assert_eq!(dat.emote.answer_timer, 123);
+    assert_eq!(dat.emote.last_emote, 456);
+    assert_eq!(
+        (
+            dat.emote.cuddly,
+            dat.emote.angst,
+            dat.emote.bore,
+            dat.emote.bigmouth
+        ),
+        tendencies
+    );
+    // ...but the three "current need" fields were reset to 0 on respawn.
+    assert_eq!(dat.emote.boredom, 0);
+    assert_eq!(dat.emote.fear, 0);
+    assert_eq!(dat.emote.praise, 0);
+
+    // And the PPD itself reflects that same reset (persisted, not just the
+    // live copy), matching C's `ppd->soldier[n].emote.boredom = 0` etc.
+    let player = runtime.player_for_character(player_id).unwrap();
+    let saved_after_retake = player.farmy_soldier_emote(0);
+    assert_eq!(saved_after_retake.boredom, 0);
+    assert_eq!(saved_after_retake.fear, 0);
+    assert_eq!(saved_after_retake.praise, 0);
+    assert_eq!(saved_after_retake.likes[0], 7);
 }

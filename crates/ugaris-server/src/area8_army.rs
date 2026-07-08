@@ -7,17 +7,18 @@
 //! follow-driver/tick/emote logic once a soldier exists all live in
 //! `ugaris_core::world::npc::area8::fdemon_army`/`fdemon_army_combat`/
 //! `fdemon_army_emote` - see those modules' own doc comments for the full
-//! split rationale and remaining gaps (soldier exp/promotion, emote
-//! relationship state not yet surviving a drop/re-recruit cycle - see
-//! `fdemon_army_emote.rs`'s own doc comment for that one).
+//! split rationale.
 
 use super::*;
 use ugaris_core::{
     character_driver::{CharacterDriverState, FightDriverData, CDR_FDEMON_ARMY},
-    world::npc::area8::fdemon_army::{
-        assign_profile, finalize_soldier_exp_and_level, plan_soldier_recruitment,
-        scale_soldier_values, soldier_base_strength, soldier_equipment_items, FarmyData,
-        MAXSOLDIER, MIS_FOLLOW, SOLDIER_PROFILES, SOLDIER_TYPE_WARRIOR,
+    world::npc::area8::{
+        fdemon_army::{
+            assign_profile, finalize_soldier_exp_and_level, plan_soldier_recruitment,
+            scale_soldier_values, soldier_base_strength, soldier_equipment_items, FarmyData,
+            MAXSOLDIER, MIS_FOLLOW, SOLDIER_PROFILES, SOLDIER_TYPE_WARRIOR,
+        },
+        fdemon_army_emote::SoldierEmote,
     },
 };
 
@@ -47,6 +48,15 @@ pub(crate) fn drop_soldiers(
                     let exp_gained = character.exp as i32 - character.exp_used as i32;
                     let prior_exp = player.farmy_soldier_exp(slot);
                     player.set_farmy_soldier_exp(slot, prior_exp + exp_gained);
+                    // C `drop_soldiers`: `ppd->soldier[n].emote = dat->emote;`
+                    // (`fdemon.c:608-612`) - carries the live personality/
+                    // relationship state back into the PPD so a later
+                    // `take_soldiers` re-recruit can resume from it.
+                    if let Some(CharacterDriverState::FdemonArmy(dat)) =
+                        character.driver_state.as_ref()
+                    {
+                        player.set_farmy_soldier_emote(slot, &dat.emote);
+                    }
                     world.remove_character(character_id);
                 }
             }
@@ -112,16 +122,31 @@ pub(crate) fn take_soldiers(
         player.set_farmy_soldier_type(plan.slot, plan.soldier_type);
         player.set_farmy_soldier_rank(plan.slot, 1);
         player.set_farmy_soldier_profile(plan.slot, plan.profile as i32);
+        // C `assign_profile(n, pro, ppd)` (`fdemon.c:384-392`), called right
+        // when a slot is newly recruited: bzeros the slot's `struct emote`
+        // then seeds the four base personality tendencies from `profile[]`.
+        let emote_base = assign_profile(plan.profile);
+        player.set_farmy_soldier_emote(
+            plan.slot,
+            &SoldierEmote {
+                cuddly: emote_base.cuddly,
+                angst: emote_base.angst,
+                bore: emote_base.bore,
+                bigmouth: emote_base.bigmouth,
+                ..Default::default()
+            },
+        );
     }
 
     let mut spawned = [CharacterId(0); MAXSOLDIER];
     for slot in 0..MAXSOLDIER {
-        let Some((soldier_type, profile_index, rank)) =
+        let Some((soldier_type, profile_index, rank, mut emote)) =
             runtime.player_for_character(player_id).map(|player| {
                 (
                     player.farmy_soldier_type(slot),
                     player.farmy_soldier_profile(slot) as usize,
                     player.farmy_soldier_rank(slot),
+                    player.farmy_soldier_emote(slot),
                 )
             })
         else {
@@ -131,6 +156,20 @@ pub(crate) fn take_soldiers(
             continue;
         }
 
+        // C `take_soldiers`: `ppd->soldier[n].emote.boredom = 0; ppd->
+        // soldier[n].emote.fear = 0; ppd->soldier[n].emote.praise = 0; dat->
+        // emote = ppd->soldier[n].emote;` (`fdemon.c:559-563`) - every
+        // occupied slot is unconditionally rebuilt on every `take_soldiers`
+        // call, resetting (and persisting the reset of) these three
+        // "current need" fields while carrying every other emote field
+        // (tendencies, likes/talked, pending-answer state) across.
+        emote.boredom = 0;
+        emote.fear = 0;
+        emote.praise = 0;
+        if let Some(player) = runtime.player_for_character_mut(player_id) {
+            player.set_farmy_soldier_emote(slot, &emote);
+        }
+
         let Some(character_id) = spawn_army_soldier(
             world,
             loader,
@@ -138,6 +177,7 @@ pub(crate) fn take_soldiers(
             soldier_type,
             profile_index,
             rank,
+            emote,
             px,
             py,
             pgroup,
@@ -188,6 +228,7 @@ fn spawn_army_soldier(
     soldier_type: i32,
     profile_index: usize,
     rank: i32,
+    emote: SoldierEmote,
     x: u16,
     y: u16,
     group: u16,
@@ -256,25 +297,14 @@ fn spawn_army_soldier(
     // seymour`'s `set_army_rank(co, 1)` deviation note.
     soldier.military_points = rank.max(1).pow(3);
     soldier.driver = CDR_FDEMON_ARMY;
-    // C `take_soldiers`: `ppd->soldier[n].emote.boredom = 0; ppd->soldier[n]
-    // .emote.fear = 0; ppd->soldier[n].emote.praise = 0; dat->emote = ppd->
-    // soldier[n].emote;` (`fdemon.c:559-563`) - a freshly (re-)spawned
-    // soldier's four base personality tendencies come from its assigned
-    // profile ([`assign_profile`]); the "current"/relationship fields all
-    // start at `0` (documented cross-recruit-cycle gap, see `fdemon_army_
-    // emote.rs`'s own module doc comment - this port doesn't yet persist
-    // `ppd->soldier[n].emote` to carry those over instead).
-    let emote_base = assign_profile(profile_index);
+    // C `take_soldiers`: `dat->emote = ppd->soldier[n].emote;`
+    // (`fdemon.c:562`) - `emote` was already loaded from (and its
+    // boredom/fear/praise reset persisted back into) the PPD by the caller,
+    // see `take_soldiers`'s own comment.
     soldier.driver_state = Some(CharacterDriverState::FdemonArmy(FarmyData {
         leader_cn: leader_id,
         mission: MIS_FOLLOW,
-        emote: ugaris_core::world::npc::area8::fdemon_army_emote::SoldierEmote {
-            cuddly: emote_base.cuddly,
-            angst: emote_base.angst,
-            bore: emote_base.bore,
-            bigmouth: emote_base.bigmouth,
-            ..Default::default()
-        },
+        emote,
         ..FarmyData::default()
     }));
     // C `fdemon_army`'s own `NT_CREATE` handler: `fight_driver_set_dist(cn,
