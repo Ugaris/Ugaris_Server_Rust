@@ -108,3 +108,41 @@ pub(crate) async fn two_sanwyn_driver_99(
         );
     }
 }
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn two_barkeeper_driver_100(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    _zone_loader: &mut ZoneLoader,
+    config: &ServerConfig,
+    _args: &Args,
+    _completed_actions: &[WorldActionCompletion],
+    _achievement_repository: &Option<ugaris_db::PgAchievementRepository>,
+    _character_repository: &Option<ugaris_db::PgCharacterRepository>,
+    _area_repository: &Option<ugaris_db::PgAreaRepository>,
+    _clan_repository: &Option<ugaris_db::PgClanRegistryRepository>,
+    _clan_log_repository: &Option<ugaris_db::PgClanLogRepository>,
+    _merchant_repository: &Option<ugaris_db::PgMerchantRepository>,
+    _military_master_storage_repository: &Option<ugaris_db::PgMilitaryMasterStorageRepository>,
+    _military_advisor_storage_repository: &Option<ugaris_db::PgMilitaryAdvisorStorageRepository>,
+    _notes_repository: &Option<ugaris_db::PgNotesRepository>,
+    _anticheat_repository: &Option<ugaris_db::PgAntiCheatRepository>,
+    _auction_repository: &Option<ugaris_db::PgAuctionRepository>,
+) {
+    // C `barkeeper`: area 17's tavern barkeeper/guest-pass broker
+    // (`src/area/17/two.c`).
+    let two_barkeeper_facts = two_barkeeper_player_facts(runtime);
+    let two_barkeeper_events = world.process_two_barkeeper_actions(
+        &two_barkeeper_facts,
+        current_unix_time() as i32,
+        config.area_id,
+    );
+    let two_barkeeper_events_applied = apply_two_barkeeper_events(runtime, two_barkeeper_events);
+    if two_barkeeper_events_applied != 0 {
+        info!(
+            two_barkeeper_events_applied,
+            tick = world.tick.0,
+            "applied two-city barkeeper dialogue events"
+        );
+    }
+}

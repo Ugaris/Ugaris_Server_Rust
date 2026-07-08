@@ -98,6 +98,92 @@ impl PlayerRuntime {
         );
     }
 
+    /// C `struct twocity_ppd::legal_status` (`LS_CLEAN`/`LS_FINE`/
+    /// `LS_DEAD`, see `crate::world::npc::area17::{LS_CLEAN, LS_FINE,
+    /// LS_DEAD}`).
+    pub fn twocity_legal_status(&self) -> i32 {
+        if self.twocity_ppd.len() < LEGACY_TWOCITY_PPD_SIZE {
+            return 0;
+        }
+        read_i32(&self.twocity_ppd, TWOCITY_PPD_LEGAL_STATUS_OFFSET)
+    }
+
+    pub fn set_twocity_legal_status(&mut self, status: i32) {
+        self.twocity_ppd.resize(LEGACY_TWOCITY_PPD_SIZE, 0);
+        write_i32(
+            &mut self.twocity_ppd,
+            TWOCITY_PPD_LEGAL_STATUS_OFFSET,
+            status,
+        );
+    }
+
+    /// C `struct twocity_ppd::legal_fine`.
+    pub fn twocity_legal_fine(&self) -> i32 {
+        if self.twocity_ppd.len() < LEGACY_TWOCITY_PPD_SIZE {
+            return 0;
+        }
+        read_i32(&self.twocity_ppd, TWOCITY_PPD_LEGAL_FINE_OFFSET)
+    }
+
+    pub fn set_twocity_legal_fine(&mut self, fine: i32) {
+        self.twocity_ppd.resize(LEGACY_TWOCITY_PPD_SIZE, 0);
+        write_i32(&mut self.twocity_ppd, TWOCITY_PPD_LEGAL_FINE_OFFSET, fine);
+    }
+
+    /// C `struct twocity_ppd::citizen_status` (`CS_ENEMY`/`CS_GUEST`/
+    /// `CS_CITIZEN`/`CS_HONOR`, see `crate::world::npc::area17::{CS_ENEMY,
+    /// CS_GUEST, CS_CITIZEN, CS_HONOR}`).
+    pub fn twocity_citizen_status(&self) -> i32 {
+        if self.twocity_ppd.len() < LEGACY_TWOCITY_PPD_SIZE {
+            return 0;
+        }
+        read_i32(&self.twocity_ppd, TWOCITY_PPD_CITIZEN_STATUS_OFFSET)
+    }
+
+    pub fn set_twocity_citizen_status(&mut self, status: i32) {
+        self.twocity_ppd.resize(LEGACY_TWOCITY_PPD_SIZE, 0);
+        write_i32(
+            &mut self.twocity_ppd,
+            TWOCITY_PPD_CITIZEN_STATUS_OFFSET,
+            status,
+        );
+    }
+
+    /// C `struct twocity_ppd::barkeeper_state`.
+    pub fn twocity_barkeeper_state(&self) -> i32 {
+        if self.twocity_ppd.len() < LEGACY_TWOCITY_PPD_SIZE {
+            return 0;
+        }
+        read_i32(&self.twocity_ppd, TWOCITY_PPD_BARKEEPER_STATE_OFFSET)
+    }
+
+    pub fn set_twocity_barkeeper_state(&mut self, state: i32) {
+        self.twocity_ppd.resize(LEGACY_TWOCITY_PPD_SIZE, 0);
+        write_i32(
+            &mut self.twocity_ppd,
+            TWOCITY_PPD_BARKEEPER_STATE_OFFSET,
+            state,
+        );
+    }
+
+    /// C `struct twocity_ppd::barkeeper_last` (wall-clock `realtime`
+    /// seconds).
+    pub fn twocity_barkeeper_last(&self) -> i32 {
+        if self.twocity_ppd.len() < LEGACY_TWOCITY_PPD_SIZE {
+            return 0;
+        }
+        read_i32(&self.twocity_ppd, TWOCITY_PPD_BARKEEPER_LAST_OFFSET)
+    }
+
+    pub fn set_twocity_barkeeper_last(&mut self, realtime: i32) {
+        self.twocity_ppd.resize(LEGACY_TWOCITY_PPD_SIZE, 0);
+        write_i32(
+            &mut self.twocity_ppd,
+            TWOCITY_PPD_BARKEEPER_LAST_OFFSET,
+            realtime,
+        );
+    }
+
     /// Snapshot of the `twocity_ppd` fields consumed by
     /// `questlog_init_twocity` (`src/system/questlog.c:1470-1546`), for
     /// `crate::quest::init_twocity_quests`.

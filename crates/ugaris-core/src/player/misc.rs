@@ -897,6 +897,28 @@ pub(crate) const TWOCITY_PPD_SKELLY_STATE_OFFSET: usize = 27 * 4;
 
 pub(crate) const TWOCITY_PPD_ALCHEMIST_STATE_OFFSET: usize = 28 * 4;
 
+/// C `struct twocity_ppd::legal_status` (`common/two_ppd.h:2`): `LS_CLEAN`
+/// (`0`)/`LS_FINE` (`1`)/`LS_DEAD` (`2`), the player's standing with the
+/// Exkordon city guard.
+pub(crate) const TWOCITY_PPD_LEGAL_STATUS_OFFSET: usize = 0;
+
+/// C `struct twocity_ppd::legal_fine` (`common/two_ppd.h:3`): accumulated
+/// fine (in raw gold units), added to a guest pass's price while
+/// `legal_status == LS_FINE`.
+pub(crate) const TWOCITY_PPD_LEGAL_FINE_OFFSET: usize = 4;
+
+/// C `struct twocity_ppd::citizen_status` (`common/two_ppd.h:5`):
+/// `CS_ENEMY` (`0`)/`CS_GUEST` (`1`)/`CS_CITIZEN` (`2`)/`CS_HONOR` (`3`).
+pub(crate) const TWOCITY_PPD_CITIZEN_STATUS_OFFSET: usize = 2 * 4;
+
+/// C `struct twocity_ppd::barkeeper_state` (`common/two_ppd.h:11`): the
+/// tavern barkeeper's 3-state greeting/guest-pass-offer ladder.
+pub(crate) const TWOCITY_PPD_BARKEEPER_STATE_OFFSET: usize = 6 * 4;
+
+/// C `struct twocity_ppd::barkeeper_last` (`common/two_ppd.h:29`): wall-
+/// clock `realtime` stamp of the last guest-pass offer.
+pub(crate) const TWOCITY_PPD_BARKEEPER_LAST_OFFSET: usize = 26 * 4;
+
 pub(crate) const MISC_PPD_COMPLAINT_DATE_OFFSET: usize = 4;
 
 /// C `struct misc_ppd::supermax_state` (`src/common/misc_ppd.h:28`): the

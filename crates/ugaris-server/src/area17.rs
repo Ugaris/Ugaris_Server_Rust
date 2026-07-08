@@ -1,20 +1,23 @@
 //! Server-side wiring for area 17's Two-City NPCs (`CDR_TWOSKELLY`/
 //! `ugaris_core::world::npc::area17::two_skelly::process_two_skelly_
 //! actions`, `CDR_TWOALCHEMIST`/`...::alchemist::process_two_alchemist_
-//! actions`, plus `CDR_TWOSANWYN`/`...::sanwyn::process_two_sanwyn_
+//! actions`, `CDR_TWOSANWYN`/`...::sanwyn::process_two_sanwyn_actions`,
+//! plus `CDR_TWOBARKEEPER`/`...::barkeeper::process_two_barkeeper_
 //! actions`).
 //!
 //! Mirrors the `World`/`PlayerRuntime` split already established by
 //! `area16.rs`: [`two_skelly_player_facts`]/[`two_alchemist_player_facts`]/
-//! [`two_sanwyn_player_facts`] snapshot the per-player `twocity_ppd` facts
-//! each NPC's dialogue needs before the tick, and [`apply_two_skelly_events`]/
-//! [`apply_two_alchemist_events`]/[`apply_two_sanwyn_events`] apply the
+//! [`two_sanwyn_player_facts`]/[`two_barkeeper_player_facts`] snapshot the
+//! per-player `twocity_ppd` facts each NPC's dialogue needs before the
+//! tick, and [`apply_two_skelly_events`]/[`apply_two_alchemist_events`]/
+//! [`apply_two_sanwyn_events`]/[`apply_two_barkeeper_events`] apply the
 //! returned events afterward.
 
 use super::*;
 use ugaris_core::world::{
-    TwoAlchemistOutcomeEvent, TwoAlchemistPlayerFacts, TwoSanwynOutcomeEvent, TwoSanwynPlayerFacts,
-    TwoSkellyOutcomeEvent, TwoSkellyPlayerFacts,
+    TwoAlchemistOutcomeEvent, TwoAlchemistPlayerFacts, TwoBarkeeperOutcomeEvent,
+    TwoBarkeeperPlayerFacts, TwoSanwynOutcomeEvent, TwoSanwynPlayerFacts, TwoSkellyOutcomeEvent,
+    TwoSkellyPlayerFacts, CS_GUEST, LS_CLEAN,
 };
 
 pub(crate) fn two_skelly_player_facts(
@@ -293,6 +296,75 @@ pub(crate) fn apply_two_sanwyn_events(
                     }
                     applied += 1;
                 }
+            }
+        }
+    }
+    applied
+}
+
+pub(crate) fn two_barkeeper_player_facts(
+    runtime: &ServerRuntime,
+) -> HashMap<CharacterId, TwoBarkeeperPlayerFacts> {
+    runtime
+        .players
+        .values()
+        .filter_map(|player| {
+            let character_id = player.character_id?;
+            Some((
+                character_id,
+                TwoBarkeeperPlayerFacts {
+                    barkeeper_state: player.twocity_barkeeper_state(),
+                    citizen_status: player.twocity_citizen_status(),
+                    legal_status: player.twocity_legal_status(),
+                    legal_fine: player.twocity_legal_fine(),
+                },
+            ))
+        })
+        .collect()
+}
+
+/// Applies each [`TwoBarkeeperOutcomeEvent`] queued by
+/// `World::process_two_barkeeper_actions`. Unlike its siblings, this NPC
+/// has no quest of its own - every event is a plain `twocity_ppd`
+/// writeback.
+pub(crate) fn apply_two_barkeeper_events(
+    runtime: &mut ServerRuntime,
+    events: Vec<TwoBarkeeperOutcomeEvent>,
+) -> usize {
+    let mut applied = 0;
+    for event in events {
+        match event {
+            TwoBarkeeperOutcomeEvent::UpdateBarkeeperState {
+                player_id,
+                new_state,
+            } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.set_twocity_barkeeper_state(new_state);
+                applied += 1;
+            }
+            // C `ppd->barkeeper_last = realtime;` (`two.c:858`).
+            TwoBarkeeperOutcomeEvent::UpdateBarkeeperLast {
+                player_id,
+                realtime,
+            } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.set_twocity_barkeeper_last(realtime);
+                applied += 1;
+            }
+            // C `ppd->citizen_status = CS_GUEST; ppd->legal_status =
+            // LS_CLEAN; ppd->legal_fine = 0;` (`two.c:912-914`).
+            TwoBarkeeperOutcomeEvent::BuyPass { player_id } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.set_twocity_citizen_status(CS_GUEST);
+                player.set_twocity_legal_status(LS_CLEAN);
+                player.set_twocity_legal_fine(0);
+                applied += 1;
             }
         }
     }

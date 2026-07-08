@@ -536,7 +536,8 @@ impl World {
                 | CharacterDriverState::ForestWilliam(_)
                 | CharacterDriverState::ForestHermit(_)
                 | CharacterDriverState::TwoSanwyn(_)
-                | CharacterDriverState::TwoAlchemist(_) => None,
+                | CharacterDriverState::TwoAlchemist(_)
+                | CharacterDriverState::TwoBarkeeper(_) => None,
             });
         let Some(target_id) = target_id else {
             return false;

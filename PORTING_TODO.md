@@ -797,10 +797,17 @@ Ordered by player progression; the C file is the oracle.
   ("Sanwyn", the military quest giver, quest 29) is now also ported
   (`world/npc/area17/sanwyn.rs`), sharing `TWOCITY_QA`; its per-note
   military-points reward is applied directly via `World::
-  give_military_pts_from_npc` (no server-side deferral needed). Still
-  unported: `CDR_TWOGUARD`/`CDR_TWOBARKEEPER`/`CDR_TWOSERVANT`/
-  `CDR_TWOTHIEFGUARD`/`CDR_TWOTHIEFMASTER`/`CDR_TWOROBBER`'s death hook -
-  see `PORTING_LEDGER.md` for the full driver breakdown and suggested
+  give_military_pts_from_npc` (no server-side deferral needed).
+  `CDR_TWOBARKEEPER` (the tavern barkeeper/guest-pass broker) is now also
+  ported (`world/npc/area17/barkeeper.rs`), the first driver needing the
+  new shared `legal_status`/`legal_fine`/`citizen_status` `twocity_ppd`
+  accessors (plus its own `barkeeper_state`/`barkeeper_last`) and the new
+  shared `LS_CLEAN`/`LS_FINE`/`LS_DEAD`/`CS_ENEMY`/`CS_GUEST`/
+  `CS_CITIZEN`/`CS_HONOR` constants in `world/npc/area17/mod.rs` (both
+  reused by the still-unported `guard_driver`). Still unported:
+  `CDR_TWOGUARD`/`CDR_TWOSERVANT`/`CDR_TWOTHIEFGUARD`/
+  `CDR_TWOTHIEFMASTER`/`CDR_TWOROBBER`'s death hook - see
+  `PORTING_LEDGER.md` for the full driver breakdown and suggested
   next-slice order.
 - [ ] **Area 18 - `src/area/18/bones.c`** - rune quest completion
   (`exec_rune` rewards), bone NPCs.
@@ -1254,4 +1261,9 @@ notes live in `PROGRESS_ARCHIVE.md`.
   (quest 29, "Dirty Hands"); 2953 core + 1138 server tests pass, clean
   build/boot-smoke. Remaining: guard/barkeeper/servant/thiefguard/
   thiefmaster/robber-death-hook (see PORTING_LEDGER.md).
+- 2026-07-08: Area 17 progress: ported `CDR_TWOBARKEEPER`/`barkeeper`
+  (`world/npc/area17/barkeeper.rs`), the tavern guest-pass broker, plus
+  shared `legal_status`/`legal_fine`/`citizen_status` PPD accessors and
+  `LS_*`/`CS_*` constants. 2966 core + 1138 server tests pass, clean
+  build/boot-smoke (area 17).
 

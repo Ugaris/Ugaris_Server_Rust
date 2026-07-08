@@ -3007,15 +3007,55 @@
         "error: could not compile `ugaris-core` (lib) due to 2 previous errors",
         "\u001b[91m\u001b[1mError: \u001b[0mFound multiple matches for oldString. Provide more surrounding context to make the match unique."
       ]
+    },
+    {
+      "iteration": 87,
+      "startedAt": "2026-07-08T21:03:36.520Z",
+      "endedAt": "2026-07-08T21:27:26.895Z",
+      "durationMs": 1429245,
+      "agent": "opencode",
+      "model": "anthropic/claude-sonnet-5",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "PORTING_TODO.md",
+        "crates/ugaris-core/src/character_driver.rs",
+        "crates/ugaris-core/src/player/misc.rs",
+        "crates/ugaris-core/src/player/twocity.rs",
+        "crates/ugaris-core/src/world/npc/area17/mod.rs",
+        "crates/ugaris-core/src/world/npc_fight.rs",
+        "crates/ugaris-core/src/world/npc_idle.rs",
+        "crates/ugaris-core/src/world/tests/mod.rs",
+        "crates/ugaris-core/src/zone.rs",
+        "crates/ugaris-server/src/area17.rs",
+        "crates/ugaris-server/src/tick_npc/area17.rs",
+        "crates/ugaris-server/src/tick_npc/mod.rs",
+        "crates/ugaris-core/src/world/npc/area17/barkeeper.rs",
+        "crates/ugaris-core/src/world/tests/barkeeper.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "Good, this is the exact pattern I need. Let me fix the three failing tests.",
+        "All green: 2966 core + 1138 server tests, zero failures, zero warnings. This iteration is complete. Let me summarize what was accomplished.",
+        "**Verification:** `cargo fmt --all`, `cargo test --workspace` (2966 core + 1138 server, zero failures/warnings), `cargo build -p ugaris-server` clean, and a live boot-smoke against real `--area-id 17`",
+        "test result: ok. 1138 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 7.80s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "7501:- Iteration 251 confirmed the workspace was still green (`cargo test --workspace`: 2348 core + 1084 server, no failures), then continued the P4 \"Area 1 - `gwendylon.c`\" task by closing the `monst",
+        "7526:- 2026-07-07: continued the P0.5 \"Finish main() phase decomposition\" task with its eleventh completed-action-outcome family slice: the two-city burndown-barrel family (`src/area/17/two.c`) - 5 co",
+        "7532:- 2026-07-07: continued the P0.5 \"Finish main() phase decomposition\" task with its seventeenth completed-action-outcome family slice: three small contiguous digging/lockpicking families sharing o",
+        "7538:- 2026-07-07: continued the P4 \"Area 1 - `gwendylon.c`\" task with its next self-contained NPC slice: `reskin_driver` (`CDR_RESKIN = 20`, `gwendylon.c:4098-4417`), the tavern-keeper/alchemy-ingred",
+        "7549:- 2026-07-08: closed the P0.5 \"Retire legacy blob writes\" task with its final piece, the backfill startup routine. `crates/ugaris-db/src/character.rs` - added two `CharacterRepository` trait meth"
+      ]
     }
   ],
-  "totalDurationMs": 121742563,
+  "totalDurationMs": 123171808,
   "struggleIndicators": {
     "repeatedErrors": {
       "Everything builds cleanly, all tests pass (2380 core + 1091 server, zero failures, zero warnings), f": 1,
       "Verification: `cargo fmt --all`, `cargo test --workspace` (2380 ugaris-core + 1091 ugaris-server, al": 1,
       "test result: ok. 1089 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.09s": 1,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 86,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 87,
       "The arguments provided to the tool are invalid: Invalid input for tool read: JSON parsing failed: Te": 16,
       "Error message: JSON Parse error: Property name must be a string literal": 13,
       "error: could not compile `ugaris-core` (lib) due to 4 previous errors": 2,
@@ -3341,10 +3381,17 @@
       "use thiserror::Error;": 1,
       "All green: 2953 core + 81 db + 45 protocol + 3 net + 1138 server tests pass, zero failures. This cra": 1,
       "- `cargo test --workspace` — 2953 core + 81 db + 45 protocol + 3 net + 1138 server, all green, zero ": 1,
-      "7526:- 2026-07-07: continued the P0.5 \"Finish main() phase decomposition\" task with its eleventh com": 1,
-      "7532:- 2026-07-07: continued the P0.5 \"Finish main() phase decomposition\" task with its seventeenth ": 1,
+      "7526:- 2026-07-07: continued the P0.5 \"Finish main() phase decomposition\" task with its eleventh com": 2,
+      "7532:- 2026-07-07: continued the P0.5 \"Finish main() phase decomposition\" task with its seventeenth ": 2,
       "7533:- 2026-07-07: continued the P0.5 \"Finish main() phase decomposition\" task with its eighteenth c": 1,
-      "7589:- 2026-07-08: Area 17 (`src/area/17/two.c`) progress: ported `CDR_TWOALCHEMIST`/`alchemist`+its": 1
+      "7589:- 2026-07-08: Area 17 (`src/area/17/two.c`) progress: ported `CDR_TWOALCHEMIST`/`alchemist`+its": 1,
+      "Good, this is the exact pattern I need. Let me fix the three failing tests.": 1,
+      "All green: 2966 core + 1138 server tests, zero failures, zero warnings. This iteration is complete. ": 1,
+      "**Verification:** `cargo fmt --all`, `cargo test --workspace` (2966 core + 1138 server, zero failure": 1,
+      "test result: ok. 1138 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 7.80s": 1,
+      "7501:- Iteration 251 confirmed the workspace was still green (`cargo test --workspace`: 2348 core + ": 1,
+      "7538:- 2026-07-07: continued the P4 \"Area 1 - `gwendylon.c`\" task with its next self-contained NPC s": 1,
+      "7549:- 2026-07-08: closed the P0.5 \"Retire legacy blob writes\" task with its final piece, the backfi": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

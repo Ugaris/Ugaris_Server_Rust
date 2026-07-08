@@ -14,6 +14,7 @@ mod astro2;
 mod asturin;
 mod balltrap;
 mod bank;
+mod barkeeper;
 mod brithildie;
 mod camhermit;
 mod carlos;
