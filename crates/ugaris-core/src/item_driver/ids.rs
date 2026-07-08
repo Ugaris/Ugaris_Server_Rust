@@ -446,6 +446,11 @@ pub const IID_AREA2_ZOMBIESKULL2: u32 = (0x01 << 24) | 0x000026;
 
 pub const IID_AREA2_ZOMBIESKULL3: u32 = (0x01 << 24) | 0x000027;
 
+/// C `IID_AREA2_LOISANNOTE` (`src/common/item_id.h:99`): proof of
+/// Loisan's death area 3's `seymour_driver` (`world::seymour`) collects
+/// to complete quest 12.
+pub const IID_AREA2_LOISANNOTE: u32 = (0x01 << 24) | 0x000028;
+
 pub const IID_AREA11_PALACEKEY: u32 = (0x01 << 24) | 0x000050;
 
 pub const IID_AREA11_PALACEKEYPART: u32 = (0x01 << 24) | 0x000051;

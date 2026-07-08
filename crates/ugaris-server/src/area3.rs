@@ -1,28 +1,33 @@
-//! Server-side wiring for area 3's crypt-entrance/crypt-quest/astronomer
-//! NPCs (`CDR_THOMAS`/`ugaris_core::world::thomas::
+//! Server-side wiring for area 3's crypt-entrance/crypt-quest/astronomer/
+//! army-enrollment NPCs (`CDR_THOMAS`/`ugaris_core::world::thomas::
 //! process_thomas_actions`, `CDR_SIRJONES`/`ugaris_core::world::
 //! sir_jones::process_sir_jones_actions`, `CDR_ASTRO2`/`ugaris_core::
-//! world::astro2::process_astro2_actions`).
+//! world::astro2::process_astro2_actions`, `CDR_SEYMOUR`/`ugaris_core::
+//! world::seymour::process_seymour_actions`).
 //!
 //! Mirrors the `World`/`PlayerRuntime` split already established in
 //! `area1.rs`: [`thomas_player_facts`]/[`sir_jones_player_facts`]/
-//! [`astro2_player_facts`] snapshot the per-player `area3_ppd`/
-//! `quest_log` facts each NPC's dialogue needs before the tick, and
-//! [`apply_thomas_events`]/[`apply_sir_jones_events`]/
-//! [`apply_astro2_events`] apply the returned events afterward. Sir
-//! Jones's crypt-quest reward (`SirJonesOutcomeEvent::GoldEarned`) and
-//! Astro2's lost-notes reward (`Astro2OutcomeEvent::QuestDone`) both need
-//! `ZoneLoader::instantiate_item_template` - C's `create_money_item` +
-//! plain `give_char_item` (not the auto-gold-converting
-//! `give_char_item_smart`) - so [`apply_sir_jones_events`]/
+//! [`astro2_player_facts`]/[`seymour_player_facts`] snapshot the
+//! per-player `area3_ppd`/`quest_log` facts each NPC's dialogue needs
+//! before the tick, and [`apply_thomas_events`]/[`apply_sir_jones_events`]/
+//! [`apply_astro2_events`]/[`apply_seymour_events`] apply the returned
+//! events afterward. Sir Jones's crypt-quest reward (`SirJonesOutcomeEvent
+//! ::GoldEarned`) and Astro2's lost-notes reward (`Astro2OutcomeEvent::
+//! QuestDone`) both need `ZoneLoader::instantiate_item_template` - C's
+//! `create_money_item` + plain `give_char_item` (not the auto-gold-
+//! converting `give_char_item_smart`) - so [`apply_sir_jones_events`]/
 //! [`apply_astro2_events`] both take a `&mut ZoneLoader` parameter, same
 //! precedent as `area1.rs`'s `apply_lydia_events`/`apply_logain_events`.
+//! Seymour's rewards ([`SeymourOutcomeEvent::LoisanNoteQuestDone`]/
+//! [`SeymourOutcomeEvent::ZombieSkull2QuestDone`]) are military points +
+//! exp, not a carried item, so [`apply_seymour_events`] needs only
+//! `world`/`runtime`, no `loader`.
 
 use super::*;
 use ugaris_core::quest::quest_exp::MONEY_AREA3_MOONIES;
 use ugaris_core::world::{
-    Astro2OutcomeEvent, Astro2PlayerFacts, SirJonesOutcomeEvent, SirJonesPlayerFacts,
-    ThomasOutcomeEvent, ThomasPlayerFacts,
+    Astro2OutcomeEvent, Astro2PlayerFacts, SeymourOutcomeEvent, SeymourPlayerFacts,
+    SirJonesOutcomeEvent, SirJonesPlayerFacts, ThomasOutcomeEvent, ThomasPlayerFacts,
 };
 
 pub(crate) fn thomas_player_facts(
@@ -244,6 +249,150 @@ pub(crate) fn apply_astro2_events(
                                 world.destroy_item(item_id);
                             }
                         }
+                    }
+                }
+            }
+        }
+    }
+    applied
+}
+
+pub(crate) fn seymour_player_facts(
+    runtime: &ServerRuntime,
+) -> HashMap<CharacterId, SeymourPlayerFacts> {
+    runtime
+        .players
+        .values()
+        .filter_map(|player| {
+            let character_id = player.character_id?;
+            Some((
+                character_id,
+                SeymourPlayerFacts {
+                    seymour_state: player.area3_seymour_state(),
+                    quest11_done: player.quest_log.is_done(11),
+                    quest12_done: player.quest_log.is_done(12),
+                },
+            ))
+        })
+        .collect()
+}
+
+/// Applies each [`SeymourOutcomeEvent`] queued by
+/// `World::process_seymour_actions`. Unlike Sir Jones's/Astro2's item
+/// rewards, Seymour's rewards are military points + exp
+/// (`World::give_military_pts_from_npc`), so this needs only `world`/
+/// `runtime`, no `ZoneLoader`.
+pub(crate) fn apply_seymour_events(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    events: Vec<SeymourOutcomeEvent>,
+) -> usize {
+    let mut applied = 0;
+    for event in events {
+        match event {
+            SeymourOutcomeEvent::UpdateSeymourState {
+                player_id,
+                new_state,
+            } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.set_area3_seymour_state(new_state);
+                applied += 1;
+            }
+            // C `questlog_open(co, ...)` (`src/system/questlog.c:204-217`):
+            // sets the flag and unconditionally resends the questlog.
+            SeymourOutcomeEvent::QuestOpen { player_id, quest } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.quest_log.open(quest);
+                let payload = legacy_questlog_payload(player);
+                for (session_id, _) in runtime.sessions_for_character(player_id) {
+                    runtime.send_to_session(session_id, payload.clone());
+                }
+                applied += 1;
+            }
+            // C `tmp = questlog_done(co, 12); ... if (tmp == 1) {
+            // give_military_pts(cn, co, 2, 1); }` (`area3.c:894-900`).
+            SeymourOutcomeEvent::LoisanNoteQuestDone {
+                player_id,
+                seymour_id,
+            } => {
+                let Some(level) = world.characters.get(&player_id).map(|c| c.level) else {
+                    continue;
+                };
+                let level_val = level_value(level);
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                if let Some(completion) = player.quest_log.complete_legacy(12, level, level_val) {
+                    let payload = legacy_questlog_payload(player);
+                    world.give_exp(player_id, completion.granted_exp, u32::from(world.area_id));
+                    for (session_id, _) in runtime.sessions_for_character(player_id) {
+                        runtime.send_to_session(session_id, payload.clone());
+                    }
+                    applied += 1;
+
+                    if completion.times_done == 1 {
+                        world.give_military_pts_from_npc(
+                            player_id,
+                            seymour_id,
+                            2,
+                            1,
+                            u32::from(world.area_id),
+                        );
+                    }
+                }
+            }
+            // C `questlog_done(co, 10);` (`area3.c:907`) - return value
+            // unused, no conditional point reward for this one.
+            SeymourOutcomeEvent::ZombieSkull1QuestDone { player_id } => {
+                let Some(level) = world.characters.get(&player_id).map(|c| c.level) else {
+                    continue;
+                };
+                let level_val = level_value(level);
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                if let Some(completion) = player.quest_log.complete_legacy(10, level, level_val) {
+                    let payload = legacy_questlog_payload(player);
+                    world.give_exp(player_id, completion.granted_exp, u32::from(world.area_id));
+                    for (session_id, _) in runtime.sessions_for_character(player_id) {
+                        runtime.send_to_session(session_id, payload.clone());
+                    }
+                    applied += 1;
+                }
+            }
+            // C `tmp = questlog_done(co, 11); ... if (tmp == 1) {
+            // give_military_pts(cn, co, 1, 1); }` (`area3.c:921-926`).
+            SeymourOutcomeEvent::ZombieSkull2QuestDone {
+                player_id,
+                seymour_id,
+            } => {
+                let Some(level) = world.characters.get(&player_id).map(|c| c.level) else {
+                    continue;
+                };
+                let level_val = level_value(level);
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                if let Some(completion) = player.quest_log.complete_legacy(11, level, level_val) {
+                    let payload = legacy_questlog_payload(player);
+                    world.give_exp(player_id, completion.granted_exp, u32::from(world.area_id));
+                    for (session_id, _) in runtime.sessions_for_character(player_id) {
+                        runtime.send_to_session(session_id, payload.clone());
+                    }
+                    applied += 1;
+
+                    if completion.times_done == 1 {
+                        world.give_military_pts_from_npc(
+                            player_id,
+                            seymour_id,
+                            1,
+                            1,
+                            u32::from(world.area_id),
+                        );
                     }
                 }
             }

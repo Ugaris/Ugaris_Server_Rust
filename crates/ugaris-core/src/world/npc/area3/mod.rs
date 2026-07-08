@@ -3,6 +3,7 @@
 pub mod astro1;
 pub mod astro2;
 pub mod clara;
+pub mod seymour;
 pub mod sir_jones;
 pub mod thomas;
 
@@ -13,6 +14,8 @@ pub use astro2::*;
 #[allow(unused_imports)]
 pub use clara::*;
 #[allow(unused_imports)]
+pub use seymour::*;
+#[allow(unused_imports)]
 pub use sir_jones::*;
 #[allow(unused_imports)]
 pub use thomas::*;
@@ -22,14 +25,15 @@ use crate::character_driver::TextQaEntry;
 /// C `struct qa qa[]` from `src/area/3/area3.c:106-204` - the small-talk
 /// table `analyse_text_driver`'s own local copy in this file feeds every
 /// `area3.c` NPC driver that calls it (`world::thomas`, `world::
-/// sir_jones`, and eventually `kassim_driver`/`supermax_driver`/
-/// `carlos_driver`/`astro2_driver`/`seymour_driver`/`kelly_driver`), not
+/// sir_jones`, `world::astro2`, `world::seymour`, and eventually
+/// `kassim_driver`/`supermax_driver`/`carlos_driver`/`kelly_driver`), not
 /// just one - same "one shared file-local table, many drivers" shape as
 /// `world::npc::area1::gwendylon::GWENDYLON_QA`.
 ///
 /// Only the first 13 entries (`area3.c:106-118`, canned greetings plus
 /// `repeat`/`restart`/`aye`/`nay`) are ported so far - the only ones
-/// `world::thomas`/`world::sir_jones` interpret. The remaining C entries
+/// `world::thomas`/`world::sir_jones`/`world::astro2`/`world::seymour`
+/// interpret. The remaining C entries
 /// (`area3.c:119-204`: `list`(5)/`money`(6)/`shortcut to caligar`(7)/
 /// `explain`(9)/`engrave: `(8), plus the ~86-entry `raise`/`lower` skill
 /// block keyed on `V_*` skill-id offsets) are needed only by

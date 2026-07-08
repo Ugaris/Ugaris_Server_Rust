@@ -454,8 +454,12 @@ Ordered by player progression; the C file is the oracle.
   raise-lower-skill block remain for `kassim_driver`/`supermax_driver`.
   `astro2_driver` (quest 16, lost astronomer notes) is now also ported
   (`world/npc/area3/astro2.rs`, `CDR_ASTRO2`), sharing `AREA3_QA`.
-  Still unported, in suggested order: `seymour_driver`
-  (quest 10-12, Aston entry NPC, needs an army-rank-grant deviation),
+  `seymour_driver` (quest 10-12, Aston entry NPC and army-enrollment
+  chain) is now also ported (`world/npc/area3/seymour.rs`,
+  `CDR_SEYMOUR`), sharing `AREA3_QA`; the C `set_army_rank(co, 1)`
+  enrollment call is reproduced as a direct `military_points = 1` write
+  (see the module's own doc comment for why that's equivalent).
+  Still unported, in suggested order:
   `kelly_driver` (biggest chain, quests 13-15/54/60, needs new
   `kelly_found1-3`/`kelly_found_cnt`/`crypt_bonus` `PlayerRuntime`
   accessors), `carlos_driver` (uses `DRD_STAFFER_PPD` not `area3_ppd`;
@@ -782,4 +786,9 @@ notes live in `PROGRESS_ARCHIVE.md`.
   quest, `QLOG` 16), including the `IID_AREA2_ASTRONOTE` NT_GIVE handoff
   and its first-completion `MONEY_AREA3_MOONIES` reward. 2581 core + 1101
   server tests pass, clean build/boot-smoke.
+- 2026-07-08: Area 3: ported `seymour_driver` (`QLOG` 10-12, Aston-entry
+  greeting/army-enrollment chain), including the 3-branch `NT_GIVE`
+  handler (Loisan's note/zombie skull 1/zombie skull 2) and the
+  `set_army_rank(co, 1)` enrollment deviation. 2592 core + 1101 server
+  tests pass, clean build/boot-smoke.
 
