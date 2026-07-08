@@ -623,6 +623,20 @@ impl ZoneLoader {
             character.push_driver_message(NT_CREATE, 0, 0, 0);
             apply_simple_baddy_create_message(&mut character, Some(&template.args), 0);
         }
+        if template.driver == crate::character_driver::CDR_TWOROBBER {
+            // C `ch_driver`'s `CDR_TWOROBBER` dispatch (`two.c:3163-3165`):
+            // an unconditional every-tick tail call to
+            // `char_driver(CDR_SIMPLEBADDY, CDT_DRIVER, cn, ret,
+            // lastact)`, reusing the SimpleBaddy driver's full idle-
+            // wander/auto-attack AI wholesale - same precedent as
+            // `CDR_PENTER`/`CDR_SWAMPMONSTER`/`CDR_FORESTMONSTER` above.
+            // The `robber1`-`robber4`/`robber_guard`/`robber_baron`
+            // templates (`zones/17/two.chr`) carry the same
+            // `arg="aggressive=1;helper=0;scavenger=...;"` shape
+            // SimpleBaddy's own `NT_CREATE` handler parses.
+            character.push_driver_message(NT_CREATE, 0, 0, 0);
+            apply_simple_baddy_create_message(&mut character, Some(&template.args), 0);
+        }
         if template.driver == CDR_FORESTIMP {
             // C never parses zone-file args into `struct
             // imp_driver_data` (`set_data` zero-initializes it) - no

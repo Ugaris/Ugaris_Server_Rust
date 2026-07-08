@@ -35,6 +35,22 @@ impl PlayerRuntime {
         )
     }
 
+    /// C `struct twocity_ppd::thief_killed[6]` element write, used by
+    /// `robber_dead`'s `ppd->thief_killed[N]++` (`two.c:2211-2247`) via
+    /// `crates/ugaris-server/src/world_events/death_hooks.rs`'s
+    /// `apply_two_robber_death_from_hurt_event`.
+    pub fn set_twocity_thief_killed(&mut self, index: usize, value: i32) {
+        if index >= 6 {
+            return;
+        }
+        self.twocity_ppd.resize(LEGACY_TWOCITY_PPD_SIZE, 0);
+        write_i32(
+            &mut self.twocity_ppd,
+            TWOCITY_PPD_THIEF_KILLED_OFFSET + index * 4,
+            value,
+        );
+    }
+
     pub fn twocity_sanwyn_state(&self) -> i32 {
         if self.twocity_ppd.len() < LEGACY_TWOCITY_PPD_SIZE {
             return 0;

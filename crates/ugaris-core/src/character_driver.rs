@@ -60,6 +60,19 @@ pub const CDR_TWOGUARD: u16 = 62;
 /// tavern barkeeper, "guest pass" broker (`src/area/17/two.c::barkeeper`),
 /// see `world::npc::area17::barkeeper`'s module doc comment.
 pub const CDR_TWOBARKEEPER: u16 = 63;
+/// C `#define CDR_TWOROBBER 68` (`src/system/drvlib.h`, comment "robber
+/// (simple baddy with special death)"): the Exkordon forest-camp robbers
+/// (`robber1`-`robber4`/`robber_guard`/`robber_baron` templates,
+/// `zones/17/two.chr`). C's own `ch_driver` dispatch (`two.c:3163-3165`)
+/// is an unconditional tail call to `char_driver(CDR_SIMPLEBADDY, ...)`,
+/// so `CDR_TWOROBBER` characters reuse the SimpleBaddy AI end-to-end -
+/// same precedent as `CDR_PENTER`/`CDR_FORESTMONSTER` (see the
+/// `character.driver == CDR_SIMPLEBADDY` gates widened alongside those in
+/// `world/npc_fight.rs`/`world/npc_idle.rs`). Its own `ch_died_driver`/
+/// `robber_dead` death hook (`two.c:2211-2247`) lives in `ugaris-server`'s
+/// `apply_two_robber_death_from_hurt_event` (needs `PlayerRuntime`'s
+/// `twocity_thief_state`/`twocity_thief_killed`).
+pub const CDR_TWOROBBER: u16 = 68;
 /// C `#define CDR_TWOSANWYN 69` (`src/system/drvlib.h`): the military
 /// quest giver "Sanwyn" (`src/area/17/two.c::sanwyn`), see `world::npc::
 /// area17::sanwyn`'s module doc comment.
@@ -2080,6 +2093,7 @@ mod tests {
         assert_eq!(CDR_SWAMPMONSTER, 56);
         assert_eq!(CDR_PALACEISLENA, 57);
         assert_eq!(CDR_TWOBARKEEPER, 63);
+        assert_eq!(CDR_TWOROBBER, 68);
         assert_eq!(CDR_TWOSANWYN, 69);
         assert_eq!(CDR_TWOSKELLY, 70);
         assert_eq!(CDR_TWOALCHEMIST, 71);

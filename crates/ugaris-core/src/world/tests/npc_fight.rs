@@ -2616,3 +2616,56 @@ fn lostcon_attack_action_follows_an_invisible_enemy_toward_its_last_position() {
     let lingering = world.characters.get(&CharacterId(1)).unwrap();
     assert_eq!(lingering.action, action::WALK);
 }
+
+#[test]
+fn two_robber_npc_attacks_visible_enemy_via_reused_simple_baddy_dispatch() {
+    // C's `ch_driver`'s `CDR_TWOROBBER` dispatch (`two.c:3163-3165`) is an
+    // unconditional tail call to `char_driver(CDR_SIMPLEBADDY, ...)`, so
+    // `process_simple_baddy_attack_action`'s driver gate must accept
+    // `CDR_TWOROBBER` (not just `CDR_SIMPLEBADDY`) for a robber to fight
+    // back - same precedent as `CDR_PENTER`/`CDR_FORESTMONSTER` above.
+    let mut world = World::default();
+    let mut robber = character(1);
+    robber.driver = crate::character_driver::CDR_TWOROBBER;
+    robber.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+        enemies: vec![SimpleBaddyEnemy {
+            target_id: CharacterId(2),
+            priority: 1,
+            last_seen_tick: 0,
+            visible: true,
+            last_x: 15,
+            last_y: 10,
+        }],
+        ..SimpleBaddyDriverData::default()
+    }));
+    let target = character(2);
+    assert!(world.spawn_character(robber, 10, 10));
+    assert!(world.spawn_character(target, 15, 10));
+    world.map.tile_mut(15, 10).unwrap().light = 255;
+
+    assert!(world.process_simple_baddy_attack_action(CharacterId(1), 1));
+    let npc = world.characters.get(&CharacterId(1)).unwrap();
+    assert_ne!(npc.action, 0);
+
+    // The aggregate dispatch must also pick up `CDR_TWOROBBER` characters.
+    let mut world = World::default();
+    let mut robber = character(1);
+    robber.driver = crate::character_driver::CDR_TWOROBBER;
+    robber.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+        enemies: vec![SimpleBaddyEnemy {
+            target_id: CharacterId(2),
+            priority: 1,
+            last_seen_tick: 0,
+            visible: true,
+            last_x: 15,
+            last_y: 10,
+        }],
+        ..SimpleBaddyDriverData::default()
+    }));
+    let target = character(2);
+    assert!(world.spawn_character(robber, 10, 10));
+    assert!(world.spawn_character(target, 15, 10));
+    world.map.tile_mut(15, 10).unwrap().light = 255;
+    let attacks = world.process_simple_baddy_attack_actions_with_random(1, |_| 0);
+    assert_eq!(attacks, 1);
+}

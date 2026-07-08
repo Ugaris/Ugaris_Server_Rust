@@ -88,6 +88,29 @@ fn twocity_burndown_kill_updates_legacy_thief_fields() {
 }
 
 #[test]
+fn twocity_thief_killed_setter_writes_the_indexed_slot_used_by_robber_dead() {
+    // C `robber_dead`'s `ppd->thief_killed[N]++` (`two.c:2211-2247`).
+    let mut player = PlayerRuntime::connected(1, 0);
+    player.set_twocity_thief_killed(0, player.twocity_thief_killed(0) + 1);
+    player.set_twocity_thief_killed(5, player.twocity_thief_killed(5) + 1);
+    assert_eq!(player.twocity_thief_killed(0), 1);
+    assert_eq!(player.twocity_thief_killed(5), 1);
+    assert_eq!(player.twocity_thief_killed(1), 0);
+
+    // out-of-range index is a silent no-op, matching the getter's own
+    // out-of-range guard.
+    player.set_twocity_thief_killed(6, 99);
+    assert_eq!(player.twocity_thief_killed(6), 0);
+
+    let encoded = player.encode_legacy_twocity_ppd();
+    assert_eq!(read_i32(&encoded, TWOCITY_PPD_THIEF_KILLED_OFFSET), 1);
+    assert_eq!(
+        read_i32(&encoded, TWOCITY_PPD_THIEF_KILLED_OFFSET + 5 * 4),
+        1
+    );
+}
+
+#[test]
 fn twocity_ppd_blob_replaces_and_appends_legacy_block() {
     let unknown_id = DRD_RANK_PPD; // still-unmodeled id, safe placeholder for round-trip tests
     let mut existing_twocity = vec![0; LEGACY_TWOCITY_PPD_SIZE];

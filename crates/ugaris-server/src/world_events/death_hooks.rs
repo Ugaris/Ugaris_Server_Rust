@@ -1,5 +1,5 @@
 use super::*;
-use ugaris_core::character_driver::CDR_TWOGUARD;
+use ugaris_core::character_driver::{CDR_TWOGUARD, CDR_TWOROBBER};
 use ugaris_core::world::{CS_ENEMY, CS_GUEST, LS_DEAD, LS_FINE};
 
 pub(crate) fn apply_lab2_undead_death_from_hurt_event(
@@ -681,6 +681,67 @@ pub(crate) fn apply_two_guard_death_from_hurt_event(
     player.set_twocity_legal_fine(player.twocity_legal_fine() + 5000);
     if player.twocity_citizen_status() == CS_GUEST {
         player.set_twocity_citizen_status(CS_ENEMY);
+    }
+    true
+}
+
+/// C `robber_dead(cn, co)` (`src/area/17/two.c:2211-2247`): the Exkordon
+/// forest-camp robbers' death hook. Only tracks a kill (bumping
+/// `thief_killed[N]` for the still-unported `thiefmaster_driver`'s bounty
+/// scoreboard, `two.c:1856-1857`/`1931`) while the killer's own
+/// `thief_state` sits in the narrow `6..=9` window (the active
+/// bounty-hunt phase of that still-unported quest chain) - matching C
+/// exactly, this hook is a complete no-op for any killer outside that
+/// window, including one with no `twocity_ppd` at all yet. `co == 0`
+/// (no killer) and a non-player killer both return early in C before ever
+/// touching `co`'s ppd; `event.cause_id` not resolving to a `CF_PLAYER`
+/// character reproduces both cases (a dead/removed non-existent character
+/// id behaves exactly like "no killer" here, since neither can be a
+/// player). C's `default:` switch arm (`elog("unlisted robber level...")`)
+/// is log-only and not ported, same precedent as every other bare
+/// `elog(...)` call in this file.
+pub(crate) fn apply_two_robber_death_from_hurt_event(
+    runtime: &mut ServerRuntime,
+    world: &mut World,
+    event: LegacyHurtEvent,
+) -> bool {
+    if !event.outcome.killed {
+        return false;
+    }
+    let Some(level) = world
+        .characters
+        .get(&event.target_id)
+        .filter(|target| target.driver == CDR_TWOROBBER)
+        .map(|target| target.level)
+    else {
+        return false;
+    };
+    let is_player_kill = world
+        .characters
+        .get(&event.cause_id)
+        .is_some_and(|killer| killer.flags.contains(CharacterFlags::PLAYER));
+    if !is_player_kill {
+        return false;
+    }
+    let Some(player) = runtime.player_for_character_mut(event.cause_id) else {
+        return false;
+    };
+    if !(6..=9).contains(&player.twocity_thief_state()) {
+        return true;
+    }
+    // C `switch (ch[cn].level) { case 35: ppd->thief_killed[0]++; ... }`
+    // (`two.c:2223-2245`).
+    let index = match level {
+        35 => Some(0),
+        39 => Some(1),
+        43 => Some(2),
+        47 => Some(3),
+        51 => Some(4),
+        55 => Some(5),
+        _ => None,
+    };
+    if let Some(index) = index {
+        player.set_twocity_thief_killed(index, player.twocity_thief_killed(index) + 1);
     }
     true
 }

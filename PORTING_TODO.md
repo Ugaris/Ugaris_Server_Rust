@@ -821,10 +821,17 @@ Ordered by player progression; the C file is the oracle.
   destination and `NTID_TWOCITY_PICK` lockpicking fine, and the patrol-
   waypoint/return-to-post movement tail. The `guard_dead` death hook is
   ported in `ugaris-server`'s `world_events::death_hooks::
-  apply_two_guard_death_from_hurt_event`. 30 new focused tests. Still
-  unported: `CDR_TWOSERVANT`/`CDR_TWOTHIEFGUARD`/`CDR_TWOTHIEFMASTER`/
-  `CDR_TWOROBBER`'s death hook - see `PORTING_LEDGER.md` for the full
-  driver breakdown and suggested next-slice order.
+  apply_two_guard_death_from_hurt_event`. 30 new focused tests.
+  `CDR_TWOROBBER` (the forest-camp robbers, `two.c:3163-3165`, an
+  unconditional `char_driver(CDR_SIMPLEBADDY, ...)` tail call) is now
+  reused end-to-end (new `character.driver == CDR_SIMPLEBADDY` gate
+  widening in `world/npc_fight.rs`/`world/npc_idle.rs`, same precedent as
+  `CDR_PENTER`/`CDR_FORESTMONSTER`) plus its `robber_dead` death hook
+  (`ugaris-server`'s `apply_two_robber_death_from_hurt_event`, new
+  `PlayerRuntime::set_twocity_thief_killed`). Still unported:
+  `CDR_TWOSERVANT`/`CDR_TWOTHIEFGUARD`/`CDR_TWOTHIEFMASTER` - see
+  `PORTING_LEDGER.md` for the full driver breakdown and suggested
+  next-slice order.
 - [ ] **Area 18 - `src/area/18/bones.c`** - rune quest completion
   (`exec_rune` rewards), bone NPCs.
 - [ ] **Area 19 - `src/area/19/nomad.c`** - nomad camp NPCs/trading.
@@ -896,6 +903,10 @@ Ordered by player progression; the C file is the oracle.
 Keep entries to at most three lines: date, task, one-line result.
 Anything longer belongs in `PORTING_LEDGER.md`; historical verbose
 notes live in `PROGRESS_ARCHIVE.md`.
+
+- 2026-07-09: Area 17 progress: ported `CDR_TWOROBBER` (reuses
+  `CDR_SIMPLEBADDY` AI, new gate widening) + its `robber_dead` death hook.
+  2986 core + 1138 server tests pass, clean build/boot-smoke (area 17).
 
 - 2026-07-08: Area 17 STARTED: ported `CDR_TWOSKELLY` (`world/npc/
   area17/two_skelly.rs`, quest 30) plus a new `raise_skeleton_from_
