@@ -22,8 +22,8 @@ use crate::{
         CDR_GATE_WELCOME, CDR_GOLEMKEYHOLDER, CDR_GREETER, CDR_GWENDYLON, CDR_JANITOR, CDR_JESSICA,
         CDR_JIU, CDR_KASSIM, CDR_KELLY, CDR_LAB2UNDEAD, CDR_NOOK, CDR_RESKIN, CDR_SEYMOUR,
         CDR_SIMPLEBADDY, CDR_SIRJONES, CDR_SUPERIOR, CDR_SUPERMAX, CDR_SWAMPCLARA, CDR_TERION,
-        CDR_THOMAS, CDR_TRADER, CDR_TWOALCHEMIST, CDR_TWOBARKEEPER, CDR_TWOSANWYN, CDR_TWOSKELLY,
-        CDR_YOAKIN, NT_CREATE,
+        CDR_THOMAS, CDR_TRADER, CDR_TWOALCHEMIST, CDR_TWOBARKEEPER, CDR_TWOGUARD, CDR_TWOSANWYN,
+        CDR_TWOSKELLY, CDR_YOAKIN, NT_CREATE,
     },
     entity::{
         Character, CharacterFlags, Item, ItemFlags, CHARACTER_VALUE_COUNT, INVENTORY_SIZE,
@@ -690,6 +690,19 @@ impl ZoneLoader {
             // two.chr`'s `cervik`), same as `CDR_SWAMPCLARA` above.
             character.driver_state = Some(CharacterDriverState::TwoAlchemist(
                 TwoAlchemistDriverData::default(),
+            ));
+        }
+        if template.driver == CDR_TWOGUARD {
+            // C `guard_driver`'s `NT_CREATE` handler (`two.c:381-386`):
+            // `guard_parse(cn, dat)` parsed here at spawn time instead of
+            // through the per-tick message loop, same precedent as
+            // `CDR_PALACEGUARD` above - see `world::npc::area17::guard`'s
+            // module doc comment. Some `two_guard*` templates
+            // (`zones/17/two.chr`) carry repeated `arg="patx=N;paty=N;"`
+            // lines (patrol waypoints); most carry none at all (a
+            // stationary post).
+            character.driver_state = Some(CharacterDriverState::TwoGuard(
+                crate::world::npc::area17::guard::parse_two_guard_driver_args(&template.args),
             ));
         }
         if template.driver == crate::character_driver::CDR_FDEMON_DEMON {

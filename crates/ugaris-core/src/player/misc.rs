@@ -919,6 +919,27 @@ pub(crate) const TWOCITY_PPD_BARKEEPER_STATE_OFFSET: usize = 6 * 4;
 /// clock `realtime` stamp of the last guest-pass offer.
 pub(crate) const TWOCITY_PPD_BARKEEPER_LAST_OFFSET: usize = 26 * 4;
 
+/// C `struct twocity_ppd::current_guard` (`common/two_ppd.h:10`): the
+/// character id of the guard currently pursuing/warning this player
+/// (`0` if none), so only that guard (or one whose claim has timed out)
+/// re-triggers the leave/fine warning ladder.
+pub(crate) const TWOCITY_PPD_CURRENT_GUARD_OFFSET: usize = 3 * 4;
+
+/// C `struct twocity_ppd::current_guard_time` (`common/two_ppd.h:11`):
+/// wall-clock `realtime` stamp of `current_guard`'s claim.
+pub(crate) const TWOCITY_PPD_CURRENT_GUARD_TIME_OFFSET: usize = 4 * 4;
+
+/// C `struct twocity_ppd::last_attack` (`common/two_ppd.h:12`): wall-clock
+/// `realtime` stamp of the last guard-fine-triggering event (attacking a
+/// guard, attacking a bystander under guard protection, lockpicking,
+/// killing a guard), rate-limiting repeated fines.
+pub(crate) const TWOCITY_PPD_LAST_ATTACK_OFFSET: usize = 5 * 4;
+
+/// C `struct twocity_ppd::guard_intro` (`common/two_ppd.h:15`): whether
+/// `guard_driver` has already given the one-time "thou art here on a
+/// guest pass" warning speech.
+pub(crate) const TWOCITY_PPD_GUARD_INTRO_OFFSET: usize = 7 * 4;
+
 pub(crate) const MISC_PPD_COMPLAINT_DATE_OFFSET: usize = 4;
 
 /// C `struct misc_ppd::supermax_state` (`src/common/misc_ppd.h:28`): the

@@ -1,4 +1,6 @@
 use super::*;
+use ugaris_core::character_driver::CDR_TWOGUARD;
+use ugaris_core::world::{CS_ENEMY, CS_GUEST, LS_DEAD, LS_FINE};
 
 pub(crate) fn apply_lab2_undead_death_from_hurt_event(
     runtime: &mut ServerRuntime,
@@ -632,6 +634,57 @@ pub(crate) fn apply_lampghost_death_from_hurt_event(
 /// (`PlayerRuntime` only exists for real players), matching the
 /// observable difference (an NPC killer's shadow `ppd` write is
 /// discarded/never read again in C anyway).
+/// C `guard_dead(cn, co)` (`src/area/17/two.c:744-769`): the Exkordon city
+/// guard's death hook - `cn` is the dead guard, `co` its killer.
+pub(crate) fn apply_two_guard_death_from_hurt_event(
+    runtime: &mut ServerRuntime,
+    world: &mut World,
+    event: LegacyHurtEvent,
+) -> bool {
+    if !event.outcome.killed {
+        return false;
+    }
+    let is_guard_kill = world
+        .characters
+        .get(&event.target_id)
+        .is_some_and(|target| target.driver == CDR_TWOGUARD);
+    if !is_guard_kill {
+        return false;
+    }
+    let Some((killer_name, killer_is_player)) =
+        world.characters.get(&event.cause_id).map(|killer| {
+            (
+                killer.name.clone(),
+                killer.flags.contains(CharacterFlags::PLAYER),
+            )
+        })
+    else {
+        return false;
+    };
+    if !killer_is_player {
+        return false;
+    }
+
+    world.npc_say(
+        event.target_id,
+        &format!("Thou shalt be punished for this misdeed, {killer_name}."),
+    );
+
+    let Some(player) = runtime.player_for_character_mut(event.cause_id) else {
+        return false;
+    };
+    // C `if (ppd->legal_status == LS_DEAD) return;` (`two.c:760-762`).
+    if player.twocity_legal_status() == LS_DEAD {
+        return true;
+    }
+    player.set_twocity_legal_status(LS_FINE);
+    player.set_twocity_legal_fine(player.twocity_legal_fine() + 5000);
+    if player.twocity_citizen_status() == CS_GUEST {
+        player.set_twocity_citizen_status(CS_ENEMY);
+    }
+    true
+}
+
 pub(crate) fn apply_asturin_death_from_hurt_event(
     runtime: &mut ServerRuntime,
     world: &mut World,

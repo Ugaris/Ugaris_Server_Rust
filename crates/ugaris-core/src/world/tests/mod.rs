@@ -46,6 +46,7 @@ mod gate_fight;
 mod gatekeeper;
 mod golemkeyholder;
 mod greeter;
+mod guard;
 mod guiwynn;
 mod gwendylon;
 mod hurt;

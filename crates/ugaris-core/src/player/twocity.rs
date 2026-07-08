@@ -184,6 +184,70 @@ impl PlayerRuntime {
         );
     }
 
+    /// C `struct twocity_ppd::current_guard`.
+    pub fn twocity_current_guard(&self) -> i32 {
+        if self.twocity_ppd.len() < LEGACY_TWOCITY_PPD_SIZE {
+            return 0;
+        }
+        read_i32(&self.twocity_ppd, TWOCITY_PPD_CURRENT_GUARD_OFFSET)
+    }
+
+    pub fn set_twocity_current_guard(&mut self, guard_id: i32) {
+        self.twocity_ppd.resize(LEGACY_TWOCITY_PPD_SIZE, 0);
+        write_i32(
+            &mut self.twocity_ppd,
+            TWOCITY_PPD_CURRENT_GUARD_OFFSET,
+            guard_id,
+        );
+    }
+
+    /// C `struct twocity_ppd::current_guard_time`.
+    pub fn twocity_current_guard_time(&self) -> i32 {
+        if self.twocity_ppd.len() < LEGACY_TWOCITY_PPD_SIZE {
+            return 0;
+        }
+        read_i32(&self.twocity_ppd, TWOCITY_PPD_CURRENT_GUARD_TIME_OFFSET)
+    }
+
+    pub fn set_twocity_current_guard_time(&mut self, realtime: i32) {
+        self.twocity_ppd.resize(LEGACY_TWOCITY_PPD_SIZE, 0);
+        write_i32(
+            &mut self.twocity_ppd,
+            TWOCITY_PPD_CURRENT_GUARD_TIME_OFFSET,
+            realtime,
+        );
+    }
+
+    /// C `struct twocity_ppd::last_attack`.
+    pub fn twocity_last_attack(&self) -> i32 {
+        if self.twocity_ppd.len() < LEGACY_TWOCITY_PPD_SIZE {
+            return 0;
+        }
+        read_i32(&self.twocity_ppd, TWOCITY_PPD_LAST_ATTACK_OFFSET)
+    }
+
+    pub fn set_twocity_last_attack(&mut self, realtime: i32) {
+        self.twocity_ppd.resize(LEGACY_TWOCITY_PPD_SIZE, 0);
+        write_i32(
+            &mut self.twocity_ppd,
+            TWOCITY_PPD_LAST_ATTACK_OFFSET,
+            realtime,
+        );
+    }
+
+    /// C `struct twocity_ppd::guard_intro`.
+    pub fn twocity_guard_intro(&self) -> i32 {
+        if self.twocity_ppd.len() < LEGACY_TWOCITY_PPD_SIZE {
+            return 0;
+        }
+        read_i32(&self.twocity_ppd, TWOCITY_PPD_GUARD_INTRO_OFFSET)
+    }
+
+    pub fn set_twocity_guard_intro(&mut self, value: i32) {
+        self.twocity_ppd.resize(LEGACY_TWOCITY_PPD_SIZE, 0);
+        write_i32(&mut self.twocity_ppd, TWOCITY_PPD_GUARD_INTRO_OFFSET, value);
+    }
+
     /// Snapshot of the `twocity_ppd` fields consumed by
     /// `questlog_init_twocity` (`src/system/questlog.c:1470-1546`), for
     /// `crate::quest::init_twocity_quests`.

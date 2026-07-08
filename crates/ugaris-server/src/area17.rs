@@ -16,8 +16,8 @@
 use super::*;
 use ugaris_core::world::{
     TwoAlchemistOutcomeEvent, TwoAlchemistPlayerFacts, TwoBarkeeperOutcomeEvent,
-    TwoBarkeeperPlayerFacts, TwoSanwynOutcomeEvent, TwoSanwynPlayerFacts, TwoSkellyOutcomeEvent,
-    TwoSkellyPlayerFacts, CS_GUEST, LS_CLEAN,
+    TwoBarkeeperPlayerFacts, TwoGuardOutcomeEvent, TwoGuardPlayerFacts, TwoSanwynOutcomeEvent,
+    TwoSanwynPlayerFacts, TwoSkellyOutcomeEvent, TwoSkellyPlayerFacts, CS_GUEST, LS_CLEAN,
 };
 
 pub(crate) fn two_skelly_player_facts(
@@ -367,6 +367,60 @@ pub(crate) fn apply_two_barkeeper_events(
                 applied += 1;
             }
         }
+    }
+    applied
+}
+
+pub(crate) fn two_guard_player_facts(
+    runtime: &ServerRuntime,
+) -> HashMap<CharacterId, TwoGuardPlayerFacts> {
+    runtime
+        .players
+        .values()
+        .filter_map(|player| {
+            let character_id = player.character_id?;
+            Some((
+                character_id,
+                TwoGuardPlayerFacts {
+                    legal_status: player.twocity_legal_status(),
+                    legal_fine: player.twocity_legal_fine(),
+                    citizen_status: player.twocity_citizen_status(),
+                    current_guard: player.twocity_current_guard(),
+                    current_guard_time: player.twocity_current_guard_time(),
+                    last_attack: player.twocity_last_attack(),
+                    guard_intro: player.twocity_guard_intro(),
+                    bank_gold: player.bank_gold as i32,
+                },
+            ))
+        })
+        .collect()
+}
+
+/// Applies each [`TwoGuardOutcomeEvent`] queued by
+/// `World::process_two_guard_actions`. Every event carries a full new
+/// `twocity_ppd` snapshot (see that type's own doc comment for why),
+/// plus an optional bank-balance deduction for the "pay" text command's
+/// bank-account fallback.
+pub(crate) fn apply_two_guard_events(
+    runtime: &mut ServerRuntime,
+    events: Vec<TwoGuardOutcomeEvent>,
+) -> usize {
+    let mut applied = 0;
+    for event in events {
+        let Some(player) = runtime.player_for_character_mut(event.player_id) else {
+            continue;
+        };
+        player.set_twocity_legal_status(event.legal_status);
+        player.set_twocity_legal_fine(event.legal_fine);
+        player.set_twocity_citizen_status(event.citizen_status);
+        player.set_twocity_current_guard(event.current_guard);
+        player.set_twocity_current_guard_time(event.current_guard_time);
+        player.set_twocity_last_attack(event.last_attack);
+        player.set_twocity_guard_intro(event.guard_intro);
+        if let Some(need) = event.bank_gold_deduction {
+            player.bank_gold = player.bank_gold.saturating_sub(need.max(0) as u32);
+        }
+        applied += 1;
     }
     applied
 }

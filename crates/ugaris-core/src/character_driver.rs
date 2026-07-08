@@ -52,6 +52,10 @@ pub const CDR_FORESTWILLIAM: u16 = 60;
 /// spider-queen quest giver (`src/area/16/forest.c::hermit_driver`), see
 /// `world::npc::area16::hermit`'s module doc comment.
 pub const CDR_FORESTHERMIT: u16 = 61;
+/// C `#define CDR_TWOGUARD 62` (`src/system/drvlib.h`): the Exkordon city
+/// guard patrol (`src/area/17/two.c::guard_driver`), see `world::npc::
+/// area17::guard`'s module doc comment.
+pub const CDR_TWOGUARD: u16 = 62;
 /// C `#define CDR_TWOBARKEEPER 63` (`src/system/drvlib.h`): the Two-Towns
 /// tavern barkeeper, "guest pass" broker (`src/area/17/two.c::barkeeper`),
 /// see `world::npc::area17::barkeeper`'s module doc comment.
@@ -396,6 +400,7 @@ pub enum CharacterDriverState {
     TwoSkelly(TwoSkellyDriverData),
     TwoAlchemist(TwoAlchemistDriverData),
     TwoBarkeeper(TwoBarkeeperDriverData),
+    TwoGuard(TwoGuardDriverData),
     Lab2Undead(Lab2UndeadDriverData),
     Merchant(MerchantDriverData),
     Aclerk(AclerkDriverData),
@@ -1251,7 +1256,8 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::ForestHermit(_)
             | CharacterDriverState::TwoSanwyn(_)
             | CharacterDriverState::TwoAlchemist(_)
-            | CharacterDriverState::TwoBarkeeper(_),
+            | CharacterDriverState::TwoBarkeeper(_)
+            | CharacterDriverState::TwoGuard(_),
         ) => SimpleBaddyDriverData::default(),
         None => SimpleBaddyDriverData::default(),
     };
@@ -3666,6 +3672,7 @@ pub use crate::world::npc::area16::imp::ForestImpDriverData;
 pub use crate::world::npc::area16::william::ForestWilliamDriverData;
 pub use crate::world::npc::area17::alchemist::TwoAlchemistDriverData;
 pub use crate::world::npc::area17::barkeeper::TwoBarkeeperDriverData;
+pub use crate::world::npc::area17::guard::TwoGuardDriverData;
 pub use crate::world::npc::area17::sanwyn::TwoSanwynDriverData;
 pub use crate::world::npc::area17::two_skelly::TwoSkellyDriverData;
 pub use crate::world::npc::area2::moonie::MoonieDriverData;

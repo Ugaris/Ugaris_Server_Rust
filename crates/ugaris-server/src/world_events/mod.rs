@@ -70,6 +70,7 @@ pub(crate) fn apply_pk_hate_from_hurt_events(
         apply_riverbeast_death_from_hurt_event(runtime, world, event);
         apply_bigbadspider_death_from_hurt_event(runtime, world, event);
         apply_asturin_death_from_hurt_event(runtime, world, event);
+        apply_two_guard_death_from_hurt_event(runtime, world, event);
         apply_vampire_death_from_hurt_event(runtime, world, event);
         apply_vampire2_death_from_hurt_event(runtime, world, event);
         apply_fdemon_demon_death_from_hurt_event(runtime, world, event);

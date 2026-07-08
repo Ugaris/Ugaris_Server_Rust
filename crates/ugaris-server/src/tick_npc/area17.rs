@@ -146,3 +146,42 @@ pub(crate) async fn two_barkeeper_driver_100(
         );
     }
 }
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn two_guard_driver_101(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    zone_loader: &mut ZoneLoader,
+    config: &ServerConfig,
+    _args: &Args,
+    _completed_actions: &[WorldActionCompletion],
+    _achievement_repository: &Option<ugaris_db::PgAchievementRepository>,
+    _character_repository: &Option<ugaris_db::PgCharacterRepository>,
+    _area_repository: &Option<ugaris_db::PgAreaRepository>,
+    _clan_repository: &Option<ugaris_db::PgClanRegistryRepository>,
+    _clan_log_repository: &Option<ugaris_db::PgClanLogRepository>,
+    _merchant_repository: &Option<ugaris_db::PgMerchantRepository>,
+    _military_master_storage_repository: &Option<ugaris_db::PgMilitaryMasterStorageRepository>,
+    _military_advisor_storage_repository: &Option<ugaris_db::PgMilitaryAdvisorStorageRepository>,
+    _notes_repository: &Option<ugaris_db::PgNotesRepository>,
+    _anticheat_repository: &Option<ugaris_db::PgAntiCheatRepository>,
+    _auction_repository: &Option<ugaris_db::PgAuctionRepository>,
+) {
+    // C `guard_driver`: Exkordon's territory-enforcement city guard
+    // patrol (`src/area/17/two.c`).
+    let two_guard_facts = two_guard_player_facts(runtime);
+    let two_guard_events = world.process_two_guard_actions(
+        &two_guard_facts,
+        current_unix_time() as i32,
+        zone_loader,
+        config.area_id,
+    );
+    let two_guard_events_applied = apply_two_guard_events(runtime, two_guard_events);
+    if two_guard_events_applied != 0 {
+        info!(
+            two_guard_events_applied,
+            tick = world.tick.0,
+            "applied two-city guard events"
+        );
+    }
+}

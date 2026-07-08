@@ -803,12 +803,28 @@ Ordered by player progression; the C file is the oracle.
   new shared `legal_status`/`legal_fine`/`citizen_status` `twocity_ppd`
   accessors (plus its own `barkeeper_state`/`barkeeper_last`) and the new
   shared `LS_CLEAN`/`LS_FINE`/`LS_DEAD`/`CS_ENEMY`/`CS_GUEST`/
-  `CS_CITIZEN`/`CS_HONOR` constants in `world/npc/area17/mod.rs` (both
-  reused by the still-unported `guard_driver`). Still unported:
-  `CDR_TWOGUARD`/`CDR_TWOSERVANT`/`CDR_TWOTHIEFGUARD`/
-  `CDR_TWOTHIEFMASTER`/`CDR_TWOROBBER`'s death hook - see
-  `PORTING_LEDGER.md` for the full driver breakdown and suggested
-  next-slice order.
+  `CS_CITIZEN`/`CS_HONOR` constants in `world/npc/area17/mod.rs`.
+  `CDR_TWOGUARD` (the Exkordon territory-enforcement city guard patrol,
+  the biggest single driver in this file) is now also ported
+  (`world/npc/area17/guard.rs` + `guard_messages.rs`, split across two
+  files to stay under the ~800-line NPC guideline): the day/night torch
+  sensor, the full `NT_CHAR` illegal-territory leave-warning/fine ladder
+  state machine (with `LS_DEAD` immediate-attack and `LS_CLEAN` one-time
+  guest-pass-intro branches), the `NT_TEXT` "pay" command (including its
+  bank-account fallback, new `twocity_current_guard`/
+  `twocity_current_guard_time`/`twocity_last_attack`/`twocity_guard_intro`
+  `PlayerRuntime` accessors) and god-only citizen-status admin commands,
+  `NT_GOTHIT`'s low-HP `call_guard` alert (new shared `World::
+  two_city_call_guard` in `mod.rs`, reused by the still-unported
+  `servant_driver`) plus attacking-a-guard fine, `NT_SEEHIT`'s
+  protect-an-ally fine, `NT_NPC`'s `NTID_TWOCITY` called-to-help
+  destination and `NTID_TWOCITY_PICK` lockpicking fine, and the patrol-
+  waypoint/return-to-post movement tail. The `guard_dead` death hook is
+  ported in `ugaris-server`'s `world_events::death_hooks::
+  apply_two_guard_death_from_hurt_event`. 30 new focused tests. Still
+  unported: `CDR_TWOSERVANT`/`CDR_TWOTHIEFGUARD`/`CDR_TWOTHIEFMASTER`/
+  `CDR_TWOROBBER`'s death hook - see `PORTING_LEDGER.md` for the full
+  driver breakdown and suggested next-slice order.
 - [ ] **Area 18 - `src/area/18/bones.c`** - rune quest completion
   (`exec_rune` rewards), bone NPCs.
 - [ ] **Area 19 - `src/area/19/nomad.c`** - nomad camp NPCs/trading.
@@ -1266,4 +1282,8 @@ notes live in `PROGRESS_ARCHIVE.md`.
   shared `legal_status`/`legal_fine`/`citizen_status` PPD accessors and
   `LS_*`/`CS_*` constants. 2966 core + 1138 server tests pass, clean
   build/boot-smoke (area 17).
+- 2026-07-08: Area 17 progress: ported `CDR_TWOGUARD`/`guard_driver`
+  (`world/npc/area17/guard.rs`+`guard_messages.rs`), the Exkordon city
+  guard patrol, plus its `guard_dead` death hook. 2984 core + 1138 server
+  tests pass, clean build/boot-smoke (area 17).
 

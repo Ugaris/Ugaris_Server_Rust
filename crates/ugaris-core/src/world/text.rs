@@ -148,6 +148,18 @@ pub fn hisname(character: &Character) -> &'static str {
     }
 }
 
+/// C `hename` (`src/system/tool.c:1508`): lowercase he/she/it pronoun
+/// (unlike [`look_character_hename`]/`Hename`, which is capitalized).
+pub fn hename(character: &Character) -> &'static str {
+    if character.flags.contains(CharacterFlags::MALE) {
+        "he"
+    } else if character.flags.contains(CharacterFlags::FEMALE) {
+        "she"
+    } else {
+        "it"
+    }
+}
+
 /// C `plr_send_inv` (`src/system/player.c`): the `SV_LOOKINV` paperdoll
 /// fields (target's sprite/colors/12 worn-slot item sprites).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

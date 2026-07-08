@@ -631,7 +631,8 @@ impl World {
             | CharacterDriverState::ForestHermit(_)
             | CharacterDriverState::TwoSanwyn(_)
             | CharacterDriverState::TwoAlchemist(_)
-            | CharacterDriverState::TwoBarkeeper(_) => None,
+            | CharacterDriverState::TwoBarkeeper(_)
+            | CharacterDriverState::TwoGuard(_) => None,
         }
     }
 
