@@ -502,13 +502,48 @@ Ordered by player progression; the C file is the oracle.
   lives in `ugaris-server`'s `spawns::respawn_npc_character`, and the
   claim-release death hook lives in `world_events::death_hooks::
   apply_lampghost_death_from_hurt_event`. This closes Area 3.
-- [ ] **Area 4 - `src/area/4/pents.c`** - pentagram quest NPCs + demon
+- [~] **Area 4 - `src/area/4/pents.c`** - pentagram quest NPCs + demon
   wave logic beyond the ported item boundary. Also wire the achievement
   calls this file's reward mechanic makes in C (`achievement_add_pents`,
   `achievement_award(FIVE_IN_A_ROW/HAPPY_GO_LUCKY/FAVORED_BY_FORTUNE/
   DEMON_LORDS_DEMISE)`) using the existing `award_*` helper pattern in
   `crates/ugaris-server/src/achievement.rs` (Achievements task, closed
   iteration 84).
+  REMAINING: the whole per-player solve/reward pipeline is now ported and
+  wired end-to-end - `activate_pentagram`/`deactivate_pentagram`/
+  `check_for_quest_completion`/`complete_pentagram_quest`/
+  `distribute_rewards_to_player`/`add_pentagram_to_player`/
+  `update_player_pentagram_stats`/`check_for_color_combo`/
+  `handle_lucky_pentagram`/`log_pentagram_info`/`check_for_record`/
+  `calculate_required_pentagrams`/`update_power_levels` (`World::
+  pentagram_quest: PentagramQuestState` + `crates/ugaris-core/src/
+  pentagram.rs`'s pure per-player math over `PlayerRuntime::
+  pentagram_debug`, drained every tick by `crates/ugaris-server/src/
+  pents.rs::process_pentagram_activations`, wired into
+  `tick_item_use_completion.rs` right after the item-use dispatch loop);
+  all four reachable achievement call sites (`FIVE_IN_A_ROW`/
+  `HAPPY_GO_LUCKY`/`FAVORED_BY_FORTUNE`/`achievement_add_pents`) are wired
+  through `award_pentagram_*` helpers in `achievement.rs`. The
+  `handle_demon_lord_door` access-time gate and the `IDR_PENT`/
+  `IDR_PENTBOSSDOOR` item drivers were already ported before this. Still
+  unported: (1) demon spawning (`spawn_demons_at_pentagram`/
+  `enhance_elite_demon`/`adjust_lesser_demon`/`enhance_demon_character`) -
+  pentagrams activate/solve/reward correctly but never spawn guardian
+  demons yet, so `handle_pentagram_interaction`'s `spawn_count` branches
+  are a no-op; (2) the `CDR_PENTER` demon character driver
+  (`process_demon_messages`'s loot-table dispatch - the referenced
+  `pent_demon_{low,mid,high}[_elite]` JSON tables don't exist under
+  `ugaris_data/loot/` yet either - plus `update_demon_profession`) and
+  `handle_demon_death`'s power-level-reduction/`DEMON_LORDS_DEMISE`
+  achievement, both meaningless until (1) lands; (3) the `CDR_TESTER` QA
+  helper NPC (`pentagram_tester_driver`, a test-only bot that auto-hunts
+  pentagrams/demons - lowest priority, not player-facing); (4)
+  `pentagram_record` DB persistence (in-memory only right now, like
+  `World::arena_toplist`, resets on restart) and the macro-daemon
+  challenge-room `saved_pent_*` restore (already a documented no-op in
+  `macro_daemon.rs`). Next slice should be (1)+(2) together (spawning has
+  no player-visible effect without the driver that makes spawned demons
+  fight back / drop loot / reduce training power on a demon-lord kill).
 - [ ] **Area 6 - `src/area/6/edemon.c`** - Earth Demon boss driver
   (`CDR_EDEMON*` characters); machinery items are ported.
 - [ ] **Area 8 - `src/area/8/fdemon.c`** - Fire Demon boss + farm NPCs;
@@ -840,4 +875,10 @@ notes live in `PROGRESS_ARCHIVE.md`.
   (self-defense + nearest-lit-lamp claim/walk/extinguish job loop), new
   `World::area3_lamp_claims` registry substituting C's `lamp[]` array.
   2663 core + 1104 server tests pass, clean build/boot-smoke.
+- 2026-07-08: Area 4 STARTED: ported the full pentagram solve/reward
+  pipeline (activate/deactivate/quest-completion/reward-distribution/
+  color-combo/lucky-pent/record-tracking) plus all 4 reachable pentagram
+  achievement call sites; demon spawning/`CDR_PENTER`/`CDR_TESTER`/DB
+  record persistence remain (see checkbox REMAINING). 2680 core + 1106
+  server tests pass, clean build/boot-smoke.
 
