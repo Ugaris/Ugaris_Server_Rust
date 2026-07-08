@@ -89,6 +89,7 @@ mod reskin;
 mod rmdeath;
 mod robber;
 mod sanoa;
+mod sanwyn;
 mod seymour;
 mod sir_jones;
 mod skills;

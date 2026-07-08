@@ -1,10 +1,13 @@
 //! Area 17 (Two-City/Exkordon) NPCs, one file per NPC.
 
 pub mod alchemist;
+pub mod sanwyn;
 pub mod two_skelly;
 
 #[allow(unused_imports)]
 pub use alchemist::*;
+#[allow(unused_imports)]
+pub use sanwyn::*;
 #[allow(unused_imports)]
 pub use two_skelly::*;
 

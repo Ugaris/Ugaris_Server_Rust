@@ -73,3 +73,38 @@ pub(crate) async fn two_alchemist_driver_98(
         );
     }
 }
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn two_sanwyn_driver_99(
+    mut world: &mut World,
+    mut runtime: &mut ServerRuntime,
+    _zone_loader: &mut ZoneLoader,
+    config: &ServerConfig,
+    _args: &Args,
+    _completed_actions: &[WorldActionCompletion],
+    _achievement_repository: &Option<ugaris_db::PgAchievementRepository>,
+    _character_repository: &Option<ugaris_db::PgCharacterRepository>,
+    _area_repository: &Option<ugaris_db::PgAreaRepository>,
+    _clan_repository: &Option<ugaris_db::PgClanRegistryRepository>,
+    _clan_log_repository: &Option<ugaris_db::PgClanLogRepository>,
+    _merchant_repository: &Option<ugaris_db::PgMerchantRepository>,
+    _military_master_storage_repository: &Option<ugaris_db::PgMilitaryMasterStorageRepository>,
+    _military_advisor_storage_repository: &Option<ugaris_db::PgMilitaryAdvisorStorageRepository>,
+    _notes_repository: &Option<ugaris_db::PgNotesRepository>,
+    _anticheat_repository: &Option<ugaris_db::PgAntiCheatRepository>,
+    _auction_repository: &Option<ugaris_db::PgAuctionRepository>,
+) {
+    // C `sanwyn`: area 17's military quest giver "Sanwyn"
+    // (`src/area/17/two.c`).
+    let two_sanwyn_facts = two_sanwyn_player_facts(runtime);
+    let two_sanwyn_events = world.process_two_sanwyn_actions(&two_sanwyn_facts, config.area_id);
+    let two_sanwyn_events_applied =
+        apply_two_sanwyn_events(&mut world, &mut runtime, two_sanwyn_events);
+    if two_sanwyn_events_applied != 0 {
+        info!(
+            two_sanwyn_events_applied,
+            tick = world.tick.0,
+            "applied two-city sanwyn dialogue events"
+        );
+    }
+}

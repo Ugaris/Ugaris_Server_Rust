@@ -1,17 +1,20 @@
 //! Server-side wiring for area 17's Two-City NPCs (`CDR_TWOSKELLY`/
 //! `ugaris_core::world::npc::area17::two_skelly::process_two_skelly_
-//! actions`, plus `CDR_TWOALCHEMIST`/`...::alchemist::process_two_
-//! alchemist_actions`).
+//! actions`, `CDR_TWOALCHEMIST`/`...::alchemist::process_two_alchemist_
+//! actions`, plus `CDR_TWOSANWYN`/`...::sanwyn::process_two_sanwyn_
+//! actions`).
 //!
 //! Mirrors the `World`/`PlayerRuntime` split already established by
-//! `area16.rs`: [`two_skelly_player_facts`]/[`two_alchemist_player_facts`]
-//! snapshot the per-player `twocity_ppd` facts each NPC's dialogue needs
-//! before the tick, and [`apply_two_skelly_events`]/
-//! [`apply_two_alchemist_events`] apply the returned events afterward.
+//! `area16.rs`: [`two_skelly_player_facts`]/[`two_alchemist_player_facts`]/
+//! [`two_sanwyn_player_facts`] snapshot the per-player `twocity_ppd` facts
+//! each NPC's dialogue needs before the tick, and [`apply_two_skelly_events`]/
+//! [`apply_two_alchemist_events`]/[`apply_two_sanwyn_events`] apply the
+//! returned events afterward.
 
 use super::*;
 use ugaris_core::world::{
-    TwoAlchemistOutcomeEvent, TwoAlchemistPlayerFacts, TwoSkellyOutcomeEvent, TwoSkellyPlayerFacts,
+    TwoAlchemistOutcomeEvent, TwoAlchemistPlayerFacts, TwoSanwynOutcomeEvent, TwoSanwynPlayerFacts,
+    TwoSkellyOutcomeEvent, TwoSkellyPlayerFacts,
 };
 
 pub(crate) fn two_skelly_player_facts(
@@ -197,6 +200,96 @@ pub(crate) fn apply_two_alchemist_events(
                                 "Too little sulphur this time. I will... Oh, the poison! Very well, {giver_name}, I thank thee."
                             ),
                         );
+                    }
+                    applied += 1;
+                }
+            }
+        }
+    }
+    applied
+}
+
+pub(crate) fn two_sanwyn_player_facts(
+    runtime: &ServerRuntime,
+) -> HashMap<CharacterId, TwoSanwynPlayerFacts> {
+    runtime
+        .players
+        .values()
+        .filter_map(|player| {
+            let character_id = player.character_id?;
+            Some((
+                character_id,
+                TwoSanwynPlayerFacts {
+                    sanwyn_state: player.twocity_sanwyn_state(),
+                    sanwyn_bits: player.twocity_sanwyn_bits(),
+                },
+            ))
+        })
+        .collect()
+}
+
+/// Applies each [`TwoSanwynOutcomeEvent`] queued by
+/// `World::process_two_sanwyn_actions`. Unlike `TwoAlchemistOutcomeEvent`,
+/// the military-points reward is applied directly inside `World` (it only
+/// needs `Character::level`), so `QuestDone` here is just the plain
+/// `questlog_done(co, 29)` bookkeeping (quest 29's `exp` is `0` -
+/// "awarded in driver" per `questlog.c`'s own table comment).
+pub(crate) fn apply_two_sanwyn_events(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    events: Vec<TwoSanwynOutcomeEvent>,
+) -> usize {
+    let mut applied = 0;
+    for event in events {
+        match event {
+            TwoSanwynOutcomeEvent::UpdateSanwynState {
+                player_id,
+                new_state,
+            } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.set_twocity_sanwyn_state(new_state);
+                applied += 1;
+            }
+            TwoSanwynOutcomeEvent::UpdateSanwynBits {
+                player_id,
+                new_bits,
+            } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.set_twocity_sanwyn_bits(new_bits);
+                applied += 1;
+            }
+            // C `questlog_open(co, 29)` (`two.c:2318`).
+            TwoSanwynOutcomeEvent::QuestOpen { player_id } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.quest_log.open(29);
+                let payload = legacy_questlog_payload(player);
+                for (session_id, _) in runtime.sessions_for_character(player_id) {
+                    runtime.send_to_session(session_id, payload.clone());
+                }
+                applied += 1;
+            }
+            // C `questlog_done(co, 29)` (`two.c:2401`).
+            TwoSanwynOutcomeEvent::QuestDone { player_id } => {
+                let Some(level) = world.characters.get(&player_id).map(|c| c.level) else {
+                    continue;
+                };
+                let level_val = level_value(level);
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                if let Some(completion) = player.quest_log.complete_legacy(29, level, level_val) {
+                    let payload = legacy_questlog_payload(player);
+                    if completion.granted_exp != 0 {
+                        world.give_exp(player_id, completion.granted_exp, u32::from(world.area_id));
+                    }
+                    for (session_id, _) in runtime.sessions_for_character(player_id) {
+                        runtime.send_to_session(session_id, payload.clone());
                     }
                     applied += 1;
                 }

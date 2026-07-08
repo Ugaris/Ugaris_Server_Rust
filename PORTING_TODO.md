@@ -793,11 +793,15 @@ Ordered by player progression; the C file is the oracle.
   (`world/npc/area17/alchemist.rs`), sharing `TWOCITY_QA`; its 1st/3rd/
   7th/10th-completion potion reward (`combo_potion3`/`security_potion`,
   level-gated) is finished server-side (`ugaris-server/area17.rs`) since
-  it needs the quest-log completion count and `ZoneLoader`. Still
+  it needs the quest-log completion count and `ZoneLoader`. `CDR_TWOSANWYN`
+  ("Sanwyn", the military quest giver, quest 29) is now also ported
+  (`world/npc/area17/sanwyn.rs`), sharing `TWOCITY_QA`; its per-note
+  military-points reward is applied directly via `World::
+  give_military_pts_from_npc` (no server-side deferral needed). Still
   unported: `CDR_TWOGUARD`/`CDR_TWOBARKEEPER`/`CDR_TWOSERVANT`/
-  `CDR_TWOTHIEFGUARD`/`CDR_TWOTHIEFMASTER`/`CDR_TWOROBBER`'s death hook/
-  `CDR_TWOSANWYN` - see `PORTING_LEDGER.md` for the full driver breakdown
-  and suggested next-slice order.
+  `CDR_TWOTHIEFGUARD`/`CDR_TWOTHIEFMASTER`/`CDR_TWOROBBER`'s death hook -
+  see `PORTING_LEDGER.md` for the full driver breakdown and suggested
+  next-slice order.
 - [ ] **Area 18 - `src/area/18/bones.c`** - rune quest completion
   (`exec_rune` rewards), bone NPCs.
 - [ ] **Area 19 - `src/area/19/nomad.c`** - nomad camp NPCs/trading.
@@ -1245,4 +1249,9 @@ notes live in `PROGRESS_ARCHIVE.md`.
   counters in `ugaris-server::apply_forest_monster_death_from_hurt_event`).
   2918 core + 1138 server tests pass, clean build/boot-smoke (area 16,
   116 characters, no panics).
+- 2026-07-08: Area 17 progress: ported `CDR_TWOSANWYN`/`sanwyn`
+  (`world/npc/area17/sanwyn.rs`), the military quest giver "Sanwyn"
+  (quest 29, "Dirty Hands"); 2953 core + 1138 server tests pass, clean
+  build/boot-smoke. Remaining: guard/barkeeper/servant/thiefguard/
+  thiefmaster/robber-death-hook (see PORTING_LEDGER.md).
 

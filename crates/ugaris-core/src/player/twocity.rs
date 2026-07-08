@@ -51,6 +51,21 @@ impl PlayerRuntime {
         );
     }
 
+    /// C `struct twocity_ppd::sanwyn_bits` (`common/two_ppd.h:22`): a
+    /// 3-bit mask of which of the three incriminating palace notes have
+    /// already been turned in to Sanwyn (`1`/`2`/`4`).
+    pub fn twocity_sanwyn_bits(&self) -> i32 {
+        if self.twocity_ppd.len() < LEGACY_TWOCITY_PPD_SIZE {
+            return 0;
+        }
+        read_i32(&self.twocity_ppd, TWOCITY_PPD_SANWYN_BITS_OFFSET)
+    }
+
+    pub fn set_twocity_sanwyn_bits(&mut self, bits: i32) {
+        self.twocity_ppd.resize(LEGACY_TWOCITY_PPD_SIZE, 0);
+        write_i32(&mut self.twocity_ppd, TWOCITY_PPD_SANWYN_BITS_OFFSET, bits);
+    }
+
     pub fn twocity_skelly_state(&self) -> i32 {
         if self.twocity_ppd.len() < LEGACY_TWOCITY_PPD_SIZE {
             return 0;

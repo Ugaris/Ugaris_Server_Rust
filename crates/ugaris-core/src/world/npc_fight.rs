@@ -629,6 +629,7 @@ impl World {
             | CharacterDriverState::ForestImp(_)
             | CharacterDriverState::ForestWilliam(_)
             | CharacterDriverState::ForestHermit(_)
+            | CharacterDriverState::TwoSanwyn(_)
             | CharacterDriverState::TwoAlchemist(_) => None,
         }
     }

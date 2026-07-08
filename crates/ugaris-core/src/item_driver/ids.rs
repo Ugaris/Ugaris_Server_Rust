@@ -476,6 +476,20 @@ pub const IID_AREA17_CROSS: u32 = (0x01 << 24) | 0x000074;
 
 pub const IID_AREA17_POISON: u32 = (0x01 << 24) | 0x000075;
 
+/// C `#define IID_AREA17_PALACENOTE1 MAKE_ITEMID(DEV_ID_DB, 0x000066)`
+/// (`src/common/item_id.h:161`): one of the three incriminating documents
+/// `world::npc::area17::sanwyn`'s quest 29 ("The Sergeant Major's Favor")
+/// turn-in accepts.
+pub const IID_AREA17_PALACENOTE1: u32 = (0x01 << 24) | 0x000066;
+
+/// C `#define IID_AREA17_PALACENOTE2 MAKE_ITEMID(DEV_ID_DB, 0x000067)`
+/// (`src/common/item_id.h:162`).
+pub const IID_AREA17_PALACENOTE2: u32 = (0x01 << 24) | 0x000067;
+
+/// C `#define IID_AREA17_PALACENOTE3 MAKE_ITEMID(DEV_ID_DB, 0x000068)`
+/// (`src/common/item_id.h:163`).
+pub const IID_AREA17_PALACENOTE3: u32 = (0x01 << 24) | 0x000068;
+
 pub const IID_AREA16_ROBBERKEY: u32 = (0x01 << 24) | 0x000060;
 
 pub const IID_AREA16_SKELLYKEY: u32 = (0x01 << 24) | 0x000061;

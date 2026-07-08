@@ -891,6 +891,8 @@ pub(crate) const TWOCITY_PPD_THIEF_KILLED_OFFSET: usize = 10 * 4;
 
 pub(crate) const TWOCITY_PPD_SANWYN_STATE_OFFSET: usize = 16 * 4;
 
+pub(crate) const TWOCITY_PPD_SANWYN_BITS_OFFSET: usize = 17 * 4;
+
 pub(crate) const TWOCITY_PPD_SKELLY_STATE_OFFSET: usize = 27 * 4;
 
 pub(crate) const TWOCITY_PPD_ALCHEMIST_STATE_OFFSET: usize = 28 * 4;
