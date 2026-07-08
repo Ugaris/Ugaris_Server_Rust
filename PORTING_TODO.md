@@ -764,18 +764,11 @@ Ordered by player progression; the C file is the oracle.
   ported across earlier "Clan system"/P0.5/cross-area-transfer
   iterations; audited function-by-function against C in iteration 79 -
   no gaps found. Details in PORTING_LEDGER.md.)*
-- [~] **Area 14 - `src/area/14/random.c`** - remaining shrine effects
+- [x] **Area 14 - `src/area/14/random.c`** - remaining shrine effects
   (indecisiveness/bribes/welding) + questlog resend after shrines.
-  REMAINING: `shrine_indecisiveness`/`shrine_bribes` are ported
-  (`area_apply::apply_random_shrine_indecisiveness`/`_bribes`, wired into
-  `tick_item_use_shrines.rs`'s `RandomShrineKind::Indecisiveness`/`Bribes`
-  arms), and the `sendquestlog` resend after every successful random-shrine
-  use (all 10 now-ported kinds) is wired via a new
-  `resend_random_shrine_questlog` helper. Only `shrine_welding` (+ its
-  `can_receive_mod`/`can_give_mod` helpers) remains - it needs a `World`-
-  level API addition (`recompute_item_requirements`, wrapping the private
-  `set_item_requirements`) before it can be ported; see
-  `PORTING_LEDGER.md` for the detailed remaining-work breakdown.
+  *(done - `shrine_welding` plus its `can_receive_mod`/`can_give_mod`
+  helpers now ported via a new `World::apply_random_shrine_welding`/
+  `World::recompute_item_requirements`; details in PORTING_LEDGER.md)*
 - [ ] **Area 15 - `src/area/15/swamp.c`** - Clara dialogue runtime (state
   helpers exist), military reward application.
 - [ ] **Area 16 - `src/area/16/forest.c`** - forest NPCs/robber quest.

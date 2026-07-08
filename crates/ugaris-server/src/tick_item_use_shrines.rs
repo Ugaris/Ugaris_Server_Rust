@@ -534,9 +534,57 @@ pub(crate) fn dispatch_shrine_outcome(
             ugaris_core::item_driver::RandomShrineKind::Dormant => {
                 *executed += 1;
             }
-            _ => {
-                feedback.push((character_id, "Nothing happens.".to_string()));
-                *blocked += 1;
+            ugaris_core::item_driver::RandomShrineKind::Welding => {
+                match world.apply_random_shrine_welding(character_id, level) {
+                    ugaris_core::world::RandomShrineWeldingResult::Used {
+                        item1_name,
+                        item2_name,
+                    } => {
+                        if let Some(player) = runtime.player_for_character_mut(character_id) {
+                            player.mark_random_shrine_used(shrine_type);
+                        }
+                        feedback.push((
+                            character_id,
+                            format!(
+                                "You feel a burning hand touch your {item1_name} and your {item2_name}."
+                            ),
+                        ));
+                        resend_random_shrine_questlog(runtime, character_id);
+                        *executed += 1;
+                    }
+                    ugaris_core::world::RandomShrineWeldingResult::NotPowerfulEnough => {
+                        feedback.push((
+                            character_id,
+                            "You are not powerful enough to use this shrine.".to_string(),
+                        ));
+                        *blocked += 1;
+                    }
+                    ugaris_core::world::RandomShrineWeldingResult::NotPaying => {
+                        feedback.push((
+                            character_id,
+                            "Only paying players can use this shrine.".to_string(),
+                        ));
+                        *blocked += 1;
+                    }
+                    ugaris_core::world::RandomShrineWeldingResult::Contempt => {
+                        feedback.push((
+                            character_id,
+                            "You feel a cold hand touch your equipment. After it has touched all your items, it leaves with a laugh of contempt.".to_string(),
+                        ));
+                        *blocked += 1;
+                    }
+                    ugaris_core::world::RandomShrineWeldingResult::Regret => {
+                        feedback.push((
+                            character_id,
+                            "You feel a cold hand touch your equipment. After it has touched all your items, it leaves with a laugh of regret.".to_string(),
+                        ));
+                        *blocked += 1;
+                    }
+                    ugaris_core::world::RandomShrineWeldingResult::Bug => {
+                        feedback.push((character_id, "You found bug #337.".to_string()));
+                        *failed += 1;
+                    }
+                }
             }
         },
         ugaris_core::item_driver::ItemDriverOutcome::SpecialShrine {

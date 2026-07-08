@@ -783,6 +783,102 @@ fn set_item_requirements(item: &mut Item) {
     set_item_requirements_sub(item, 120);
 }
 
+/// C: the shared "no special items" eligibility prelude duplicated at the
+/// top of both `can_receive_mod` and `can_give_mod` (`tool.c:1845-1928`) -
+/// no item driver, template id is generic/hardkill/none, and not
+/// `IF_NOENHANCE`.
+fn shrine_item_eligible(item: &Item) -> bool {
+    if item.driver != 0 {
+        return false;
+    }
+    if item.template_id != IID_GENERIC_SPECIAL
+        && item.template_id != IID_HARDKILL
+        && item.template_id != 0
+    {
+        return false;
+    }
+    !item.flags.contains(ItemFlags::NOENHANCE)
+}
+
+/// C `can_give_mod(in, slot)` (`tool.c:1893-1928`): true if `item`'s
+/// `slot`-th modifier is a nonzero, non-requirement, non-weapon/armor/
+/// speed/demon/light modifier that can be donated to another item.
+fn shrine_can_give_mod(item: &Item, slot: usize) -> bool {
+    if !shrine_item_eligible(item) {
+        return false;
+    }
+    if item.modifier_value[slot] == 0 {
+        return false;
+    }
+    let idx = item.modifier_index[slot];
+    if idx < 0 {
+        return false;
+    }
+    !(idx == CharacterValue::Weapon as i16
+        || idx == CharacterValue::Armor as i16
+        || idx == CharacterValue::Speed as i16
+        || idx == CharacterValue::Demon as i16
+        || idx == CharacterValue::Light as i16)
+}
+
+/// C `can_receive_mod(in, pslot, v)` (`tool.c:1845-1891`): true (returning
+/// the first free modifier slot) if `item` doesn't already carry modifier
+/// `v`, has at most two other "generic" modifiers already (weapon/armor/
+/// demon/light modifiers don't count toward that cap - note `V_SPEED` is
+/// *not* in this exclusion list, matching C's switch exactly even though
+/// `can_give_mod`'s exclusion list does include it), and has a free
+/// modifier slot to put it in.
+fn shrine_can_receive_mod(item: &Item, target_mod_index: i16) -> Option<usize> {
+    if !shrine_item_eligible(item) {
+        return None;
+    }
+    let mut generic_mod_count = 0;
+    for n in 0..MAX_MODIFIERS {
+        if item.modifier_value[n] != 0 && item.modifier_index[n] == target_mod_index {
+            return None;
+        }
+        let idx = item.modifier_index[n];
+        if idx == CharacterValue::Weapon as i16
+            || idx == CharacterValue::Armor as i16
+            || idx == CharacterValue::Demon as i16
+            || idx == CharacterValue::Light as i16
+        {
+            continue;
+        }
+        if item.modifier_value[n] > 0 && idx >= 0 {
+            generic_mod_count += 1;
+        }
+    }
+    if generic_mod_count > 2 {
+        return None;
+    }
+    (0..MAX_MODIFIERS).find(|&n| item.modifier_value[n] == 0)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RandomShrineWeldingResult {
+    /// C `random.c:1932-1935`: "You are not powerful enough to use this
+    /// shrine."
+    NotPowerfulEnough,
+    /// C `random.c:1937-1940`: "Only paying players can use this shrine."
+    NotPaying,
+    /// C `random.c:1953-1957`: no worn item has any donatable modifier -
+    /// "...leaves with a laugh of contempt."
+    Contempt,
+    /// C `random.c:1985-1989`: a donor was found but no *other* worn item
+    /// can receive its modifier - "...leaves with a laugh of regret."
+    Regret,
+    /// C `random.c:1979-1982`: "You found bug #337 (...)" - the picked
+    /// `RANDOM(cnt)` index somehow wasn't found on the second pass. Should
+    /// be unreachable given the counting pass always agrees with the
+    /// picking pass, kept only because C keeps the safety net.
+    Bug,
+    Used {
+        item1_name: String,
+        item2_name: String,
+    },
+}
+
 impl World {
     /// C `create_special_item(strength, base, potionprob, maxchance)`
     /// (`src/system/tool.c:2620-2789`). Builds a fresh, randomly enchanted
@@ -950,6 +1046,164 @@ impl World {
         };
         self.add_item_to_merchant_store(merchant_id, item);
         true
+    }
+
+    /// C `set_item_requirements(in)` (`tool.c:2581-2583`) exposed as a
+    /// public `World` method: recomputes `min_level`/`needs_class` from an
+    /// item's current modifiers after something (e.g. [`Self::
+    /// apply_random_shrine_welding`]) rewrites `modifier_index`/
+    /// `modifier_value` directly. No-op if `item_id` doesn't exist.
+    pub fn recompute_item_requirements(&mut self, item_id: ItemId) {
+        if let Some(item) = self.items.get_mut(&item_id) {
+            set_item_requirements(item);
+        }
+    }
+
+    /// C `shrine_welding(in, cn, nr, level, ppd)` (`src/area/14/random.c:
+    /// 1929-2013`): picks one random enhanceable-mod slot off any of the
+    /// player's 12 worn items and welds it onto another random worn item
+    /// that has room for it, wiping the mod off the donor. Eligibility
+    /// mirrors C's `can_give_mod`/`can_receive_mod` exactly (see
+    /// [`shrine_can_give_mod`]/[`shrine_can_receive_mod`]). Does not call
+    /// `shrine_set`/`sendquestlog` itself - matching every other
+    /// `apply_random_shrine_*` helper, the caller resends the questlog and
+    /// marks the shrine used only on [`RandomShrineWeldingResult::Used`].
+    pub fn apply_random_shrine_welding(
+        &mut self,
+        character_id: CharacterId,
+        level: u8,
+    ) -> RandomShrineWeldingResult {
+        let Some(character) = self.characters.get(&character_id) else {
+            return RandomShrineWeldingResult::Bug;
+        };
+        if character.level + character.level / 4 + 2 < u32::from(level) {
+            return RandomShrineWeldingResult::NotPowerfulEnough;
+        }
+        if !character.flags.contains(CharacterFlags::PAID) {
+            return RandomShrineWeldingResult::NotPaying;
+        }
+
+        let worn: Vec<ItemId> = LEGACY_EQUIPMENT_SLOTS
+            .clone()
+            .filter_map(|slot| character.inventory.get(slot).copied().flatten())
+            .collect();
+
+        // Phase 1: pick a random (item, mod-slot) willing to give up its
+        // modifier (C's first `n`/`m` double loop + `RANDOM(cnt)`).
+        let mut total_give = 0i32;
+        for item_id in &worn {
+            let Some(item) = self.items.get(item_id) else {
+                continue;
+            };
+            for slot in 0..MAX_MODIFIERS {
+                if shrine_can_give_mod(item, slot) {
+                    total_give += 1;
+                }
+            }
+        }
+        if total_give == 0 {
+            return RandomShrineWeldingResult::Contempt;
+        }
+        let mut pick =
+            legacy_random_below_from_seed(&mut self.legacy_random_seed, total_give as u32) as i32;
+        let mut give: Option<(ItemId, usize)> = None;
+        'give: for item_id in &worn {
+            let Some(item) = self.items.get(item_id) else {
+                continue;
+            };
+            for slot in 0..MAX_MODIFIERS {
+                if shrine_can_give_mod(item, slot) {
+                    if pick == 0 {
+                        give = Some((*item_id, slot));
+                        break 'give;
+                    }
+                    pick -= 1;
+                }
+            }
+        }
+        let Some((in2, slot2)) = give else {
+            return RandomShrineWeldingResult::Bug;
+        };
+        let target_mod_index = self.items[&in2].modifier_index[slot2];
+
+        // Phase 2: pick a random *other* worn item with room to receive
+        // that same modifier (C's second `n` loop + `RANDOM(cnt)`).
+        let mut total_receive = 0i32;
+        for item_id in &worn {
+            if *item_id == in2 {
+                continue;
+            }
+            if let Some(item) = self.items.get(item_id) {
+                if shrine_can_receive_mod(item, target_mod_index).is_some() {
+                    total_receive += 1;
+                }
+            }
+        }
+        if total_receive == 0 {
+            return RandomShrineWeldingResult::Regret;
+        }
+        let mut pick2 =
+            legacy_random_below_from_seed(&mut self.legacy_random_seed, total_receive as u32)
+                as i32;
+        let mut receive: Option<(ItemId, usize)> = None;
+        for item_id in &worn {
+            if *item_id == in2 {
+                continue;
+            }
+            let Some(item) = self.items.get(item_id) else {
+                continue;
+            };
+            if let Some(slot1) = shrine_can_receive_mod(item, target_mod_index) {
+                if pick2 == 0 {
+                    receive = Some((*item_id, slot1));
+                    break;
+                }
+                pick2 -= 1;
+            }
+        }
+        let Some((in1, slot1)) = receive else {
+            return RandomShrineWeldingResult::Bug;
+        };
+
+        let (mod_index, mod_value) = {
+            let donor = &self.items[&in2];
+            (donor.modifier_index[slot2], donor.modifier_value[slot2])
+        };
+
+        let item1_name = self.items[&in1].name.clone();
+        let item2_name = self.items[&in2].name.clone();
+
+        if let Some(item1) = self.items.get_mut(&in1) {
+            item1.modifier_index[slot1] = mod_index;
+            item1.modifier_value[slot1] = mod_value;
+            // C: `if (!strstr(it[in1].description, "Christmas"))
+            // snprintf(it[in1].description, ..., "%s of Welding.",
+            // it[in1].name);` - `name` (max 40 bytes in C) plus the fixed
+            // suffix never overflows the 80-byte description buffer, so no
+            // truncation guard is needed here.
+            if !item1.description.contains("Christmas") {
+                item1.description = format!("{} of Welding.", item1.name);
+            }
+        }
+        self.recompute_item_requirements(in1);
+
+        if let Some(item2) = self.items.get_mut(&in2) {
+            item2.modifier_index[slot2] = 0;
+            item2.modifier_value[slot2] = 0;
+            if !item2.description.contains("Christmas") {
+                item2.description = format!("{} of Unwelding.", item2.name);
+            }
+        }
+        self.recompute_item_requirements(in2);
+
+        if let Some(character) = self.characters.get_mut(&character_id) {
+            character.flags.insert(CharacterFlags::ITEMS);
+        }
+
+        RandomShrineWeldingResult::Used {
+            item1_name,
+            item2_name,
+        }
     }
 
     fn set_merchant_last_special_add(&mut self, merchant_id: CharacterId, tick: u64) {

@@ -216,6 +216,164 @@ fn refresh_special_stores_seeds_five_then_refreshes_every_twelve_hours() {
     assert_eq!(store_ware_total(store), 6);
 }
 
+fn welding_test_character(level: u32) -> Character {
+    let mut ch = character(1);
+    ch.level = level;
+    ch.flags.insert(CharacterFlags::PAID);
+    ch
+}
+
+#[test]
+fn shrine_welding_rejects_underpowered_characters() {
+    // C `shrine_welding` (`random.c:1935`): `ch[cn].level + ch[cn].level/4
+    // + 2 < level` - level 1 gives `1 + 0 + 2 = 3`, so a shrine level of 4
+    // is out of reach.
+    let mut world = World::default();
+    world
+        .characters
+        .insert(CharacterId(1), welding_test_character(1));
+
+    assert_eq!(
+        world.apply_random_shrine_welding(CharacterId(1), 4),
+        RandomShrineWeldingResult::NotPowerfulEnough
+    );
+}
+
+#[test]
+fn shrine_welding_requires_a_paying_player() {
+    let mut world = World::default();
+    let mut ch = welding_test_character(50);
+    ch.flags.remove(CharacterFlags::PAID);
+    world.characters.insert(CharacterId(1), ch);
+
+    assert_eq!(
+        world.apply_random_shrine_welding(CharacterId(1), 1),
+        RandomShrineWeldingResult::NotPaying
+    );
+}
+
+#[test]
+fn shrine_welding_reports_contempt_with_no_donatable_modifiers() {
+    let mut world = World::default();
+    world
+        .characters
+        .insert(CharacterId(1), welding_test_character(50));
+
+    assert_eq!(
+        world.apply_random_shrine_welding(CharacterId(1), 1),
+        RandomShrineWeldingResult::Contempt,
+        "no worn items at all -> no eligible donor"
+    );
+}
+
+#[test]
+fn shrine_welding_reports_regret_when_no_item_can_receive_the_modifier() {
+    // A single worn item can never weld with itself (`tmp != in2` in C's
+    // second search loop), so one donor and nothing else worn is "regret",
+    // not a self-weld.
+    let mut world = World::default();
+    let mut ch = welding_test_character(50);
+    let mut donor = item(10, ItemFlags::empty());
+    donor.modifier_index[0] = CharacterValue::Attack as i16;
+    donor.modifier_value[0] = 3;
+    ch.inventory[0] = Some(ItemId(10));
+    world.items.insert(ItemId(10), donor);
+    world.characters.insert(CharacterId(1), ch);
+
+    assert_eq!(
+        world.apply_random_shrine_welding(CharacterId(1), 1),
+        RandomShrineWeldingResult::Regret
+    );
+}
+
+#[test]
+fn shrine_welding_moves_a_modifier_between_two_worn_items() {
+    let mut world = World::default();
+    world.legacy_random_seed = 0;
+    let mut ch = welding_test_character(50);
+    let mut donor = item(10, ItemFlags::empty());
+    donor.name = "Donor Sword".into();
+    donor.modifier_index[0] = CharacterValue::Attack as i16;
+    donor.modifier_value[0] = 3;
+    let mut receiver = item(11, ItemFlags::empty());
+    receiver.name = "Receiver Shield".into();
+    ch.inventory[0] = Some(ItemId(10));
+    ch.inventory[1] = Some(ItemId(11));
+    world.items.insert(ItemId(10), donor);
+    world.items.insert(ItemId(11), receiver);
+    world.characters.insert(CharacterId(1), ch);
+
+    let result = world.apply_random_shrine_welding(CharacterId(1), 1);
+
+    assert_eq!(
+        result,
+        RandomShrineWeldingResult::Used {
+            item1_name: "Receiver Shield".to_string(),
+            item2_name: "Donor Sword".to_string(),
+        }
+    );
+    let receiver = &world.items[&ItemId(11)];
+    assert_eq!(receiver.modifier_index[0], CharacterValue::Attack as i16);
+    assert_eq!(receiver.modifier_value[0], 3);
+    assert_eq!(receiver.description, "Receiver Shield of Welding.");
+    let donor = &world.items[&ItemId(10)];
+    assert_eq!(donor.modifier_index[0], 0);
+    assert_eq!(donor.modifier_value[0], 0);
+    assert_eq!(donor.description, "Donor Sword of Unwelding.");
+    assert!(world
+        .characters
+        .get(&CharacterId(1))
+        .unwrap()
+        .flags
+        .contains(CharacterFlags::ITEMS));
+}
+
+#[test]
+fn shrine_welding_never_touches_weapon_armor_speed_demon_light_mods() {
+    // C `can_give_mod`: `V_WEAPON`/`V_ARMOR`/`V_SPEED`/`V_DEMON`/`V_LIGHT`
+    // modifiers can never be donated away.
+    let mut world = World::default();
+    world.legacy_random_seed = 0;
+    let mut ch = welding_test_character(50);
+    let mut only_excluded = item(10, ItemFlags::empty());
+    only_excluded.modifier_index[0] = CharacterValue::Weapon as i16;
+    only_excluded.modifier_value[0] = 3;
+    let receiver = item(11, ItemFlags::empty());
+    ch.inventory[0] = Some(ItemId(10));
+    ch.inventory[1] = Some(ItemId(11));
+    world.items.insert(ItemId(10), only_excluded);
+    world.items.insert(ItemId(11), receiver);
+    world.characters.insert(CharacterId(1), ch);
+
+    assert_eq!(
+        world.apply_random_shrine_welding(CharacterId(1), 1),
+        RandomShrineWeldingResult::Contempt
+    );
+}
+
+#[test]
+fn shrine_welding_skips_items_with_noenhance_or_a_driver() {
+    let mut world = World::default();
+    world.legacy_random_seed = 0;
+    let mut ch = welding_test_character(50);
+    let mut donor = item(10, ItemFlags::NOENHANCE);
+    donor.modifier_index[0] = CharacterValue::Attack as i16;
+    donor.modifier_value[0] = 3;
+    let mut driven = item(11, ItemFlags::empty());
+    driven.driver = 5;
+    ch.inventory[0] = Some(ItemId(10));
+    ch.inventory[1] = Some(ItemId(11));
+    world.items.insert(ItemId(10), donor);
+    world.items.insert(ItemId(11), driven);
+    world.characters.insert(CharacterId(1), ch);
+
+    assert_eq!(
+        world.apply_random_shrine_welding(CharacterId(1), 1),
+        RandomShrineWeldingResult::Contempt,
+        "NOENHANCE blocks the only possible donor; the receiver has a driver too"
+    );
+}
+
 #[test]
 fn refresh_special_stores_ignores_merchants_without_the_special_flag() {
     let mut loader = ZoneLoader::new();

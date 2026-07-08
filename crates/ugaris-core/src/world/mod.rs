@@ -114,6 +114,7 @@ pub use rmdeath::*;
 pub use skills::*;
 #[allow(unused_imports)]
 pub(crate) use spawn::*;
+pub use special_item::RandomShrineWeldingResult;
 #[allow(unused_imports)]
 pub(crate) use spells::*;
 pub use steal::*;
