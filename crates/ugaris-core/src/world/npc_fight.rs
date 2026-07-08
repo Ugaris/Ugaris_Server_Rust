@@ -615,6 +615,7 @@ impl World {
             | CharacterDriverState::Carlos(_)
             | CharacterDriverState::Kassim(_)
             | CharacterDriverState::Supermax(_)
+            | CharacterDriverState::Tester(_)
             | CharacterDriverState::Engrave(_) => None,
         }
     }

@@ -35,6 +35,11 @@ pub const CDR_TRADER: u16 = 72;
 /// `character.driver == CDR_SIMPLEBADDY` gates widened alongside
 /// `CDR_DUNGEONFIGHTER` in `world/npc_fight.rs`/`world/npc_idle.rs`.
 pub const CDR_PENTER: u16 = 64;
+/// C `#define CDR_TESTER 77` (`src/system/drvlib.h`): the pentagram-quest
+/// QA test bot (`src/area/4/pents.c::pentagram_tester_driver`) - see
+/// `world::npc::area4::tester`'s module doc comment for why it is not
+/// player-facing.
+pub const CDR_TESTER: u16 = 77;
 pub const CDR_LQNPC: u16 = 74;
 pub const CDR_JANITOR: u16 = 85;
 pub const CDR_TEUFELDEMON: u16 = 114;
@@ -383,6 +388,7 @@ pub enum CharacterDriverState {
     Carlos(CarlosDriverData),
     Kassim(KassimDriverData),
     Supermax(SupermaxDriverData),
+    Tester(TesterDriverData),
     /// C `struct engrave_data` (`src/area/3/area3.c:318-320`), stored via
     /// `set_data(co, DRD_ENGRAVE_DATA, ...)` on the *player* mid-
     /// transaction with Kassim, not on Kassim himself. Same "player, not
@@ -1088,6 +1094,7 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::Carlos(_)
             | CharacterDriverState::Kassim(_)
             | CharacterDriverState::Supermax(_)
+            | CharacterDriverState::Tester(_)
             | CharacterDriverState::Engrave(_),
         ) => SimpleBaddyDriverData::default(),
         None => SimpleBaddyDriverData::default(),
@@ -3457,6 +3464,7 @@ pub use crate::world::npc::area32::military::{
     parse_military_advisor_driver_args, parse_military_master_driver_args,
     MilitaryAdvisorDriverData, MilitaryMasterDriverData, MILITARY_QA,
 };
+pub use crate::world::npc::area4::tester::TesterDriverData;
 pub use crate::world::npc::arena::{
     parse_arena_manager_driver_args, ArenaContender, ArenaFighterDriverData,
     ArenaManagerDriverData, ArenaMasterDriverData, ARENA_FIGHTER_MASTER_POS,

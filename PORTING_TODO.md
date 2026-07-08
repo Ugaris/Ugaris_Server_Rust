@@ -502,7 +502,7 @@ Ordered by player progression; the C file is the oracle.
   lives in `ugaris-server`'s `spawns::respawn_npc_character`, and the
   claim-release death hook lives in `world_events::death_hooks::
   apply_lampghost_death_from_hurt_event`. This closes Area 3.
-- [~] **Area 4 - `src/area/4/pents.c`** - pentagram quest NPCs + demon
+- [x] **Area 4 - `src/area/4/pents.c`** - pentagram quest NPCs + demon
   wave logic beyond the ported item boundary. Also wire the achievement
   calls this file's reward mechanic makes in C (`achievement_add_pents`,
   `achievement_award(FIVE_IN_A_ROW/HAPPY_GO_LUCKY/FAVORED_BY_FORTUNE/
@@ -560,12 +560,14 @@ Ordered by player progression; the C file is the oracle.
   threaded through `tick_npc::run_all` - deliberately avoided touching
   its ~150-function-signature blast radius for a system-wide,
   non-NPC concern) and `/saveall`'s explicit call
-  (`tick_client_actions.rs`). Still unported: (3) the `CDR_TESTER` QA
-  helper NPC (`pentagram_tester_driver`, a test-only bot that auto-hunts
-  pentagrams/demons - lowest priority, not player-facing) and the
-  macro-daemon challenge-room `saved_pent_*` restore (already a
-  documented no-op in `macro_daemon.rs`). Next slice should be (3);
-  neither blocks any other P4 area.
+  (`tick_client_actions.rs`). (3) is now also CLOSED: `pentagram_tester_
+  driver` (`CDR_TESTER = 77`, a test-only QA bot never spawned by any C
+  code path - confirmed not player-facing) is ported in
+  `world/npc/area4/tester.rs`, registered as `tick_npc::area4::
+  tester_driver_87`. This closes Area 4. The macro-daemon challenge-room
+  `saved_pent_*` restore remains a documented no-op in `macro_daemon.rs`
+  (unrelated to any of the four numbered items above; not a blocker for
+  any other P4 area).
 - [ ] **Area 6 - `src/area/6/edemon.c`** - Earth Demon boss driver
   (`CDR_EDEMON*` characters); machinery items are ported.
 - [ ] **Area 8 - `src/area/8/fdemon.c`** - Fire Demon boss + farm NPCs;
@@ -913,4 +915,8 @@ notes live in `PROGRESS_ARCHIVE.md`.
   0021_pentagram_record.sql`, startup load + 4h-cadence/`/saveall`
   saves). Only `CDR_TESTER` remains. 2696 core + 1108 server + 81 db
   tests pass, clean build/boot-smoke.
+- 2026-07-08: Area 4 CLOSED: ported `pentagram_tester_driver`
+  (`CDR_TESTER`, `world/npc/area4/tester.rs`), the QA-only test bot -
+  last remaining piece. 2704 core + 1108 server tests pass, clean
+  build/boot-smoke.
 

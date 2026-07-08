@@ -1975,17 +1975,53 @@
         "test result: ok. 45 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 1108 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.12s"
       ]
+    },
+    {
+      "iteration": 58,
+      "startedAt": "2026-07-08T06:30:26.878Z",
+      "endedAt": "2026-07-08T07:09:28.509Z",
+      "durationMs": 2340552,
+      "agent": "opencode",
+      "model": "anthropic/claude-sonnet-5",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "PORTING_TODO.md",
+        "crates/ugaris-core/src/character_driver.rs",
+        "crates/ugaris-core/src/world/npc/mod.rs",
+        "crates/ugaris-core/src/world/npc_fight.rs",
+        "crates/ugaris-core/src/world/npc_idle.rs",
+        "crates/ugaris-core/src/world/tests/mod.rs",
+        "crates/ugaris-server/src/tick_npc/mod.rs",
+        "crates/ugaris-core/src/world/npc/area4/",
+        "crates/ugaris-core/src/world/tests/tester.rs",
+        "crates/ugaris-server/src/tick_npc/area4.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "test result: ok. 1108 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.09s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "The arguments provided to the tool are invalid: Invalid input for tool read: JSON parsing failed: Text: {\"filePath\": \"/home/eddow/Development/UgarisProjects/Ugaris_Server_Rust/crates/ugaris-core/src/w",
+        "Error message: JSON Parse error: Property name must be a string literal",
+        "245-        return Err(DoError::Dead);",
+        "248-    let direction = Direction::try_from(direction).map_err(|_| DoError::IllegalDirection)?;",
+        "error: could not compile `ugaris-core` (lib) due to 2 previous errors",
+        "test result: ok. 2696 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.22s",
+        "test world::tests::tester::tester_takes_an_adjacent_potion_directly ... FAILED",
+        "test world::tests::tester::tester_walks_toward_a_visible_ground_potion_to_pick_it_up ... FAILED"
+      ]
     }
   ],
-  "totalDurationMs": 69506860,
+  "totalDurationMs": 71847412,
   "struggleIndicators": {
     "repeatedErrors": {
       "Everything builds cleanly, all tests pass (2380 core + 1091 server, zero failures, zero warnings), f": 1,
       "Verification: `cargo fmt --all`, `cargo test --workspace` (2380 ugaris-core + 1091 ugaris-server, al": 1,
       "test result: ok. 1089 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.09s": 1,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 57,
-      "The arguments provided to the tool are invalid: Invalid input for tool read: JSON parsing failed: Te": 13,
-      "Error message: JSON Parse error: Property name must be a string literal": 10,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 58,
+      "The arguments provided to the tool are invalid: Invalid input for tool read: JSON parsing failed: Te": 14,
+      "Error message: JSON Parse error: Property name must be a string literal": 11,
       "error: could not compile `ugaris-core` (lib) due to 4 previous errors": 2,
       "test world::tests::brithildie::give_hands_item_back_to_giver ... FAILED": 1,
       "test result: FAILED. 17 passed; 1 failed; 0 ignored; 0 measured; 2362 filtered out; finished in 0.00": 1,
@@ -2145,7 +2181,7 @@
       "test result: ok. 2558 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.21s": 1,
       "7434:- Iteration 183 ported `/tunnel [level]`/`/tunnels` (`src/system/command.c:1712-1834`, dispatch": 1,
       "- `cargo test --workspace`: 2581 core (+6) + 1101 server tests, all green, zero failures": 1,
-      "error: could not compile `ugaris-core` (lib) due to 2 previous errors": 1,
+      "error: could not compile `ugaris-core` (lib) due to 2 previous errors": 2,
       "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 2573 filtered out; finished in 0.00s": 1,
       "test result: ok. 1101 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.11s": 1,
       "**Verification**: `cargo fmt --all` clean, `cargo test --workspace` (2592 core + 1101 server, all gr": 1,
@@ -2190,8 +2226,13 @@
       "7467:- Iteration 217 did a fresh full `cmdcmp(ptr, \"...\")` extraction pass (308 entries in `command.": 1,
       "That failure is due to pre-existing DB pollution from unrelated prior test runs (account id=1 alread": 1,
       "- All verification green: `cargo fmt --all`, `cargo test --workspace` (2696 core + 81 db + 1108 serv": 1,
-      "test result: ok. 2696 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.22s": 1,
-      "test result: ok. 1108 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.12s": 1
+      "test result: ok. 2696 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.22s": 2,
+      "test result: ok. 1108 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.12s": 1,
+      "test result: ok. 1108 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.09s": 1,
+      "245-        return Err(DoError::Dead);": 1,
+      "248-    let direction = Direction::try_from(direction).map_err(|_| DoError::IllegalDirection)?;": 1,
+      "test world::tests::tester::tester_takes_an_adjacent_potion_directly ... FAILED": 1,
+      "test world::tests::tester::tester_walks_toward_a_visible_ground_potion_to_pick_it_up ... FAILED": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

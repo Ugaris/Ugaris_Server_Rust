@@ -89,6 +89,7 @@ mod superior;
 mod supermax;
 mod teleport;
 mod terion;
+mod tester;
 mod text;
 mod thomas;
 mod trader;
