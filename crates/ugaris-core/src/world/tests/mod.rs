@@ -66,6 +66,7 @@ mod lydia;
 mod macro_npc;
 mod merchant;
 mod military;
+mod mining;
 mod moonie;
 mod nook;
 mod npc_fight;

@@ -1,10 +1,12 @@
 //! Completed-action-outcome handling: the mine-wall digging (`MineWall*`)
 //! family of `ItemDriverOutcome` variants (area 12's `src/area/12/mine.c`
 //! diggable-wall mechanic: wall init, dig attempt, cursor-occupied/
-//! exhausted blocks, and the post-collapse respawn timer). Split out of
-//! the giant `match outcome { ... }` block that still lives inline in
-//! `main.rs`'s `tick.tick()` arm (P0.5 "Finish main() phase decomposition"
-//! - REMAINING note: the completed-action-outcome handling needs
+//! exhausted blocks, the post-collapse respawn timer, and - once a wall
+//! is fully dug (`opened: true`) - the `handle_mining_result` reward
+//! cascade, see `mine::apply_mine_wall_reward`). Split out of the giant
+//! `match outcome { ... }` block that still lives inline in `main.rs`'s
+//! `tick.tick()` arm (P0.5 "Finish main() phase decomposition" -
+//! REMAINING note: the completed-action-outcome handling needs
 //! splitting by completed-action-kind family across several files, not
 //! just relocation, because the whole match is too large to move
 //! verbatim into one file). Warp, chests, dungeon, ice/palace, Teufel,
@@ -17,8 +19,11 @@
 use super::*;
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn dispatch_minewall_outcome(
+pub(crate) async fn dispatch_minewall_outcome(
     world: &mut World,
+    zone_loader: &mut ZoneLoader,
+    runtime: &mut ServerRuntime,
+    achievement_repository: &Option<ugaris_db::PgAchievementRepository>,
     outcome: ugaris_core::item_driver::ItemDriverOutcome,
     feedback: &mut Vec<(CharacterId, String)>,
     executed: &mut i32,
@@ -30,6 +35,7 @@ pub(crate) fn dispatch_minewall_outcome(
             *executed += 1;
         }
         ugaris_core::item_driver::ItemDriverOutcome::MineWallDig {
+            item_id,
             character_id,
             endurance_delta,
             opened,
@@ -39,6 +45,16 @@ pub(crate) fn dispatch_minewall_outcome(
                 character.endurance = character.endurance.saturating_add(endurance_delta);
             }
             if opened {
+                apply_mine_wall_reward(
+                    world,
+                    zone_loader,
+                    runtime,
+                    achievement_repository,
+                    item_id,
+                    character_id,
+                    feedback,
+                )
+                .await;
                 *deferred_templates += 1;
             } else {
                 *executed += 1;

@@ -31,6 +31,7 @@ mod macro_daemon;
 mod map_sync;
 mod merchants;
 mod military;
+mod mine;
 mod pents;
 mod player_actions;
 mod resource_sync;

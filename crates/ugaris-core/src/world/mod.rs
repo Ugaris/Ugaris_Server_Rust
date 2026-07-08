@@ -39,6 +39,7 @@ mod lockname;
 mod look;
 mod loot;
 mod lq;
+mod mining;
 pub mod npc;
 mod npc_fight;
 mod npc_idle;
@@ -96,6 +97,7 @@ pub use lockname::*;
 pub use look::*;
 pub use loot::*;
 pub use lq::*;
+pub use mining::*;
 pub use npc::*;
 pub use npc_fight::*;
 #[allow(unused_imports)]

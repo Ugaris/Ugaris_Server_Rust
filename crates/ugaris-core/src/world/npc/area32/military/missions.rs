@@ -740,6 +740,28 @@ pub enum MilitaryMissionProgress {
     Solved,
 }
 
+/// Outcome of [`crate::PlayerRuntime::check_military_silver`] (C
+/// `check_military_silver`, `src/area/12/mine.c:102-134`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MilitaryMissionSilverProgress {
+    /// No active unsolved mission (`!ppd->took_mission ||
+    /// ppd->solved_mission`) - C's outer `if` is false, so nothing
+    /// happens at all, not even the questlog resend.
+    NoMission,
+    /// An active unsolved mission exists, but it isn't a silver mission
+    /// (`mis[nr].type != MISSION_TYPE_SILVER`). C still calls
+    /// `sendquestlog` unconditionally inside the outer `if` before the
+    /// `switch`, so callers should still resend the questlog display for
+    /// this case, just with no message and no mutation.
+    NotSilverMission,
+    /// The mission's remaining silver requirement (`mis[nr].opt1`) was
+    /// decremented and is still above zero.
+    Progress { remaining: i32 },
+    /// The mission's remaining silver requirement reached (or was
+    /// exceeded by) this find - `solved_mission` just flipped to true.
+    Solved,
+}
+
 /// Outcome of [`crate::PlayerRuntime::accept_mission`] (C `accept_mission`,
 /// `military.c:1300-1341`). Mirrors every distinct `say()` branch;
 /// `dat->storage_data.quests_given[difficulty]++` (the NPC-scoped

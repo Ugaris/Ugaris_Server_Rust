@@ -1093,12 +1093,16 @@ pub(crate) async fn process_completed_action_outcomes(
                             | ugaris_core::item_driver::ItemDriverOutcome::MineWallCollapse { .. }) => {
                                 tick_item_use_minewall::dispatch_minewall_outcome(
                                     &mut world,
+                                    &mut zone_loader,
+                                    &mut runtime,
+                                    &achievement_repository,
                                     outcome,
                                     &mut feedback,
                                     &mut executed,
                                     &mut blocked,
                                     &mut deferred_templates,
-                                );
+                                )
+                                .await;
                             }
                             ugaris_core::item_driver::ItemDriverOutcome::IdentityTag { .. } => {
                                 executed += 1;

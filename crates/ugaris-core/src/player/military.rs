@@ -392,6 +392,47 @@ impl PlayerRuntime {
         }
     }
 
+    /// C `check_military_silver(cn, amount)` (`src/area/12/mine.c:102-
+    /// 134`): fired from the mine-wall reward cascade whenever a silver
+    /// or gold find is granted (gold counts double, see the caller),
+    /// decrementing the active mission's remaining silver requirement
+    /// (`mis[nr].opt1`) if it's a silver-type mission, flipping
+    /// `solved_mission` once the requirement is met. Unlike
+    /// [`Self::check_military_solve`], C calls `sendquestlog`
+    /// unconditionally whenever there's *any* active unsolved mission
+    /// (even a non-silver one) - see [`MilitaryMissionSilverProgress::
+    /// NotSilverMission`]'s doc comment; callers should resend the
+    /// questlog display for every non-`NoMission` outcome.
+    pub fn check_military_silver(
+        &mut self,
+        amount: i32,
+    ) -> crate::world::MilitaryMissionSilverProgress {
+        use crate::world::{MilitaryMissionSilverProgress, MISSION_TYPE_SILVER};
+
+        let took_mission = self.military_took_mission();
+        if took_mission == 0 || self.military_solved_mission() {
+            return MilitaryMissionSilverProgress::NoMission;
+        }
+        let nr = (took_mission - 1) as usize;
+        if nr >= MILITARY_PPD_MISSION_COUNT {
+            return MilitaryMissionSilverProgress::NoMission;
+        }
+        let mission = self.military_mission(nr);
+        if mission.mission_type != MISSION_TYPE_SILVER {
+            return MilitaryMissionSilverProgress::NotSilverMission;
+        }
+
+        if amount < mission.opt1 {
+            let remaining = mission.opt1 - amount;
+            self.set_military_mission_opt1(nr, remaining);
+            MilitaryMissionSilverProgress::Progress { remaining }
+        } else {
+            self.set_military_solved_mission(true);
+            self.set_military_mission_opt1(nr, 0);
+            MilitaryMissionSilverProgress::Solved
+        }
+    }
+
     /// C `accept_mission(cn, co, difficulty, ppd, dat)`
     /// (`military.c:1300-1341`)'s ppd-mutating half. `difficulty` is
     /// `0..=4` (C's only call sites, `military.c:1996-2015`, always pass a

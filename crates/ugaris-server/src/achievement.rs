@@ -654,6 +654,89 @@ pub(crate) async fn award_potion_brewed_achievement(
     record_achievement_firsts_and_announce(world, repository, character_id, &name, &unlocked).await;
 }
 
+/// C `handle_silver_find`'s `if (ch[cn].flags & CF_PLAYER)
+/// achievement_add_silver_mined(cn, amount);` tail (`src/area/12/
+/// mine.c:299-301`). A no-op if the character has no live `PlayerRuntime`
+/// (mirrors C's `CF_PLAYER` gate) or `amount == 0`. Also records the DB
+/// first-unlock/grats-announce tail (see `award_play_time_minute`'s doc
+/// comment).
+pub(crate) async fn award_silver_mined_achievement(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    repository: &Option<ugaris_db::PgAchievementRepository>,
+    character_id: CharacterId,
+    amount: u32,
+) {
+    if amount == 0 {
+        return;
+    }
+    let Some(name) = world
+        .characters
+        .get(&character_id)
+        .map(|character| character.name.clone())
+    else {
+        return;
+    };
+    let now = current_unix_time();
+    let Some(player) = runtime.player_for_character_mut(character_id) else {
+        return;
+    };
+    let unlocked = ugaris_core::achievement::add_silver_mined(
+        &mut player.achievement_data,
+        &mut player.achievement_stats,
+        amount,
+        &name,
+        now,
+    );
+    for ty in &unlocked {
+        let payload = achievement_unlock_payload(*ty, now);
+        for (sid, _) in runtime.sessions_for_character(character_id) {
+            runtime.send_to_session(sid, payload.clone());
+        }
+    }
+    record_achievement_firsts_and_announce(world, repository, character_id, &name, &unlocked).await;
+}
+
+/// C `handle_gold_find`'s `if (ch[cn].flags & CF_PLAYER)
+/// achievement_add_gold_mined(cn, amount);` tail (`src/area/12/
+/// mine.c:313-315`), same shape as [`award_silver_mined_achievement`].
+pub(crate) async fn award_gold_mined_achievement(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    repository: &Option<ugaris_db::PgAchievementRepository>,
+    character_id: CharacterId,
+    amount: u32,
+) {
+    if amount == 0 {
+        return;
+    }
+    let Some(name) = world
+        .characters
+        .get(&character_id)
+        .map(|character| character.name.clone())
+    else {
+        return;
+    };
+    let now = current_unix_time();
+    let Some(player) = runtime.player_for_character_mut(character_id) else {
+        return;
+    };
+    let unlocked = ugaris_core::achievement::add_gold_mined(
+        &mut player.achievement_data,
+        &mut player.achievement_stats,
+        amount,
+        &name,
+        now,
+    );
+    for ty in &unlocked {
+        let payload = achievement_unlock_payload(*ty, now);
+        for (sid, _) in runtime.sessions_for_character(character_id) {
+            runtime.send_to_session(sid, payload.clone());
+        }
+    }
+    record_achievement_firsts_and_announce(world, repository, character_id, &name, &unlocked).await;
+}
+
 /// C `raise_value`/`raise_value_exp` (`src/system/skill.c:204-266`,
 /// `:311-373`): both end with `if (ch[cn].flags & CF_PLAYER) {
 /// achievement_check_skill(cn, v, ch[cn].value[1][v]); }` after

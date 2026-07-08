@@ -725,11 +725,31 @@ Ordered by player progression; the C file is the oracle.
 - [x] **Area 11 - `src/area/11/palace.c`** - palace guards, Islena fight
   driver (door/bomb/cap items ported). *(done - `palace_islena` and
   `palace_guard` both ported; details in PORTING_LEDGER.md)*
-- [ ] **Area 12 - `src/area/12/mine.c`** - keyholder golems, miners. Also
+- [~] **Area 12 - `src/area/12/mine.c`** - keyholder golems, miners. Also
   wire `achievement_add_silver_mined`/`_gold_mined` from the
   `handle_mining_result` reward cascade using the existing `award_*`
   helper pattern in `crates/ugaris-server/src/achievement.rs`
   (Achievements task, closed iteration 84).
+  REMAINING: the `handle_mining_result` weighted-event roll and four of
+  its six branches are now ported - silver/gold finds (`give_mine_item`'s
+  cursor/inventory-pile placement, `check_military_silver` mission
+  tracking, and the `achievement_add_silver_mined`/`_gold_mined` wiring
+  this checkbox specifically called out), golem spawning
+  (`spawn_normal_golem`/`spawn_rare_golem`, reusing plain `CDR_SIMPLEBADDY`
+  templates same as other area mob spawns), and the cave-in endurance
+  mechanic (`handle_cave_in`, including the miner-avoid-chance and
+  athlete-reduction quirks). New `crates/ugaris-core/src/world/mining.rs`
+  (pure roll/amount/cave-in math) + `crates/ugaris-server/src/mine.rs`
+  (`ZoneLoader`/achievement glue), wired from `tick_item_use_minewall.rs`
+  when a wall's `MineWallDig` outcome carries `opened: true`. Still
+  unported: `handle_orb_find` (orb-of-skill reward, `create_orb_with_value`)
+  and `handle_artifact_find` (the 12-flavor relic table with exp/gold/
+  military-point tiers) - both rare branches (5 and 200 out of the
+  100,000-wide roll respectively); and `CDR_GOLEMKEYHOLDER`
+  (`keyhold_fight_driver`, the locked-treasure-room boss spawned by
+  `keyholder_door`/`IDR_MINEKEYDOOR` - the door/room-teleport mechanic
+  itself is already ported, only the actual golem character/fight AI is
+  missing, see `world/item_outcomes.rs`'s `MineKeyDoor` handling).
 - [ ] **Area 13 - `src/area/13/dungeon.c` + `dungeon_tab.c`** - dungeon
   master/fighter drivers, clan jewel raid protocol.
 - [ ] **Area 14 - `src/area/14/random.c`** - remaining shrine effects
@@ -1146,4 +1166,9 @@ notes live in `PROGRESS_ARCHIVE.md`.
   (patrol/reserve-ambush/scream-alert/freeze-chokepoint/`Ice Eye` line
   walk, single-victim self-defense). 2856 core + 1113 server tests pass,
   clean build/boot-smoke (area 11, 139 characters, no panics).
+- 2026-07-08: Area 12 STARTED: ported `handle_mining_result`'s silver/
+  gold/golem-spawn/cave-in branches (new `world/mining.rs` + server-side
+  `mine.rs`), `check_military_silver`, and the silver/gold-mined
+  achievement wiring. Orb/artifact finds and `CDR_GOLEMKEYHOLDER` remain.
+  2865 core + 1123 server tests pass, clean build/boot-smoke.
 
