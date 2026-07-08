@@ -452,8 +452,9 @@ Ordered by player progression; the C file is the oracle.
   canned-greeting/repeat/restart/aye/nay entries these two drivers need -
   the `list`/`money`/`shortcut to caligar`/`explain`/`engrave:`/~86-entry
   raise-lower-skill block remain for `kassim_driver`/`supermax_driver`.
-  Still unported, in suggested order: `astro2_driver` (quest 16, lost
-  astronomer notes), `seymour_driver`
+  `astro2_driver` (quest 16, lost astronomer notes) is now also ported
+  (`world/npc/area3/astro2.rs`, `CDR_ASTRO2`), sharing `AREA3_QA`.
+  Still unported, in suggested order: `seymour_driver`
   (quest 10-12, Aston entry NPC, needs an army-rank-grant deviation),
   `kelly_driver` (biggest chain, quests 13-15/54/60, needs new
   `kelly_found1-3`/`kelly_found_cnt`/`crypt_bonus` `PlayerRuntime`
@@ -777,4 +778,8 @@ notes live in `PROGRESS_ARCHIVE.md`.
   entrance guard + full 16-state crypt quest chain), plus a new shared
   `AREA3_QA` table. 2575 core + 1101 server tests pass, clean
   build/boot-smoke (area 1 and area 3 zone data both verified).
+- 2026-07-08: Area 3: ported `astro2_driver` (lost-astronomer's-notes
+  quest, `QLOG` 16), including the `IID_AREA2_ASTRONOTE` NT_GIVE handoff
+  and its first-completion `MONEY_AREA3_MOONIES` reward. 2581 core + 1101
+  server tests pass, clean build/boot-smoke.
 

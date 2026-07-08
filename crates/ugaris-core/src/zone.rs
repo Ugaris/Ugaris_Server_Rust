@@ -7,16 +7,17 @@ use crate::{
         apply_lab2_undead_create_message, apply_simple_baddy_create_message,
         parse_arena_manager_driver_args, parse_clanclerk_driver_args, parse_clanmaster_driver_args,
         parse_clubmaster_driver_args, ArenaFighterDriverData, ArenaMasterDriverData,
-        BrithildieDriverData, CamhermitDriverData, CharacterDriverState, DungeonmasterDriverData,
-        ForestRangerDriverData, GateFightDriverData, GateWelcomeDriverData, GreeterDriverData,
-        GwendylonDriverData, JanitorDriverData, JessicaDriverData, JiuDriverData, NookDriverData,
-        ReskinDriverData, SirJonesDriverData, SuperiorDriverData, TerionDriverData,
-        ThomasDriverData, TraderDriverData, YoakinDriverData, ARENA_FIGHTER_REST_POS,
-        CDR_ARENAFIGHTER, CDR_ARENAMANAGER, CDR_ARENAMASTER, CDR_BRITHILDIE, CDR_CAMHERMIT,
-        CDR_CLANCLERK, CDR_CLANMASTER, CDR_CLUBMASTER, CDR_DUNGEONMASTER, CDR_FOREST_RANGER,
-        CDR_GATE_FIGHT, CDR_GATE_WELCOME, CDR_GREETER, CDR_GWENDYLON, CDR_JANITOR, CDR_JESSICA,
-        CDR_JIU, CDR_LAB2UNDEAD, CDR_NOOK, CDR_RESKIN, CDR_SIMPLEBADDY, CDR_SIRJONES, CDR_SUPERIOR,
-        CDR_TERION, CDR_THOMAS, CDR_TRADER, CDR_YOAKIN, NT_CREATE,
+        Astro2DriverData, BrithildieDriverData, CamhermitDriverData, CharacterDriverState,
+        DungeonmasterDriverData, ForestRangerDriverData, GateFightDriverData,
+        GateWelcomeDriverData, GreeterDriverData, GwendylonDriverData, JanitorDriverData,
+        JessicaDriverData, JiuDriverData, NookDriverData, ReskinDriverData, SirJonesDriverData,
+        SuperiorDriverData, TerionDriverData, ThomasDriverData, TraderDriverData, YoakinDriverData,
+        ARENA_FIGHTER_REST_POS, CDR_ARENAFIGHTER, CDR_ARENAMANAGER, CDR_ARENAMASTER, CDR_ASTRO2,
+        CDR_BRITHILDIE, CDR_CAMHERMIT, CDR_CLANCLERK, CDR_CLANMASTER, CDR_CLUBMASTER,
+        CDR_DUNGEONMASTER, CDR_FOREST_RANGER, CDR_GATE_FIGHT, CDR_GATE_WELCOME, CDR_GREETER,
+        CDR_GWENDYLON, CDR_JANITOR, CDR_JESSICA, CDR_JIU, CDR_LAB2UNDEAD, CDR_NOOK, CDR_RESKIN,
+        CDR_SIMPLEBADDY, CDR_SIRJONES, CDR_SUPERIOR, CDR_TERION, CDR_THOMAS, CDR_TRADER,
+        CDR_YOAKIN, NT_CREATE,
     },
     entity::{
         Character, CharacterFlags, Item, ItemFlags, CHARACTER_VALUE_COUNT, INVENTORY_SIZE,
@@ -643,6 +644,13 @@ impl ZoneLoader {
             // args to read here, same as `CDR_GATE_WELCOME` above.
             character.driver_state =
                 Some(CharacterDriverState::Thomas(ThomasDriverData::default()));
+        }
+        if template.driver == CDR_ASTRO2 {
+            // C never parses zone-file args into `struct
+            // astro2_driver_data` (`set_data` zero-initializes it) - no
+            // args to read here, same as `CDR_GATE_WELCOME` above.
+            character.driver_state =
+                Some(CharacterDriverState::Astro2(Astro2DriverData::default()));
         }
         if template.driver == CDR_SIRJONES {
             // C never parses zone-file args into `struct

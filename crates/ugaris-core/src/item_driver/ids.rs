@@ -510,6 +510,10 @@ pub const IID_AREA2_DAGGERRIGHT: u32 = make_item_id(DEV_ID_DB, 0x000042);
 
 pub const IID_AREA2_SMALLSPIDER: u32 = make_item_id(DEV_ID_DB, 0x000037);
 
+/// C `IID_AREA2_ASTRONOTE` (`src/common/item_id.h:115`): the lost
+/// astronomer's notes area 3's `astro2_driver` (`world::astro2`) collects.
+pub const IID_AREA2_ASTRONOTE: u32 = make_item_id(DEV_ID_DB, 0x000038);
+
 pub(crate) const IID_STAFF_BLUEKEY1: u32 = make_item_id(DEV_ID_WARR, 0x00000A);
 
 pub(crate) const IID_STAFF_BLUEKEY2: u32 = make_item_id(DEV_ID_WARR, 0x00000B);

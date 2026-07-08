@@ -227,6 +227,11 @@ pub const CDR_VAMPIRE2: u16 = 38;
 /// area 3's ambient moon-telescope astronomer NPC
 /// (`src/area/3/area3.c::astro1_driver`).
 pub const CDR_ASTRO1: u16 = 32;
+/// C `#define CDR_ASTRO2 33` (`src/system/drvlib.h`, "gives moonie-quest
+/// in area 2" - a stale comment; the driver itself lives in
+/// `src/area/3/area3.c::astro2_driver`): the astronomer whose lost-notes
+/// quest (`QLOG` 16) rewards `MONEY_AREA3_MOONIES`.
+pub const CDR_ASTRO2: u16 = 33;
 /// C `#define CDR_THOMAS 35` (`src/system/drvlib.h`, "gives moonie-quest
 /// in area 2" - a stale comment; the driver itself lives in
 /// `src/area/3/area3.c::thomas_driver`): the crypt entrance guard who
@@ -336,6 +341,7 @@ pub enum CharacterDriverState {
     Vampire(VampireDriverData),
     Vampire2(Vampire2DriverData),
     Astro1(Astro1DriverData),
+    Astro2(Astro2DriverData),
     Thomas(ThomasDriverData),
     SirJones(SirJonesDriverData),
 }
@@ -1029,6 +1035,7 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::Vampire(_)
             | CharacterDriverState::Vampire2(_)
             | CharacterDriverState::Astro1(_)
+            | CharacterDriverState::Astro2(_)
             | CharacterDriverState::Thomas(_)
             | CharacterDriverState::SirJones(_),
         ) => SimpleBaddyDriverData::default(),
@@ -3377,6 +3384,7 @@ pub use crate::world::npc::area22::lab2_undead::{
     apply_lab2_undead_create_message, parse_lab2_undead_driver_args, Lab2UndeadDriverData,
 };
 pub use crate::world::npc::area3::astro1::Astro1DriverData;
+pub use crate::world::npc::area3::astro2::Astro2DriverData;
 pub use crate::world::npc::area3::clara::{
     clara_dialogue_step, clara_replay_state_after_text_analysis,
     clara_state_after_swamp_monster_death, ClaraDialogueContext, ClaraDialogueOutcome,

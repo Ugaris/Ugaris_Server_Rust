@@ -504,6 +504,7 @@ impl World {
                 | CharacterDriverState::Vampire(_)
                 | CharacterDriverState::Vampire2(_)
                 | CharacterDriverState::Astro1(_)
+                | CharacterDriverState::Astro2(_)
                 | CharacterDriverState::Thomas(_)
                 | CharacterDriverState::SirJones(_) => None,
             });
