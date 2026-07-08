@@ -568,8 +568,32 @@ Ordered by player progression; the C file is the oracle.
   `saved_pent_*` restore remains a documented no-op in `macro_daemon.rs`
   (unrelated to any of the four numbered items above; not a blocker for
   any other P4 area).
-- [ ] **Area 6 - `src/area/6/edemon.c`** - Earth Demon boss driver
+- [~] **Area 6 - `src/area/6/edemon.c`** - Earth Demon boss driver
   (`CDR_EDEMON*` characters); machinery items are ported.
+  REMAINING: confirmed C's own `ch_driver`/`ch_died_driver`/
+  `ch_respawn_driver` in `edemon.c` are all empty (`switch { default: return
+  0; }`) - no `CDR_EDEMON` character driver exists in C; `edemon2s`/
+  `edemon6s` (`ugaris_data/zones/6/edemon.chr`) use plain `driver=7`
+  (`CDR_SIMPLEBADDY`, already ported) plus `flag=CF_EDEMON`, so this task is
+  really "port every `CF_EDEMON` branch in shared combat code", not a new
+  driver. All 8 `IDR_EDEMON*` item drivers were already ported (confirmed,
+  extensively tested per the ledger). This iteration closed two previously-
+  unported `CF_EDEMON` combat mechanics found by auditing every C
+  `CF_EDEMON` call site: `do_walk`'s earthmud-spell movement slowdown
+  (`do.c:93-99`, `edemon_reduction`) - a genuine pre-existing gap where the
+  earthmud spell didn't slow anyone down at all - and `check_strike_near`'s
+  earth-demon damage reduction against ball/flash strikes (`effect.c:864`).
+  Still gap: `sub_attack`'s earth-demon hit-harder/hit-less-often diff bonus
+  (`act.c:495-501`) is unreachable because `do_action::act_attack` resolves
+  melee to-hit from raw `V_ATTACK`/`V_PARRY` instead of calling
+  `get_attack_skill`/`get_parry_skill` (`attack_skill`/`parry_skill` in
+  `attack.rs` already implement the right formula, including their own
+  earth-demon fallback, but no melee call site invokes them) - this is a
+  pre-existing, cross-cutting P1 combat gap far larger than Area 6 (it
+  would change to-hit math for every character in the game, needs
+  `get_fight_skill`'s weapon-type lookup threaded into `act_attack`'s
+  signature, and touches many existing tests), not something to fix inside
+  one area's slice. Left `[~]` for that reason.
 - [ ] **Area 8 - `src/area/8/fdemon.c`** - Fire Demon boss + farm NPCs;
   cannon/loader items are ported.
 - [ ] **Area 10 - `src/area/10/ice.c`** - ice NPCs, ice demon curse
@@ -919,4 +943,8 @@ notes live in `PROGRESS_ARCHIVE.md`.
   (`CDR_TESTER`, `world/npc/area4/tester.rs`), the QA-only test bot -
   last remaining piece. 2704 core + 1108 server tests pass, clean
   build/boot-smoke.
+- 2026-07-08: Area 6 audit + two `CF_EDEMON` combat gaps closed:
+  `do_walk`'s earthmud-spell movement slowdown (previously a total no-op)
+  and `check_strike_near`'s earth-demon ball/flash damage reduction.
+  2711 core + 1108 server tests pass, clean build/boot-smoke.
 

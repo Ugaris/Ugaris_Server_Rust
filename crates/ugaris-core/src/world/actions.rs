@@ -80,6 +80,36 @@ impl World {
             .map(advance_action_step)
     }
 
+    /// C `do_walk` (`system/do.c:93-99`): earth-demon-exempt earthmud
+    /// slowdown, pre-computed here (rather than threaded into `do_action`'s
+    /// pure `do_walk`) since only `World` has access to `self.effects`.
+    /// Sums `edemon_reduction(ef[fn].strength) * 2` over every active
+    /// `EF_EARTHMUD` effect on the character's current tile; `0` for
+    /// `CF_EDEMON` characters (matching C's gate around the whole scan) or
+    /// characters/tiles that can't be resolved.
+    pub(crate) fn earthmud_extra_movement_cost(&self, character_id: CharacterId) -> i32 {
+        let Some(character) = self.characters.get(&character_id) else {
+            return 0;
+        };
+        if character.flags.contains(CharacterFlags::EDEMON) {
+            return 0;
+        }
+        let Some(tile) = self
+            .map
+            .tile(usize::from(character.x), usize::from(character.y))
+        else {
+            return 0;
+        };
+        let current_demon = character_value(character, CharacterValue::Demon);
+        tile.effects
+            .iter()
+            .filter(|&&slot| slot != 0)
+            .filter_map(|&slot| self.effects.get(&u32::from(slot)))
+            .filter(|effect| effect.effect_type == EF_EARTHMUD)
+            .map(|effect| edemon_reduction(effect.strength, current_demon) * 2)
+            .sum()
+    }
+
     pub fn tile_special_check(&mut self, character_id: CharacterId) -> TileSpecialOutcome {
         let Some(character) = self.characters.get(&character_id) else {
             return TileSpecialOutcome::default();
@@ -343,6 +373,7 @@ impl World {
             }
             PlayerActionCode::WalkDir => {
                 let weather_movement_percent = self.settings.weather_movement_percent;
+                let earthmud_extra_cost = self.earthmud_extra_movement_cost(character_id);
                 let Some(character) = self.characters.get_mut(&character_id) else {
                     return false;
                 };
@@ -353,6 +384,7 @@ impl World {
                     direction,
                     area_id,
                     weather_movement_percent,
+                    earthmud_extra_cost,
                 )
                 .is_ok()
                 {
@@ -364,6 +396,7 @@ impl World {
                         alt1 as u8,
                         area_id,
                         weather_movement_percent,
+                        earthmud_extra_cost,
                     )
                     .is_ok()
                         || do_walk(
@@ -372,6 +405,7 @@ impl World {
                             alt2 as u8,
                             area_id,
                             weather_movement_percent,
+                            earthmud_extra_cost,
                         )
                         .is_ok()
                 }) {
@@ -1201,6 +1235,7 @@ impl World {
         area_id: u16,
     ) -> bool {
         let weather_movement_percent = self.settings.weather_movement_percent;
+        let earthmud_extra_cost = self.earthmud_extra_movement_cost(character_id);
         let Some(character) = self.characters.get_mut(&character_id) else {
             return false;
         };
@@ -1210,6 +1245,7 @@ impl World {
             direction as u8,
             area_id,
             weather_movement_percent,
+            earthmud_extra_cost,
         )
         .is_ok()
         {
@@ -1252,6 +1288,7 @@ impl World {
         area_id: u16,
     ) -> bool {
         let weather_movement_percent = self.settings.weather_movement_percent;
+        let earthmud_extra_cost = self.earthmud_extra_movement_cost(character_id);
         let Some(character) = self.characters.get_mut(&character_id) else {
             return false;
         };
@@ -1261,6 +1298,7 @@ impl World {
             direction as u8,
             area_id,
             weather_movement_percent,
+            earthmud_extra_cost,
         )
         .is_ok()
         {
@@ -1410,6 +1448,7 @@ impl World {
         area_id: u16,
     ) -> bool {
         let weather_movement_percent = self.settings.weather_movement_percent;
+        let earthmud_extra_cost = self.earthmud_extra_movement_cost(character_id);
         self.characters
             .get_mut(&character_id)
             .is_some_and(|character| {
@@ -1419,6 +1458,7 @@ impl World {
                     direction as u8,
                     area_id,
                     weather_movement_percent,
+                    earthmud_extra_cost,
                 )
                 .is_ok()
             })

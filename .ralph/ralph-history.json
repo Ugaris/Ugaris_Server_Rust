@@ -2011,15 +2011,48 @@
         "test world::tests::tester::tester_takes_an_adjacent_potion_directly ... FAILED",
         "test world::tests::tester::tester_walks_toward_a_visible_ground_potion_to_pick_it_up ... FAILED"
       ]
+    },
+    {
+      "iteration": 59,
+      "startedAt": "2026-07-08T07:09:32.584Z",
+      "endedAt": "2026-07-08T07:36:43.031Z",
+      "durationMs": 1629411,
+      "agent": "opencode",
+      "model": "anthropic/claude-sonnet-5",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "PORTING_TODO.md",
+        "crates/ugaris-core/src/do_action.rs",
+        "crates/ugaris-core/src/world/actions.rs",
+        "crates/ugaris-core/src/world/effect_tick.rs",
+        "crates/ugaris-core/src/world/mod.rs",
+        "crates/ugaris-core/src/world/tests/actions.rs",
+        "crates/ugaris-core/src/world/tests/effect_tick.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "**Verification**: 7 new focused tests, `cargo fmt --all` clean, `cargo test --workspace` (2711 core + 1108 server, all green, zero failures/warnings), `cargo build -p ugaris-server` clean, boot-smoke ",
+        "test result: ok. 1108 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.09s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "7514:- 2026-07-07: continued the P0.5 \"Finish main() phase decomposition\" task with its first completed-action-outcome family slice, following the \"needs splitting by completed-action-kind family acro",
+        "7515:- 2026-07-07: continued the P0.5 \"Finish main() phase decomposition\" task with its second completed-action-outcome family slice: the chest family - 16 `ItemDriverOutcome` variants (`ChestTreasure",
+        "7516:- 2026-07-07: continued the P0.5 \"Finish main() phase decomposition\" task with its third completed-action-outcome family slice: the dungeon family (`src/area/13/dungeon.c`) - 7 contiguous `ItemDr",
+        "7517:- 2026-07-07: continued the P0.5 \"Finish main() phase decomposition\" task with its fourth completed-action-outcome family slice: the ice family (`src/area/10/ice.c`) plus the adjacent Palace/Isle",
+        "7519:- 2026-07-07: continued the P0.5 \"Finish main() phase decomposition\" task with its fifth completed-action-outcome family slice: the Teufel family (`src/area/34/teufel.c`) - 16 contiguous `ItemDri",
+        "7520:- 2026-07-07: continued the P0.5 \"Finish main() phase decomposition\" task with its sixth completed-action-outcome family slice: the skeleton-raise family (area 1's chair/blood-raise sequence, `gw",
+        "7522:- 2026-07-07: continued the P0.5 \"Finish main() phase decomposition\" task with its seventh completed-action-outcome family slice: the Edemon (`src/area/6/edemon.c`) + Fdemon (`src/area/8/fdemon.c"
+      ]
     }
   ],
-  "totalDurationMs": 71847412,
+  "totalDurationMs": 73476823,
   "struggleIndicators": {
     "repeatedErrors": {
       "Everything builds cleanly, all tests pass (2380 core + 1091 server, zero failures, zero warnings), f": 1,
       "Verification: `cargo fmt --all`, `cargo test --workspace` (2380 ugaris-core + 1091 ugaris-server, al": 1,
       "test result: ok. 1089 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.09s": 1,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 58,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 59,
       "The arguments provided to the tool are invalid: Invalid input for tool read: JSON parsing failed: Te": 14,
       "Error message: JSON Parse error: Property name must be a string literal": 11,
       "error: could not compile `ugaris-core` (lib) due to 4 previous errors": 2,
@@ -2228,11 +2261,19 @@
       "- All verification green: `cargo fmt --all`, `cargo test --workspace` (2696 core + 81 db + 1108 serv": 1,
       "test result: ok. 2696 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.22s": 2,
       "test result: ok. 1108 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.12s": 1,
-      "test result: ok. 1108 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.09s": 1,
+      "test result: ok. 1108 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.09s": 2,
       "245-        return Err(DoError::Dead);": 1,
       "248-    let direction = Direction::try_from(direction).map_err(|_| DoError::IllegalDirection)?;": 1,
       "test world::tests::tester::tester_takes_an_adjacent_potion_directly ... FAILED": 1,
-      "test world::tests::tester::tester_walks_toward_a_visible_ground_potion_to_pick_it_up ... FAILED": 1
+      "test world::tests::tester::tester_walks_toward_a_visible_ground_potion_to_pick_it_up ... FAILED": 1,
+      "**Verification**: 7 new focused tests, `cargo fmt --all` clean, `cargo test --workspace` (2711 core ": 1,
+      "7514:- 2026-07-07: continued the P0.5 \"Finish main() phase decomposition\" task with its first comple": 1,
+      "7515:- 2026-07-07: continued the P0.5 \"Finish main() phase decomposition\" task with its second compl": 1,
+      "7516:- 2026-07-07: continued the P0.5 \"Finish main() phase decomposition\" task with its third comple": 1,
+      "7517:- 2026-07-07: continued the P0.5 \"Finish main() phase decomposition\" task with its fourth compl": 1,
+      "7519:- 2026-07-07: continued the P0.5 \"Finish main() phase decomposition\" task with its fifth comple": 1,
+      "7520:- 2026-07-07: continued the P0.5 \"Finish main() phase decomposition\" task with its sixth comple": 1,
+      "7522:- 2026-07-07: continued the P0.5 \"Finish main() phase decomposition\" task with its seventh comp": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

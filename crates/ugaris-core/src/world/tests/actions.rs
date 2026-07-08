@@ -1039,3 +1039,53 @@ fn player_move_paths_through_closed_door_and_opens_it() {
     );
     assert_eq!(character.act1, 900, "the door item is the use target");
 }
+
+#[test]
+fn earthmud_extra_movement_cost_sums_own_tile_effects_scaled_by_edemon_reduction() {
+    let mut world = World::default();
+    let mut walker = character(1);
+    walker.x = 10;
+    walker.y = 10;
+    walker.values[0][CharacterValue::Demon as usize] = 4;
+    world.add_character(walker);
+
+    // Only the walker's own tile (10,10) should count - a second earthmud
+    // effect on an adjacent tile (11,10) must not contribute.
+    world.create_earthmud_effect(10, 10, 30);
+    world.create_earthmud_effect(11, 10, 30);
+
+    // C `edemon_reduction(cn, 30) = max(0, 30 - 4) = 26`, doubled per C
+    // `do_walk`'s `edemon_reduction(cn, ef[fn].strength) * 2`.
+    assert_eq!(world.earthmud_extra_movement_cost(CharacterId(1)), 52);
+}
+
+#[test]
+fn earthmud_extra_movement_cost_is_zero_for_earth_demons() {
+    let mut world = World::default();
+    let mut walker = character(1);
+    walker.x = 10;
+    walker.y = 10;
+    walker.flags |= CharacterFlags::EDEMON;
+    world.add_character(walker);
+    world.create_earthmud_effect(10, 10, 30);
+
+    // C `do_walk`'s `if (!(ch[cn].flags & CF_EDEMON))` gate skips the whole
+    // scan for earth demons - they aren't slowed by their own mud spell.
+    assert_eq!(world.earthmud_extra_movement_cost(CharacterId(1)), 0);
+}
+
+#[test]
+fn setup_walk_direction_slows_down_when_standing_in_earthmud() {
+    let mut world = World::default();
+    let mut walker = character(1);
+    walker.x = 10;
+    walker.y = 10;
+    world.add_character(walker);
+    world.create_earthmud_effect(10, 10, 5);
+
+    assert!(world.setup_walk_direction(CharacterId(1), Direction::Right, 1));
+
+    let character = world.characters.get(&CharacterId(1)).unwrap();
+    // base cost 8 + edemon_reduction(5, 0) * 2 = 8 + 10 = 18.
+    assert_eq!(character.duration, speed_ticks(0, SpeedMode::Normal, 18));
+}

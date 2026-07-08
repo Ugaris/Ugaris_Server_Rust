@@ -240,6 +240,7 @@ pub fn do_walk(
     direction: u8,
     area_id: u16,
     weather_movement_percent: i32,
+    earthmud_extra_cost: i32,
 ) -> Result<(), DoError> {
     if character.flags.contains(CharacterFlags::DEAD) {
         return Err(DoError::Dead);
@@ -260,7 +261,7 @@ pub fn do_walk(
     let current_tile = map
         .tile(current_x, current_y)
         .ok_or(DoError::IllegalCoords)?;
-    let mut cost = movement_cost(character, current_tile, area_id);
+    let mut cost = movement_cost(character, current_tile, area_id, earthmud_extra_cost);
     // C `modify_movement_speed` (`module/weather/weather.c:477-493`) checks
     // the character's *current* (pre-move) tile - captured now before the
     // later mutable borrow of `map` for the target tile's `TMOVEBLOCK` flag.
@@ -1575,8 +1576,35 @@ pub fn reset_action_after_act(character: &mut Character) {
     character.action = 0;
 }
 
-fn movement_cost(character: &Character, tile: &crate::map::MapTile, area_id: u16) -> i32 {
-    let mut cost = 8;
+/// C `edemon_reduction` (`system/tool.c:3171-3173`): `max(0, str -
+/// ch[cn].value[0][V_DEMON])`. Shared by `sub_attack`'s earth-demon hit/miss
+/// adjustment (act.c:498-501, not yet wired - `act_attack` doesn't call
+/// `get_attack_skill`/`get_parry_skill`) and `do_walk`'s earthmud slowdown
+/// below; `current_demon_value` is always the target character's *current*
+/// (`value[0]`) `V_DEMON`, matching C's `ch[cn].value[0][V_DEMON]` read.
+pub(crate) fn edemon_reduction(strength: i32, current_demon_value: i32) -> i32 {
+    (strength - current_demon_value).max(0)
+}
+
+/// C `do_walk` (`system/do.c:86-99`): base cost `8`, plus (for non-earth-
+/// demons) `edemon_reduction(cn, ef[fn].strength) * 2` for every active
+/// `EF_EARTHMUD` map effect on the character's current tile - the earthmud
+/// spell's slowdown, from which earth demons are immune (they don't get
+/// slowed by their own mud). `earthmud_extra_cost` is pre-computed by the
+/// `World`-level caller (already `0` when the walker has `CF_EDEMON`,
+/// mirroring C's `if (!(ch[cn].flags & CF_EDEMON))` gate around the whole
+/// scan) since `do_action.rs` has no access to `World::effects`. The swamp-
+/// sprite/underwater branches below *replace* `cost` outright for players,
+/// exactly like C's unconditional `cost = ...` assignments - so on a muddy
+/// swamp tile the earthmud bonus is silently discarded for players, an
+/// authentic C quirk preserved here by adding `earthmud_extra_cost` first.
+fn movement_cost(
+    character: &Character,
+    tile: &crate::map::MapTile,
+    area_id: u16,
+    earthmud_extra_cost: i32,
+) -> i32 {
+    let mut cost = 8 + earthmud_extra_cost;
 
     if character.flags.contains(CharacterFlags::PLAYER) {
         let sprite = tile.ground_sprite & 0xffff;
@@ -1840,7 +1868,7 @@ mod tests {
         character.x = 10;
         character.y = 10;
 
-        do_walk(&mut character, &mut map, Direction::Right as u8, 1, 100).unwrap();
+        do_walk(&mut character, &mut map, Direction::Right as u8, 1, 100, 0).unwrap();
 
         assert_eq!(character.action, action::WALK);
         assert_eq!(character.tox, 11);
@@ -1863,14 +1891,21 @@ mod tests {
         map.set_flags(11, 10, MapFlags::MOVEBLOCK);
 
         assert_eq!(
-            do_walk(&mut character, &mut map, Direction::Right as u8, 1, 100),
+            do_walk(&mut character, &mut map, Direction::Right as u8, 1, 100, 0),
             Err(DoError::Blocked)
         );
 
         map.set_flags(11, 10, MapFlags::empty());
         map.set_flags(10, 11, MapFlags::MOVEBLOCK);
         assert_eq!(
-            do_walk(&mut character, &mut map, Direction::RightDown as u8, 1, 100),
+            do_walk(
+                &mut character,
+                &mut map,
+                Direction::RightDown as u8,
+                1,
+                100,
+                0
+            ),
             Err(DoError::Blocked)
         );
     }
@@ -1886,10 +1921,48 @@ mod tests {
         character.y = 10;
         map.tile_mut(10, 10).unwrap().ground_sprite = 59423;
 
-        do_walk(&mut character, &mut map, Direction::Right as u8, 1, 100).unwrap();
+        do_walk(&mut character, &mut map, Direction::Right as u8, 1, 100, 0).unwrap();
 
         assert_eq!(character.duration, speed_ticks(0, SpeedMode::Fast, 24));
         assert_eq!(character.endurance, 750);
+    }
+
+    #[test]
+    fn edemon_reduction_matches_c_max_of_zero_and_strength_minus_demon() {
+        assert_eq!(edemon_reduction(30, 10), 20);
+        assert_eq!(edemon_reduction(10, 30), 0);
+        assert_eq!(edemon_reduction(10, 10), 0);
+    }
+
+    #[test]
+    fn do_walk_applies_earthmud_extra_cost_before_terrain_overrides() {
+        let mut map = MapGrid::new(20, 20);
+        let mut character = character();
+        character.x = 10;
+        character.y = 10;
+
+        // C `do_walk` (`do.c:93-99`): non-earth-demon walkers pay the
+        // pre-computed `earthmud_extra_cost` on top of the base cost 8.
+        do_walk(&mut character, &mut map, Direction::Right as u8, 1, 100, 6).unwrap();
+
+        assert_eq!(character.duration, speed_ticks(0, SpeedMode::Normal, 14));
+    }
+
+    #[test]
+    fn do_walk_swamp_sprite_overrides_discard_earthmud_extra_cost_for_players() {
+        let mut map = MapGrid::new(20, 20);
+        let mut character = character();
+        character.flags.insert(CharacterFlags::PLAYER);
+        character.x = 10;
+        character.y = 10;
+        map.tile_mut(10, 10).unwrap().ground_sprite = 59423;
+
+        // C's swamp-sprite branches assign `cost = 24` outright (not `+=`),
+        // so a muddy swamp tile silently loses the earthmud bonus for
+        // players - an authentic C quirk, preserved here.
+        do_walk(&mut character, &mut map, Direction::Right as u8, 1, 100, 6).unwrap();
+
+        assert_eq!(character.duration, speed_ticks(0, SpeedMode::Normal, 24));
     }
 
     #[test]
@@ -1901,7 +1974,7 @@ mod tests {
         character.y = 10;
         character.values[0][CharacterValue::Speed as usize] = 100;
 
-        do_walk(&mut character, &mut map, Direction::Right as u8, 1, 70).unwrap();
+        do_walk(&mut character, &mut map, Direction::Right as u8, 1, 70, 0).unwrap();
 
         assert_eq!(
             character.duration,
@@ -1922,7 +1995,7 @@ mod tests {
 
         // C `modify_movement_speed` returns `speed` unmodified indoors, even
         // though the weather-slow flag/percent is passed in.
-        do_walk(&mut character, &mut map, Direction::Right as u8, 1, 70).unwrap();
+        do_walk(&mut character, &mut map, Direction::Right as u8, 1, 70, 0).unwrap();
 
         assert_eq!(character.duration, speed_ticks(100, SpeedMode::Normal, 8));
     }

@@ -1418,6 +1418,43 @@ fn ball_effect_moves_slowly_and_strikes_nearby_targets() {
 }
 
 #[test]
+fn ball_effect_earth_demon_target_takes_reduced_strike_damage() {
+    // C `check_strike_near` (`system/effect.c:864`): earth demons don't
+    // suffer as much damage from a nearby ball/flash strike - compares
+    // against the identical non-edemon setup in
+    // `ball_effect_moves_slowly_and_strikes_nearby_targets` above (which
+    // takes the target to `28_675` hp, i.e. `1325` raw damage).
+    let mut world = World::default();
+    let mut caster = character(1);
+    caster.flags.insert(CharacterFlags::PLAYER);
+    caster.x = 10;
+    caster.y = 10;
+    caster.act1 = 15;
+    caster.act2 = 10;
+    caster.values[0][CharacterValue::Flash as usize] = 50;
+    caster.values[0][CharacterValue::Tactics as usize] = 24;
+    let mut target = character(2);
+    target
+        .flags
+        .insert(CharacterFlags::ALIVE | CharacterFlags::EDEMON);
+    target.hp = 30 * POWERSCALE;
+    target.values[0][CharacterValue::Immunity as usize] = 20;
+    // Trained (`value[1]`) `V_DEMON` gap of 30 vs the caster's 0 hits the
+    // `min(dam/4, dam*30/10)` cap, i.e. exactly a 25% reduction.
+    target.values[1][CharacterValue::Demon as usize] = 30;
+    world.spawn_character(caster, 10, 10);
+    world.spawn_character(target, 12, 10);
+    let caster = world.characters.get(&CharacterId(1)).unwrap().clone();
+    world.create_ball_effect(&caster);
+
+    world.tick_effects();
+
+    let target = world.characters.get(&CharacterId(2)).unwrap();
+    let raw_damage = 30 * POWERSCALE - target.hp;
+    assert_eq!(raw_damage, 1325 - 1325 / 4);
+}
+
+#[test]
 fn ball_effect_respects_runtime_attack_policy() {
     let mut world = World::default();
     let mut caster = character(1);

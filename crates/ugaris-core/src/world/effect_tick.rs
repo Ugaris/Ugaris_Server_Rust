@@ -428,13 +428,24 @@ impl World {
                 }
                 if self.tick.0 & 3 == 0 {
                     let has_tactics = character_value_present(target, CharacterValue::Tactics) != 0;
-                    let damage = strike_damage(
+                    let mut damage = strike_damage(
                         effect.strength,
                         character_value(target, CharacterValue::Immunity),
                         character_value(target, CharacterValue::Tactics),
                         has_tactics,
                     ) * ball_target_damage_multiplier(effect.number_of_enemies)
                         / (25 * TICKS_PER_SECOND as i32 * 2);
+                    // C `check_strike_near` (`system/effect.c:864`): earth
+                    // demons don't suffer as much damage from nearby ball/
+                    // flash strikes, scaled by the trained (`value[1]`)
+                    // `V_DEMON` gap between target and caster.
+                    if target.flags.contains(CharacterFlags::EDEMON) {
+                        let target_demon = character_value_present(target, CharacterValue::Demon);
+                        let caster_demon = character_value_present(&caster, CharacterValue::Demon);
+                        let reduction =
+                            (damage / 4).min(damage * (target_demon - caster_demon).max(0) / 10);
+                        damage -= reduction;
+                    }
                     targets.push((target_id, damage));
                 } else {
                     targets.push((target_id, 0));
