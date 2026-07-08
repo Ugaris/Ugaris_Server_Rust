@@ -80,7 +80,14 @@ impl World {
         };
         let defender_rhand = defender.inventory[worn_slot::RIGHT_HAND].is_some();
         let resolution = self.characters.get_mut(&attacker_id).and_then(|attacker| {
-            act_attack(attacker, &mut defender, &self.map, d100_roll, d6_roll)
+            act_attack(
+                attacker,
+                &mut defender,
+                &self.map,
+                &self.items,
+                d100_roll,
+                d6_roll,
+            )
         });
         self.characters.insert(defender_id, defender);
         let Some(resolution) = resolution else {

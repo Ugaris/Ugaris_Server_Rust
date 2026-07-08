@@ -666,6 +666,11 @@ fn completed_attack_queues_legacy_showattack_pre_hurt_line() {
     attacker.y = 10;
     attacker.dir = Direction::Right as u8;
     attacker.act1 = 2;
+    // `get_attack_skill` (`tool.c:1224-1244`) only reads the raised Attack
+    // stat when its "present" flag (`value[1][V_ATTACK]`) is set; otherwise
+    // it falls back to the spellcaster formula. Set both "present" flags so
+    // this test exercises the raised-stat branch, matching a real fighter.
+    attacker.values[1][CharacterValue::Attack as usize] = 1;
     attacker.values[0][CharacterValue::Attack as usize] = 10;
     attacker.values[0][CharacterValue::Weapon as usize] = 10;
     let mut defender = character(2);
@@ -673,6 +678,7 @@ fn completed_attack_queues_legacy_showattack_pre_hurt_line() {
     defender.x = 11;
     defender.y = 10;
     defender.dir = Direction::Left as u8;
+    defender.values[1][CharacterValue::Parry as usize] = 1;
     defender.values[0][CharacterValue::Parry as usize] = 10;
     world.spawn_character(attacker, 10, 10);
     world.spawn_character(defender, 11, 10);
@@ -683,7 +689,7 @@ fn completed_attack_queues_legacy_showattack_pre_hurt_line() {
     assert_eq!(texts[0].character_id, CharacterId(1));
     assert_eq!(
         texts[0].message,
-        "attack Target, diff=0 (10 10), chan=50, percent=90, dam=16"
+        "attack Target, diff=0 (20 20), chan=50, percent=90, dam=16"
     );
 }
 

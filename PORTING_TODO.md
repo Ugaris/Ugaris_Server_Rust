@@ -568,7 +568,7 @@ Ordered by player progression; the C file is the oracle.
   `saved_pent_*` restore remains a documented no-op in `macro_daemon.rs`
   (unrelated to any of the four numbered items above; not a blocker for
   any other P4 area).
-- [~] **Area 6 - `src/area/6/edemon.c`** - Earth Demon boss driver
+- [x] **Area 6 - `src/area/6/edemon.c`** - Earth Demon boss driver
   (`CDR_EDEMON*` characters); machinery items are ported.
   REMAINING: confirmed C's own `ch_driver`/`ch_died_driver`/
   `ch_respawn_driver` in `edemon.c` are all empty (`switch { default: return
@@ -577,23 +577,24 @@ Ordered by player progression; the C file is the oracle.
   (`CDR_SIMPLEBADDY`, already ported) plus `flag=CF_EDEMON`, so this task is
   really "port every `CF_EDEMON` branch in shared combat code", not a new
   driver. All 8 `IDR_EDEMON*` item drivers were already ported (confirmed,
-  extensively tested per the ledger). This iteration closed two previously-
-  unported `CF_EDEMON` combat mechanics found by auditing every C
-  `CF_EDEMON` call site: `do_walk`'s earthmud-spell movement slowdown
-  (`do.c:93-99`, `edemon_reduction`) - a genuine pre-existing gap where the
-  earthmud spell didn't slow anyone down at all - and `check_strike_near`'s
-  earth-demon damage reduction against ball/flash strikes (`effect.c:864`).
-  Still gap: `sub_attack`'s earth-demon hit-harder/hit-less-often diff bonus
-  (`act.c:495-501`) is unreachable because `do_action::act_attack` resolves
-  melee to-hit from raw `V_ATTACK`/`V_PARRY` instead of calling
-  `get_attack_skill`/`get_parry_skill` (`attack_skill`/`parry_skill` in
-  `attack.rs` already implement the right formula, including their own
-  earth-demon fallback, but no melee call site invokes them) - this is a
-  pre-existing, cross-cutting P1 combat gap far larger than Area 6 (it
-  would change to-hit math for every character in the game, needs
-  `get_fight_skill`'s weapon-type lookup threaded into `act_attack`'s
-  signature, and touches many existing tests), not something to fix inside
-  one area's slice. Left `[~]` for that reason.
+  extensively tested per the ledger). A previous slice closed two
+  `CF_EDEMON` combat mechanics: `do_walk`'s earthmud-spell movement
+  slowdown (`do.c:93-99`) and `check_strike_near`'s earth-demon damage
+  reduction against ball/flash strikes (`effect.c:864`). This iteration
+  closed the last gap: `act_attack` (`act.c:747-748`) was resolving melee
+  to-hit from the raw `V_ATTACK`/`V_PARRY` stat instead of calling
+  `get_attack_skill`/`get_parry_skill` - a pre-existing, cross-cutting P1
+  bug affecting every character's melee to-hit chance, not just earth
+  demons (their `CF_EDEMON` fallback branch, `fight_skill * 3.5`, was
+  simply unreachable dead code before this fix). `do_action::act_attack`
+  now takes an `items: &HashMap<ItemId, Item>` parameter and calls the
+  already-ported `attack::attack_skill`/`parry_skill` (fight-skill lookup
+  via the already-ported `simple_baddy_fight_skill`), matching C exactly,
+  including the earth-demon/magic-shield/spellcaster fallback branches.
+  `rage` stays hardcoded to `0` (undocumented pre-existing gap: `Character`
+  has no `rage` field yet, same as every other `attack_skill`/`parry_skill`
+  caller - see `values.rs`'s `show_values_lines` doc comment). This closes
+  every `CF_EDEMON` call site and Area 6 for real.
 - [ ] **Area 8 - `src/area/8/fdemon.c`** - Fire Demon boss + farm NPCs;
   cannon/loader items are ported.
 - [ ] **Area 10 - `src/area/10/ice.c`** - ice NPCs, ice demon curse
@@ -947,4 +948,9 @@ notes live in `PROGRESS_ARCHIVE.md`.
   `do_walk`'s earthmud-spell movement slowdown (previously a total no-op)
   and `check_strike_near`'s earth-demon ball/flash damage reduction.
   2711 core + 1108 server tests pass, clean build/boot-smoke.
+- 2026-07-08: Area 6 CLOSED: fixed `act_attack` to call `get_attack_skill`/
+  `get_parry_skill` (`attack_skill`/`parry_skill`) instead of the raw
+  `V_ATTACK`/`V_PARRY` stat - a cross-cutting P1 melee to-hit bug affecting
+  every character, not just earth demons. 2712 core + 1108 server tests
+  pass, clean build/boot-smoke.
 

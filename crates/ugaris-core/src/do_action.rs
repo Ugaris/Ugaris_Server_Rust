@@ -4,9 +4,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     attack::{
-        apply_facing_attack_bonus, attack_chance_for_diff, attack_roll_hits,
-        direct_attack_damage_units, direct_attack_shield_percent,
-        reduce_hurt_by_armor_and_lifeshield, scaled_direct_attack_damage, ATTACK_DIV,
+        apply_facing_attack_bonus, attack_chance_for_diff, attack_roll_hits, attack_skill,
+        direct_attack_damage_units, direct_attack_shield_percent, parry_skill,
+        reduce_hurt_by_armor_and_lifeshield, scaled_direct_attack_damage, spell_average,
+        ATTACK_DIV,
     },
     direction::Direction,
     entity::{Character, CharacterFlags, CharacterValue, Item, ItemFlags, SpeedMode, POWERSCALE},
@@ -18,6 +19,7 @@ use crate::{
         FIREBALL_COST, FLASH_COST, FREEZE_COST, IDR_BLESS, IDR_FIRERING, IDR_FLASH, IDR_WARCRY,
     },
     tick::TICKS_PER_SECOND,
+    world::simple_baddy_fight_skill,
 };
 
 pub const DUR_COMBAT_ACTION: i32 = 12;
@@ -1238,6 +1240,7 @@ pub fn act_attack(
     attacker: &mut Character,
     defender: &mut Character,
     map: &MapGrid,
+    items: &HashMap<ItemId, Item>,
     d100_roll: i32,
     d6_roll: i32,
 ) -> Option<AttackResolution> {
@@ -1253,8 +1256,48 @@ pub fn act_attack(
         return None;
     }
 
-    let attack = character_value(attacker, CharacterValue::Attack);
-    let parry = character_value(defender, CharacterValue::Parry);
+    // C `act_attack` (act.c:747-748): `vcn = get_attack_skill(cn); vco =
+    // get_parry_skill(co);` - the effective to-hit skill is the weapon/
+    // hand-to-hand fight skill plus the raised Attack/Parry stat (or the
+    // earth-demon/magic-shield/spellcaster fallback), never the raw
+    // `V_ATTACK`/`V_PARRY` stat alone.
+    let attack = attack_skill(
+        character_value_present(attacker, CharacterValue::Attack) != 0,
+        simple_baddy_fight_skill(attacker, items),
+        character_value(attacker, CharacterValue::Attack),
+        character_value(attacker, CharacterValue::Tactics),
+        0, // C `ch[cn].rage`: not yet ported on `Character` (see `values.rs` doc comment).
+        attacker.flags.contains(CharacterFlags::EDEMON),
+        attacker.level as i32,
+        spell_average(
+            character_value(attacker, CharacterValue::Bless),
+            character_value(attacker, CharacterValue::Heal),
+            character_value(attacker, CharacterValue::Freeze),
+            character_value(attacker, CharacterValue::MagicShield),
+            character_value(attacker, CharacterValue::Flash),
+            character_value(attacker, CharacterValue::Fireball),
+            character_value(attacker, CharacterValue::Pulse),
+        ),
+    );
+    let parry = parry_skill(
+        character_value_present(defender, CharacterValue::Parry) != 0,
+        simple_baddy_fight_skill(defender, items),
+        character_value(defender, CharacterValue::Parry),
+        character_value(defender, CharacterValue::Tactics),
+        0, // C `ch[co].rage`: same not-yet-ported gap as above.
+        defender.flags.contains(CharacterFlags::EDEMON),
+        character_value_present(defender, CharacterValue::MagicShield) != 0,
+        character_value(defender, CharacterValue::MagicShield),
+        spell_average(
+            character_value(defender, CharacterValue::Bless),
+            character_value(defender, CharacterValue::Heal),
+            character_value(defender, CharacterValue::Freeze),
+            character_value(defender, CharacterValue::MagicShield),
+            character_value(defender, CharacterValue::Flash),
+            character_value(defender, CharacterValue::Fireball),
+            character_value(defender, CharacterValue::Pulse),
+        ),
+    );
     let (attack, parry) = apply_facing_attack_bonus(
         attack,
         parry,
@@ -1709,6 +1752,19 @@ fn character_value(character: &Character, value: CharacterValue) -> i32 {
     character
         .values
         .first()
+        .and_then(|values| values.get(value as usize))
+        .copied()
+        .map(i32::from)
+        .unwrap_or_default()
+}
+
+/// C `ch[cn].value[1][x]`: the "present" flag `get_attack_skill`/
+/// `get_parry_skill` (`tool.c:1206-1244`) branch on, distinct from the raw
+/// base skill points `character_value` above returns (`ch[cn].value[0][x]`).
+fn character_value_present(character: &Character, value: CharacterValue) -> i32 {
+    character
+        .values
+        .get(1)
         .and_then(|values| values.get(value as usize))
         .copied()
         .map(i32::from)
@@ -2759,17 +2815,28 @@ mod tests {
         defender.hp = 10_000;
         attacker.dir = Direction::Right as u8;
         attacker.act1 = defender.id.0 as i32;
+        // `has_attack_base`/`has_parry_base` (C `ch[].value[1][V_ATTACK]`/
+        // `[V_PARRY]`, the "present" flag `get_attack_skill`/
+        // `get_parry_skill` branch on) must be set, or the fallback
+        // spellcaster formula (`get_fight_skill(cn) + get_spell_average(cn)
+        // * 2 - level`) applies instead of the raised-Attack/Parry-stat one.
+        attacker.values[1][CharacterValue::Attack as usize] = 1;
         attacker.values[0][CharacterValue::Attack as usize] = 10;
         attacker.values[0][CharacterValue::Weapon as usize] = 10;
+        defender.values[1][CharacterValue::Parry as usize] = 1;
         defender.values[0][CharacterValue::Parry as usize] = 10;
         map.tile_mut(11, 10).unwrap().character = defender.id.0 as u16;
+        let items = HashMap::new();
 
         assert_eq!(
-            act_attack(&mut attacker, &mut defender, &map, 50, 6),
+            act_attack(&mut attacker, &mut defender, &map, &items, 50, 6),
             Some(AttackResolution {
                 hit: false,
-                attack_skill: 10,
-                parry_skill: 10,
+                // C `get_attack_skill`/`get_parry_skill`: no weapon worn ->
+                // `get_fight_skill` falls back to `V_HAND` (0 here), so each
+                // side's skill is `0 + 10 * 2 = 20`, not the raw stat.
+                attack_skill: 20,
+                parry_skill: 20,
                 hit_chance: 50,
                 raw_damage: 0,
                 armor_divisor: ATTACK_DIV,
@@ -2780,11 +2847,42 @@ mod tests {
             })
         );
 
-        let result = act_attack(&mut attacker, &mut defender, &map, 49, 6).unwrap();
+        let result = act_attack(&mut attacker, &mut defender, &map, &items, 49, 6).unwrap();
         assert!(result.hit);
         assert_eq!(result.raw_damage, 3200);
         assert_eq!(result.hp_damage, 3200);
         assert_eq!(defender.hp, 10_000);
+    }
+
+    #[test]
+    fn act_attack_uses_get_attack_skill_get_parry_skill_not_raw_stat() {
+        // C `act_attack` (act.c:747-748) always calls `get_attack_skill`/
+        // `get_parry_skill`, never reads `ch[].value[0][V_ATTACK]`/
+        // `[V_PARRY]` directly. A pure spellcaster (no `V_ATTACK`/`V_PARRY`
+        // base, i.e. `value[1]` unset) still gets a nonzero effective skill
+        // from the `get_fight_skill(cn) + get_spell_average(cn) * 2 -
+        // level` fallback branch, which the old "just read the raw stat"
+        // code (which would have zeroed both sides) could never produce.
+        let mut map = MapGrid::new(20, 20);
+        let mut attacker = character();
+        let mut defender = character();
+        defender.id = CharacterId(2);
+        defender.x = 11;
+        defender.y = 10;
+        defender.dir = Direction::Left as u8;
+        attacker.dir = Direction::Right as u8;
+        attacker.act1 = defender.id.0 as i32;
+        attacker.level = 5;
+        attacker.values[0][CharacterValue::Fireball as usize] = 40; // spell_average = 5.0
+        map.tile_mut(11, 10).unwrap().character = defender.id.0 as u16;
+        let items = HashMap::new();
+
+        let resolution = act_attack(&mut attacker, &mut defender, &map, &items, 0, 6).unwrap();
+        // attack_skill = fight_skill(0) + spell_average(5.0) * 2 - level(5) = 5
+        assert_eq!(resolution.attack_skill, 5);
+        // parry_skill: no V_PARRY/V_MAGICSHIELD base -> spell_average
+        // fallback too, but defender's spell_average is 0.
+        assert_eq!(resolution.parry_skill, 0);
     }
 
     #[test]
