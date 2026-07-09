@@ -1019,14 +1019,21 @@ Ordered by player progression; the C file is the oracle.
   prisoner) are now also ported (`world/npc/area22/lab3_passguard.rs` +
   `lab3_prisoner.rs`), including new `PlayerRuntime::legacy_lab3_
   password1/2`/`_guard_talkstep`/`_prisoner_talkstep` accessors and the
-  `IID_LAB3_PRISONKEY` item id. REMAINING gap: `IDR_LAB3_SPECIAL`
-  (`lab3_special` - the password-protected teleport door plus the
-  note-reading/`lab3_init_password` machinery that actually assigns
-  `password1`/`password2`) is not yet ported, so the guard's password
-  check is currently untestable end-to-end in a live game (both
-  `password1`/`password2` stay empty until that item driver exists - see
-  `lab3_passguard.rs`'s own module doc comment). Still open: all of
-  lab3's `IDR_LAB3_SPECIAL`, and all of lab4/5 (`CDR_LAB4SEYAN`/`GNALB`,
+  `IID_LAB3_PRISONKEY` item id. `IDR_LAB3_SPECIAL` (`lab3_special`,
+  `src/area/22/lab3.c:897-1068`) is now also ported: the password-protected
+  teleport door (`drdata[0]==1` - `World::apply_lab3_teleport_door` in the
+  new `world/lab.rs` addition, resolving `teleport_char_driver` plus the
+  underwater torch-extinguish/bubble/"Hrgblub."/`create_lab_exit`-reward
+  tail entirely in `World` since none of it needs `ZoneLoader`/
+  `PlayerRuntime`; the guard-locked check reads a new `ItemDriverContext::
+  lab3_guard_talkstep` field), the note-giving skeleton (`drdata[0]==2` -
+  `ugaris-server`'s new `create_lab3_note_for_character`, sibling to the
+  prisoner's own `create_lab3_note_on_cursor`), and the note-reading switch
+  (`drdata[0]==3`, cases `1..=6` canned lore text plus `20`/`21`'s
+  `lab3_init_password` - `tick_item_use_lab.rs`'s new `lab3_note_text`,
+  the first real writer of `PlayerRuntime::legacy_lab3_password1`/`_2`,
+  closing the gap `lab3_passguard.rs`'s own module doc comment used to
+  flag). Still open: all of lab4/5 (`CDR_LAB4SEYAN`/`GNALB`,
   `CDR_LAB5DAEMON`/`SEYAN`/`MAGE`).
 - [ ] **Areas 23/24 - `src/area/23_24/strategy.c` (3,599 lines)** - the
   strategy minigame (mission ownership, worker spawning, resources).
@@ -1093,6 +1100,10 @@ Keep entries to at most three lines: date, task, one-line result.
 Anything longer belongs in `PORTING_LEDGER.md`; historical verbose
 notes live in `PROGRESS_ARCHIVE.md`.
 
+- 2026-07-09: Area 22 progress: ported `IDR_LAB3_SPECIAL` (teleport door +
+  note-giving skeleton + note-reading/password switch, closing the
+  `lab3_passguard.rs` password-write gap). 3299 core + 1162 server tests
+  pass, clean build/boot-smoke (area 22).
 - 2026-07-09: Area 22 progress: ported `CDR_LAB3PASSGUARD`/`CDR_LAB3PRISONER`
   (new `world/npc/area22/lab3_passguard.rs`+`lab3_prisoner.rs`, new
   `PlayerRuntime::legacy_lab3_*` accessors, `IID_LAB3_PRISONKEY`).

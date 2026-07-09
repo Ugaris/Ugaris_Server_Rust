@@ -1059,6 +1059,199 @@ fn deathfibrin_staff_strike_that_empties_the_charge_vanishes() {
 }
 
 #[test]
+fn lab3_special_zero_character_is_a_no_op() {
+    let mut timer = character(0);
+    let mut door = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_LAB3_SPECIAL);
+    door.driver_data = vec![1, 5, 250, 1];
+
+    let outcome = execute_item_driver(
+        &mut timer,
+        &mut door,
+        ItemDriverRequest::Driver {
+            driver: IDR_LAB3_SPECIAL,
+            item_id: ItemId(7),
+            character_id: CharacterId(0),
+            spec: 0,
+        },
+        22,
+        false,
+    );
+
+    assert_eq!(outcome, ItemDriverOutcome::Noop);
+}
+
+#[test]
+fn lab3_special_teleport_door_decodes_signed_offsets_and_password_flag() {
+    let mut actor = character(1);
+    let mut door = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_LAB3_SPECIAL);
+    // type=1 (teleport door), dx=5, dy=-6 (250 as signed byte), not
+    // password protected.
+    door.driver_data = vec![1, 5, 250, 0];
+
+    let outcome = execute_item_driver(
+        &mut actor,
+        &mut door,
+        ItemDriverRequest::Driver {
+            driver: IDR_LAB3_SPECIAL,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        },
+        22,
+        false,
+    );
+
+    assert_eq!(
+        outcome,
+        ItemDriverOutcome::Lab3TeleportDoor {
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            dx: 5,
+            dy: -6,
+            password_protected: false,
+            extinguished_count: 0,
+        }
+    );
+}
+
+#[test]
+fn lab3_special_password_door_blocks_until_guard_talkstep_reaches_20() {
+    let mut actor = character(1);
+    let mut door = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_LAB3_SPECIAL);
+    door.driver_data = vec![1, 1, 0, 1];
+    let request = ItemDriverRequest::Driver {
+        driver: IDR_LAB3_SPECIAL,
+        item_id: ItemId(7),
+        character_id: CharacterId(1),
+        spec: 0,
+    };
+
+    // No context at all (defaults to "not opened yet", same as C's
+    // freshly-allocated `struct lab_ppd`).
+    assert_eq!(
+        execute_item_driver(&mut actor, &mut door, request, 22, false),
+        ItemDriverOutcome::Lab3TeleportDoorLocked {
+            character_id: CharacterId(1),
+        }
+    );
+
+    // Mid-challenge (1..6) still blocks.
+    let mid_challenge = ItemDriverContext {
+        lab3_guard_talkstep: Some(4),
+        ..ItemDriverContext::default()
+    };
+    assert_eq!(
+        execute_item_driver_with_context(&mut actor, &mut door, request, 22, false, &mid_challenge),
+        ItemDriverOutcome::Lab3TeleportDoorLocked {
+            character_id: CharacterId(1),
+        }
+    );
+
+    // Passworded (20) opens the door.
+    let passworded = ItemDriverContext {
+        lab3_guard_talkstep: Some(20),
+        ..ItemDriverContext::default()
+    };
+    assert_eq!(
+        execute_item_driver_with_context(&mut actor, &mut door, request, 22, false, &passworded),
+        ItemDriverOutcome::Lab3TeleportDoor {
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            dx: 1,
+            dy: 0,
+            password_protected: true,
+            extinguished_count: 0,
+        }
+    );
+}
+
+#[test]
+fn lab3_special_note_giving_skeleton_blocks_on_occupied_cursor() {
+    let mut actor = character(1);
+    actor.cursor_item = Some(ItemId(99));
+    let mut skeleton_item = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_LAB3_SPECIAL);
+    skeleton_item.driver_data = vec![2, 3];
+
+    let outcome = execute_item_driver(
+        &mut actor,
+        &mut skeleton_item,
+        ItemDriverRequest::Driver {
+            driver: IDR_LAB3_SPECIAL,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        },
+        22,
+        false,
+    );
+
+    assert_eq!(
+        outcome,
+        ItemDriverOutcome::Lab3NoteGivingBlocked {
+            character_id: CharacterId(1),
+        }
+    );
+}
+
+#[test]
+fn lab3_special_note_giving_skeleton_returns_note_value_when_free() {
+    let mut actor = character(1);
+    let mut skeleton_item = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_LAB3_SPECIAL);
+    skeleton_item.driver_data = vec![2, 20];
+
+    let outcome = execute_item_driver(
+        &mut actor,
+        &mut skeleton_item,
+        ItemDriverRequest::Driver {
+            driver: IDR_LAB3_SPECIAL,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        },
+        22,
+        false,
+    );
+
+    assert_eq!(
+        outcome,
+        ItemDriverOutcome::Lab3NoteGivingSkeleton {
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            note_value: 20,
+        }
+    );
+}
+
+#[test]
+fn lab3_special_note_read_returns_its_own_note_value() {
+    let mut actor = character(1);
+    let mut note = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_LAB3_SPECIAL);
+    note.driver_data = vec![3, 21];
+
+    let outcome = execute_item_driver(
+        &mut actor,
+        &mut note,
+        ItemDriverRequest::Driver {
+            driver: IDR_LAB3_SPECIAL,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        },
+        22,
+        false,
+    );
+
+    assert_eq!(
+        outcome,
+        ItemDriverOutcome::Lab3NoteRead {
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            note_value: 21,
+        }
+    );
+}
+
+#[test]
 fn deathfibrin_timer_call_is_a_no_op() {
     let mut timer = character(0);
     let mut staff = item(

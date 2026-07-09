@@ -40,4 +40,118 @@ impl World {
     pub fn drain_pending_lab_exit_spawns(&mut self) -> Vec<LabExitSpawnRequest> {
         self.pending_lab_exit_spawns.drain(..).collect()
     }
+
+    /// C `lab3_special`'s `drdata[0]==1` teleport-door branch
+    /// (`src/area/22/lab3.c:909-965`): resolves the raw
+    /// `ItemDriverOutcome::Lab3TeleportDoor` outcome by actually moving the
+    /// character via `teleport_char_driver`, then (if the destination tile
+    /// is underwater) extinguishing carried torches and playing the
+    /// bubble/"Hrgblub." flavor, then (if the door was password-protected)
+    /// queuing the `create_lab_exit` reward. Called from `World::
+    /// apply_item_driver_outcome` since none of this needs `ZoneLoader`/
+    /// `PlayerRuntime`.
+    pub(crate) fn apply_lab3_teleport_door(
+        &mut self,
+        item_id: ItemId,
+        character_id: CharacterId,
+        dx: i8,
+        dy: i8,
+        password_protected: bool,
+    ) -> ItemDriverOutcome {
+        let Some(character) = self.characters.get(&character_id) else {
+            return ItemDriverOutcome::Noop;
+        };
+        // C `ch[cn].x + (signed char)drdata[1]` / `... + drdata[2]`
+        // (`lab3.c:917`): plain signed addition onto trusted level data.
+        let target_x = (i32::from(character.x) + i32::from(dx)).max(0) as u16;
+        let target_y = (i32::from(character.y) + i32::from(dy)).max(0) as u16;
+
+        if !self.teleport_char_driver(character_id, target_x, target_y) {
+            return ItemDriverOutcome::Lab3TeleportDoorBusy { character_id };
+        }
+
+        let extinguished_count = self.lab3_teleport_door_water_tail(character_id);
+
+        if password_protected {
+            self.queue_lab_exit_spawn(character_id, 25);
+        }
+
+        ItemDriverOutcome::Lab3TeleportDoor {
+            item_id,
+            character_id,
+            dx,
+            dy,
+            password_protected,
+            extinguished_count,
+        }
+    }
+
+    /// C `lab3_special:922-957`: the underwater-arrival tail (extinguish
+    /// carried torches, bubble effects, "Hrgblub." talk, splash sounds).
+    /// Returns the number of torches extinguished, for the caller's
+    /// pluralized feedback text.
+    fn lab3_teleport_door_water_tail(&mut self, character_id: CharacterId) -> u8 {
+        let Some(character) = self.characters.get(&character_id).cloned() else {
+            return 0;
+        };
+        let underwater = self
+            .map
+            .tile(usize::from(character.x), usize::from(character.y))
+            .is_some_and(|tile| tile.flags.contains(MapFlags::UNDERWATER));
+        if !underwater {
+            return 0;
+        }
+
+        // C `WN_LHAND` slot index, same precedent as `world::robber`'s own
+        // `ROBBER_TORCH_SLOT`.
+        const WN_LHAND: usize = 8;
+        let mut torch_item_ids: Vec<ItemId> = character.inventory[INVENTORY_START_INVENTORY..]
+            .iter()
+            .flatten()
+            .copied()
+            .collect();
+        if let Some(cursor_item_id) = character.cursor_item {
+            torch_item_ids.push(cursor_item_id);
+        }
+        if let Some(Some(lhand_item_id)) = character.inventory.get(WN_LHAND) {
+            torch_item_ids.push(*lhand_item_id);
+        }
+
+        let mut extinguished_count = 0u8;
+        for item_id in torch_item_ids {
+            if let Some(item) = self.items.get_mut(&item_id) {
+                if item.driver == IDR_TORCH && item.driver_data.first().copied().unwrap_or(0) != 0 {
+                    extinguish_torch(item);
+                    extinguished_count = extinguished_count.saturating_add(1);
+                }
+            }
+        }
+
+        // C `lab3.c:945-956`: bubbles + talk only fire when the character
+        // doesn't already carry `CF_OXYGEN` (a Yellow Berry effect).
+        if !character.flags.contains(CharacterFlags::OXYGEN) {
+            let x = i32::from(character.x);
+            let y = i32::from(character.y);
+            let base_tick = self.tick.0 as i32;
+            for offset in 0..5 {
+                self.create_map_effect(
+                    EF_BUBBLE,
+                    x,
+                    y,
+                    base_tick + offset,
+                    base_tick + offset + 1,
+                    0,
+                    45,
+                );
+            }
+            for _ in 0..3 {
+                let sound_type =
+                    44 + legacy_random_variant_below_from_seed(&mut self.legacy_random_seed, 3);
+                self.queue_sound_area(x as usize, y as usize, sound_type);
+            }
+            self.npc_say(character_id, "Hrgblub.");
+        }
+
+        extinguished_count
+    }
 }

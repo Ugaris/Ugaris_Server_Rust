@@ -1056,6 +1056,49 @@ pub(crate) fn create_lab3_note_on_cursor(
     true
 }
 
+/// C `lab3_special`'s `drdata[0]==2` "note giving skeleton" branch
+/// (`src/area/22/lab3.c:969-997`): creates a fresh `"lab3_note_generic"`
+/// item, copies the special item's own `drdata[1]` (the note-text id)
+/// onto the new note's `drdata[1]`, switches its sprite for the password
+/// note flavor (`drdata[1]==20`), and places it on the *using player's*
+/// cursor - unlike [`create_lab3_note_on_cursor`] (the prisoner's own
+/// always-`21`-flavor note, placed on the prisoner's own cursor for
+/// pickup pursuit).
+pub(crate) fn create_lab3_note_for_character(
+    world: &mut World,
+    loader: &mut ZoneLoader,
+    character_id: CharacterId,
+    note_value: u8,
+) -> bool {
+    if world
+        .characters
+        .get(&character_id)
+        .is_none_or(|character| character.cursor_item.is_some())
+    {
+        return false;
+    }
+    let Ok(mut item) = loader.instantiate_item_template("lab3_note_generic", Some(character_id))
+    else {
+        return false;
+    };
+    item.driver_data.resize(item.driver_data.len().max(2), 0);
+    item.driver_data[1] = note_value;
+    if note_value == 20 {
+        item.sprite = 11076;
+    }
+    let item_id = item.id;
+    let Some(character) = world.characters.get_mut(&character_id) else {
+        return false;
+    };
+    if character.cursor_item.is_some() {
+        return false;
+    }
+    character.cursor_item = Some(item_id);
+    character.flags.insert(CharacterFlags::ITEMS);
+    world.add_item(item);
+    true
+}
+
 pub(crate) fn apply_lab2_water_altar(
     world: &mut World,
     loader: &mut ZoneLoader,

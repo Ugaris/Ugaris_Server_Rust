@@ -294,6 +294,7 @@ pub fn execute_item_driver_with_context(
                 IDR_PICKBERRY => pick_berry_driver(character, item, area_id),
                 IDR_LIZARDFLOWER => lizard_flower_driver(character, item, context, area_id),
                 IDR_LAB3_PLANT => lab3_plant_driver(character, item, context),
+                IDR_LAB3_SPECIAL => lab3_special_driver(character, item, context),
                 IDR_LAB2_WATER => lab2_water_driver(character, item),
                 IDR_LAB2_STEPACTION => lab2_stepaction_driver(character, item),
                 IDR_LAB2_REGENERATE => lab2_regenerate_driver(character, item, context),

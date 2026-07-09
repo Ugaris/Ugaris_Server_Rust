@@ -184,7 +184,7 @@ use crate::{
     game_time::GameDate,
     ids::{CharacterId, ItemId},
     item_driver::{
-        execute_item_driver_with_context, reset_flask_empty_state, use_item,
+        execute_item_driver_with_context, extinguish_torch, reset_flask_empty_state, use_item,
         EdemonGateSpawnContext, FdemonGateSpawnContext, ItemDriverContext, ItemDriverOutcome,
         ItemDriverRequest, UseItemError, UseItemOutcome, WarpTrialDoorContext, IDR_BONEWALL,
         IDR_CALIGAR, IDR_CALIGARFLAME, IDR_CLANJEWEL, IDR_CLANSPAWN, IDR_DEATHFIBRIN, IDR_DOOR,

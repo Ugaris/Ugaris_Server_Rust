@@ -223,3 +223,354 @@ async fn dispatch_lab_outcome_labexit_use_reports_down_message_without_repositor
         .iter()
         .any(|(_, message)| message == "Sorry, Aston is down. Please try again soon."));
 }
+
+fn lab3_note_zone_loader() -> ZoneLoader {
+    let mut loader = ZoneLoader::new();
+    loader
+        .load_item_templates_str(
+            r#"
+                lab3_note_generic:
+                    name="Note"
+                    sprite=11074
+                    flag=IF_USE
+                    flag=IF_TAKE
+                    driver=192
+                    arg="0300"
+                ;
+                "#,
+        )
+        .unwrap();
+    loader
+}
+
+async fn run_dispatch_lab_outcome(
+    world: &mut World,
+    zone_loader: &mut ZoneLoader,
+    runtime: &mut ServerRuntime,
+    outcome: ugaris_core::item_driver::ItemDriverOutcome,
+) -> (Vec<(CharacterId, String)>, i32, i32, i32) {
+    let config = ServerConfig {
+        area_id: 22,
+        ..ServerConfig::default()
+    };
+    let mut feedback = Vec::new();
+    let (mut executed, mut blocked, mut failed) = (0, 0, 0);
+    tick_item_use_lab::dispatch_lab_outcome(
+        world,
+        zone_loader,
+        runtime,
+        &None,
+        &None,
+        &config,
+        outcome,
+        &mut feedback,
+        &mut executed,
+        &mut blocked,
+        &mut failed,
+    )
+    .await;
+    (feedback, executed, blocked, failed)
+}
+
+#[tokio::test]
+async fn dispatch_lab_outcome_lab3_teleport_door_locked_names_the_player() {
+    let mut world = World::default();
+    let mut zone_loader = ZoneLoader::new();
+    let mut runtime = ServerRuntime::default();
+    let character_id = CharacterId(7);
+    let character = login_character(character_id, &login_block("Hero"), 22, 10, 10);
+    world.add_character(character);
+
+    let (feedback, executed, blocked, failed) = run_dispatch_lab_outcome(
+        &mut world,
+        &mut zone_loader,
+        &mut runtime,
+        ugaris_core::item_driver::ItemDriverOutcome::Lab3TeleportDoorLocked { character_id },
+    )
+    .await;
+
+    assert_eq!((executed, blocked, failed), (0, 1, 0));
+    assert!(feedback
+        .iter()
+        .any(|(_, message)| message == "The Guard has not opened the door for thee yet, Hero."));
+}
+
+#[tokio::test]
+async fn dispatch_lab_outcome_lab3_teleport_door_busy_reports_crowd_message() {
+    let mut world = World::default();
+    let mut zone_loader = ZoneLoader::new();
+    let mut runtime = ServerRuntime::default();
+    let character_id = CharacterId(7);
+
+    let (feedback, executed, blocked, failed) = run_dispatch_lab_outcome(
+        &mut world,
+        &mut zone_loader,
+        &mut runtime,
+        ugaris_core::item_driver::ItemDriverOutcome::Lab3TeleportDoorBusy { character_id },
+    )
+    .await;
+
+    assert_eq!((executed, blocked, failed), (0, 1, 0));
+    assert!(feedback.iter().any(|(_, message)| message
+        == "Hm. It seems there is a crowd behind the door. Please try again later."));
+}
+
+#[tokio::test]
+async fn dispatch_lab_outcome_lab3_teleport_door_pluralizes_extinguished_torches() {
+    let mut world = World::default();
+    let mut zone_loader = ZoneLoader::new();
+    let mut runtime = ServerRuntime::default();
+    let character_id = CharacterId(7);
+
+    let (feedback, executed, blocked, failed) = run_dispatch_lab_outcome(
+        &mut world,
+        &mut zone_loader,
+        &mut runtime,
+        ugaris_core::item_driver::ItemDriverOutcome::Lab3TeleportDoor {
+            item_id: ItemId(9),
+            character_id,
+            dx: 0,
+            dy: 2,
+            password_protected: false,
+            extinguished_count: 1,
+        },
+    )
+    .await;
+    assert_eq!((executed, blocked, failed), (1, 0, 0));
+    assert!(feedback
+        .iter()
+        .any(|(_, message)| message == "Thine torch extinguished due to the water."));
+
+    let (feedback, executed, blocked, failed) = run_dispatch_lab_outcome(
+        &mut world,
+        &mut zone_loader,
+        &mut runtime,
+        ugaris_core::item_driver::ItemDriverOutcome::Lab3TeleportDoor {
+            item_id: ItemId(9),
+            character_id,
+            dx: 0,
+            dy: 2,
+            password_protected: false,
+            extinguished_count: 2,
+        },
+    )
+    .await;
+    assert_eq!((executed, blocked, failed), (1, 0, 0));
+    assert!(feedback
+        .iter()
+        .any(|(_, message)| message == "Thine torches extinguished due to the water."));
+
+    let (feedback, executed, blocked, failed) = run_dispatch_lab_outcome(
+        &mut world,
+        &mut zone_loader,
+        &mut runtime,
+        ugaris_core::item_driver::ItemDriverOutcome::Lab3TeleportDoor {
+            item_id: ItemId(9),
+            character_id,
+            dx: 0,
+            dy: 2,
+            password_protected: false,
+            extinguished_count: 0,
+        },
+    )
+    .await;
+    assert_eq!((executed, blocked, failed), (1, 0, 0));
+    assert!(feedback.is_empty());
+}
+
+#[tokio::test]
+async fn dispatch_lab_outcome_lab3_note_giving_blocked_says_nothing_happens() {
+    let mut world = World::default();
+    let mut zone_loader = ZoneLoader::new();
+    let mut runtime = ServerRuntime::default();
+    let character_id = CharacterId(7);
+
+    let (feedback, executed, blocked, failed) = run_dispatch_lab_outcome(
+        &mut world,
+        &mut zone_loader,
+        &mut runtime,
+        ugaris_core::item_driver::ItemDriverOutcome::Lab3NoteGivingBlocked { character_id },
+    )
+    .await;
+
+    assert_eq!((executed, blocked, failed), (0, 1, 0));
+    assert!(feedback
+        .iter()
+        .any(|(_, message)| message == "Nothing happens."));
+}
+
+#[tokio::test]
+async fn dispatch_lab_outcome_lab3_note_giving_skeleton_places_note_on_cursor() {
+    let mut world = World::default();
+    let mut zone_loader = lab3_note_zone_loader();
+    let mut runtime = ServerRuntime::default();
+    let character_id = CharacterId(7);
+    let character = login_character(character_id, &login_block("Hero"), 22, 10, 10);
+    world.add_character(character);
+
+    let (feedback, executed, blocked, failed) = run_dispatch_lab_outcome(
+        &mut world,
+        &mut zone_loader,
+        &mut runtime,
+        ugaris_core::item_driver::ItemDriverOutcome::Lab3NoteGivingSkeleton {
+            item_id: ItemId(9),
+            character_id,
+            note_value: 20,
+        },
+    )
+    .await;
+
+    assert_eq!((executed, blocked, failed), (1, 0, 0));
+    assert!(feedback.is_empty());
+    let character = world.characters.get(&character_id).unwrap();
+    let note_id = character
+        .cursor_item
+        .expect("expected a note on the cursor");
+    let note = world.items.get(&note_id).unwrap();
+    assert_eq!(note.driver, ugaris_core::item_driver::IDR_LAB3_SPECIAL);
+    assert_eq!(note.driver_data[1], 20);
+    // C `lab3_special`'s `drdata[1]==20` sprite override.
+    assert_eq!(note.sprite, 11076);
+}
+
+#[tokio::test]
+async fn dispatch_lab_outcome_lab3_note_read_returns_canned_lore_text() {
+    let mut world = World::default();
+    let mut zone_loader = ZoneLoader::new();
+    let mut runtime = ServerRuntime::default();
+    let character_id = CharacterId(7);
+
+    let (feedback, executed, blocked, failed) = run_dispatch_lab_outcome(
+        &mut world,
+        &mut zone_loader,
+        &mut runtime,
+        ugaris_core::item_driver::ItemDriverOutcome::Lab3NoteRead {
+            item_id: ItemId(9),
+            character_id,
+            note_value: 5,
+        },
+    )
+    .await;
+
+    assert_eq!((executed, blocked, failed), (1, 0, 0));
+    assert!(feedback.iter().any(|(_, message)| message
+        == "These large crustaceans are too strong, but fortunately very slow."));
+}
+
+#[tokio::test]
+async fn dispatch_lab_outcome_lab3_note_read_unknown_value_is_a_silent_no_op() {
+    let mut world = World::default();
+    let mut zone_loader = ZoneLoader::new();
+    let mut runtime = ServerRuntime::default();
+    let character_id = CharacterId(7);
+
+    let (feedback, executed, blocked, failed) = run_dispatch_lab_outcome(
+        &mut world,
+        &mut zone_loader,
+        &mut runtime,
+        ugaris_core::item_driver::ItemDriverOutcome::Lab3NoteRead {
+            item_id: ItemId(9),
+            character_id,
+            note_value: 99,
+        },
+    )
+    .await;
+
+    // C's `default: xlog(...)` branch: no player-visible text, but the
+    // item was still "used" (return 1).
+    assert_eq!((executed, blocked, failed), (1, 0, 0));
+    assert!(feedback.is_empty());
+}
+
+#[tokio::test]
+async fn dispatch_lab_outcome_lab3_note_read_password_notes_reveal_and_persist_the_same_pair() {
+    let mut world = World::default();
+    let mut zone_loader = ZoneLoader::new();
+    let mut runtime = ServerRuntime::default();
+    let character_id = CharacterId(7);
+    let (commands, _rx) = mpsc::channel(16);
+    runtime.connect(1, commands, 0);
+    if let Some(player) = runtime.players.get_mut(&1) {
+        player.character_id = Some(character_id);
+    }
+
+    let (feedback, executed, blocked, failed) = run_dispatch_lab_outcome(
+        &mut world,
+        &mut zone_loader,
+        &mut runtime,
+        ugaris_core::item_driver::ItemDriverOutcome::Lab3NoteRead {
+            item_id: ItemId(9),
+            character_id,
+            note_value: 20,
+        },
+    )
+    .await;
+    assert_eq!((executed, blocked, failed), (1, 0, 0));
+    let first_message = feedback
+        .iter()
+        .find(|(id, _)| *id == character_id)
+        .map(|(_, message)| message.clone())
+        .expect("expected password-reveal feedback");
+    assert!(first_message.starts_with("Thou can read the incomplete word \""));
+    assert!(first_message.ends_with("...\"."));
+    let password1 = first_message
+        .trim_start_matches("Thou can read the incomplete word \"")
+        .trim_end_matches("...\".")
+        .to_string();
+    assert!(!password1.is_empty());
+
+    // Reading a `drdata[1]==20` note a second time must not reroll: C's
+    // `lab3_init_password` only assigns `password1`/`password2` once
+    // (`if (*ppd->password1) return;`).
+    let (feedback_again, ..) = run_dispatch_lab_outcome(
+        &mut world,
+        &mut zone_loader,
+        &mut runtime,
+        ugaris_core::item_driver::ItemDriverOutcome::Lab3NoteRead {
+            item_id: ItemId(9),
+            character_id,
+            note_value: 20,
+        },
+    )
+    .await;
+    let second_message = feedback_again
+        .iter()
+        .find(|(id, _)| *id == character_id)
+        .map(|(_, message)| message.clone())
+        .unwrap();
+    assert_eq!(first_message, second_message);
+
+    // Reading the `drdata[1]==21` companion note reveals the *other*
+    // half of the very same persisted pair.
+    let (feedback21, ..) = run_dispatch_lab_outcome(
+        &mut world,
+        &mut zone_loader,
+        &mut runtime,
+        ugaris_core::item_driver::ItemDriverOutcome::Lab3NoteRead {
+            item_id: ItemId(9),
+            character_id,
+            note_value: 21,
+        },
+    )
+    .await;
+    let second_half_message = feedback21
+        .iter()
+        .find(|(id, _)| *id == character_id)
+        .map(|(_, message)| message.clone())
+        .expect("expected password-reveal feedback");
+    let password2 = second_half_message
+        .trim_start_matches("Thou can read the incomplete word \"...")
+        .trim_end_matches("\".")
+        .to_string();
+    assert!(!password2.is_empty());
+
+    let player = runtime.player_for_character(character_id).unwrap();
+    assert_eq!(
+        String::from_utf8_lossy(&player.legacy_lab3_password1()),
+        password1
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&player.legacy_lab3_password2()),
+        password2
+    );
+}

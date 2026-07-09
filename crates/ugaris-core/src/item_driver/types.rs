@@ -89,6 +89,13 @@ pub struct ItemDriverContext {
     pub lq_death_penalty_seconds: Option<u32>,
     pub teufel_arena_roll: Option<u8>,
     pub teufel_ratnest_guard_active: bool,
+    /// C `ppd->guard_talkstep` (`src/area/22/lab3.c:911`, `set_data(cn,
+    /// DRD_LAB_PPD, ...)`): the *using character's own* password-guard
+    /// challenge stage, read by `lab3_special`'s teleport-door password
+    /// check (`drdata[3] && ppd->guard_talkstep < 20`). `None` (treated as
+    /// `0`, matching a freshly-allocated `struct lab_ppd`) when the item
+    /// isn't `IDR_LAB3_SPECIAL`.
+    pub lab3_guard_talkstep: Option<u8>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -1609,6 +1616,56 @@ pub enum ItemDriverOutcome {
         character_id: CharacterId,
         duration_ticks: u64,
         installed: bool,
+    },
+    /// C `lab3_special`'s `drdata[0]==1` teleport-door branch, blocked
+    /// path (`ppd->guard_talkstep < 20`, `lab3.c:911-914`).
+    Lab3TeleportDoorLocked {
+        character_id: CharacterId,
+    },
+    /// The same branch's `teleport_char_driver` failure path
+    /// (`lab3.c:917-920`, "there is a crowd behind the door").
+    Lab3TeleportDoorBusy {
+        character_id: CharacterId,
+    },
+    /// C `lab3_special`'s `drdata[0]==1` teleport-door branch, resolved by
+    /// `World::apply_item_driver_outcome` (`lab3.c:916-965`):
+    /// `teleport_char_driver` plus the water/torch/bubble/lab-exit-reward
+    /// tail all happen there since none of it needs `ZoneLoader`/
+    /// `PlayerRuntime`. `extinguished_count` starts at `0` on the raw
+    /// outcome from the item driver and is filled in with the real count
+    /// once resolved.
+    Lab3TeleportDoor {
+        item_id: ItemId,
+        character_id: CharacterId,
+        dx: i8,
+        dy: i8,
+        password_protected: bool,
+        extinguished_count: u8,
+    },
+    /// C `lab3_special`'s `drdata[0]==2` note-giving-skeleton branch,
+    /// blocked path (`ch[cn].citem` already occupied, `lab3.c:971-974`).
+    Lab3NoteGivingBlocked {
+        character_id: CharacterId,
+    },
+    /// The same branch's success path (`lab3.c:976-994`): creates a fresh
+    /// `"lab3_note_generic"` on the *using player's* cursor with
+    /// `drdata[1] = note_value` copied from the special item's own
+    /// `drdata[1]`.
+    Lab3NoteGivingSkeleton {
+        item_id: ItemId,
+        character_id: CharacterId,
+        note_value: u8,
+    },
+    /// C `lab3_special`'s `drdata[0]==3` note-reading branch
+    /// (`lab3.c:1001-1067`): `note_value` is the note item's own
+    /// `drdata[1]`, matched against C's `switch (drdata[1])` cases
+    /// `1..=6`/`20`/`21` server-side (`20`/`21` need `PlayerRuntime` for
+    /// `lab3_init_password`, so the whole switch stays there rather than
+    /// splitting canned-text cases into `World`).
+    Lab3NoteRead {
+        item_id: ItemId,
+        character_id: CharacterId,
+        note_value: u8,
     },
     Lab2WaterWell {
         item_id: ItemId,

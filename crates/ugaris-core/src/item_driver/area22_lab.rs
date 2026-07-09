@@ -341,6 +341,61 @@ pub(crate) fn lab3_plant_driver(
     }
 }
 
+/// C `lab3_special` (`src/area/22/lab3.c:897-1068`). `drdata[0]` selects
+/// the object flavor: `1` = teleport door, `2` = note-giving skeleton,
+/// `3` = readable note (a freshly-created note from case `2` is itself an
+/// `IDR_LAB3_SPECIAL` item with `drdata[0]==3`, see `lab3_note_generic`'s
+/// zone template). All the actual mutation (teleport, item creation,
+/// password assignment) happens outside this pure function - see the
+/// three new `Lab3*` outcome variants' own doc comments for where each
+/// one resolves.
+pub(crate) fn lab3_special_driver(
+    character: &Character,
+    item: &Item,
+    context: &ItemDriverContext,
+) -> ItemDriverOutcome {
+    if character.id.0 == 0 {
+        return ItemDriverOutcome::Noop;
+    }
+
+    match drdata(item, 0) {
+        1 => {
+            let password_protected = drdata(item, 3) != 0;
+            if password_protected && context.lab3_guard_talkstep.unwrap_or(0) < 20 {
+                return ItemDriverOutcome::Lab3TeleportDoorLocked {
+                    character_id: character.id,
+                };
+            }
+            ItemDriverOutcome::Lab3TeleportDoor {
+                item_id: item.id,
+                character_id: character.id,
+                dx: drdata(item, 1) as i8,
+                dy: drdata(item, 2) as i8,
+                password_protected,
+                extinguished_count: 0,
+            }
+        }
+        2 => {
+            if character.cursor_item.is_some() {
+                return ItemDriverOutcome::Lab3NoteGivingBlocked {
+                    character_id: character.id,
+                };
+            }
+            ItemDriverOutcome::Lab3NoteGivingSkeleton {
+                item_id: item.id,
+                character_id: character.id,
+                note_value: drdata(item, 1),
+            }
+        }
+        3 => ItemDriverOutcome::Lab3NoteRead {
+            item_id: item.id,
+            character_id: character.id,
+            note_value: drdata(item, 1),
+        },
+        _ => ItemDriverOutcome::Noop,
+    }
+}
+
 pub(crate) fn legacy_lab_destination(lab_level: u8) -> Option<(u16, u16, u16, u16)> {
     match lab_level {
         10 => Some((10, 22, 27, 242)),

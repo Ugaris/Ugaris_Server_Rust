@@ -294,6 +294,16 @@ pub(crate) fn item_driver_context_for_request(
             ..ugaris_core::item_driver::ItemDriverContext::default()
         };
     }
+    if *driver == ugaris_core::item_driver::IDR_LAB3_SPECIAL {
+        return ugaris_core::item_driver::ItemDriverContext {
+            lab3_guard_talkstep: Some(
+                player
+                    .map(|player| player.legacy_lab3_guard_talkstep())
+                    .unwrap_or_default(),
+            ),
+            ..ugaris_core::item_driver::ItemDriverContext::default()
+        };
+    }
     if *driver == ugaris_core::item_driver::IDR_WARPKEYDOOR {
         let area25_door_key = world.characters.get(character_id).and_then(|character| {
             character.inventory.iter().flatten().find_map(|item_id| {

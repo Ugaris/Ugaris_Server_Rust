@@ -393,6 +393,206 @@ pub(crate) async fn dispatch_lab_outcome(
             }
             *executed += 1;
         }
+        ugaris_core::item_driver::ItemDriverOutcome::Lab3TeleportDoorLocked { character_id } => {
+            let name = world
+                .characters
+                .get(&character_id)
+                .map(|character| character.name.clone())
+                .unwrap_or_default();
+            feedback.push((
+                character_id,
+                format!("The Guard has not opened the door for thee yet, {name}."),
+            ));
+            *blocked += 1;
+        }
+        ugaris_core::item_driver::ItemDriverOutcome::Lab3TeleportDoorBusy { character_id } => {
+            feedback.push((
+                character_id,
+                "Hm. It seems there is a crowd behind the door. Please try again later."
+                    .to_string(),
+            ));
+            *blocked += 1;
+        }
+        ugaris_core::item_driver::ItemDriverOutcome::Lab3TeleportDoor {
+            character_id,
+            extinguished_count,
+            ..
+        } => {
+            if extinguished_count > 0 {
+                let suffix = if extinguished_count == 1 { "" } else { "es" };
+                feedback.push((
+                    character_id,
+                    format!("Thine torch{suffix} extinguished due to the water."),
+                ));
+            }
+            *executed += 1;
+        }
+        ugaris_core::item_driver::ItemDriverOutcome::Lab3NoteGivingBlocked { character_id } => {
+            feedback.push((character_id, "Nothing happens.".to_string()));
+            *blocked += 1;
+        }
+        ugaris_core::item_driver::ItemDriverOutcome::Lab3NoteGivingSkeleton {
+            character_id,
+            note_value,
+            ..
+        } => {
+            if create_lab3_note_for_character(world, zone_loader, character_id, note_value) {
+                *executed += 1;
+            } else {
+                *failed += 1;
+            }
+        }
+        ugaris_core::item_driver::ItemDriverOutcome::Lab3NoteRead {
+            character_id,
+            note_value,
+            ..
+        } => {
+            if let Some(text) = lab3_note_text(runtime, character_id, note_value) {
+                feedback.push((character_id, text));
+            }
+            *executed += 1;
+        }
         _ => {}
+    }
+}
+
+/// C `password[][8]` (`src/area/22/lab3.c:876-886`): 70 two-part word
+/// pairs `lab3_init_password` picks a random one from.
+const LAB3_PASSWORD_PAIRS: [(&str, &str); 70] = [
+    ("Gero", "nimo"),
+    ("Ban", "zai"),
+    ("Yum", "my"),
+    ("Jun", "ker"),
+    ("Jun", "ction"),
+    ("Jun", "gle"),
+    ("Ea", "gle"),
+    ("Ban", "gle"),
+    ("An", "gle"),
+    ("An", "gel"),
+    ("E", "el"),
+    ("He", "el"),
+    ("Re", "el"),
+    ("Lab", "el"),
+    ("Ba", "nd"),
+    ("Ba", "nns"),
+    ("Seal", "skin"),
+    ("Bu", "skin"),
+    ("Sheep", "skin"),
+    ("Sheep", "ish"),
+    ("Era", "sure"),
+    ("Era", "sing"),
+    ("Era", "ser"),
+    ("Sen", "sing"),
+    ("Rai", "sing"),
+    ("Rai", "der"),
+    ("Rai", "son"),
+    ("Per", "son"),
+    ("Pri", "son"),
+    ("Per", "mit"),
+    ("Per", "iod"),
+    ("Per", "ch"),
+    ("Sw", "itch"),
+    ("Fet", "ch"),
+    ("Wre", "nch"),
+    ("Bra", "nch"),
+    ("Be", "nch"),
+    ("Was", "te"),
+    ("Da", "te"),
+    ("Te", "st"),
+    ("Sum", "moner"),
+    ("Sum", "pter"),
+    ("Sta", "ck"),
+    ("Sta", "ff"),
+    ("Sta", "te"),
+    ("Gru", "nt"),
+    ("Gru", "dge"),
+    ("Ti", "bet"),
+    ("Gob", "bet"),
+    ("Gib", "bet"),
+    ("Sor", "bet"),
+    ("Sor", "b"),
+    ("Sor", "ghum"),
+    ("Sc", "um"),
+    ("Al", "um"),
+    ("Atr", "ium"),
+    ("Atr", "ophy"),
+    ("Tal", "on"),
+    ("Ta", "le"),
+    ("Tal", "ker"),
+    ("Wa", "sh"),
+    ("Tal", "ent"),
+    ("In", "tent"),
+    ("Stu", "dy"),
+    ("Stu", "ff"),
+    ("Ti", "me"),
+    ("Na", "me"),
+    ("Du", "st"),
+    ("Al", "to"),
+    ("Fra", "me"),
+];
+
+/// C `lab3_init_password` (`lab3.c:873-895`): assigns a random password
+/// pair only if `password1` isn't already set - the password then
+/// persists across every future read (both note-reading and the
+/// `CDR_LAB3PASSGUARD` challenge check the same stored value).
+fn lab3_init_password(player: &mut PlayerRuntime) {
+    if !player.legacy_lab3_password1().is_empty() {
+        return;
+    }
+    let index = runtime_random_below(LAB3_PASSWORD_PAIRS.len() as i32).max(0) as usize
+        % LAB3_PASSWORD_PAIRS.len();
+    let (part1, part2) = LAB3_PASSWORD_PAIRS[index];
+    player.set_legacy_lab3_password1(part1.as_bytes());
+    player.set_legacy_lab3_password2(part2.as_bytes());
+}
+
+/// C `lab3_special`'s `drdata[0]==3` note-reading switch
+/// (`lab3.c:1001-1067`). Cases `1..=6` are canned lore text; `20`/`21`
+/// need `lab3_init_password` (reads/writes `PlayerRuntime`'s
+/// `legacy_lab3_password1`/`2`) to reveal half of the teleport door's
+/// password. Any other value matches C's `default: xlog(...)` branch -
+/// no player-visible text, `None`.
+fn lab3_note_text(
+    runtime: &mut ServerRuntime,
+    character_id: CharacterId,
+    note_value: u8,
+) -> Option<String> {
+    match note_value {
+        1 => Some(
+            "I have to find a way of holding my breath for longer.\u{fffd} Too bad you can\u{fffd}t breathe under water."
+                .to_string(),
+        ),
+        2 => Some(
+            "The yellow berries seem to release oxygen. I have finally figured out how to stay underwater for longer. Now I simply need to manage fighting these hordes of crustaceans in order to find the exit to this part of the labyrinth. The exit is supposed to be somewhere in the south."
+                .to_string(),
+        ),
+        3 => Some(
+            "Behind the southern caves I discovered a rare brown berry. Encouraged by my experience with the yellow berries I ate it. Nothing much happened, but when I expressed my disappointment, I could understand my own words. Very interesting, might even come in handy."
+                .to_string(),
+        ),
+        4 => Some(
+            "In the south I only discovered the entrance to some caves. I will explore them later on, for the time being I just want to find the exit to this part of the labyrinth. It must be further to the east."
+                .to_string(),
+        ),
+        5 => Some(
+            "These large crustaceans are too strong, but fortunately very slow.".to_string(),
+        ),
+        6 => Some(
+            "These berries are incredible. When you eat the white ones, you start glowing. Thus I can finally explore the darker regions."
+                .to_string(),
+        ),
+        20 => {
+            let player = runtime.player_for_character_mut(character_id)?;
+            lab3_init_password(player);
+            let password1 = String::from_utf8_lossy(&player.legacy_lab3_password1()).into_owned();
+            Some(format!("Thou can read the incomplete word \"{password1}...\"."))
+        }
+        21 => {
+            let player = runtime.player_for_character_mut(character_id)?;
+            lab3_init_password(player);
+            let password2 = String::from_utf8_lossy(&player.legacy_lab3_password2()).into_owned();
+            Some(format!("Thou can read the incomplete word \"...{password2}\"."))
+        }
+        _ => None,
     }
 }

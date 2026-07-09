@@ -2191,6 +2191,14 @@ impl World {
                     installed,
                 }
             }
+            ItemDriverOutcome::Lab3TeleportDoor {
+                item_id,
+                character_id,
+                dx,
+                dy,
+                password_protected,
+                ..
+            } => self.apply_lab3_teleport_door(item_id, character_id, dx, dy, password_protected),
             ItemDriverOutcome::SpecialPotionSecurity { .. }
             | ItemDriverOutcome::SpecialPotionProfessionReset { .. }
             | ItemDriverOutcome::SpecialPotionBug { .. } => outcome,

@@ -4,8 +4,8 @@
 //! exactly one guard instance in the whole game (`ugaris_data/zones/22/
 //! lab3.chr:398`), stationed in front of the password-protected teleport
 //! door `IDR_LAB3_SPECIAL` gates (`drdata[0]==1`, `drdata[3]!=0` -
-//! `lab3_special`, still unported, see the module doc comment gap note
-//! below).
+//! `lab3_special`, ported in `item_driver::area22_lab::lab3_special_driver`
+//! + `World::apply_lab3_teleport_door`).
 //!
 //! Deviations/gaps (documented, not silent):
 //! - C's `static int talk` (`lab3.c:83`) is process-lifetime, not
@@ -37,16 +37,16 @@
 //! - `standard_message_driver(cn, msg, 0, 0)` is not reproduced (dead
 //!   code for `agressive=0, helper=0`), same precedent as every other
 //!   NPC's own module doc comment in this directory.
-//! - **Known gap**: `IDR_LAB3_SPECIAL` (`lab3_special`, the password-
-//!   protected teleport door plus the note-reading/`lab3_init_password`
-//!   machinery that actually assigns `password1`/`password2`) is not yet
-//!   ported, so [`crate::player::PlayerRuntime::legacy_lab3_password1`]/
-//!   `legacy_lab3_password2` are always empty for every player until that
-//!   item driver is ported. C's own `strcasestr(str, "")` (empty needle)
-//!   always matches, so this port's `contains` check behaves identically
-//!   to C given the same missing initialization - not a behavioral
-//!   deviation, just an accurate reflection of the still-open item-driver
-//!   dependency (`PORTING_TODO.md`'s Area 22 entry).
+//! - `IDR_LAB3_SPECIAL`'s note-reading branch (`lab3_special`'s
+//!   `drdata[0]==3`, cases `20`/`21`) is what actually calls
+//!   `lab3_init_password` and populates
+//!   [`crate::player::PlayerRuntime::legacy_lab3_password1`]/
+//!   `legacy_lab3_password2` (`ugaris-server`'s `tick_item_use_lab.rs`,
+//!   since the random pick + `PlayerRuntime` write need the server layer).
+//!   Until a player reads one of those two notes, both fields stay empty;
+//!   C's own `strcasestr(str, "")` (empty needle) always matches, so this
+//!   port's `contains` check behaves identically to C in that state - not
+//!   a behavioral deviation.
 
 use crate::direction::Direction;
 use crate::drvlib::{char_dist, offset2dx};
