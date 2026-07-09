@@ -340,6 +340,23 @@ pub const RUNE_SPECIAL_EXEC_COUNT: usize = 25;
 
 pub const LEGACY_RUNE_PPD_SIZE: usize = RUNE_USED_WORDS * 4 + RUNE_SPECIAL_EXEC_COUNT * 4;
 
+/// C `MAXRUNE` (`src/area/18/bones.c:80`): the exclusive upper bound for a
+/// rune combination number, matching `rune_used_words`'s 32-word (1024-bit)
+/// bitfield.
+pub const MAXRUNE: i32 = 1024;
+
+/// Result of `rune_check(cn, nr, ppd)` (`src/area/18/bones.c:285-299`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RuneCheckResult {
+    /// The combination has never been executed by this player.
+    Ok,
+    /// `nr` is outside `0..MAXRUNE` (C: "You have found bug #5136a.").
+    OutOfRange,
+    /// The bit for `nr` is already set (C: "You cannot use this
+    /// combination again.").
+    AlreadyUsed,
+}
+
 pub const PK_HATE_MAX_ENTRIES: usize = 50;
 
 pub const LEGACY_PK_PPD_SIZE: usize = 4 * 4 + PK_HATE_MAX_ENTRIES * 4;

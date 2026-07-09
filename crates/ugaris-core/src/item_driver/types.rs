@@ -1817,6 +1817,19 @@ pub enum ItemDriverOutcome {
         character_id: CharacterId,
         last_holder: bool,
     },
+    /// `World`-level resolution of [`Self::BoneHolderActivate`]: the
+    /// three-preceding-stand scan (C `bones.c:698-717`) has already run
+    /// and cleared any matched stands, producing the concatenated
+    /// combination number and up to 3 `(holder_item_id, rune)` pairs the
+    /// server crate should hand each rune item back for (`ZoneLoader`
+    /// instantiation of `rune{1..9}`, needed outside `ugaris-core`).
+    BoneHolderActivateResolved {
+        item_id: ItemId,
+        character_id: CharacterId,
+        last_holder: bool,
+        nr: i32,
+        cleared: [Option<(ItemId, u8)>; 3],
+    },
     BoneHolderBadCursor {
         item_id: ItemId,
         character_id: CharacterId,

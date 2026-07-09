@@ -15,6 +15,7 @@ mod asturin;
 mod balltrap;
 mod bank;
 mod barkeeper;
+mod bones;
 mod brithildie;
 mod camhermit;
 mod carlos;

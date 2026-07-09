@@ -16,6 +16,7 @@ mod allow;
 mod anticheat;
 mod area_mech;
 mod assembly;
+mod bones;
 mod character_values;
 mod combat;
 mod complain;

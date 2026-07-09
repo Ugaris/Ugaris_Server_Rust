@@ -859,6 +859,7 @@ pub(crate) async fn process_completed_action_outcomes(
                             | ugaris_core::item_driver::ItemDriverOutcome::BoneHolderInsertRune { .. }
                             | ugaris_core::item_driver::ItemDriverOutcome::BoneHolderRemoveRune { .. }
                             | ugaris_core::item_driver::ItemDriverOutcome::BoneHolderActivate { .. }
+                            | ugaris_core::item_driver::ItemDriverOutcome::BoneHolderActivateResolved { .. }
                             | ugaris_core::item_driver::ItemDriverOutcome::BoneHolderExpired { .. }
                             | ugaris_core::item_driver::ItemDriverOutcome::LizardFlowerMixed { .. }
                             | ugaris_core::item_driver::ItemDriverOutcome::LizardFlowerNeedsCursor { .. }

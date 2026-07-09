@@ -838,8 +838,34 @@ Ordered by player progression; the C file is the oracle.
   Master", the 18-state lockpick-chain quest giver behind the sewer
   entrance covering quests 25-28, `world/npc/area17/thiefmaster.rs`) is
   now also ported, closing Area 17.
-- [ ] **Area 18 - `src/area/18/bones.c`** - rune quest completion
+- [~] **Area 18 - `src/area/18/bones.c`** - rune quest completion
   (`exec_rune` rewards), bone NPCs.
+  REMAINING: confirmed C's own `ch_driver` is an empty stub (no bone-
+  specific NPCs; area 18's monsters use plain `driver=7`/`CDR_SIMPLEBADDY`,
+  already ported elsewhere) - this task is purely the item-driver/rune-
+  puzzle half. This iteration closed the rune-combination reward table and
+  the full boneholder rune-stand pipeline: `PlayerRuntime::rune_check`/
+  `rune_set` (the `used[]` bitmask gate, `player/areas_misc.rs`), `World::
+  exec_rune`/`exec_rune_special`/`rune_raise` (the full ~44-combo reward
+  switch - all nine level-progression teleport/bonus-exp/"laugh" triads,
+  the six literal skill-raise combos, and the 25-slot `special_exec` table
+  dispatch including the `last_holder`-gated bonus-area case 20) in a new
+  `world/bones.rs`, plus `World::update_bone_holder_sprite`/
+  `scan_and_clear_bone_holder_runes` (the three-preceding-stand activation
+  scan). Wired end-to-end in `tick_item_use_keyassembly.rs`:
+  `BoneHolderInsertRune` now actually destroys the cursor rune and starts
+  the 120s timer; `BoneHolderRemoveRune`/the activation scan's cleared
+  stands now instantiate real `rune{1..9}` items via `ZoneLoader` and hand
+  them back to the player (C's "bug #11970" text preserved for the
+  creation-failure edge case); `BoneHolderActivateResolved` (new
+  `ItemDriverOutcome`, the `World`-level resolution of
+  `BoneHolderActivate` carrying the computed combination number) drives
+  the full `rune_check` -> `exec_rune` -> `rune_set` pipeline. Still
+  unported: `bonebridge`'s partial-add/remove-bones-from-a-carried-bridge
+  path (`bones.c:236-270`, `item_driver/area18_bones.rs`'s
+  `bonebridge_driver` still early-returns `Noop` there) - needs a
+  template-backed `create_item("bone")` the same way the rune give-back
+  above does, just not started this iteration.
 - [ ] **Area 19 - `src/area/19/nomad.c`** - nomad camp NPCs/trading.
 - [ ] **Area 20 - `src/area/20/lq.c`** - live-quest admin command table,
   LQ NPC dialogue (spawn/raise/equipment ported).
@@ -910,6 +936,11 @@ Keep entries to at most three lines: date, task, one-line result.
 Anything longer belongs in `PORTING_LEDGER.md`; historical verbose
 notes live in `PROGRESS_ARCHIVE.md`.
 
+- 2026-07-09: Area 18 STARTED: ported the rune-combination reward table
+  (`exec_rune`, all ~44 combos) plus the full boneholder rune-stand
+  insert/remove/expire/activate pipeline (new `world/bones.rs`,
+  `PlayerRuntime::rune_check`/`rune_set`). Only `bonebridge`'s partial-add
+  path remains. 3061 core + 1138 server tests pass, clean build/boot-smoke.
 - 2026-07-09: Area 17 CLOSED: ported `CDR_TWOTHIEFMASTER` ("Guild
   Master", the 18-state lockpick-chain quest giver, quests 25-28,
   `world/npc/area17/thiefmaster.rs`), including its own `NT_GOTHIT`

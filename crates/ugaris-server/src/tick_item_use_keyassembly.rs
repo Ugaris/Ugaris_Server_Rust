@@ -503,10 +503,100 @@ pub(crate) async fn dispatch_keyassembly_outcome(
             *blocked += 1;
         }
         ugaris_core::item_driver::ItemDriverOutcome::BoneHolderInsertRune { .. }
-        | ugaris_core::item_driver::ItemDriverOutcome::BoneHolderRemoveRune { .. }
-        | ugaris_core::item_driver::ItemDriverOutcome::BoneHolderActivate { .. }
         | ugaris_core::item_driver::ItemDriverOutcome::BoneHolderExpired { .. } => {
             *executed += 1;
+        }
+        ugaris_core::item_driver::ItemDriverOutcome::BoneHolderRemoveRune {
+            character_id,
+            rune,
+            ..
+        } => {
+            // C `boneholder`'s "remove rune from holder" branch
+            // (`bones.c:759-768`): the driver already verified the cursor
+            // is empty, so `give_char_item` (empty-cursor-first) lands on
+            // the cursor exactly like C's direct `ch[cn].citem = in2`
+            // assignment. `create_rune_from_holder` failing is C's "bug
+            // #11970" branch.
+            match zone_loader.instantiate_item_template(&format!("rune{rune}"), Some(character_id))
+            {
+                Ok(item) => {
+                    let item_id = item.id;
+                    world.add_item(item);
+                    world.give_char_item(character_id, item_id);
+                    *executed += 1;
+                }
+                Err(_) => {
+                    feedback.push((character_id, "You found bug #11970".to_string()));
+                    *failed += 1;
+                }
+            }
+        }
+        ugaris_core::item_driver::ItemDriverOutcome::BoneHolderActivateResolved {
+            character_id,
+            last_holder,
+            nr,
+            cleared,
+            ..
+        } => {
+            // C `remove_rune_from_holder`'s `give_char_item` variant
+            // (`bones.c:678-688`), called once per stand the scan
+            // cleared, regardless of whether `nr` ends up usable.
+            for (_, rune) in cleared.into_iter().flatten() {
+                if let Ok(item) = zone_loader
+                    .instantiate_item_template(&format!("rune{rune}"), Some(character_id))
+                {
+                    let item_id = item.id;
+                    world.add_item(item);
+                    if !world.give_char_item(character_id, item_id) {
+                        world.destroy_item(item_id);
+                    }
+                }
+            }
+
+            if nr == 0 {
+                feedback.push((
+                    character_id,
+                    "You sense that you must place something on the stand before you can activate it."
+                        .to_string(),
+                ));
+                *blocked += 1;
+                return;
+            }
+
+            let Some(player) = runtime.player_for_character_mut(character_id) else {
+                *blocked += 1;
+                return;
+            };
+            player.ensure_rune_special_execs(|limit| {
+                runtime_random_below(limit as i32).max(0) as u32
+            });
+            match player.rune_check(nr) {
+                ugaris_core::player::RuneCheckResult::OutOfRange => {
+                    feedback.push((character_id, "You have found bug #5136a.".to_string()));
+                    *blocked += 1;
+                }
+                ugaris_core::player::RuneCheckResult::AlreadyUsed => {
+                    feedback.push((
+                        character_id,
+                        "You cannot use this combination again.".to_string(),
+                    ));
+                    *blocked += 1;
+                }
+                ugaris_core::player::RuneCheckResult::Ok => {
+                    let special_exec = player.rune_special_exec;
+                    let flag = world.exec_rune(
+                        character_id,
+                        nr,
+                        &special_exec,
+                        last_holder,
+                        u32::from(args.area_id),
+                    );
+                    if flag {
+                        player.rune_set(nr);
+                    }
+                    *executed += 1;
+                }
+            }
         }
         ugaris_core::item_driver::ItemDriverOutcome::LizardFlowerMixed {
             character_id,

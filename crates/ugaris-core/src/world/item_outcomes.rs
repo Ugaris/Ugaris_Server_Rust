@@ -1252,6 +1252,52 @@ impl World {
                     ItemDriverOutcome::Noop
                 }
             }
+            ItemDriverOutcome::BoneHolderInsertRune {
+                item_id,
+                character_id,
+                cursor_item_id,
+                schedule_after_ticks,
+                ..
+            } => {
+                if self.character_holds_cursor_item(character_id, cursor_item_id) {
+                    self.destroy_item(cursor_item_id);
+                    if let Some(character) = self.characters.get_mut(&character_id) {
+                        character.cursor_item = None;
+                        character.flags.insert(CharacterFlags::ITEMS);
+                    }
+                    self.update_bone_holder_sprite(item_id);
+                    self.schedule_item_driver_timer(
+                        item_id,
+                        CharacterId(0),
+                        u64::from(schedule_after_ticks),
+                    );
+                    outcome
+                } else {
+                    ItemDriverOutcome::Noop
+                }
+            }
+            ItemDriverOutcome::BoneHolderRemoveRune { item_id, .. } => {
+                self.update_bone_holder_sprite(item_id);
+                outcome
+            }
+            ItemDriverOutcome::BoneHolderExpired { item_id } => {
+                self.update_bone_holder_sprite(item_id);
+                outcome
+            }
+            ItemDriverOutcome::BoneHolderActivate {
+                item_id,
+                character_id,
+                last_holder,
+            } => {
+                let (nr, cleared) = self.scan_and_clear_bone_holder_runes(item_id, character_id);
+                ItemDriverOutcome::BoneHolderActivateResolved {
+                    item_id,
+                    character_id,
+                    last_holder,
+                    nr,
+                    cleared,
+                }
+            }
             ItemDriverOutcome::BallTrapProjectile {
                 start_x,
                 start_y,

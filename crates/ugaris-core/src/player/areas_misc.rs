@@ -88,6 +88,34 @@ impl PlayerRuntime {
         }
     }
 
+    /// C `rune_check(cn, nr, ppd)` (`src/area/18/bones.c:285-299`): tests
+    /// (without setting) the bit for combination `nr` in the 1024-bit
+    /// `used[]` bitfield.
+    pub fn rune_check(&self, nr: i32) -> RuneCheckResult {
+        if !(0..MAXRUNE).contains(&nr) {
+            return RuneCheckResult::OutOfRange;
+        }
+        let word = (nr / 32) as usize;
+        let bit = 1u32 << (nr & 31);
+        if self.rune_used_words[word] & bit != 0 {
+            RuneCheckResult::AlreadyUsed
+        } else {
+            RuneCheckResult::Ok
+        }
+    }
+
+    /// C `rune_set(nr, ppd)` (`src/area/18/bones.c:301-313`): marks
+    /// combination `nr` as executed. Out-of-range `nr` is a silent no-op
+    /// (C only `elog`s a server-side bug, never player-facing).
+    pub fn rune_set(&mut self, nr: i32) {
+        if !(0..MAXRUNE).contains(&nr) {
+            return;
+        }
+        let word = (nr / 32) as usize;
+        let bit = 1u32 << (nr & 31);
+        self.rune_used_words[word] |= bit;
+    }
+
     pub fn bone_hint<F>(&mut self, level: u8, nr: u8, pos: u8, random_below: F) -> BoneHintResult
     where
         F: FnMut(u32) -> u32,

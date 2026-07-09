@@ -599,3 +599,22 @@ fn bone_hint_uses_generated_special_exec_digit() {
         }
     );
 }
+
+#[test]
+fn rune_check_and_set_track_the_used_bitmask_like_c() {
+    let mut player = PlayerRuntime::connected(1, 0);
+
+    assert_eq!(player.rune_check(212), RuneCheckResult::Ok);
+    player.rune_set(212);
+    assert_eq!(player.rune_check(212), RuneCheckResult::AlreadyUsed);
+
+    // A different combination number is unaffected.
+    assert_eq!(player.rune_check(231), RuneCheckResult::Ok);
+
+    assert_eq!(player.rune_check(-1), RuneCheckResult::OutOfRange);
+    assert_eq!(player.rune_check(1024), RuneCheckResult::OutOfRange);
+
+    // Out-of-range `rune_set` is a silent no-op (C only `elog`s).
+    player.rune_set(1024);
+    assert_eq!(player.rune_check(1023), RuneCheckResult::Ok);
+}
