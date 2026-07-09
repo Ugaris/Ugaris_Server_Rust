@@ -64,6 +64,7 @@ pub(crate) fn apply_pk_hate_from_hurt_events(
         apply_area1_quest_giver_death_from_hurt_event(world, event);
         apply_area3_immortal_death_from_hurt_event(world, event);
         apply_lampghost_death_from_hurt_event(world, event);
+        apply_labgnome_death_from_hurt_event(world, event);
         apply_area1_monster_death_from_hurt_event(runtime, world, event);
         apply_forest_monster_death_from_hurt_event(runtime, world, event);
         apply_bredel_death_from_hurt_event(runtime, world, event);

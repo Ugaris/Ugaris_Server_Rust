@@ -1,5 +1,7 @@
 use super::*;
-use ugaris_core::character_driver::{CDR_TWOGUARD, CDR_TWOROBBER, CDR_TWOSERVANT};
+use ugaris_core::character_driver::{
+    CDR_LABGNOMEDRIVER, CDR_TWOGUARD, CDR_TWOROBBER, CDR_TWOSERVANT,
+};
 use ugaris_core::world::{CS_ENEMY, CS_GUEST, LS_DEAD, LS_FINE};
 
 pub(crate) fn apply_lab2_undead_death_from_hurt_event(
@@ -622,6 +624,29 @@ pub(crate) fn apply_lampghost_death_from_hurt_event(
         return false;
     }
     world.release_lampghost_lamp_claim(event.target_id);
+    true
+}
+
+/// C `ch_died_driver`/`CDR_LABGNOMEDRIVER` dispatch (`lab1.c:615-623`) ->
+/// `labgnome_died_driver` (`:388-406`). Only the `dat->text` speech branch
+/// is ported here; the `dat->master` `create_lab_exit` reward branch is a
+/// documented gap shared by all five lab areas - see
+/// `world::npc::area22::lab1_gnome`'s own module doc comment.
+pub(crate) fn apply_labgnome_death_from_hurt_event(
+    world: &mut World,
+    event: LegacyHurtEvent,
+) -> bool {
+    if !event.outcome.killed {
+        return false;
+    }
+    let is_labgnome = world
+        .characters
+        .get(&event.target_id)
+        .is_some_and(|target| target.driver == CDR_LABGNOMEDRIVER);
+    if !is_labgnome {
+        return false;
+    }
+    world.apply_labgnome_death_driver(event.target_id, event.cause_id);
     true
 }
 

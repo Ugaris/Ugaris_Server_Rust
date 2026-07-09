@@ -976,7 +976,12 @@ pub(crate) async fn process_completed_action_outcomes(
                             | ugaris_core::item_driver::ItemDriverOutcome::Lab2GraveOpen { .. }
                             | ugaris_core::item_driver::ItemDriverOutcome::LabEntranceSolvedAll { .. }
                             | ugaris_core::item_driver::ItemDriverOutcome::LabEntranceTooLow { .. }
-                            | ugaris_core::item_driver::ItemDriverOutcome::LabExitWrongOwner { .. }) => {
+                            | ugaris_core::item_driver::ItemDriverOutcome::LabExitWrongOwner { .. }
+                            | ugaris_core::item_driver::ItemDriverOutcome::DeathfibrinShrineGive { .. }
+                            | ugaris_core::item_driver::ItemDriverOutcome::DeathfibrinShrineOccupied { .. }
+                            | ugaris_core::item_driver::ItemDriverOutcome::DeathfibrinNeedsCarry { .. }
+                            | ugaris_core::item_driver::ItemDriverOutcome::DeathfibrinNoMaster { .. }
+                            | ugaris_core::item_driver::ItemDriverOutcome::DeathfibrinStrike { .. }) => {
                                 tick_item_use_lab::dispatch_lab_outcome(
                                     &mut world,
                                     &mut zone_loader,

@@ -52,6 +52,13 @@ pub struct ItemDriverContext {
     pub has_dungeon_door_key2: bool,
     pub dungeon_defender_count: Option<u16>,
     pub lab_solved_bits: u64,
+    /// C `deathfibrin_scan(cn)` (`src/area/22/lab1.c:440-458`): the nearby
+    /// `CDR_LABGNOMEDRIVER` "Immortal Master" the staff can strike, if any.
+    pub deathfibrin_master: Option<CharacterId>,
+    /// C `map[ch[cn].x+ch[cn].y*MAXMAP].light` (`lab1.c:523-524`), the
+    /// debug light value C's own "no immortal close enough" message
+    /// prints verbatim.
+    pub deathfibrin_tile_light: u8,
     pub pent_last_solve_tick: Option<u32>,
     pub pent_demon_lord_access_seconds: Option<u32>,
     pub has_matching_random_shrine_key: bool,
@@ -1154,6 +1161,27 @@ pub enum ItemDriverOutcome {
         item_id: ItemId,
         character_id: CharacterId,
         required_level: u16,
+    },
+    DeathfibrinShrineGive {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    DeathfibrinShrineOccupied {
+        character_id: CharacterId,
+    },
+    DeathfibrinNeedsCarry {
+        character_id: CharacterId,
+    },
+    DeathfibrinNoMaster {
+        character_id: CharacterId,
+        tile_light: u8,
+    },
+    DeathfibrinStrike {
+        item_id: ItemId,
+        character_id: CharacterId,
+        master_id: CharacterId,
+        item_name: [u8; OUTCOME_ITEM_NAME_BYTES],
+        vanished: bool,
     },
     BeyondPotion {
         item_id: ItemId,

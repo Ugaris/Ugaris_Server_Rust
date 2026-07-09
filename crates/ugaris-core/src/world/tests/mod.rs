@@ -61,6 +61,7 @@ mod jessica;
 mod jiu;
 mod kassim;
 mod kelly;
+mod lab1_gnome;
 mod lab2_undead;
 mod lampghost;
 mod lastseen;

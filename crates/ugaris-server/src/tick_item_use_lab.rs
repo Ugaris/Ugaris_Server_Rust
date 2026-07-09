@@ -225,6 +225,57 @@ pub(crate) fn dispatch_lab_outcome(
             ));
             *blocked += 1;
         }
+        ugaris_core::item_driver::ItemDriverOutcome::DeathfibrinShrineGive {
+            character_id, ..
+        } => {
+            if let Some(item_name) =
+                grant_template_item_to_cursor(world, zone_loader, character_id, "deathfibrin")
+            {
+                feedback.push((character_id, format!("You received a {item_name}.")));
+                *executed += 1;
+            } else {
+                *failed += 1;
+            }
+        }
+        ugaris_core::item_driver::ItemDriverOutcome::DeathfibrinShrineOccupied { character_id } => {
+            feedback.push((
+                character_id,
+                "The Shrine of Deathfibrin seems to ignore everything. It may want to give you something."
+                    .to_string(),
+            ));
+            *blocked += 1;
+        }
+        ugaris_core::item_driver::ItemDriverOutcome::DeathfibrinNeedsCarry { character_id } => {
+            feedback.push((
+                character_id,
+                "You need to carry this to use it.".to_string(),
+            ));
+            *blocked += 1;
+        }
+        ugaris_core::item_driver::ItemDriverOutcome::DeathfibrinNoMaster {
+            character_id,
+            tile_light,
+        } => {
+            feedback.push((
+                character_id,
+                format!("Nothing happens. There is no immortal close enough. {tile_light}"),
+            ));
+            *blocked += 1;
+        }
+        ugaris_core::item_driver::ItemDriverOutcome::DeathfibrinStrike {
+            character_id,
+            item_name,
+            vanished,
+            ..
+        } => {
+            if vanished {
+                let item_name = String::from_utf8_lossy(&item_name)
+                    .trim_end_matches('\0')
+                    .to_string();
+                feedback.push((character_id, format!("Your {item_name} vanished.")));
+            }
+            *executed += 1;
+        }
         _ => {}
     }
 }

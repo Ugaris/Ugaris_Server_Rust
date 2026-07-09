@@ -165,6 +165,13 @@ impl World {
         .flatten();
         let dungeon_door_context = (driver == Some(IDR_DUNGEONDOOR))
             .then(|| self.dungeon_door_context(character_id, item_id));
+        let deathfibrin_master = (driver == Some(IDR_DEATHFIBRIN)
+            && context.deathfibrin_master.is_none())
+        .then(|| self.deathfibrin_scan(character_id))
+        .flatten();
+        let deathfibrin_tile_light = (driver == Some(IDR_DEATHFIBRIN))
+            .then(|| self.deathfibrin_tile_light(character_id))
+            .unwrap_or(0);
         let clanspawn_contested = (driver == Some(IDR_CLANSPAWN))
             .then(|| self.clanspawn_is_contested(character_id, item_id))
             .unwrap_or(false);
@@ -255,6 +262,12 @@ impl World {
             effective_context.dungeon_defender_count = effective_context
                 .dungeon_defender_count
                 .or(Some(defender_count));
+        }
+        if effective_context.deathfibrin_master.is_none() {
+            effective_context.deathfibrin_master = deathfibrin_master;
+        }
+        if effective_context.deathfibrin_tile_light == 0 {
+            effective_context.deathfibrin_tile_light = deathfibrin_tile_light;
         }
         effective_context.clanspawn_contested |= clanspawn_contested;
         effective_context.has_matching_random_shrine_key |= random_shrine_key_context;
@@ -1869,7 +1882,38 @@ impl World {
             ItemDriverOutcome::LabExitUse { .. }
             | ItemDriverOutcome::LabExitWrongOwner { .. }
             | ItemDriverOutcome::LabEntranceSolvedAll { .. }
-            | ItemDriverOutcome::LabEntranceTooLow { .. } => outcome,
+            | ItemDriverOutcome::LabEntranceTooLow { .. }
+            | ItemDriverOutcome::DeathfibrinShrineGive { .. }
+            | ItemDriverOutcome::DeathfibrinShrineOccupied { .. }
+            | ItemDriverOutcome::DeathfibrinNeedsCarry { .. }
+            | ItemDriverOutcome::DeathfibrinNoMaster { .. } => outcome,
+            ItemDriverOutcome::DeathfibrinStrike {
+                character_id,
+                master_id,
+                ..
+            } => {
+                // C `lab1.c:527-540`: pulse-back show effect at the
+                // master, then the actual strike - both unconditional
+                // regardless of whether this hit vanishes the staff.
+                let start_tick = self.tick.0 as u32;
+                self.create_show_effect(
+                    EF_PULSEBACK,
+                    master_id,
+                    start_tick,
+                    start_tick + 7,
+                    20,
+                    42,
+                );
+                if let Some(master) = self.characters.get_mut(&master_id) {
+                    master.flags.remove(CharacterFlags::IMMORTAL);
+                }
+                self.apply_legacy_hurt(master_id, Some(character_id), 10 * POWERSCALE, 1, 0, 0);
+                if let Some(master) = self.characters.get_mut(&master_id) {
+                    master.flags.insert(CharacterFlags::IMMORTAL);
+                }
+                self.npc_say(master_id, "Oh no! Deathfibrin hurts.");
+                outcome
+            }
             ItemDriverOutcome::StafferMineDig {
                 item_id,
                 character_id: _,

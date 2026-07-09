@@ -839,3 +839,253 @@ fn lab2_regenerate_timer_decodes_legacy_spell_data() {
         }
     );
 }
+
+#[test]
+fn deathfibrin_shrine_gives_a_new_staff_when_cursor_is_empty() {
+    let mut player = character(1);
+    let mut shrine = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_DEATHFIBRIN);
+    shrine.sprite = 10428;
+
+    let outcome = execute_item_driver(
+        &mut player,
+        &mut shrine,
+        ItemDriverRequest::Driver {
+            driver: IDR_DEATHFIBRIN,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        },
+        22,
+        false,
+    );
+
+    assert_eq!(
+        outcome,
+        ItemDriverOutcome::DeathfibrinShrineGive {
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+        }
+    );
+}
+
+#[test]
+fn deathfibrin_shrine_refuses_when_cursor_is_occupied() {
+    let mut player = character(1);
+    player.cursor_item = Some(ItemId(99));
+    let mut shrine = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_DEATHFIBRIN);
+    shrine.sprite = 10428;
+
+    let outcome = execute_item_driver(
+        &mut player,
+        &mut shrine,
+        ItemDriverRequest::Driver {
+            driver: IDR_DEATHFIBRIN,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        },
+        22,
+        false,
+    );
+
+    assert_eq!(
+        outcome,
+        ItemDriverOutcome::DeathfibrinShrineOccupied {
+            character_id: CharacterId(1),
+        }
+    );
+}
+
+#[test]
+fn deathfibrin_staff_needs_carrying() {
+    let mut player = character(1);
+    let mut staff = item(
+        7,
+        ItemFlags::USED | ItemFlags::TAKE | ItemFlags::USE,
+        0,
+        IDR_DEATHFIBRIN,
+    );
+    staff.sprite = 10418;
+
+    let outcome = execute_item_driver(
+        &mut player,
+        &mut staff,
+        ItemDriverRequest::Driver {
+            driver: IDR_DEATHFIBRIN,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        },
+        22,
+        false,
+    );
+
+    assert_eq!(
+        outcome,
+        ItemDriverOutcome::DeathfibrinNeedsCarry {
+            character_id: CharacterId(1),
+        }
+    );
+}
+
+#[test]
+fn deathfibrin_staff_reports_no_master_nearby() {
+    let mut player = character(1);
+    let mut staff = item(
+        7,
+        ItemFlags::USED | ItemFlags::TAKE | ItemFlags::USE,
+        0,
+        IDR_DEATHFIBRIN,
+    );
+    staff.sprite = 10418;
+    staff.carried_by = Some(CharacterId(1));
+
+    let outcome = execute_item_driver_with_context(
+        &mut player,
+        &mut staff,
+        ItemDriverRequest::Driver {
+            driver: IDR_DEATHFIBRIN,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        },
+        22,
+        false,
+        &ItemDriverContext {
+            deathfibrin_master: None,
+            deathfibrin_tile_light: 7,
+            ..ItemDriverContext::default()
+        },
+    );
+
+    assert_eq!(
+        outcome,
+        ItemDriverOutcome::DeathfibrinNoMaster {
+            character_id: CharacterId(1),
+            tile_light: 7,
+        }
+    );
+}
+
+#[test]
+fn deathfibrin_staff_first_strike_lazily_initializes_to_full_charge() {
+    let mut player = character(1);
+    let mut staff = item(
+        7,
+        ItemFlags::USED | ItemFlags::TAKE | ItemFlags::USE,
+        0,
+        IDR_DEATHFIBRIN,
+    );
+    staff.sprite = 10418;
+    staff.carried_by = Some(CharacterId(1));
+
+    let outcome = execute_item_driver_with_context(
+        &mut player,
+        &mut staff,
+        ItemDriverRequest::Driver {
+            driver: IDR_DEATHFIBRIN,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        },
+        22,
+        false,
+        &ItemDriverContext {
+            deathfibrin_master: Some(CharacterId(9)),
+            ..ItemDriverContext::default()
+        },
+    );
+
+    assert_eq!(
+        outcome,
+        ItemDriverOutcome::DeathfibrinStrike {
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            master_id: CharacterId(9),
+            item_name: outcome_item_name(&staff.name),
+            vanished: false,
+        }
+    );
+    // Amount is 10000 - 1000 = 9000 (90%).
+    assert_eq!(
+        u32::from_le_bytes(staff.driver_data[0..4].try_into().unwrap()),
+        9000
+    );
+    assert_eq!(staff.description, "Staff containing 90% Deathfibrin");
+}
+
+#[test]
+fn deathfibrin_staff_strike_that_empties_the_charge_vanishes() {
+    let mut player = character(1);
+    let mut staff = item(
+        7,
+        ItemFlags::USED | ItemFlags::TAKE | ItemFlags::USE,
+        0,
+        IDR_DEATHFIBRIN,
+    );
+    staff.sprite = 10418;
+    staff.carried_by = Some(CharacterId(1));
+    // Already initialized, one strike away from empty.
+    staff.driver_data = vec![0, 0, 0, 0, 1];
+    staff.driver_data[0..4].copy_from_slice(&1000u32.to_le_bytes());
+
+    let outcome = execute_item_driver_with_context(
+        &mut player,
+        &mut staff,
+        ItemDriverRequest::Driver {
+            driver: IDR_DEATHFIBRIN,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        },
+        22,
+        false,
+        &ItemDriverContext {
+            deathfibrin_master: Some(CharacterId(9)),
+            ..ItemDriverContext::default()
+        },
+    );
+
+    assert_eq!(
+        outcome,
+        ItemDriverOutcome::DeathfibrinStrike {
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            master_id: CharacterId(9),
+            item_name: outcome_item_name(&staff.name),
+            vanished: true,
+        }
+    );
+}
+
+#[test]
+fn deathfibrin_timer_call_is_a_no_op() {
+    let mut timer = character(0);
+    let mut staff = item(
+        7,
+        ItemFlags::USED | ItemFlags::TAKE | ItemFlags::USE,
+        0,
+        IDR_DEATHFIBRIN,
+    );
+    staff.sprite = 10418;
+    staff.carried_by = Some(CharacterId(1));
+
+    let outcome = execute_item_driver_with_context(
+        &mut timer,
+        &mut staff,
+        ItemDriverRequest::Driver {
+            driver: IDR_DEATHFIBRIN,
+            item_id: ItemId(7),
+            character_id: CharacterId(0),
+            spec: 0,
+        },
+        22,
+        false,
+        &ItemDriverContext {
+            timer_call: true,
+            ..ItemDriverContext::default()
+        },
+    );
+
+    assert_eq!(outcome, ItemDriverOutcome::Noop);
+}

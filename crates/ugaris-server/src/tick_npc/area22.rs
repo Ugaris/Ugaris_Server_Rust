@@ -249,3 +249,35 @@ pub(crate) async fn gate_fight_driver_51(
         );
     }
 }
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn labgnome_driver_108(
+    world: &mut World,
+    _runtime: &mut ServerRuntime,
+    _zone_loader: &mut ZoneLoader,
+    config: &ServerConfig,
+    _args: &Args,
+    _completed_actions: &[WorldActionCompletion],
+    _achievement_repository: &Option<ugaris_db::PgAchievementRepository>,
+    _character_repository: &Option<ugaris_db::PgCharacterRepository>,
+    _area_repository: &Option<ugaris_db::PgAreaRepository>,
+    _clan_repository: &Option<ugaris_db::PgClanRegistryRepository>,
+    _clan_log_repository: &Option<ugaris_db::PgClanLogRepository>,
+    _merchant_repository: &Option<ugaris_db::PgMerchantRepository>,
+    _military_master_storage_repository: &Option<ugaris_db::PgMilitaryMasterStorageRepository>,
+    _military_advisor_storage_repository: &Option<ugaris_db::PgMilitaryAdvisorStorageRepository>,
+    _notes_repository: &Option<ugaris_db::PgNotesRepository>,
+    _anticheat_repository: &Option<ugaris_db::PgAntiCheatRepository>,
+    _auction_repository: &Option<ugaris_db::PgAuctionRepository>,
+) {
+    // C `labgnome_driver`: the area-22 Lab 1 torch-gnome triad (guard/
+    // fighter/immortal master).
+    let labgnome_acted = world.process_labgnome_actions(config.area_id);
+    if labgnome_acted != 0 {
+        info!(
+            labgnome_acted,
+            tick = world.tick.0,
+            "processed lab-1 torch-gnome actions"
+        );
+    }
+}

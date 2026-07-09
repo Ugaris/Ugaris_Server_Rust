@@ -995,8 +995,16 @@ Ordered by player progression; the C file is the oracle.
   than a tick later - see that function's own doc comment for why this is
   an equivalent, not a behavior change. This closes every subcommand in
   the `CDR_LQPARSER` table and closes Area 20.
-- [ ] **Area 22 - `src/area/22/lab*.c`** - remaining lab mechanics per
+- [~] **Area 22 - `src/area/22/lab*.c`** - remaining lab mechanics per
   lab; lab2 undead mostly ported; gatekeeper depends on P2.
+  REMAINING: lab1's `CDR_LABGNOMEDRIVER` torch-gnome triad and
+  `IDR_DEATHFIBRIN` (shrine + staff) are now ported. Still open: the
+  shared `create_lab_exit`/`IDR_LABEXIT` reward loop (spawn on master
+  death + `set_solved_lab`/`change_area` on use, currently an inert
+  stub - see `world::npc::area22::lab1_gnome`'s doc comment) for all
+  five lab files; lab2's `CDR_LAB2HERALD`/`CDR_LAB2DEAMON`; all of
+  lab3/4/5 (`CDR_LAB3PASSGUARD`/`PRISONER`, `CDR_LAB4SEYAN`/`GNALB`,
+  `CDR_LAB5DAEMON`/`SEYAN`/`MAGE`).
 - [ ] **Areas 23/24 - `src/area/23_24/strategy.c` (3,599 lines)** - the
   strategy minigame (mission ownership, worker spawning, resources).
   Item dispatch is stubbed as no-ops; this is a full subsystem - plan in
@@ -1062,6 +1070,9 @@ Keep entries to at most three lines: date, task, one-line result.
 Anything longer belongs in `PORTING_LEDGER.md`; historical verbose
 notes live in `PROGRESS_ARCHIVE.md`.
 
+- 2026-07-09: Area 22 progress: ported lab1's `CDR_LABGNOMEDRIVER`
+  (torch-gnome guard/fighter/immortal-master triad) and `IDR_DEATHFIBRIN`
+  (shrine + staff). 3236 core + 1148 server tests pass, clean boot-smoke.
 - 2026-07-09: Area 20 CLOSED: ported `#questsave`/`#questdelete`/
   `#questload` (new `world/lq_quest_file.rs` + `ugaris-server::area20::
   handle_lq_quest_file_dispatch`, JSON save files under `quest/`). 3226

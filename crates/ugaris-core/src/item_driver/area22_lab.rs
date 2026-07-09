@@ -29,6 +29,107 @@ pub(crate) fn labtorch_driver(character: &Character, item: &mut Item) -> ItemDri
     }
 }
 
+/// C `deathfibrin` (`src/area/22/lab1.c:482-590`). The same driver id
+/// (`IDR_DEATHFIBRIN = 198`) backs two very different objects
+/// distinguished by sprite, exactly like C: `deathfibrin_shrine`
+/// (`sprite == 10428`, a fixed map dispenser) and the carried/dropped
+/// `deathfibrin` staff itself (`struct deathfibrin_data`, cast onto
+/// `it[in].drdata`).
+///
+/// Deviations/gaps (documented, not silent):
+/// - The zero-character passive ticker (`lab1.c:548-588`: light-based
+///   `amount` decay while sitting lit on the ground or being carried,
+///   auto-vanish after 10 minutes unattended, and the `dat->tickerused`
+///   cooldown that pauses decay right after a strike) is not ported -
+///   nothing schedules `call_item(IDR_DEATHFIBRIN, in, 0, ...)` for this
+///   driver in this port. Without that ticker ever running, C's own
+///   lazy `dat->init` (only set the first time the zero-character path
+///   runs) would never fire either, so this port instead lazily
+///   initializes `amount = 10000` on the *first player strike* instead
+///   (byte 4 of `driver_data` doubles as the "already initialized"
+///   flag) - the one piece of `dat->init` this port actually needs, so
+///   a freshly created staff still starts at 100% charge instead of
+///   incorrectly reading as already-spent.
+/// - `dat->used`/`dat->tickerused`/`dat->tickervanish` (all only
+///   meaningful to the unported ticker) are not represented at all.
+pub(crate) fn deathfibrin_driver(
+    character: &Character,
+    item: &mut Item,
+    context: &ItemDriverContext,
+) -> ItemDriverOutcome {
+    // C `lab1.c:487-510`: the shrine dispenser.
+    if item.sprite == 10428 {
+        if character.id.0 == 0 {
+            return ItemDriverOutcome::Noop;
+        }
+        if character.cursor_item.is_some() {
+            return ItemDriverOutcome::DeathfibrinShrineOccupied {
+                character_id: character.id,
+            };
+        }
+        return ItemDriverOutcome::DeathfibrinShrineGive {
+            item_id: item.id,
+            character_id: character.id,
+        };
+    }
+
+    // C `lab1.c:548-588`: the passive ticker is not ported - see the
+    // driver's own doc comment.
+    if context.timer_call || character.id.0 == 0 {
+        return ItemDriverOutcome::Noop;
+    }
+
+    // C `lab1.c:516-519`.
+    if item.carried_by.is_none() {
+        return ItemDriverOutcome::DeathfibrinNeedsCarry {
+            character_id: character.id,
+        };
+    }
+
+    // C `lab1.c:521-526`.
+    let Some(master_id) = context.deathfibrin_master else {
+        return ItemDriverOutcome::DeathfibrinNoMaster {
+            character_id: character.id,
+            tile_light: context.deathfibrin_tile_light,
+        };
+    };
+
+    // C `lab1.c:513-543`: lazy `dat->init` substitute (see doc comment)
+    // plus the unconditional `dat->amount = max(0, dat->amount - 1000)`.
+    item.driver_data.resize(item.driver_data.len().max(5), 0);
+    let already_initialized = item.driver_data[4] != 0;
+    let amount = if already_initialized {
+        u32::from_le_bytes(item.driver_data[0..4].try_into().unwrap_or_default())
+    } else {
+        item.driver_data[4] = 1;
+        10_000
+    };
+    let amount = amount.saturating_sub(1000);
+    item.driver_data[0..4].copy_from_slice(&amount.to_le_bytes());
+    let vanished = deathfibrin_check(item, amount);
+
+    ItemDriverOutcome::DeathfibrinStrike {
+        item_id: item.id,
+        character_id: character.id,
+        master_id,
+        item_name: outcome_item_name(&item.name),
+        vanished,
+    }
+}
+
+/// C `deathfibrin_check` (`lab1.c:460-480`): updates the staff's sprite/
+/// description for its new `amount`, returning whether it should vanish
+/// (C's `remove_item`/`destroy_item`, applied by the caller since this
+/// pure function has no `World` access).
+fn deathfibrin_check(item: &mut Item, amount: u32) -> bool {
+    if amount == 0 {
+        return true;
+    }
+    item.sprite = (10428 - 10 * (amount as i32 + 500) / 10000).min(10427);
+    item.description = format!("Staff containing {}% Deathfibrin", amount / 100);
+    false
+}
+
 pub(crate) fn lab2_water_driver(character: &Character, item: &mut Item) -> ItemDriverOutcome {
     item.driver_data.resize(1, 0);
 

@@ -4,28 +4,28 @@ use thiserror::Error;
 
 use crate::{
     character_driver::{
-        apply_lab2_undead_create_message, apply_simple_baddy_create_message,
-        parse_arena_manager_driver_args, parse_clanclerk_driver_args, parse_clanmaster_driver_args,
-        parse_clubmaster_driver_args, ArenaFighterDriverData, ArenaMasterDriverData,
-        Astro2DriverData, BrithildieDriverData, CamhermitDriverData, CarlosDriverData,
-        CharacterDriverState, ClaraDriverData, DungeonmasterDriverData, FightDriverData,
-        ForestHermitDriverData, ForestImpDriverData, ForestRangerDriverData,
-        ForestWilliamDriverData, GateFightDriverData, GateWelcomeDriverData,
-        GolemKeyholdDriverData, GreeterDriverData, GwendylonDriverData, JanitorDriverData,
-        JessicaDriverData, JiuDriverData, KassimDriverData, KellyDriverData, NookDriverData,
-        ReskinDriverData, SeymourDriverData, SirJonesDriverData, SuperiorDriverData,
-        SupermaxDriverData, TerionDriverData, ThomasDriverData, TraderDriverData,
-        TwoAlchemistDriverData, TwoBarkeeperDriverData, TwoSanwynDriverData, TwoSkellyDriverData,
-        TwoThiefGuardDriverData, TwoThiefMasterDriverData, YoakinDriverData,
+        apply_lab2_undead_create_message, apply_labgnome_create_message,
+        apply_simple_baddy_create_message, parse_arena_manager_driver_args,
+        parse_clanclerk_driver_args, parse_clanmaster_driver_args, parse_clubmaster_driver_args,
+        ArenaFighterDriverData, ArenaMasterDriverData, Astro2DriverData, BrithildieDriverData,
+        CamhermitDriverData, CarlosDriverData, CharacterDriverState, ClaraDriverData,
+        DungeonmasterDriverData, FightDriverData, ForestHermitDriverData, ForestImpDriverData,
+        ForestRangerDriverData, ForestWilliamDriverData, GateFightDriverData,
+        GateWelcomeDriverData, GolemKeyholdDriverData, GreeterDriverData, GwendylonDriverData,
+        JanitorDriverData, JessicaDriverData, JiuDriverData, KassimDriverData, KellyDriverData,
+        NookDriverData, ReskinDriverData, SeymourDriverData, SirJonesDriverData,
+        SuperiorDriverData, SupermaxDriverData, TerionDriverData, ThomasDriverData,
+        TraderDriverData, TwoAlchemistDriverData, TwoBarkeeperDriverData, TwoSanwynDriverData,
+        TwoSkellyDriverData, TwoThiefGuardDriverData, TwoThiefMasterDriverData, YoakinDriverData,
         ARENA_FIGHTER_REST_POS, CDR_ARENAFIGHTER, CDR_ARENAMANAGER, CDR_ARENAMASTER, CDR_ASTRO2,
         CDR_BRITHILDIE, CDR_CAMHERMIT, CDR_CARLOS, CDR_CLANCLERK, CDR_CLANMASTER, CDR_CLUBMASTER,
         CDR_DUNGEONMASTER, CDR_FORESTHERMIT, CDR_FORESTIMP, CDR_FORESTMONSTER, CDR_FORESTWILLIAM,
         CDR_FOREST_RANGER, CDR_GATE_FIGHT, CDR_GATE_WELCOME, CDR_GOLEMKEYHOLDER, CDR_GREETER,
         CDR_GWENDYLON, CDR_JANITOR, CDR_JESSICA, CDR_JIU, CDR_KASSIM, CDR_KELLY, CDR_LAB2UNDEAD,
-        CDR_NOOK, CDR_RESKIN, CDR_SEYMOUR, CDR_SIMPLEBADDY, CDR_SIRJONES, CDR_SUPERIOR,
-        CDR_SUPERMAX, CDR_SWAMPCLARA, CDR_TERION, CDR_THOMAS, CDR_TRADER, CDR_TWOALCHEMIST,
-        CDR_TWOBARKEEPER, CDR_TWOGUARD, CDR_TWOSANWYN, CDR_TWOSERVANT, CDR_TWOSKELLY,
-        CDR_TWOTHIEFGUARD, CDR_TWOTHIEFMASTER, CDR_YOAKIN, NT_CREATE,
+        CDR_LABGNOMEDRIVER, CDR_NOOK, CDR_RESKIN, CDR_SEYMOUR, CDR_SIMPLEBADDY, CDR_SIRJONES,
+        CDR_SUPERIOR, CDR_SUPERMAX, CDR_SWAMPCLARA, CDR_TERION, CDR_THOMAS, CDR_TRADER,
+        CDR_TWOALCHEMIST, CDR_TWOBARKEEPER, CDR_TWOGUARD, CDR_TWOSANWYN, CDR_TWOSERVANT,
+        CDR_TWOSKELLY, CDR_TWOTHIEFGUARD, CDR_TWOTHIEFMASTER, CDR_YOAKIN, NT_CREATE,
     },
     entity::{
         Character, CharacterFlags, Item, ItemFlags, CHARACTER_VALUE_COUNT, INVENTORY_SIZE,
@@ -858,6 +858,14 @@ impl ZoneLoader {
             character.push_driver_message(NT_CREATE, 0, 0, 0);
             apply_lab2_undead_create_message(&mut character, Some(&template.args));
             self.add_lab2_undead_regenerate_spell(&mut character, &mut inventory_items);
+        }
+        if template.driver == CDR_LABGNOMEDRIVER {
+            // Data-only half of C's `NT_CREATE` handler; the map-dependent
+            // remainder (idle-facing direction, torch scan) runs on this
+            // character's first live tick instead - see
+            // `world::npc::area22::lab1_gnome::apply_labgnome_create_message`'s
+            // own doc comment.
+            apply_labgnome_create_message(&mut character, Some(&template.args));
         }
         if template.driver == crate::character_driver::CDR_PALACEGUARD {
             // C `palace_guard`'s `NT_CREATE` handler (`palace.c:152-163`):

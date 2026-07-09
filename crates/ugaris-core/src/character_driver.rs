@@ -160,6 +160,9 @@ pub const CDR_TEUFELQUEST: u16 = 116;
 pub const CDR_TEUFELRAT: u16 = 117;
 pub const CDR_CALIGARSKELLY: u16 = 124;
 pub const CDR_LAB2UNDEAD: u16 = 198;
+/// C `#define CDR_LABGNOMEDRIVER 199` (`src/system/drvlib.h:225`): the
+/// area-22 Lab 1 torch-gnome triad (guard/fighter/immortal master).
+pub const CDR_LABGNOMEDRIVER: u16 = 199;
 /// C `#define CDR_CAMHERMIT 14` (`src/system/drvlib.h`): the forest
 /// hermit NPC in area 1 (`src/area/1/gwendylon.c::camhermit_driver`).
 pub const CDR_CAMHERMIT: u16 = 14;
@@ -446,6 +449,7 @@ pub enum CharacterDriverState {
     TwoThiefGuard(TwoThiefGuardDriverData),
     TwoThiefMaster(TwoThiefMasterDriverData),
     Lab2Undead(Lab2UndeadDriverData),
+    LabGnome(crate::world::npc::area22::lab1_gnome::LabGnomeDriverData),
     Merchant(MerchantDriverData),
     Aclerk(AclerkDriverData),
     Lostcon(LostconDriverData),
@@ -1310,7 +1314,8 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::TwoThiefMaster(_)
             | CharacterDriverState::Nomad(_)
             | CharacterDriverState::Madhermit(_)
-            | CharacterDriverState::LqNpc(_),
+            | CharacterDriverState::LqNpc(_)
+            | CharacterDriverState::LabGnome(_),
         ) => SimpleBaddyDriverData::default(),
         None => SimpleBaddyDriverData::default(),
     };
@@ -3808,6 +3813,9 @@ pub use crate::world::npc::area2::moonie::MoonieDriverData;
 pub use crate::world::npc::area2::superior::SuperiorDriverData;
 pub use crate::world::npc::area2::vampire::VampireDriverData;
 pub use crate::world::npc::area2::vampire2::Vampire2DriverData;
+pub use crate::world::npc::area22::lab1_gnome::{
+    apply_labgnome_create_message, LabGnomeDriverData,
+};
 pub use crate::world::npc::area22::lab2_undead::{
     apply_lab2_undead_create_message, parse_lab2_undead_driver_args, Lab2UndeadDriverData,
 };
