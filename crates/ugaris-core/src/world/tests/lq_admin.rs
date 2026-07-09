@@ -464,3 +464,106 @@ fn numeric_slot_lookup_targets_a_single_npc() {
     assert!(world.apply_lq_admin_command(caller, 20, "#npcname 1 Renamed"));
     assert_eq!(world.lq_npcs[0].name, "Renamed");
 }
+
+fn door(world: &mut World, id: u32, nick: &str, x: u16, y: u16) {
+    let mut door = item(id, ItemFlags::USED | ItemFlags::USE);
+    door.driver = IDR_DOOR;
+    door.name = nick.to_string();
+    door.driver_data = vec![0; 11];
+    door.driver_data[10] = 1;
+    door.x = x;
+    door.y = y;
+    world.add_item(door);
+}
+
+#[test]
+fn doorlist_discovers_doors_on_first_use_and_lists_them() {
+    let mut world = World::default();
+    let caller = god(&mut world, 1, 1, 1);
+    door(&mut world, 10, "north-gate", 12, 34);
+
+    assert!(world.apply_lq_admin_command(caller, 20, "#doorlist"));
+    assert!(world.lq_doors_initialized);
+    assert_eq!(
+        plain_texts(&mut world),
+        vec!["Door 1, Nick: north-gate, Pos: 12,34, Key: 0.".to_string()]
+    );
+}
+
+#[test]
+fn doorlist_ignores_trailing_garbage() {
+    let mut world = World::default();
+    let caller = god(&mut world, 1, 1, 1);
+    door(&mut world, 10, "north-gate", 12, 34);
+
+    // C never validates `ptr` in `cmd_doorlist` - no "Trailing garbage"
+    // error, unlike almost every other command in this table.
+    assert!(world.apply_lq_admin_command(caller, 20, "#doorlist some junk"));
+    assert_eq!(
+        plain_texts(&mut world),
+        vec!["Door 1, Nick: north-gate, Pos: 12,34, Key: 0.".to_string()]
+    );
+}
+
+#[test]
+fn doorlock_sets_key_by_nick_and_writes_the_item() {
+    let mut world = World::default();
+    let caller = god(&mut world, 1, 1, 1);
+    door(&mut world, 10, "north-gate", 12, 34);
+
+    assert!(world.apply_lq_admin_command(caller, 20, "#doorlock north-gate 5"));
+    assert_eq!(
+        plain_texts(&mut world),
+        vec!["Set key for 1 doors.".to_string()]
+    );
+    assert_eq!(world.lq_doors[0].key_id, 5);
+    // `MAKE_ITEMID(DEV_ID_LQ, 5)` little-endian: `DEV_ID_LQ` (5) in the top
+    // byte, `key_id` (5) in the bottom byte.
+    assert_eq!(&world.items[&ItemId(10)].driver_data[1..5], &[5, 0, 0, 5]);
+}
+
+#[test]
+fn doorlock_sets_key_by_numeric_slot() {
+    let mut world = World::default();
+    let caller = god(&mut world, 1, 1, 1);
+    door(&mut world, 10, "north-gate", 12, 34);
+    world.discover_lq_doors_once();
+
+    assert!(world.apply_lq_admin_command(caller, 20, "#doorlock 1 0"));
+    assert_eq!(world.lq_doors[0].key_id, 0);
+    assert_eq!(
+        plain_texts(&mut world),
+        vec!["Set key for 1 doors.".to_string()]
+    );
+}
+
+#[test]
+fn doorlock_reports_door_not_found() {
+    let mut world = World::default();
+    let caller = god(&mut world, 1, 1, 1);
+
+    assert!(world.apply_lq_admin_command(caller, 20, "#doorlock missing 3"));
+    assert_eq!(error_text(&mut world), "Door not found.");
+}
+
+#[test]
+fn doorlock_missing_args_reports_usage() {
+    let mut world = World::default();
+    let caller = god(&mut world, 1, 1, 1);
+
+    assert!(world.apply_lq_admin_command(caller, 20, "#doorlock"));
+    assert!(error_text(&mut world).starts_with("Missing doornick. Usage is: /doorlock"));
+
+    assert!(world.apply_lq_admin_command(caller, 20, "#doorlock north-gate"));
+    assert!(error_text(&mut world).starts_with("Missing keyID. Usage is: /doorlock"));
+}
+
+#[test]
+fn doorlock_rejects_trailing_garbage() {
+    let mut world = World::default();
+    let caller = god(&mut world, 1, 1, 1);
+    door(&mut world, 10, "north-gate", 12, 34);
+
+    assert!(world.apply_lq_admin_command(caller, 20, "#doorlock north-gate 5 extra"));
+    assert!(error_text(&mut world).starts_with("Trailing garbage. Usage is: /doorlock"));
+}

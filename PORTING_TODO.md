@@ -890,13 +890,18 @@ Ordered by player progression; the C file is the oracle.
   these commands touch already lived on `LqNpcState`. Still unported:
   `#thrall`/`#killthrall` (need `DRD_LQ_NPC_DATA.thrallname`), `#usurp`/
   `#follow`/`#stop`/`#exit` (need a new `PlayerRuntime.usurp` field),
-  `#doorlist`/`#doorlock`/`#nspawn`/`#nremove`/`#nsay`/`#nimmortal`/
-  `#nemote`/`#nattack`/`#wimp` (live-instance control), the whole quest-
-  lifecycle family (`#questsave`/`#questdelete`/`#questend`/
-  `#questload`/`#questshow`/`#questreward`/`#questlevel`/`#questreset`/
-  `#questentrance`/`#queststart`, `#xinfo` - needs a new `lq_data` `World`
-  field C never got ported here), and `#questsave`/`#questload`'s file
-  I/O (a genuinely new pattern for this codebase).
+  `#nspawn`/`#nremove`/`#nsay`/`#nimmortal`/`#nemote`/`#nattack`/`#wimp`
+  (live-instance control), the whole quest-lifecycle family
+  (`#questsave`/`#questdelete`/`#questend`/`#questload`/`#questshow`/
+  `#questreward`/`#questlevel`/`#questreset`/`#questentrance`/
+  `#queststart`, `#xinfo` - needs a new `lq_data` `World` field C never
+  got ported here), and `#questsave`/`#questload`'s file I/O (a
+  genuinely new pattern for this codebase). Second slice done: the
+  `#doorlist`/`#doorlock` pair (`lq.c:2443-2503`) is now ported
+  (`world/lq_admin.rs`'s `lq_admin_cmd_doorlist`/`lq_admin_cmd_doorlock`),
+  reusing the pre-existing `World::lq_doors`/`discover_lq_doors_once`/
+  `write_lq_door_key_id` scaffolding from the `LqTicker` port - pure
+  `World` logic, no `ZoneLoader`/`PlayerRuntime` needed.
 - [ ] **Area 22 - `src/area/22/lab*.c`** - remaining lab mechanics per
   lab; lab2 undead mostly ported; gatekeeper depends on P2.
 - [ ] **Areas 23/24 - `src/area/23_24/strategy.c` (3,599 lines)** - the
@@ -964,6 +969,10 @@ Keep entries to at most three lines: date, task, one-line result.
 Anything longer belongs in `PORTING_LEDGER.md`; historical verbose
 notes live in `PROGRESS_ARCHIVE.md`.
 
+- 2026-07-09: Area 20 progress: ported the `CDR_LQPARSER` admin command
+  table's `#doorlist`/`#doorlock` pair (`world/lq_admin.rs`, reusing the
+  existing `LqDoorState`/`discover_lq_doors_once` scaffolding). 3131 core
+  + 1140 server tests pass, clean build/boot-smoke.
 - 2026-07-09: Area 20 progress: ported the `CDR_LQPARSER` admin command
   table's NPC-template CRUD slice (18 subcommands, `world/lq_admin.rs`,
   pure `World` logic, no `ZoneLoader` needed). 3124 core + 1140 server

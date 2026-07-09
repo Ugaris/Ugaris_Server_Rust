@@ -24,9 +24,16 @@
 //!   modeled on [`crate::world::npc::area20::lqnpc::LqNpcDriverData`].
 //! - `#usurp`/`#follow`/`#stop`/`#exit`, and the possessed-NPC-relay
 //!   plain-speech branch - need a new `PlayerRuntime.usurp` field.
-//! - `#doorlist`/`#doorlock`, `#nspawn`/`#nremove`/`#nsay`/`#nimmortal`/
-//!   `#nemote`/`#nattack`, `#wimp` - live-instance control, some need
-//!   `ZoneLoader`/`ServerRuntime`.
+//! - `#nspawn`/`#nremove`/`#nsay`/`#nimmortal`/`#nemote`/`#nattack`,
+//!   `#wimp` - live-instance control, some need `ZoneLoader`/
+//!   `ServerRuntime`.
+//!
+//! Second slice: `#doorlist`/`#doorlock` (`lq.c:2443-2503`), operating on
+//! [`crate::world::LqDoorState`] (`world::lq`'s `discover_lq_doors_once`,
+//! already ported for the `LqTicker` periodic scan). Both commands call
+//! `discover_lq_doors_once` themselves first, matching C's own lazy
+//! `lq_ticker`-driven `init_done` populate-on-first-use behavior in case
+//! no `LqTicker` tick has run yet.
 //! - `#questsave`/`#questdelete`/`#questend`/`#questload`/`#questshow`/
 //!   `#questreward`/`#questlevel`/`#questreset`/`#questentrance`/
 //!   `#queststart`, `#xinfo` - quest-lifecycle state (`struct lq_data` has
@@ -393,6 +400,14 @@ impl World {
         }
         if cmd_word_matches(&word, "npcrespawn", 5) {
             self.lq_admin_cmd_npcrespawn(character_id, args);
+            return true;
+        }
+        if cmd_word_matches(&word, "doorlist", 6) {
+            self.lq_admin_cmd_doorlist(character_id, args);
+            return true;
+        }
+        if cmd_word_matches(&word, "doorlock", 6) {
+            self.lq_admin_cmd_doorlock(character_id, args);
             return true;
         }
 
@@ -1246,6 +1261,90 @@ impl World {
             self.queue_lq_error(character_id, "NPC not found.");
         } else {
             self.queue_system_text(character_id, format!("Deleted {count} NPCs."));
+        }
+    }
+
+    /// C `cmd_doorlist` (`lq.c:2443-2452`). Unlike almost every other
+    /// `cmd_*` handler in this table, C never validates `ptr` here (no
+    /// "Trailing garbage" check) - any extra text after `/doorlist` is
+    /// silently ignored, kept exactly.
+    fn lq_admin_cmd_doorlist(&mut self, character_id: CharacterId, _args: &str) {
+        self.discover_lq_doors_once();
+        let mut doors: Vec<LqDoorState> = self.lq_doors.clone();
+        doors.sort_by_key(|door| door.slot);
+        for door in doors {
+            let Some(item) = self.items.get(&door.item_id) else {
+                continue;
+            };
+            self.queue_system_text(
+                character_id,
+                format!(
+                    "Door {}, Nick: {}, Pos: {},{}, Key: {}.",
+                    door.slot, door.nick, item.x, item.y, door.key_id
+                ),
+            );
+        }
+    }
+
+    /// C `cmd_doorlock` (`lq.c:2464-2503`), calling `update_lqdoor`
+    /// (`lq.c:2454-2462`) inline via [`write_lq_door_key_id`].
+    fn lq_admin_cmd_doorlock(&mut self, character_id: CharacterId, args: &str) {
+        const USAGE: &str = "/doorlock <doornick> <keyID:int> (keyID=0 for unlocked)";
+        self.discover_lq_doors_once();
+        let mut reader = ArgReader::new(args);
+        let Some(nick) = reader.take_str() else {
+            self.queue_lq_error(
+                character_id,
+                format!("Missing doornick. Usage is: {USAGE}."),
+            );
+            return;
+        };
+        let Some(key_id) = reader.take_int() else {
+            self.queue_lq_error(character_id, format!("Missing keyID. Usage is: {USAGE}."));
+            return;
+        };
+        if reader.has_trailing_garbage() {
+            self.queue_lq_error(
+                character_id,
+                format!("Trailing garbage. Usage is: {USAGE}."),
+            );
+            return;
+        }
+        let key_id = (key_id as i32) as u32;
+
+        let numeric = legacy_atoi(&nick);
+        let slots: Vec<usize> = if numeric > 0
+            && (numeric as usize) < MAX_LQ_DOORS
+            && self
+                .lq_doors
+                .iter()
+                .any(|door| door.slot == numeric as usize)
+        {
+            vec![numeric as usize]
+        } else {
+            self.lq_doors
+                .iter()
+                .filter(|door| door.nick.eq_ignore_ascii_case(&nick))
+                .map(|door| door.slot)
+                .collect()
+        };
+
+        let mut count = 0usize;
+        for slot in slots {
+            let Some(door) = self.lq_doors.iter_mut().find(|door| door.slot == slot) else {
+                continue;
+            };
+            door.key_id = key_id;
+            let item_id = door.item_id;
+            if let Some(item) = self.items.get_mut(&item_id) {
+                write_lq_door_key_id(item, key_id);
+            }
+            count += 1;
+        }
+        if count == 0 {
+            self.queue_lq_error(character_id, "Door not found.");
+        } else {
+            self.queue_system_text(character_id, format!("Set key for {count} doors."));
         }
     }
 }
