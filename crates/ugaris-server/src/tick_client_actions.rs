@@ -944,11 +944,19 @@ pub(crate) async fn process_queued_client_actions(
                     ugaris_core::world::LqNspawnDispatch::NotMatched => {
                         match world.try_dispatch_lq_thrall(character_id, config.area_id, &command) {
                             ugaris_core::world::LqThrallDispatch::NotMatched => {
-                                world.apply_lq_admin_command(
+                                if !dispatch_lq_questend_or_xinfo(
+                                    &mut world,
+                                    &mut runtime,
                                     character_id,
                                     config.area_id,
                                     &command,
-                                );
+                                ) {
+                                    world.apply_lq_admin_command(
+                                        character_id,
+                                        config.area_id,
+                                        &command,
+                                    );
+                                }
                             }
                             ugaris_core::world::LqThrallDispatch::Rejected => {}
                             ugaris_core::world::LqThrallDispatch::Requests(requests) => {
@@ -1468,4 +1476,58 @@ pub(crate) async fn process_queued_client_actions(
             "processed text/container commands"
         );
     }
+}
+
+/// `CDR_LQPARSER`'s `#questend`/`#xinfo` pair (`lq.c:1314-1345`,
+/// `2638-2642`, `2695-2701`) - the two commands in that admin table
+/// needing `PlayerRuntime::lq_marks` (only `ServerRuntime::players` has
+/// it; `World` doesn't), same split rationale as `#nspawn`/`#thrall`'s
+/// own dispatchers above. See `ugaris_core::world::World::
+/// lq_admin_wants_questend`/`lq_admin_wants_xinfo`'s doc comments.
+/// Returns `false` (not matched, or the gate failed) so the caller falls
+/// through to `apply_lq_admin_command`/normal processing exactly as C's
+/// `special_driver` does.
+fn dispatch_lq_questend_or_xinfo(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    character_id: CharacterId,
+    area_id: u16,
+    command: &str,
+) -> bool {
+    if world.lq_admin_wants_questend(character_id, area_id, command) {
+        let mut rewarded = 0u32;
+        for player in runtime.players.values_mut() {
+            let Some(target_id) = player.character_id else {
+                continue;
+            };
+            if !world
+                .characters
+                .get(&target_id)
+                .is_some_and(|character| character.flags.contains(CharacterFlags::PLAYER))
+            {
+                continue;
+            }
+            let mut sum = 0i32;
+            for n in 1..ugaris_core::world::MAXLQMARK {
+                if player.lq_marks[n] {
+                    sum += world.lq_data.reward[n];
+                    player.lq_marks[n] = false;
+                }
+            }
+            if world.apply_lq_questend_reward(target_id, sum) {
+                rewarded += 1;
+            }
+        }
+        world.queue_system_text(character_id, format!("Rewarded {rewarded} players."));
+        return true;
+    }
+    if world.lq_admin_wants_xinfo(character_id, area_id, command) {
+        let marks = runtime
+            .player_for_character(character_id)
+            .map(|player| player.lq_marks)
+            .unwrap_or([false; ugaris_core::world::MAXLQMARK]);
+        world.report_lq_xinfo(character_id, &marks);
+        return true;
+    }
+    false
 }

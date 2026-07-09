@@ -963,13 +963,20 @@ Ordered by player progression; the C file is the oracle.
    struct = C's `struct lq_data`, plus a new `World::
    lq_reset_drop_body_item` for `#questreset`'s already-on-the-map body
    relocation). All six are pure `World` logic; `#npcshow`'s hurt/
-   killmark exp-preview line now reads the real table instead of a
-   placeholder. Still unported: `#questsave`/`#questdelete`/`#questload`
-   (need file I/O, a genuinely new pattern for this codebase), and
-   `#questend`/`#xinfo` (need to read/mutate every *online* player's
-   `PlayerRuntime::lq_marks`, which `World` has no access to - needs a
-   queued-dispatch pattern analogous to `#nspawn`/`#thrall`/`#usurp` but
-   iterating all sessions instead of one target).
+  killmark exp-preview line now reads the real table instead of a
+  placeholder. Seventh slice done: `#questend`/`#xinfo` (new
+  `world/lq_quest_admin.rs` - `lq_admin.rs` was already near the
+  2,000-line cap - plus `tick_client_actions.rs`'s new
+  `dispatch_lq_questend_or_xinfo`, checked right before
+  `apply_lq_admin_command`'s fallback like `#nspawn`/`#thrall`). Same
+  split as those two: `World::lq_admin_wants_questend`/
+  `lq_admin_wants_xinfo` gate the command/permission/area match,
+  `World::apply_lq_questend_reward`/`report_lq_xinfo` do the pure-`World`
+  reward-math/formatting half, and `ugaris-server` supplies the
+  `PlayerRuntime::lq_marks` `World` can't see by iterating
+  `ServerRuntime::players`. Still unported: `#questsave`/`#questdelete`/
+  `#questload` (need file I/O, a genuinely new pattern for this
+  codebase - the only remaining gap in this task).
 - [ ] **Area 22 - `src/area/22/lab*.c`** - remaining lab mechanics per
   lab; lab2 undead mostly ported; gatekeeper depends on P2.
 - [ ] **Areas 23/24 - `src/area/23_24/strategy.c` (3,599 lines)** - the
@@ -1037,6 +1044,10 @@ Keep entries to at most three lines: date, task, one-line result.
 Anything longer belongs in `PORTING_LEDGER.md`; historical verbose
 notes live in `PROGRESS_ARCHIVE.md`.
 
+- 2026-07-09: Area 20 progress: ported `#questend`/`#xinfo` (new
+  `world/lq_quest_admin.rs`, `tick_client_actions.rs::
+  dispatch_lq_questend_or_xinfo`). Only `#questsave`/`#questdelete`/
+  `#questload` file I/O remains. 3210 core + 1141 server tests pass.
 - 2026-07-09: Area 20 progress: ported the non-file-I/O quest-lifecycle
   commands `#questlevel`/`#questreward`/`#questshow`/`#questentrance`/
   `#queststart`/`#questreset` (new `LqData`, `World::

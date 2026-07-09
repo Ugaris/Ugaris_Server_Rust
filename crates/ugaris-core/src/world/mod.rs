@@ -42,6 +42,7 @@ mod loot;
 mod lq;
 mod lq_admin;
 pub use lq_admin::{LqNspawnDispatch, LqThrallDispatch};
+mod lq_quest_admin;
 pub mod lq_usurp;
 mod mining;
 pub mod npc;
