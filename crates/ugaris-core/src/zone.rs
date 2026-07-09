@@ -879,6 +879,27 @@ impl ZoneLoader {
             // message`'s own doc comment.
             apply_lab2_herald_create_message(&mut character);
         }
+        if template.driver == crate::character_driver::CDR_LAB3PASSGUARD {
+            // C never parses zone-file args into `struct
+            // lab3_passguard_driver_data` (`set_data` zero-initializes
+            // it) - no args to read here, same as `CDR_LAB2HERALD` above.
+            // The `NT_CREATE` message must be pushed explicitly (unlike
+            // `CDR_LAB2HERALD`'s C driver, this one reacts to it - see
+            // `world::npc::area22::lab3_passguard`'s module doc comment).
+            character.driver_state = Some(CharacterDriverState::Lab3Passguard(
+                crate::world::npc::area22::lab3_passguard::Lab3PassguardDriverData::default(),
+            ));
+            character.push_driver_message(NT_CREATE, 0, 0, 0);
+        }
+        if template.driver == crate::character_driver::CDR_LAB3PRISONER {
+            // C never parses zone-file args into `struct
+            // lab3_prisoner_driver_data` (`set_data` zero-initializes
+            // it), and the C driver has no `NT_CREATE` handler either -
+            // no `NT_CREATE` push needed here.
+            character.driver_state = Some(CharacterDriverState::Lab3Prisoner(
+                crate::world::npc::area22::lab3_prisoner::Lab3PrisonerDriverData::default(),
+            ));
+        }
         if template.driver == crate::character_driver::CDR_PALACEGUARD {
             // C `palace_guard`'s `NT_CREATE` handler (`palace.c:152-163`):
             // parsed here at spawn time instead of through the per-tick

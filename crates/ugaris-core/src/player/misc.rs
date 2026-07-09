@@ -284,6 +284,25 @@ pub const LEGACY_LAB2_GRAVEVERSION_OFFSET: usize = 43;
 
 pub const LEGACY_LAB2_GRAVEINDEX_OFFSET: usize = 44;
 
+/// C `struct lab_ppd::password1` (`src/system/lab.h`): offset 80 (after
+/// `graveindex[4]` (4, ending at 48) + `lab2_dummy[8]` (32, ending at 80)).
+/// An 8-byte nul-terminated ASCII fragment (`lab3_passguard_driver`'s
+/// `sprintf(password, "%s%s", ppd->password1, ppd->password2)`).
+pub const LEGACY_LAB3_PASSWORD1_OFFSET: usize = 80;
+
+/// C `struct lab_ppd::password2` (`src/system/lab.h`): offset 88, right
+/// after `password1[8]`.
+pub const LEGACY_LAB3_PASSWORD2_OFFSET: usize = 88;
+
+pub const LEGACY_LAB3_PASSWORD_FIELD_LEN: usize = 8;
+
+/// C `struct lab_ppd::prisoner_talkstep` (`src/system/lab.h`): offset 96,
+/// right after `password2[8]`.
+pub const LEGACY_LAB3_PRISONER_TALKSTEP_OFFSET: usize = 96;
+
+/// C `struct lab_ppd::guard_talkstep` (`src/system/lab.h`): offset 97.
+pub const LEGACY_LAB3_GUARD_TALKSTEP_OFFSET: usize = 97;
+
 pub const LAB2_GRAVE_BITSET_BYTES: usize = 256;
 
 pub const LAB2_DESCRIBED_GRAVES: [((u16, u16), &str); 40] = [

@@ -1014,8 +1014,19 @@ Ordered by player progression; the C file is the oracle.
   `lab2_deamon_create`/`lab2_deamon_is_elias` creation helpers (split
   between `World::init_lab2_deamon`/`lab2_deamon_already_tracking` and the
   `ugaris-server` `Lab2StepActionDaemonWarning` dispatcher, since only the
-  server caller knows the real spawn coordinates). Still open: all of
-  lab3/4/5 (`CDR_LAB3PASSGUARD`/`PRISONER`, `CDR_LAB4SEYAN`/`GNALB`,
+  server caller knows the real spawn coordinates). `CDR_LAB3PASSGUARD`
+  (the password-gate guard) and `CDR_LAB3PRISONER` (the mute note-giving
+  prisoner) are now also ported (`world/npc/area22/lab3_passguard.rs` +
+  `lab3_prisoner.rs`), including new `PlayerRuntime::legacy_lab3_
+  password1/2`/`_guard_talkstep`/`_prisoner_talkstep` accessors and the
+  `IID_LAB3_PRISONKEY` item id. REMAINING gap: `IDR_LAB3_SPECIAL`
+  (`lab3_special` - the password-protected teleport door plus the
+  note-reading/`lab3_init_password` machinery that actually assigns
+  `password1`/`password2`) is not yet ported, so the guard's password
+  check is currently untestable end-to-end in a live game (both
+  `password1`/`password2` stay empty until that item driver exists - see
+  `lab3_passguard.rs`'s own module doc comment). Still open: all of
+  lab3's `IDR_LAB3_SPECIAL`, and all of lab4/5 (`CDR_LAB4SEYAN`/`GNALB`,
   `CDR_LAB5DAEMON`/`SEYAN`/`MAGE`).
 - [ ] **Areas 23/24 - `src/area/23_24/strategy.c` (3,599 lines)** - the
   strategy minigame (mission ownership, worker spawning, resources).
@@ -1081,6 +1092,12 @@ Ordered by player progression; the C file is the oracle.
 Keep entries to at most three lines: date, task, one-line result.
 Anything longer belongs in `PORTING_LEDGER.md`; historical verbose
 notes live in `PROGRESS_ARCHIVE.md`.
+
+- 2026-07-09: Area 22 progress: ported `CDR_LAB3PASSGUARD`/`CDR_LAB3PRISONER`
+  (new `world/npc/area22/lab3_passguard.rs`+`lab3_prisoner.rs`, new
+  `PlayerRuntime::legacy_lab3_*` accessors, `IID_LAB3_PRISONKEY`).
+  `IDR_LAB3_SPECIAL` (password assignment/door) remains unported. 3286
+  core + 1154 server tests pass, clean build/boot-smoke.
 
 - 2026-07-09: Area 22 progress: ported `CDR_LAB2DEAMON` (new
   `world/npc/area22/lab2_deamon.rs`, family-vault masquerade-detection

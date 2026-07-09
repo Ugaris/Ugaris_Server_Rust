@@ -5,6 +5,8 @@ pub mod lab1_gnome;
 pub mod lab2_deamon;
 pub mod lab2_herald;
 pub mod lab2_undead;
+pub mod lab3_passguard;
+pub mod lab3_prisoner;
 
 #[allow(unused_imports)]
 pub use gatekeeper::*;
@@ -16,3 +18,7 @@ pub use lab2_deamon::*;
 pub use lab2_herald::*;
 #[allow(unused_imports)]
 pub use lab2_undead::*;
+#[allow(unused_imports)]
+pub use lab3_passguard::*;
+#[allow(unused_imports)]
+pub use lab3_prisoner::*;

@@ -115,4 +115,90 @@ impl PlayerRuntime {
         self.lab2_grave_bits[byte] |= 1 << bit;
         !was_cleared
     }
+
+    /// C `ppd->password1` (`src/system/lab.h`), an 8-byte nul-padded ASCII
+    /// fragment. Trailing zero bytes are trimmed on read.
+    pub fn legacy_lab3_password1(&self) -> Vec<u8> {
+        legacy_lab3_password_field(&self.lab_ppd, LEGACY_LAB3_PASSWORD1_OFFSET)
+    }
+
+    /// C `sprintf(ppd->password1, password[ho])` write.
+    pub fn set_legacy_lab3_password1(&mut self, value: &[u8]) {
+        set_legacy_lab3_password_field(&mut self.lab_ppd, LEGACY_LAB3_PASSWORD1_OFFSET, value);
+    }
+
+    /// C `ppd->password2` (`src/system/lab.h`).
+    pub fn legacy_lab3_password2(&self) -> Vec<u8> {
+        legacy_lab3_password_field(&self.lab_ppd, LEGACY_LAB3_PASSWORD2_OFFSET)
+    }
+
+    /// C `sprintf(ppd->password2, password[ho + 1])` write.
+    pub fn set_legacy_lab3_password2(&mut self, value: &[u8]) {
+        set_legacy_lab3_password_field(&mut self.lab_ppd, LEGACY_LAB3_PASSWORD2_OFFSET, value);
+    }
+
+    /// C `sprintf(password, "%s%s", ppd->password1, ppd->password2)`
+    /// (`lab3.c:261`): the guard's full expected password.
+    pub fn legacy_lab3_full_password(&self) -> Vec<u8> {
+        let mut password = self.legacy_lab3_password1();
+        password.extend(self.legacy_lab3_password2());
+        password
+    }
+
+    /// C `ppd->prisoner_talkstep` (`src/system/lab.h`).
+    pub fn legacy_lab3_prisoner_talkstep(&self) -> u8 {
+        self.lab_ppd
+            .get(LEGACY_LAB3_PRISONER_TALKSTEP_OFFSET)
+            .copied()
+            .unwrap_or(0)
+    }
+
+    /// C `ppd->prisoner_talkstep = ...` write.
+    pub fn set_legacy_lab3_prisoner_talkstep(&mut self, value: u8) {
+        if self.lab_ppd.len() <= LEGACY_LAB3_PRISONER_TALKSTEP_OFFSET {
+            self.lab_ppd
+                .resize(LEGACY_LAB3_PRISONER_TALKSTEP_OFFSET + 1, 0);
+        }
+        self.lab_ppd[LEGACY_LAB3_PRISONER_TALKSTEP_OFFSET] = value;
+    }
+
+    /// C `ppd->guard_talkstep` (`src/system/lab.h`).
+    pub fn legacy_lab3_guard_talkstep(&self) -> u8 {
+        self.lab_ppd
+            .get(LEGACY_LAB3_GUARD_TALKSTEP_OFFSET)
+            .copied()
+            .unwrap_or(0)
+    }
+
+    /// C `ppd->guard_talkstep = ...` write.
+    pub fn set_legacy_lab3_guard_talkstep(&mut self, value: u8) {
+        if self.lab_ppd.len() <= LEGACY_LAB3_GUARD_TALKSTEP_OFFSET {
+            self.lab_ppd
+                .resize(LEGACY_LAB3_GUARD_TALKSTEP_OFFSET + 1, 0);
+        }
+        self.lab_ppd[LEGACY_LAB3_GUARD_TALKSTEP_OFFSET] = value;
+    }
+}
+
+/// Reads an 8-byte nul-padded ASCII field, trimming trailing zero bytes
+/// (C's `char[8]` `sprintf`-written strings, always short enough to fit
+/// with a nul terminator).
+fn legacy_lab3_password_field(lab_ppd: &[u8], offset: usize) -> Vec<u8> {
+    let end = (offset + LEGACY_LAB3_PASSWORD_FIELD_LEN).min(lab_ppd.len());
+    if offset >= end {
+        return Vec::new();
+    }
+    let field = &lab_ppd[offset..end];
+    let len = field.iter().position(|&b| b == 0).unwrap_or(field.len());
+    field[..len].to_vec()
+}
+
+fn set_legacy_lab3_password_field(lab_ppd: &mut Vec<u8>, offset: usize, value: &[u8]) {
+    let needed = offset + LEGACY_LAB3_PASSWORD_FIELD_LEN;
+    if lab_ppd.len() < needed {
+        lab_ppd.resize(needed, 0);
+    }
+    let copy_len = value.len().min(LEGACY_LAB3_PASSWORD_FIELD_LEN - 1);
+    lab_ppd[offset..offset + LEGACY_LAB3_PASSWORD_FIELD_LEN].fill(0);
+    lab_ppd[offset..offset + copy_len].copy_from_slice(&value[..copy_len]);
 }

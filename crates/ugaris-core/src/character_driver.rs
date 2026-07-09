@@ -172,6 +172,15 @@ pub const CDR_LAB2UNDEAD: u16 = 198;
 /// C `#define CDR_LABGNOMEDRIVER 199` (`src/system/drvlib.h:225`): the
 /// area-22 Lab 1 torch-gnome triad (guard/fighter/immortal master).
 pub const CDR_LABGNOMEDRIVER: u16 = 199;
+/// C `#define CDR_LAB3PASSGUARD 194` (`src/system/drvlib.h:220`): the
+/// lab3 password-gate guard (`src/area/22/lab3.c::lab3_passguard_driver`),
+/// see `world::npc::area22::lab3_passguard`'s module doc comment.
+pub const CDR_LAB3PASSGUARD: u16 = 194;
+/// C `#define CDR_LAB3PRISONER 195` (`src/system/drvlib.h:221`): the
+/// lab3 mute prisoner note-giver (`src/area/22/lab3.c::
+/// lab3_prisoner_driver`), see `world::npc::area22::lab3_prisoner`'s
+/// module doc comment.
+pub const CDR_LAB3PRISONER: u16 = 195;
 /// C `#define CDR_CAMHERMIT 14` (`src/system/drvlib.h`): the forest
 /// hermit NPC in area 1 (`src/area/1/gwendylon.c::camhermit_driver`).
 pub const CDR_CAMHERMIT: u16 = 14;
@@ -538,6 +547,8 @@ pub enum CharacterDriverState {
     Nomad(crate::world::npc::area19::NomadDriverData),
     Madhermit(crate::world::npc::area19::MadhermitDriverData),
     LqNpc(crate::world::npc::area20::LqNpcDriverData),
+    Lab3Passguard(crate::world::npc::area22::lab3_passguard::Lab3PassguardDriverData),
+    Lab3Prisoner(crate::world::npc::area22::lab3_prisoner::Lab3PrisonerDriverData),
 }
 /// C `bank_driver_parse` from `src/module/bank.c`. The C driver defaults
 /// opening hours to 6..23 before parsing (`bank_driver` lines 304-309).
@@ -1328,7 +1339,9 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::LqNpc(_)
             | CharacterDriverState::LabGnome(_)
             | CharacterDriverState::Lab2Herald(_)
-            | CharacterDriverState::Lab2Deamon(_),
+            | CharacterDriverState::Lab2Deamon(_)
+            | CharacterDriverState::Lab3Passguard(_)
+            | CharacterDriverState::Lab3Prisoner(_),
         ) => SimpleBaddyDriverData::default(),
         None => SimpleBaddyDriverData::default(),
     };

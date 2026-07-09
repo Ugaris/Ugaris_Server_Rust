@@ -617,6 +617,16 @@ pub struct World {
     /// repository `World` doesn't have, same architectural split as
     /// `pending_penter_demon_lords_demise_awards` above.
     pending_islena_ladykiller_awards: Vec<CharacterId>,
+    /// C `lab3_passguard_driver`'s `static int talk` (`src/area/22/
+    /// lab3.c:83`): process-lifetime, not per-character - the *first*
+    /// `CDR_LAB3PASSGUARD` ever created (server-wide) latches its own
+    /// `dat->talk = 1` forever; every later creation (e.g. a respawn
+    /// after death) sees `talk` already `1` and never sets its own fresh
+    /// `dat->talk`, so it stays permanently mute. A real, reproduced C
+    /// quirk (there is exactly one `lab3.chr` guard instance in the whole
+    /// game, so this only matters across that guard's own respawns) - see
+    /// `world::npc::area22::lab3_passguard`'s module doc comment.
+    pub(crate) lab3_passguard_talk_latched: bool,
 }
 
 impl Default for Tick {

@@ -809,6 +809,10 @@ pub const IID_LAB2_ELIASCAPE: u32 = make_item_id(DEV_ID_MR, 0x000002);
 pub const IID_LAB2_ELIASBOOTS: u32 = make_item_id(DEV_ID_MR, 0x000003);
 /// C `IID_LAB2_ELIASBELT` (`src/common/item_id.h:284`).
 pub const IID_LAB2_ELIASBELT: u32 = make_item_id(DEV_ID_MR, 0x000004);
+/// C `IID_LAB3_PRISONKEY` (`src/common/item_id.h:287`): the key
+/// `lab3_prisoner_driver` checks for on `NT_GIVE` to unlock its note-giving
+/// state (`world::npc::area22::lab3_prisoner`).
+pub const IID_LAB3_PRISONKEY: u32 = make_item_id(DEV_ID_MR, 0x000007);
 /// C `IID_MAX_CHRONICLES` (`src/common/item_id.h:372`): swept alongside
 /// `IID_MAX_RITUAL`'s turn-in in `carlos_driver`.
 pub const IID_MAX_CHRONICLES: u32 = make_item_id(DEV_ID_MAX, 0x000003);

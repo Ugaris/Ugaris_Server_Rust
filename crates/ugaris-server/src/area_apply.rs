@@ -1019,6 +1019,43 @@ pub(crate) fn grant_salt_to_cursor(
     true
 }
 
+/// C `lab3_prisoner_driver`'s `case 20: // GIVE NOTE` (`src/area/22/
+/// lab3.c:430-444`): creates a fresh `"lab3_note_generic"` item, sets its
+/// `drdata[1] = 21` (the "reveal `password2`" note flavor -
+/// `lab3_special`'s `drdata[0]==3` note-reading switch, still unported),
+/// and places it on the *prisoner's own* cursor (not the player's - the
+/// prisoner then walks over and gives it via `World::
+/// process_lab3_prisoner_actions`'s give-target pursuit).
+pub(crate) fn create_lab3_note_on_cursor(
+    world: &mut World,
+    loader: &mut ZoneLoader,
+    npc_id: CharacterId,
+) -> bool {
+    if world
+        .characters
+        .get(&npc_id)
+        .is_none_or(|character| character.cursor_item.is_some())
+    {
+        return false;
+    }
+    let Ok(mut item) = loader.instantiate_item_template("lab3_note_generic", Some(npc_id)) else {
+        return false;
+    };
+    item.driver_data.resize(item.driver_data.len().max(2), 0);
+    item.driver_data[1] = 21;
+    let item_id = item.id;
+    let Some(character) = world.characters.get_mut(&npc_id) else {
+        return false;
+    };
+    if character.cursor_item.is_some() {
+        return false;
+    }
+    character.cursor_item = Some(item_id);
+    character.flags.insert(CharacterFlags::ITEMS);
+    world.add_item(item);
+    true
+}
+
 pub(crate) fn apply_lab2_water_altar(
     world: &mut World,
     loader: &mut ZoneLoader,

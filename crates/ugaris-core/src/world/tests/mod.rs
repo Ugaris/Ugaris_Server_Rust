@@ -65,6 +65,8 @@ mod lab1_gnome;
 mod lab2_deamon;
 mod lab2_herald;
 mod lab2_undead;
+mod lab3_passguard;
+mod lab3_prisoner;
 mod lampghost;
 mod lastseen;
 mod light;
