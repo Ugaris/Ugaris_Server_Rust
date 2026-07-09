@@ -653,7 +653,8 @@ impl World {
             | CharacterDriverState::Nomad(_)
             | CharacterDriverState::Madhermit(_)
             | CharacterDriverState::LqNpc(_)
-            | CharacterDriverState::LabGnome(_) => None,
+            | CharacterDriverState::LabGnome(_)
+            | CharacterDriverState::Lab2Herald(_) => None,
         }
     }
 

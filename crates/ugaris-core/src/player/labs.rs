@@ -77,6 +77,23 @@ impl PlayerRuntime {
         })
     }
 
+    /// C `ppd->herald_talkstep` read (`lab2.c`'s `lab2_herald_driver`).
+    pub fn legacy_lab2_herald_talkstep(&self) -> u8 {
+        self.lab_ppd
+            .get(LEGACY_LAB2_HERALD_TALKSTEP_OFFSET)
+            .copied()
+            .unwrap_or(0)
+    }
+
+    /// C `ppd->herald_talkstep = ...` write (`lab2.c`'s `lab2_herald_driver`).
+    pub fn set_legacy_lab2_herald_talkstep(&mut self, value: u8) {
+        if self.lab_ppd.len() <= LEGACY_LAB2_HERALD_TALKSTEP_OFFSET {
+            self.lab_ppd
+                .resize(LEGACY_LAB2_HERALD_TALKSTEP_OFFSET + 1, 0);
+        }
+        self.lab_ppd[LEGACY_LAB2_HERALD_TALKSTEP_OFFSET] = value;
+    }
+
     pub fn legacy_lab2_grave_cleared(&self, grave_number: usize) -> bool {
         let byte = grave_number / 8;
         let bit = grave_number % 8;

@@ -71,6 +71,27 @@ fn lab2_grave_bitset_uses_legacy_one_bit_per_grave_layout() {
 }
 
 #[test]
+fn lab2_herald_talkstep_uses_legacy_lab_ppd_offset() {
+    let mut player = PlayerRuntime::connected(1, 0);
+
+    assert_eq!(player.legacy_lab2_herald_talkstep(), 0);
+    player.set_legacy_lab2_herald_talkstep(62);
+    assert_eq!(player.lab_ppd[LEGACY_LAB2_HERALD_TALKSTEP_OFFSET], 62);
+    assert_eq!(player.legacy_lab2_herald_talkstep(), 62);
+
+    // Also survives a full-size `lab_ppd` (e.g. after
+    // `ensure_legacy_lab2_described_graves`), distinct from the
+    // neighboring `graveversion` byte.
+    player.ensure_legacy_lab2_described_graves();
+    assert_eq!(player.lab_ppd.len(), LEGACY_LAB_PPD_SIZE);
+    assert_eq!(player.legacy_lab2_herald_talkstep(), 62);
+    assert_ne!(
+        player.lab_ppd[LEGACY_LAB2_GRAVEVERSION_OFFSET],
+        player.lab_ppd[LEGACY_LAB2_HERALD_TALKSTEP_OFFSET]
+    );
+}
+
+#[test]
 fn lab_ppd_blob_round_trips_with_legacy_block_framing() {
     let unknown_id = DRD_RANK_PPD; // still-unmodeled id, safe placeholder for round-trip tests
     let mut existing_lab = vec![0; LEGACY_LAB_PPD_SIZE];

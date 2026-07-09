@@ -39,6 +39,11 @@ pub(crate) const BOOKCASE_RANDOM_TITLES: [&str; 26] = [
 
 pub(crate) const DEV_ID_DB: u32 = 0x01;
 
+/// C `DEV_ID_MR` (`src/common/item_id.h:26`, "Markus Roeder"): the lab2
+/// Elias-disguise/Arathas-ring quest items `lab2_herald_driver`/
+/// `lab2_deamon_driver` (`world::npc::area22::lab2_herald`) hand out/check.
+pub(crate) const DEV_ID_MR: u32 = 0x02;
+
 pub(crate) const DEV_ID_WARR: u32 = 0x06;
 
 /// C `DEV_ID_RHORUN` (`src/common/item_id.h:40`): the dragon-staff items

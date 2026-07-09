@@ -794,6 +794,10 @@ pub const IID_STAFF_DRAGONKEY4: u32 = make_item_id(DEV_ID_RHORUN, 0x000004);
 /// C `IID_STAFF_DRAGONSTAFF` (`src/common/item_id.h:351`): `carlos_
 /// driver`'s first-quest (`staffer_carlos_state`) turn-in item.
 pub const IID_STAFF_DRAGONSTAFF: u32 = make_item_id(DEV_ID_RHORUN, 0x000010);
+/// C `IID_LAB2_ARATHASRING` (`src/common/item_id.h:285`): the proof-of-kill
+/// ring `lab2_herald_driver` checks for on `NT_GIVE` (`world::npc::area22::
+/// lab2_herald`).
+pub const IID_LAB2_ARATHASRING: u32 = make_item_id(DEV_ID_MR, 0x000005);
 /// C `IID_MAX_CHRONICLES` (`src/common/item_id.h:372`): swept alongside
 /// `IID_MAX_RITUAL`'s turn-in in `carlos_driver`.
 pub const IID_MAX_CHRONICLES: u32 = make_item_id(DEV_ID_MAX, 0x000003);

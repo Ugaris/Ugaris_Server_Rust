@@ -275,6 +275,11 @@ pub const LEGACY_SALTMINE_PPD_VERSION: u8 = 1;
 
 pub const LEGACY_LAB2_GRAVE_VERSION: u8 = 2;
 
+/// C `struct lab_ppd::herald_talkstep` (`src/system/lab.h:30`): offset 42
+/// (after `solved_bits` (8) + `dummy[8]` (32) + `timesgotcryptgold` (1) +
+/// `timesgotyardgold` (1)), one byte before `graveversion` at offset 43.
+pub const LEGACY_LAB2_HERALD_TALKSTEP_OFFSET: usize = 42;
+
 pub const LEGACY_LAB2_GRAVEVERSION_OFFSET: usize = 43;
 
 pub const LEGACY_LAB2_GRAVEINDEX_OFFSET: usize = 44;

@@ -159,6 +159,10 @@ pub const CDR_TEUFELGAMBLER: u16 = 115;
 pub const CDR_TEUFELQUEST: u16 = 116;
 pub const CDR_TEUFELRAT: u16 = 117;
 pub const CDR_CALIGARSKELLY: u16 = 124;
+/// C `#define CDR_LAB2HERALD 196` (`src/system/drvlib.h:222`): the lab2
+/// graveyard chapel keeper (`src/area/22/lab2.c::lab2_herald_driver`), see
+/// `world::npc::area22::lab2_herald`'s module doc comment.
+pub const CDR_LAB2HERALD: u16 = 196;
 pub const CDR_LAB2UNDEAD: u16 = 198;
 /// C `#define CDR_LABGNOMEDRIVER 199` (`src/system/drvlib.h:225`): the
 /// area-22 Lab 1 torch-gnome triad (guard/fighter/immortal master).
@@ -449,6 +453,7 @@ pub enum CharacterDriverState {
     TwoThiefGuard(TwoThiefGuardDriverData),
     TwoThiefMaster(TwoThiefMasterDriverData),
     Lab2Undead(Lab2UndeadDriverData),
+    Lab2Herald(Lab2HeraldDriverData),
     LabGnome(crate::world::npc::area22::lab1_gnome::LabGnomeDriverData),
     Merchant(MerchantDriverData),
     Aclerk(AclerkDriverData),
@@ -1315,7 +1320,8 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::Nomad(_)
             | CharacterDriverState::Madhermit(_)
             | CharacterDriverState::LqNpc(_)
-            | CharacterDriverState::LabGnome(_),
+            | CharacterDriverState::LabGnome(_)
+            | CharacterDriverState::Lab2Herald(_),
         ) => SimpleBaddyDriverData::default(),
         None => SimpleBaddyDriverData::default(),
     };
@@ -3815,6 +3821,9 @@ pub use crate::world::npc::area2::vampire::VampireDriverData;
 pub use crate::world::npc::area2::vampire2::Vampire2DriverData;
 pub use crate::world::npc::area22::lab1_gnome::{
     apply_labgnome_create_message, LabGnomeDriverData,
+};
+pub use crate::world::npc::area22::lab2_herald::{
+    apply_lab2_herald_create_message, Lab2HeraldDriverData,
 };
 pub use crate::world::npc::area22::lab2_undead::{
     apply_lab2_undead_create_message, parse_lab2_undead_driver_args, Lab2UndeadDriverData,
