@@ -438,6 +438,26 @@ pub const IID_AREA18_RUNE1: u32 = (0x01 << 24) | 0x000078;
 
 pub const IID_AREA18_RUNE9: u32 = (0x01 << 24) | 0x000080;
 
+/// C `#define IID_AREA19_WOLFSSKIN MAKE_ITEMID(DEV_ID_DB, 0x00008A)`
+/// (`src/common/item_id.h:197`).
+pub const IID_AREA19_WOLFSSKIN: u32 = (0x01 << 24) | 0x00008A;
+
+/// C `#define IID_AREA19_SALT MAKE_ITEMID(DEV_ID_DB, 0x00008B)`
+/// (`src/common/item_id.h:198`).
+pub const IID_AREA19_SALT: u32 = (0x01 << 24) | 0x00008B;
+
+/// C `#define IID_AREA19_WOLFSSKIN2 MAKE_ITEMID(DEV_ID_DB, 0x00008C)`
+/// (`src/common/item_id.h:199`).
+pub const IID_AREA19_WOLFSSKIN2: u32 = (0x01 << 24) | 0x00008C;
+
+/// C `#define IID_AREA19_KIR MAKE_ITEMID(DEV_ID_DB, 0x00008D)`
+/// (`src/common/item_id.h:200`).
+pub const IID_AREA19_KIR: u32 = (0x01 << 24) | 0x00008D;
+
+/// C `#define IID_AREA19_KIRLETTER MAKE_ITEMID(DEV_ID_DB, 0x00008F)`
+/// (`src/common/item_id.h:202`).
+pub const IID_AREA19_KIRLETTER: u32 = (0x01 << 24) | 0x00008F;
+
 pub const IID_SKELETON_KEY: u32 = (59 << 24) | 0x000003;
 
 pub const IID_AREA2_ZOMBIESKULL1: u32 = (0x01 << 24) | 0x000025;

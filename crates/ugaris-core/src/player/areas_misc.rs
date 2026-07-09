@@ -315,6 +315,63 @@ impl PlayerRuntime {
         write_i32(&mut self.nomad_ppd, NOMAD_PPD_WIN_OFFSET + index * 4, value);
     }
 
+    /// C `open_roll1`/`open_roll2`/`open_roll3` (`src/common/nomad_ppd.h:
+    /// 11`): the last high dice roll left "on the table" when a player
+    /// walked away mid-game (`nomad.c:866-872`).
+    pub fn nomad_open_roll(&self) -> (i32, i32, i32) {
+        if self.nomad_ppd.len() < LEGACY_NOMAD_PPD_SIZE {
+            return (0, 0, 0);
+        }
+        (
+            read_i32(&self.nomad_ppd, NOMAD_PPD_OPEN_ROLL1_OFFSET),
+            read_i32(&self.nomad_ppd, NOMAD_PPD_OPEN_ROLL2_OFFSET),
+            read_i32(&self.nomad_ppd, NOMAD_PPD_OPEN_ROLL3_OFFSET),
+        )
+    }
+
+    /// C `open_bet` (`src/common/nomad_ppd.h:11`).
+    pub fn nomad_open_bet(&self) -> i32 {
+        if self.nomad_ppd.len() < LEGACY_NOMAD_PPD_SIZE {
+            return 0;
+        }
+        read_i32(&self.nomad_ppd, NOMAD_PPD_OPEN_BET_OFFSET)
+    }
+
+    /// Writes `open_bet`/`open_roll1`/`open_roll2`/`open_roll3` together,
+    /// matching every C call site that touches one also having the other
+    /// three in scope (`nomad.c:845-848`/`:868-871`/`:885-889`).
+    pub fn set_nomad_open_bet(&mut self, bet: i32, roll1: i32, roll2: i32, roll3: i32) {
+        if self.nomad_ppd.len() < LEGACY_NOMAD_PPD_SIZE {
+            self.nomad_ppd.resize(LEGACY_NOMAD_PPD_SIZE, 0);
+        }
+        write_i32(&mut self.nomad_ppd, NOMAD_PPD_OPEN_BET_OFFSET, bet);
+        write_i32(&mut self.nomad_ppd, NOMAD_PPD_OPEN_ROLL1_OFFSET, roll1);
+        write_i32(&mut self.nomad_ppd, NOMAD_PPD_OPEN_ROLL2_OFFSET, roll2);
+        write_i32(&mut self.nomad_ppd, NOMAD_PPD_OPEN_ROLL3_OFFSET, roll3);
+    }
+
+    /// C `tribe_member` (`src/common/nomad_ppd.h:12`): a `TM_TRIBE1`/`2`/
+    /// `3` bitmask.
+    pub fn nomad_tribe_member(&self) -> i32 {
+        if self.nomad_ppd.len() < LEGACY_NOMAD_PPD_SIZE {
+            return 0;
+        }
+        read_i32(&self.nomad_ppd, NOMAD_PPD_TRIBE_MEMBER_OFFSET)
+    }
+
+    /// C `ppd->tribe_member |= flag` (`nomad.c:705`, the only writer).
+    pub fn add_nomad_tribe_member(&mut self, flag: i32) {
+        if self.nomad_ppd.len() < LEGACY_NOMAD_PPD_SIZE {
+            self.nomad_ppd.resize(LEGACY_NOMAD_PPD_SIZE, 0);
+        }
+        let current = read_i32(&self.nomad_ppd, NOMAD_PPD_TRIBE_MEMBER_OFFSET);
+        write_i32(
+            &mut self.nomad_ppd,
+            NOMAD_PPD_TRIBE_MEMBER_OFFSET,
+            current | flag,
+        );
+    }
+
     /// Snapshot of the `nomad_state[]` array consumed by
     /// `questlog_init_nomad` (`src/system/questlog.c:1571-1607`), for
     /// `crate::quest::init_nomad_quests`.

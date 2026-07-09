@@ -52,6 +52,19 @@ pub const CDR_FORESTWILLIAM: u16 = 60;
 /// spider-queen quest giver (`src/area/16/forest.c::hermit_driver`), see
 /// `world::npc::area16::hermit`'s module doc comment.
 pub const CDR_FORESTHERMIT: u16 = 61;
+/// C `#define CDR_NOMAD 73` (`src/system/drvlib.h:129`, comment "nomad:
+/// nomad"): the Nomad Plains tribe NPCs - Kalanur (tribe recruiter, quest
+/// 32), Irakar (dice seller), the game host, the two Kir monastery monks
+/// (Sarkilar quest 33, life-teacher quest 34), and the statue seller -
+/// all six personas share this one driver, differentiated at spawn time
+/// by their own `arg="nr=N;..."` (`src/area/19/nomad.c::nomad`), see
+/// `world::npc::area19::nomad`'s module doc comment.
+pub const CDR_NOMAD: u16 = 73;
+/// C `#define CDR_MADHERMIT 76` (`src/system/drvlib.h:132`, comment
+/// "nomad: mad hermit"): the flower-guarding hermit in the Nomad Plains
+/// (`src/area/19/nomad.c::madhermit_driver`), see `world::npc::
+/// area19::madhermit`'s module doc comment.
+pub const CDR_MADHERMIT: u16 = 76;
 /// C `#define CDR_TWOGUARD 62` (`src/system/drvlib.h`): the Exkordon city
 /// guard patrol (`src/area/17/two.c::guard_driver`), see `world::npc::
 /// area17::guard`'s module doc comment.
@@ -507,6 +520,8 @@ pub enum CharacterDriverState {
     ForestImp(ForestImpDriverData),
     ForestWilliam(ForestWilliamDriverData),
     ForestHermit(ForestHermitDriverData),
+    Nomad(crate::world::npc::area19::NomadDriverData),
+    Madhermit(crate::world::npc::area19::MadhermitDriverData),
 }
 /// C `bank_driver_parse` from `src/module/bank.c`. The C driver defaults
 /// opening hours to 6..23 before parsing (`bank_driver` lines 304-309).
@@ -1291,7 +1306,9 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::TwoServant(_)
             | CharacterDriverState::TwoGuard(_)
             | CharacterDriverState::TwoThiefGuard(_)
-            | CharacterDriverState::TwoThiefMaster(_),
+            | CharacterDriverState::TwoThiefMaster(_)
+            | CharacterDriverState::Nomad(_)
+            | CharacterDriverState::Madhermit(_),
         ) => SimpleBaddyDriverData::default(),
         None => SimpleBaddyDriverData::default(),
     };

@@ -772,6 +772,16 @@ pub(crate) const NOMAD_PPD_STATE_OFFSET: usize = 0;
 
 pub(crate) const NOMAD_PPD_WIN_OFFSET: usize = NOMAD_PPD_MAXNOMAD * 4;
 
+pub(crate) const NOMAD_PPD_OPEN_ROLL1_OFFSET: usize = NOMAD_PPD_WIN_OFFSET + NOMAD_PPD_MAXNOMAD * 4;
+
+pub(crate) const NOMAD_PPD_OPEN_ROLL2_OFFSET: usize = NOMAD_PPD_OPEN_ROLL1_OFFSET + 4;
+
+pub(crate) const NOMAD_PPD_OPEN_ROLL3_OFFSET: usize = NOMAD_PPD_OPEN_ROLL1_OFFSET + 8;
+
+pub(crate) const NOMAD_PPD_OPEN_BET_OFFSET: usize = NOMAD_PPD_OPEN_ROLL1_OFFSET + 12;
+
+pub(crate) const NOMAD_PPD_TRIBE_MEMBER_OFFSET: usize = NOMAD_PPD_OPEN_ROLL1_OFFSET + 16;
+
 pub(crate) const CALIGAR_PPD_WATCH_FLAG_OFFSET: usize = 4 * 4;
 
 pub(crate) const CALIGAR_PPD_DOOR_FLAG_OFFSET: usize = 14 * 4;

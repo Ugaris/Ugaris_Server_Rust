@@ -8,14 +8,15 @@ use crate::{
         parse_arena_manager_driver_args, parse_clanclerk_driver_args, parse_clanmaster_driver_args,
         parse_clubmaster_driver_args, ArenaFighterDriverData, ArenaMasterDriverData,
         Astro2DriverData, BrithildieDriverData, CamhermitDriverData, CarlosDriverData,
-        CharacterDriverState, ClaraDriverData, DungeonmasterDriverData, ForestHermitDriverData,
-        ForestImpDriverData, ForestRangerDriverData, ForestWilliamDriverData, GateFightDriverData,
-        GateWelcomeDriverData, GolemKeyholdDriverData, GreeterDriverData, GwendylonDriverData,
-        JanitorDriverData, JessicaDriverData, JiuDriverData, KassimDriverData, KellyDriverData,
-        NookDriverData, ReskinDriverData, SeymourDriverData, SirJonesDriverData,
-        SuperiorDriverData, SupermaxDriverData, TerionDriverData, ThomasDriverData,
-        TraderDriverData, TwoAlchemistDriverData, TwoBarkeeperDriverData, TwoSanwynDriverData,
-        TwoSkellyDriverData, TwoThiefGuardDriverData, TwoThiefMasterDriverData, YoakinDriverData,
+        CharacterDriverState, ClaraDriverData, DungeonmasterDriverData, FightDriverData,
+        ForestHermitDriverData, ForestImpDriverData, ForestRangerDriverData,
+        ForestWilliamDriverData, GateFightDriverData, GateWelcomeDriverData,
+        GolemKeyholdDriverData, GreeterDriverData, GwendylonDriverData, JanitorDriverData,
+        JessicaDriverData, JiuDriverData, KassimDriverData, KellyDriverData, NookDriverData,
+        ReskinDriverData, SeymourDriverData, SirJonesDriverData, SuperiorDriverData,
+        SupermaxDriverData, TerionDriverData, ThomasDriverData, TraderDriverData,
+        TwoAlchemistDriverData, TwoBarkeeperDriverData, TwoSanwynDriverData, TwoSkellyDriverData,
+        TwoThiefGuardDriverData, TwoThiefMasterDriverData, YoakinDriverData,
         ARENA_FIGHTER_REST_POS, CDR_ARENAFIGHTER, CDR_ARENAMANAGER, CDR_ARENAMASTER, CDR_ASTRO2,
         CDR_BRITHILDIE, CDR_CAMHERMIT, CDR_CARLOS, CDR_CLANCLERK, CDR_CLANMASTER, CDR_CLUBMASTER,
         CDR_DUNGEONMASTER, CDR_FORESTHERMIT, CDR_FORESTIMP, CDR_FORESTMONSTER, CDR_FORESTWILLIAM,
@@ -1001,6 +1002,35 @@ impl ZoneLoader {
             character.driver_state = Some(CharacterDriverState::ForestRanger(
                 ForestRangerDriverData::default(),
             ));
+        }
+        if template.driver == crate::character_driver::CDR_NOMAD {
+            // C `nomad`'s `NT_CREATE` handler (`nomad.c:944-949`):
+            // `nomad_parse(cn, dat)` parsed here at spawn time instead of
+            // through the per-tick message loop, same precedent as
+            // `CDR_TWOSERVANT`/`CDR_TWOGUARD` above - see `world::npc::
+            // area19::nomad`'s module doc comment. Every `nomad1`-`nomad3`/
+            // `nomad6`/`monk1`/`monk2` template (`zones/19/nomad.chr`)
+            // carries an `arg="nr=N;diceskill=N;minbet=N;maxbet=N;
+            // maxloss=N;"` line.
+            character.driver_state = Some(CharacterDriverState::Nomad(
+                crate::world::npc::area19::parse_nomad_driver_args(&template.args),
+            ));
+        }
+        if template.driver == crate::character_driver::CDR_MADHERMIT {
+            // C `madhermit_driver`'s `NT_CREATE` handler (`nomad.c:1189-
+            // 1191`): `fight_driver_set_dist(cn, 30, 0, 60)`, a fixed,
+            // template-independent seed - see `world::npc::area19::
+            // madhermit`'s module doc comment for why this is seeded here
+            // instead of round-tripping an `NT_CREATE` message.
+            character.driver_state = Some(CharacterDriverState::Madhermit(
+                crate::world::npc::area19::MadhermitDriverData,
+            ));
+            character.fight_driver = Some(FightDriverData {
+                start_dist: 30,
+                char_dist: 0,
+                stop_dist: 60,
+                ..Default::default()
+            });
         }
 
         Ok((character, inventory_items))

@@ -768,6 +768,7 @@ pub(crate) async fn process_completed_action_outcomes(
                                 luck,
                             } => {
                                 if let Some(character) = world.characters.get(&character_id) {
+                                    let (x, y) = (character.x, character.y);
                                     let seed = world
                                         .tick
                                         .0
@@ -783,6 +784,20 @@ pub(crate) async fn process_completed_action_outcomes(
                                         ),
                                         8,
                                     ));
+                                    // C `notify_area(ch[cn].x, ch[cn].y,
+                                    // NT_NPC, NTID_DICE, cn, d1+d2+d3)`
+                                    // (`nomad.c:1174`): delivers the
+                                    // player's own roll to whichever
+                                    // nomad NPC is mid-game with them
+                                    // (`World::nomad_handle_npc_message`).
+                                    world.notify_area(
+                                        x,
+                                        y,
+                                        ugaris_core::character_driver::NT_NPC,
+                                        ugaris_core::character_driver::NTID_DICE,
+                                        character_id.0 as i32,
+                                        i32::from(total),
+                                    );
                                 }
                                 executed += 1;
                             }

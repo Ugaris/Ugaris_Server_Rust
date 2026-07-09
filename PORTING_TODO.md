@@ -850,7 +850,17 @@ Ordered by player progression; the C file is the oracle.
   `BoneBridgeNotEnoughBones` outcomes + `World::add_bone_to_bridge`/
   `remove_bone_from_bridge`, the new "bone" item landing on the cursor via
   `ZoneLoader::instantiate_item_template`; details in PORTING_LEDGER.md)*
-- [ ] **Area 19 - `src/area/19/nomad.c`** - nomad camp NPCs/trading.
+- [x] **Area 19 - `src/area/19/nomad.c`** - nomad camp NPCs/trading.
+  *(done - `CDR_NOMAD` (all 6 personas: Kalanur/tribe recruiter quest 32,
+  Irakar/dice seller, the `Llakal Sla` game host, the two Kir monastery
+  monks/quests 33-34, the statue seller) and `CDR_MADHERMIT`
+  (flower-guarding self-defense NPC) both ported end-to-end, including the
+  full `Llakal Sla` dice-betting minigame (`nomad_bet`/`nomad_roll`) and
+  its `IDR_NOMADDICE` -> `NT_NPC`/`NTID_DICE` `notify_area` wiring, which
+  was a real pre-existing gap (the roll was computed but never delivered
+  to the nomad NPC). `world/npc/area19/{nomad,nomad_dialogue,nomad_text,
+  nomad_give,nomad_bet,madhermit}.rs` + `ugaris-server/src/area19.rs` +
+  `tick_npc/area19.rs`; details in PORTING_LEDGER.md)*
 - [ ] **Area 20 - `src/area/20/lq.c`** - live-quest admin command table,
   LQ NPC dialogue (spawn/raise/equipment ported).
 - [ ] **Area 22 - `src/area/22/lab*.c`** - remaining lab mechanics per
@@ -920,6 +930,10 @@ Keep entries to at most three lines: date, task, one-line result.
 Anything longer belongs in `PORTING_LEDGER.md`; historical verbose
 notes live in `PROGRESS_ARCHIVE.md`.
 
+- 2026-07-09: Area 19 CLOSED: ported `CDR_NOMAD` (all 6 personas incl. the
+  `Llakal Sla` dice-betting minigame) + `CDR_MADHERMIT`, and fixed a real
+  gap (dice rolls never reached the nomad NPC). 3088 core + 1138 server
+  tests pass, clean build/boot-smoke (area 19, 178 characters, no panics).
 - 2026-07-09: Area 18 CLOSED: ported `bonebridge`'s partial-add/remove-
   bones-from-a-carried-bridge path (`bones.c:236-270`), the last gap in
   this file. 3064 core + 1138 server tests pass, clean build/boot-smoke

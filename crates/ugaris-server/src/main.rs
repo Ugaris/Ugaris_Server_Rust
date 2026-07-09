@@ -13,6 +13,7 @@ mod area1;
 mod area11;
 mod area16;
 mod area17;
+mod area19;
 mod area3;
 mod area8;
 mod area8_army;
