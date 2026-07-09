@@ -489,3 +489,70 @@ pub(crate) async fn lab4gnalb_driver_114(
         );
     }
 }
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn lab5seyan_driver_115(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    _zone_loader: &mut ZoneLoader,
+    config: &ServerConfig,
+    _args: &Args,
+    _completed_actions: &[WorldActionCompletion],
+    _achievement_repository: &Option<ugaris_db::PgAchievementRepository>,
+    _character_repository: &Option<ugaris_db::PgCharacterRepository>,
+    _area_repository: &Option<ugaris_db::PgAreaRepository>,
+    _clan_repository: &Option<ugaris_db::PgClanRegistryRepository>,
+    _clan_log_repository: &Option<ugaris_db::PgClanLogRepository>,
+    _merchant_repository: &Option<ugaris_db::PgMerchantRepository>,
+    _military_master_storage_repository: &Option<ugaris_db::PgMilitaryMasterStorageRepository>,
+    _military_advisor_storage_repository: &Option<ugaris_db::PgMilitaryAdvisorStorageRepository>,
+    _notes_repository: &Option<ugaris_db::PgNotesRepository>,
+    _anticheat_repository: &Option<ugaris_db::PgAntiCheatRepository>,
+    _auction_repository: &Option<ugaris_db::PgAuctionRepository>,
+) {
+    // C `lab5_seyan_driver`: the area-22 lab5 "Laros" quest giver.
+    let player_facts = crate::area22::lab5_seyan_player_facts(runtime);
+    let events = world.process_lab5_seyan_actions(&player_facts, config.area_id);
+    if !events.is_empty() {
+        let applied = crate::area22::apply_lab5_seyan_events(runtime, events);
+        if applied != 0 {
+            info!(
+                applied,
+                tick = world.tick.0,
+                "processed lab-5 seyan dialogue actions"
+            );
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn lab5daemon_driver_116(
+    world: &mut World,
+    _runtime: &mut ServerRuntime,
+    _zone_loader: &mut ZoneLoader,
+    config: &ServerConfig,
+    _args: &Args,
+    _completed_actions: &[WorldActionCompletion],
+    _achievement_repository: &Option<ugaris_db::PgAchievementRepository>,
+    _character_repository: &Option<ugaris_db::PgCharacterRepository>,
+    _area_repository: &Option<ugaris_db::PgAreaRepository>,
+    _clan_repository: &Option<ugaris_db::PgClanRegistryRepository>,
+    _clan_log_repository: &Option<ugaris_db::PgClanLogRepository>,
+    _merchant_repository: &Option<ugaris_db::PgMerchantRepository>,
+    _military_master_storage_repository: &Option<ugaris_db::PgMilitaryMasterStorageRepository>,
+    _military_advisor_storage_repository: &Option<ugaris_db::PgMilitaryAdvisorStorageRepository>,
+    _notes_repository: &Option<ugaris_db::PgNotesRepository>,
+    _anticheat_repository: &Option<ugaris_db::PgAntiCheatRepository>,
+    _auction_repository: &Option<ugaris_db::PgAuctionRepository>,
+) {
+    // C `lab5_daemon_driver`: the area-22 lab5 master/servant/gunned
+    // demon fight driver.
+    let lab5_daemon_acted = world.process_lab5_daemon_actions(config.area_id);
+    if lab5_daemon_acted != 0 {
+        info!(
+            lab5_daemon_acted,
+            tick = world.tick.0,
+            "processed lab-5 daemon actions"
+        );
+    }
+}

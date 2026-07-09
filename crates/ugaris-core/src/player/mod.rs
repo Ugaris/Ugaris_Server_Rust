@@ -27,7 +27,7 @@ mod transport;
 mod tunnel;
 mod twocity;
 
-pub use labs::lab4_seyan_state_from_got;
+pub use labs::{lab4_seyan_state_from_got, lab5_seyan_state_from_got};
 pub use misc::*;
 pub use settings::*;
 
@@ -374,6 +374,21 @@ pub struct PlayerRuntime {
     pub lab4_seyan_state: u8,
     #[serde(default)]
     pub lab4_seyan_got: u8,
+    /// C `struct lab5_player_data { unsigned char seyanstate; unsigned
+    /// char seyangot; ... }` (`src/area/22/lab5.c:80-90`, `DRD_LAB5_PLAYER`,
+    /// a distinct `set_data` slot from `DRD_LAB_PPD`/`lab_ppd` above, same
+    /// precedent as `lab4_seyan_state`/`_got`). `seyangot` is a 3-bit
+    /// field: bit 0/1/2 = head 1/2/3 handed in. C's slot lacks the
+    /// `PERSISTENT_PLAYER_DATA` bit (wiped on logout); this port persists
+    /// it like every other typed field per `AGENTS.md`, same documented
+    /// deviation as `lab4_seyan_state`/`_got`. The struct's remaining
+    /// fields (`magegot`/`magestate`/`ritualdaemon`/`ritualstate`) are not
+    /// yet ported - see `world::npc::area22::lab5_seyan`'s module doc
+    /// comment.
+    #[serde(default)]
+    pub lab5_seyan_state: u8,
+    #[serde(default)]
+    pub lab5_seyan_got: u8,
     #[serde(default)]
     pub pk_kills: u32,
     #[serde(default)]
@@ -765,6 +780,8 @@ impl PlayerRuntime {
             lab2_deamon_checked: false,
             lab4_seyan_state: 0,
             lab4_seyan_got: 0,
+            lab5_seyan_state: 0,
+            lab5_seyan_got: 0,
             pk_kills: 0,
             pk_deaths: 0,
             pk_last_kill: 0,

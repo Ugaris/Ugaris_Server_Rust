@@ -6,6 +6,7 @@ use crate::{
     character_driver::{
         apply_lab2_herald_create_message, apply_lab2_undead_create_message,
         apply_lab4_gnalb_create_message, apply_lab4_seyan_create_message,
+        apply_lab5_daemon_create_message, apply_lab5_seyan_create_message,
         apply_labgnome_create_message, apply_simple_baddy_create_message,
         parse_arena_manager_driver_args, parse_clanclerk_driver_args, parse_clanmaster_driver_args,
         parse_clubmaster_driver_args, ArenaFighterDriverData, ArenaMasterDriverData,
@@ -24,11 +25,11 @@ use crate::{
         CDR_DUNGEONMASTER, CDR_FORESTHERMIT, CDR_FORESTIMP, CDR_FORESTMONSTER, CDR_FORESTWILLIAM,
         CDR_FOREST_RANGER, CDR_GATE_FIGHT, CDR_GATE_WELCOME, CDR_GOLEMKEYHOLDER, CDR_GREETER,
         CDR_GWENDYLON, CDR_JANITOR, CDR_JESSICA, CDR_JIU, CDR_KASSIM, CDR_KELLY, CDR_LAB2HERALD,
-        CDR_LAB2UNDEAD, CDR_LAB4GNALB, CDR_LAB4SEYAN, CDR_LABGNOMEDRIVER, CDR_NOOK, CDR_RESKIN,
-        CDR_SEYMOUR, CDR_SIMPLEBADDY, CDR_SIRJONES, CDR_SUPERIOR, CDR_SUPERMAX, CDR_SWAMPCLARA,
-        CDR_TERION, CDR_THOMAS, CDR_TRADER, CDR_TWOALCHEMIST, CDR_TWOBARKEEPER, CDR_TWOGUARD,
-        CDR_TWOSANWYN, CDR_TWOSERVANT, CDR_TWOSKELLY, CDR_TWOTHIEFGUARD, CDR_TWOTHIEFMASTER,
-        CDR_YOAKIN, NT_CREATE,
+        CDR_LAB2UNDEAD, CDR_LAB4GNALB, CDR_LAB4SEYAN, CDR_LAB5DAEMON, CDR_LAB5SEYAN,
+        CDR_LABGNOMEDRIVER, CDR_NOOK, CDR_RESKIN, CDR_SEYMOUR, CDR_SIMPLEBADDY, CDR_SIRJONES,
+        CDR_SUPERIOR, CDR_SUPERMAX, CDR_SWAMPCLARA, CDR_TERION, CDR_THOMAS, CDR_TRADER,
+        CDR_TWOALCHEMIST, CDR_TWOBARKEEPER, CDR_TWOGUARD, CDR_TWOSANWYN, CDR_TWOSERVANT,
+        CDR_TWOSKELLY, CDR_TWOTHIEFGUARD, CDR_TWOTHIEFMASTER, CDR_YOAKIN, NT_CREATE,
     },
     entity::{
         Character, CharacterFlags, Item, ItemFlags, CHARACTER_VALUE_COUNT, INVENTORY_SIZE,
@@ -916,6 +917,21 @@ impl ZoneLoader {
             // - see `world::npc::area22::lab4_gnalb::
             // apply_lab4_gnalb_create_message`'s own doc comment.
             apply_lab4_gnalb_create_message(&mut character, Some(&template.args));
+        }
+        if template.driver == CDR_LAB5SEYAN {
+            // C never parses zone-file args for Laros (`zones/22/lab5.chr`'s
+            // `lab5_seyan` template has no `arg=`), and the C driver has no
+            // `NT_CREATE` handler either - no `NT_CREATE` push needed here,
+            // same as `CDR_LAB4SEYAN` above.
+            apply_lab5_seyan_create_message(&mut character);
+        }
+        if template.driver == CDR_LAB5DAEMON {
+            // Data-only half of C's `NT_CREATE` handler (parses `type=`);
+            // the ticker-dependent remainder (`attackstart`) runs on this
+            // character's first live tick instead - see
+            // `world::npc::area22::lab5_daemon::
+            // apply_lab5_daemon_create_message`'s own doc comment.
+            apply_lab5_daemon_create_message(&mut character, Some(&template.args));
         }
         if template.driver == crate::character_driver::CDR_PALACEGUARD {
             // C `palace_guard`'s `NT_CREATE` handler (`palace.c:152-163`):

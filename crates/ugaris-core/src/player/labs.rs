@@ -207,6 +207,24 @@ pub fn lab4_seyan_state_from_got(got: u8) -> u8 {
     }
 }
 
+/// Pure half of C `set_seyan_state` (`src/area/22/lab5.c:263-271`), split
+/// out so `world::npc::area22::lab5_seyan` can recompute the outcome
+/// state without a `PlayerRuntime` handle, same precedent as
+/// [`lab4_seyan_state_from_got`]. Unlike lab4's 2-bit crown/szepter
+/// scheme, lab5 needs all three head bits set for the "done" state.
+pub fn lab5_seyan_state_from_got(got: u8) -> u8 {
+    const GOT_HEAD1: u8 = 1 << 0;
+    const GOT_HEAD2: u8 = 1 << 1;
+    const GOT_HEAD3: u8 = 1 << 2;
+    if got & GOT_HEAD1 != 0 && got & GOT_HEAD2 != 0 && got & GOT_HEAD3 != 0 {
+        20 // done
+    } else if got != 0 {
+        10 // some
+    } else {
+        0 // start
+    }
+}
+
 /// Reads an 8-byte nul-padded ASCII field, trimming trailing zero bytes
 /// (C's `char[8]` `sprintf`-written strings, always short enough to fit
 /// with a nul terminator).

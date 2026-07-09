@@ -1042,8 +1042,22 @@ Ordered by player progression; the C file is the oracle.
   `Lab4FireplaceKeyGive`/`Blocked` outcomes). New plain `PlayerRuntime::
   lab4_seyan_state`/`_got` fields (C's non-persistent `DRD_LAB4_PLAYER`,
   intentionally made persistent per `AGENTS.md`) and three new
-  `IID_LAB4_MAGEKEY`/`_SZEPTER`/`_CROWN` item ids. Still open: all of
-  lab5 (`CDR_LAB5DAEMON`/`SEYAN`/`MAGE`).
+  `IID_LAB4_MAGEKEY`/`_SZEPTER`/`_CROWN` item ids. Lab5 progress: `CDR_
+  LAB5SEYAN` ("Laros", the three-demon-head quest giver,
+  `world/npc/area22/lab5_seyan.rs`) and `CDR_LAB5DAEMON` (the shared
+  servant/master/gunned demon fight driver - `CF_IMMORTAL` toggle gated
+  on `IID_LAB5_WEAPON` in `WN_RHAND` for masters, `world/npc/area22/
+  lab5_daemon.rs`) are both ported end to end; new `PlayerRuntime::
+  lab5_seyan_state`/`_got` fields and `IID_LAB5_HEAD1`/`_2`/`_3`/
+  `_WEAPON` item ids. The trophy heads drop via the existing generic
+  death-drop mechanic (no scripted reward call in C), so this closes a
+  fully playable "kill 3 master demons, turn in heads, get the lab
+  exit" loop on its own. Still open: `CDR_LAB5MAGE` (the ritual/lore
+  dialogue NPC) and `IDR_LAB5_ITEM` (13 drdata types: obelisk/fireface/
+  chestbox/combopotion/nameplate/realnameplate/entrance/backdoor/gun/
+  pike/no-potion-door/manapotion/lightface), plus the dynamic
+  `ritual_start`/`ritual_create_char` room-spawning system those two
+  drive together.
 - [ ] **Areas 23/24 - `src/area/23_24/strategy.c` (3,599 lines)** - the
   strategy minigame (mission ownership, worker spawning, resources).
   Item dispatch is stubbed as no-ops; this is a full subsystem - plan in
@@ -1108,6 +1122,13 @@ Ordered by player progression; the C file is the oracle.
 Keep entries to at most three lines: date, task, one-line result.
 Anything longer belongs in `PORTING_LEDGER.md`; historical verbose
 notes live in `PROGRESS_ARCHIVE.md`.
+
+- 2026-07-09: Area 22 progress: ported Lab5's `CDR_LAB5SEYAN` (head-
+  collection quest giver) and `CDR_LAB5DAEMON` (servant/master/gunned
+  demon fight driver, `IID_LAB5_WEAPON` immortal-toggle). `CDR_LAB5MAGE`
+  + `IDR_LAB5_ITEM` + the ritual room-spawn system remain. 3344 core +
+  1162 server tests pass, clean build/boot-smoke (area 22, 12 daemons
+  ticking, no panics).
 
 - 2026-07-09: Area 22 progress: ported Lab4 (`CDR_LAB4SEYAN`/`CDR_LAB4GNALB`
   + `IDR_LAB4_ITEM`, new `world/npc/area22/lab4_seyan.rs`+`lab4_gnalb.rs`,

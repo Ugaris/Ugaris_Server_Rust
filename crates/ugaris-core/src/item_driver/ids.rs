@@ -824,6 +824,21 @@ pub const IID_LAB4_SZEPTER: u32 = make_item_id(DEV_ID_MR, 0x00000B);
 /// C `IID_LAB4_CROWN` (`src/common/item_id.h:292`): the other
 /// `lab4_seyan_driver` `NT_GIVE` turn-in item.
 pub const IID_LAB4_CROWN: u32 = make_item_id(DEV_ID_MR, 0x00000C);
+/// C `IID_LAB5_HEAD1` (`src/common/item_id.h:293`): the trophy head from
+/// `lab5_one_master`, one of `lab5_seyan_driver`'s three `NT_GIVE`
+/// turn-in items (`world::npc::area22::lab5_seyan`).
+pub const IID_LAB5_HEAD1: u32 = make_item_id(DEV_ID_MR, 0x00000D);
+/// C `IID_LAB5_HEAD2` (`src/common/item_id.h:294`): the trophy head from
+/// `lab5_two_master`.
+pub const IID_LAB5_HEAD2: u32 = make_item_id(DEV_ID_MR, 0x00000E);
+/// C `IID_LAB5_HEAD3` (`src/common/item_id.h:295`): the trophy head from
+/// `lab5_three_master`.
+pub const IID_LAB5_HEAD3: u32 = make_item_id(DEV_ID_MR, 0x00000F);
+/// C `IID_LAB5_WEAPON` (`src/common/item_id.h:296`): the sacred stone
+/// weapon a master demon (`lab5_daemon_driver`, `dat->type==1`) must see
+/// worn in `WN_RHAND` to lose its `CF_IMMORTAL` flag
+/// (`world::npc::area22::lab5_daemon`).
+pub const IID_LAB5_WEAPON: u32 = make_item_id(DEV_ID_MR, 0x000010);
 /// C `IID_MAX_CHRONICLES` (`src/common/item_id.h:372`): swept alongside
 /// `IID_MAX_RITUAL`'s turn-in in `carlos_driver`.
 pub const IID_MAX_CHRONICLES: u32 = make_item_id(DEV_ID_MAX, 0x000003);

@@ -70,6 +70,8 @@ mod lab3_prisoner;
 mod lab3_special;
 mod lab4_gnalb;
 mod lab4_seyan;
+mod lab5_daemon;
+mod lab5_seyan;
 mod lampghost;
 mod lastseen;
 mod light;

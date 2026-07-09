@@ -12,7 +12,8 @@ use super::*;
 use ugaris_core::world::{
     Lab2DeamonOutcomeEvent, Lab2DeamonPlayerFacts, Lab2HeraldOutcomeEvent, Lab2HeraldPlayerFacts,
     Lab3PassguardOutcomeEvent, Lab3PassguardPlayerFacts, Lab3PrisonerOutcomeEvent,
-    Lab3PrisonerPlayerFacts, Lab4SeyanOutcomeEvent, Lab4SeyanPlayerFacts,
+    Lab3PrisonerPlayerFacts, Lab4SeyanOutcomeEvent, Lab4SeyanPlayerFacts, Lab5SeyanOutcomeEvent,
+    Lab5SeyanPlayerFacts,
 };
 
 pub(crate) fn lab2_herald_player_facts(
@@ -258,6 +259,57 @@ pub(crate) fn apply_lab4_seyan_events(
                 };
                 player.lab4_seyan_state = seyan4state;
                 player.lab4_seyan_got = seyan4got;
+                applied += 1;
+            }
+        }
+    }
+    applied
+}
+
+/// Server-side wiring for area 22's lab5 "Laros" quest giver
+/// (`CDR_LAB5SEYAN`/`ugaris_core::world::npc::area22::lab5_seyan::
+/// process_lab5_seyan_actions`). Same `World`/`PlayerRuntime` split as
+/// above: [`lab5_seyan_player_facts`] snapshots `PlayerRuntime::
+/// lab5_seyan_state`/`lab5_seyan_got` before the tick,
+/// [`apply_lab5_seyan_events`] writes both back afterward.
+pub(crate) fn lab5_seyan_player_facts(
+    runtime: &ServerRuntime,
+) -> HashMap<CharacterId, Lab5SeyanPlayerFacts> {
+    runtime
+        .players
+        .values()
+        .filter_map(|player| {
+            let character_id = player.character_id?;
+            Some((
+                character_id,
+                Lab5SeyanPlayerFacts {
+                    seyanstate: player.lab5_seyan_state,
+                    seyangot: player.lab5_seyan_got,
+                },
+            ))
+        })
+        .collect()
+}
+
+/// Applies each [`Lab5SeyanOutcomeEvent`] queued by
+/// `World::process_lab5_seyan_actions`.
+pub(crate) fn apply_lab5_seyan_events(
+    runtime: &mut ServerRuntime,
+    events: Vec<Lab5SeyanOutcomeEvent>,
+) -> usize {
+    let mut applied = 0;
+    for event in events {
+        match event {
+            Lab5SeyanOutcomeEvent::SetPlayerData {
+                player_id,
+                seyanstate,
+                seyangot,
+            } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.lab5_seyan_state = seyanstate;
+                player.lab5_seyan_got = seyangot;
                 applied += 1;
             }
         }

@@ -190,6 +190,16 @@ pub const CDR_LAB4SEYAN: u16 = 192;
 /// lab4_gnalb_driver`), see `world::npc::area22::lab4_gnalb`'s module
 /// doc comment.
 pub const CDR_LAB4GNALB: u16 = 193;
+/// C `#define CDR_LAB5DAEMON 189` (`src/system/drvlib.h:215`): the lab5
+/// master/servant/gunned demon fight driver (`src/area/22/lab5.c::
+/// lab5_daemon_driver`), see `world::npc::area22::lab5_daemon`'s module
+/// doc comment.
+pub const CDR_LAB5DAEMON: u16 = 189;
+/// C `#define CDR_LAB5SEYAN 191` (`src/system/drvlib.h:217`): the lab5
+/// "Laros" quest giver who collects the three demon heads
+/// (`src/area/22/lab5.c::lab5_seyan_driver`), see `world::npc::area22::
+/// lab5_seyan`'s module doc comment.
+pub const CDR_LAB5SEYAN: u16 = 191;
 /// C `#define CDR_CAMHERMIT 14` (`src/system/drvlib.h`): the forest
 /// hermit NPC in area 1 (`src/area/1/gwendylon.c::camhermit_driver`).
 pub const CDR_CAMHERMIT: u16 = 14;
@@ -560,6 +570,8 @@ pub enum CharacterDriverState {
     Lab3Prisoner(crate::world::npc::area22::lab3_prisoner::Lab3PrisonerDriverData),
     Lab4Seyan(crate::world::npc::area22::lab4_seyan::Lab4SeyanDriverData),
     Lab4Gnalb(crate::world::npc::area22::lab4_gnalb::Lab4GnalbDriverData),
+    Lab5Seyan(crate::world::npc::area22::lab5_seyan::Lab5SeyanDriverData),
+    Lab5Daemon(crate::world::npc::area22::lab5_daemon::Lab5DaemonDriverData),
 }
 /// C `bank_driver_parse` from `src/module/bank.c`. The C driver defaults
 /// opening hours to 6..23 before parsing (`bank_driver` lines 304-309).
@@ -1354,7 +1366,9 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::Lab3Passguard(_)
             | CharacterDriverState::Lab3Prisoner(_)
             | CharacterDriverState::Lab4Seyan(_)
-            | CharacterDriverState::Lab4Gnalb(_),
+            | CharacterDriverState::Lab4Gnalb(_)
+            | CharacterDriverState::Lab5Seyan(_)
+            | CharacterDriverState::Lab5Daemon(_),
         ) => SimpleBaddyDriverData::default(),
         None => SimpleBaddyDriverData::default(),
     };
@@ -3866,6 +3880,12 @@ pub use crate::world::npc::area22::lab4_gnalb::{
 };
 pub use crate::world::npc::area22::lab4_seyan::{
     apply_lab4_seyan_create_message, Lab4SeyanDriverData,
+};
+pub use crate::world::npc::area22::lab5_daemon::{
+    apply_lab5_daemon_create_message, Lab5DaemonDriverData,
+};
+pub use crate::world::npc::area22::lab5_seyan::{
+    apply_lab5_seyan_create_message, Lab5SeyanDriverData,
 };
 pub use crate::world::npc::area3::astro1::Astro1DriverData;
 pub use crate::world::npc::area3::astro2::Astro2DriverData;
