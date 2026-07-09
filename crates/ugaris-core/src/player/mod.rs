@@ -351,6 +351,14 @@ pub struct PlayerRuntime {
     pub lab_solved_bits: u64,
     #[serde(default)]
     pub lab2_grave_bits: Vec<u8>,
+    /// C `struct lab2_player_data { int deamonchecked; ... }`
+    /// (`src/area/22/lab2.c:361-366`, `DRD_LAB2_PLAYER`, a distinct
+    /// `set_data` slot from `DRD_LAB_PPD`/`lab_ppd` above): set the first
+    /// time a full-Elias-geared player triggers `lab2_deamon_create`, so
+    /// later daemons greet them with the short "quick elias" dialogue
+    /// instead of the full one. See `world::npc::area22::lab2_deamon`.
+    #[serde(default)]
+    pub lab2_deamon_checked: bool,
     #[serde(default)]
     pub pk_kills: u32,
     #[serde(default)]
@@ -739,6 +747,7 @@ impl PlayerRuntime {
             gate_step: 0,
             lab_solved_bits: 0,
             lab2_grave_bits: Vec::new(),
+            lab2_deamon_checked: false,
             pk_kills: 0,
             pk_deaths: 0,
             pk_last_kill: 0,

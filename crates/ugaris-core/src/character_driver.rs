@@ -163,6 +163,11 @@ pub const CDR_CALIGARSKELLY: u16 = 124;
 /// graveyard chapel keeper (`src/area/22/lab2.c::lab2_herald_driver`), see
 /// `world::npc::area22::lab2_herald`'s module doc comment.
 pub const CDR_LAB2HERALD: u16 = 196;
+/// C `#define CDR_LAB2DEAMON 197` (`src/system/drvlib.h:223`): the family-
+/// vault masquerade-detection guardian (`src/area/22/lab2.c::
+/// lab2_deamon_driver`), see `world::npc::area22::lab2_deamon`'s module
+/// doc comment.
+pub const CDR_LAB2DEAMON: u16 = 197;
 pub const CDR_LAB2UNDEAD: u16 = 198;
 /// C `#define CDR_LABGNOMEDRIVER 199` (`src/system/drvlib.h:225`): the
 /// area-22 Lab 1 torch-gnome triad (guard/fighter/immortal master).
@@ -454,6 +459,7 @@ pub enum CharacterDriverState {
     TwoThiefMaster(TwoThiefMasterDriverData),
     Lab2Undead(Lab2UndeadDriverData),
     Lab2Herald(Lab2HeraldDriverData),
+    Lab2Deamon(crate::world::npc::area22::lab2_deamon::Lab2DeamonDriverData),
     LabGnome(crate::world::npc::area22::lab1_gnome::LabGnomeDriverData),
     Merchant(MerchantDriverData),
     Aclerk(AclerkDriverData),
@@ -1321,7 +1327,8 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::Madhermit(_)
             | CharacterDriverState::LqNpc(_)
             | CharacterDriverState::LabGnome(_)
-            | CharacterDriverState::Lab2Herald(_),
+            | CharacterDriverState::Lab2Herald(_)
+            | CharacterDriverState::Lab2Deamon(_),
         ) => SimpleBaddyDriverData::default(),
         None => SimpleBaddyDriverData::default(),
     };

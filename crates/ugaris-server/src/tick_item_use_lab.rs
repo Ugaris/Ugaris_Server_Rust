@@ -166,22 +166,52 @@ pub(crate) async fn dispatch_lab_outcome(
             *executed += 1;
         }
         ugaris_core::item_driver::ItemDriverOutcome::Lab2StepActionDaemonWarning {
-            x, y, ..
+            character_id: triggering_id,
+            x,
+            y,
+            ..
         } => {
-            let character_id = runtime.allocate_character_id();
-            match zone_loader.instantiate_character_template("lab2_daemon", character_id) {
-                Ok((daemon, inventory_items)) => {
-                    if world.spawn_character(daemon, usize::from(x), usize::from(y)) {
-                        for item in inventory_items {
-                            world.items.insert(item.id, item);
+            // C `lab2_deamon_create`'s dedup loop (`lab2.c:376-388`): don't
+            // spawn a second daemon already tracking this exact player.
+            let already_tracked = world
+                .characters
+                .get(&triggering_id)
+                .is_some_and(|triggering| {
+                    world.lab2_deamon_already_tracking(triggering_id, triggering.serial)
+                });
+            if already_tracked {
+                *blocked += 1;
+            } else {
+                let character_id = runtime.allocate_character_id();
+                match zone_loader.instantiate_character_template("lab2_daemon", character_id) {
+                    Ok((daemon, inventory_items)) => {
+                        // C `drop_char(cn, x, y, 0) || drop_char(cn, x, y+3,
+                        // 0)` (`lab2.c:405-409`).
+                        let placed =
+                            world.spawn_character(daemon.clone(), usize::from(x), usize::from(y))
+                                || world.spawn_character(
+                                    daemon,
+                                    usize::from(x),
+                                    usize::from(y.saturating_add(3)),
+                                );
+                        if placed {
+                            for item in inventory_items {
+                                world.items.insert(item.id, item);
+                            }
+                            let serial = world
+                                .characters
+                                .get(&triggering_id)
+                                .map(|triggering| triggering.serial)
+                                .unwrap_or_default();
+                            world.init_lab2_deamon(character_id, triggering_id, serial);
+                            *executed += 1;
+                        } else {
+                            *failed += 1;
                         }
-                        *executed += 1;
-                    } else {
+                    }
+                    _ => {
                         *failed += 1;
                     }
-                }
-                _ => {
-                    *failed += 1;
                 }
             }
         }

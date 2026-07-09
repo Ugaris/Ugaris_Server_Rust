@@ -1008,10 +1008,15 @@ Ordered by player progression; the C file is the oracle.
   call `World::queue_lab_exit_spawn` (the shared machinery they'll call
   now exists). `CDR_LAB2HERALD` (the graveyard chapel keeper's full
   greeting dialogue/keyword jumps/ring turn-in/gate reward) is now also
-  ported (`world/npc/area22/lab2_herald.rs`). Still open: lab2's
-  `CDR_LAB2DEAMON` (the family-vault masquerade-detection/seek-and-destroy
-  guardian); all of lab3/4/5 (`CDR_LAB3PASSGUARD`/`PRISONER`,
-  `CDR_LAB4SEYAN`/`GNALB`, `CDR_LAB5DAEMON`/`SEYAN`/`MAGE`).
+  ported (`world/npc/area22/lab2_herald.rs`). `CDR_LAB2DEAMON` (the
+  family-vault masquerade-detection/seek-and-destroy guardian) is now also
+  ported (`world/npc/area22/lab2_deamon.rs`), including its
+  `lab2_deamon_create`/`lab2_deamon_is_elias` creation helpers (split
+  between `World::init_lab2_deamon`/`lab2_deamon_already_tracking` and the
+  `ugaris-server` `Lab2StepActionDaemonWarning` dispatcher, since only the
+  server caller knows the real spawn coordinates). Still open: all of
+  lab3/4/5 (`CDR_LAB3PASSGUARD`/`PRISONER`, `CDR_LAB4SEYAN`/`GNALB`,
+  `CDR_LAB5DAEMON`/`SEYAN`/`MAGE`).
 - [ ] **Areas 23/24 - `src/area/23_24/strategy.c` (3,599 lines)** - the
   strategy minigame (mission ownership, worker spawning, resources).
   Item dispatch is stubbed as no-ops; this is a full subsystem - plan in
@@ -1077,6 +1082,13 @@ Keep entries to at most three lines: date, task, one-line result.
 Anything longer belongs in `PORTING_LEDGER.md`; historical verbose
 notes live in `PROGRESS_ARCHIVE.md`.
 
+- 2026-07-09: Area 22 progress: ported `CDR_LAB2DEAMON` (new
+  `world/npc/area22/lab2_deamon.rs`, family-vault masquerade-detection
+  guardian: is-Elias check, warn/elias/quick-elias/masquerade dialogue
+  ladders, seek-and-destroy fight AI, teleport-if-stuck, self-destruct);
+  fixed the `Lab2StepActionDaemonWarning` spawn placeholder to dedup,
+  fall back to `(x, y+3)`, and set `co`/`serial`/`dir`. 3268 core + 1154
+  server tests pass, clean build/boot-smoke.
 - 2026-07-09: Area 22 progress: ported `CDR_LAB2HERALD` (new
   `world/npc/area22/lab2_herald.rs`, graveyard chapel keeper full
   dialogue/gate reward). 3254 core + 1154 server tests pass, clean

@@ -549,7 +549,8 @@ impl World {
                 | CharacterDriverState::Madhermit(_)
                 | CharacterDriverState::LqNpc(_)
                 | CharacterDriverState::LabGnome(_)
-                | CharacterDriverState::Lab2Herald(_) => None,
+                | CharacterDriverState::Lab2Herald(_)
+                | CharacterDriverState::Lab2Deamon(_) => None,
             });
         let Some(target_id) = target_id else {
             return false;

@@ -62,6 +62,7 @@ mod jiu;
 mod kassim;
 mod kelly;
 mod lab1_gnome;
+mod lab2_deamon;
 mod lab2_herald;
 mod lab2_undead;
 mod lampghost;

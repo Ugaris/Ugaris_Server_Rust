@@ -316,3 +316,39 @@ pub(crate) async fn lab2herald_driver_109(
         }
     }
 }
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn lab2deamon_driver_110(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    _zone_loader: &mut ZoneLoader,
+    config: &ServerConfig,
+    _args: &Args,
+    _completed_actions: &[WorldActionCompletion],
+    _achievement_repository: &Option<ugaris_db::PgAchievementRepository>,
+    _character_repository: &Option<ugaris_db::PgCharacterRepository>,
+    _area_repository: &Option<ugaris_db::PgAreaRepository>,
+    _clan_repository: &Option<ugaris_db::PgClanRegistryRepository>,
+    _clan_log_repository: &Option<ugaris_db::PgClanLogRepository>,
+    _merchant_repository: &Option<ugaris_db::PgMerchantRepository>,
+    _military_master_storage_repository: &Option<ugaris_db::PgMilitaryMasterStorageRepository>,
+    _military_advisor_storage_repository: &Option<ugaris_db::PgMilitaryAdvisorStorageRepository>,
+    _notes_repository: &Option<ugaris_db::PgNotesRepository>,
+    _anticheat_repository: &Option<ugaris_db::PgAntiCheatRepository>,
+    _auction_repository: &Option<ugaris_db::PgAuctionRepository>,
+) {
+    // C `lab2_deamon_driver`: the area-22 family-vault masquerade-
+    // detection guardian.
+    let player_facts = crate::area22::lab2_deamon_player_facts(runtime);
+    let events = world.process_lab2_deamon_actions(&player_facts, config.area_id);
+    if !events.is_empty() {
+        let applied = crate::area22::apply_lab2_deamon_events(runtime, events);
+        if applied != 0 {
+            info!(
+                applied,
+                tick = world.tick.0,
+                "processed lab-2 deamon guardian actions"
+            );
+        }
+    }
+}

@@ -798,6 +798,17 @@ pub const IID_STAFF_DRAGONSTAFF: u32 = make_item_id(DEV_ID_RHORUN, 0x000010);
 /// ring `lab2_herald_driver` checks for on `NT_GIVE` (`world::npc::area22::
 /// lab2_herald`).
 pub const IID_LAB2_ARATHASRING: u32 = make_item_id(DEV_ID_MR, 0x000005);
+/// C `IID_LAB2_ELIASHAT` (`src/common/item_id.h:281`): one of the four
+/// worn-slot pieces `lab2_deamon_is_elias` checks (`world::npc::area22::
+/// lab2_deamon`).
+pub const IID_LAB2_ELIASHAT: u32 = make_item_id(DEV_ID_MR, 0x000001);
+/// C `IID_LAB2_ELIASCAPE` (`src/common/item_id.h:282`).
+pub const IID_LAB2_ELIASCAPE: u32 = make_item_id(DEV_ID_MR, 0x000002);
+/// C `IID_LAB2_ELIASBOOTS` (`src/common/item_id.h:283`, note: boots is
+/// `0x3`, belt is `0x4` - do not swap).
+pub const IID_LAB2_ELIASBOOTS: u32 = make_item_id(DEV_ID_MR, 0x000003);
+/// C `IID_LAB2_ELIASBELT` (`src/common/item_id.h:284`).
+pub const IID_LAB2_ELIASBELT: u32 = make_item_id(DEV_ID_MR, 0x000004);
 /// C `IID_MAX_CHRONICLES` (`src/common/item_id.h:372`): swept alongside
 /// `IID_MAX_RITUAL`'s turn-in in `carlos_driver`.
 pub const IID_MAX_CHRONICLES: u32 = make_item_id(DEV_ID_MAX, 0x000003);

@@ -2,6 +2,7 @@
 
 pub mod gatekeeper;
 pub mod lab1_gnome;
+pub mod lab2_deamon;
 pub mod lab2_herald;
 pub mod lab2_undead;
 
@@ -9,6 +10,8 @@ pub mod lab2_undead;
 pub use gatekeeper::*;
 #[allow(unused_imports)]
 pub use lab1_gnome::*;
+#[allow(unused_imports)]
+pub use lab2_deamon::*;
 #[allow(unused_imports)]
 pub use lab2_herald::*;
 #[allow(unused_imports)]
