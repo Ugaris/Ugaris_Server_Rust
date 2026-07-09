@@ -18,7 +18,8 @@ use ugaris_core::world::{
     TwoAlchemistOutcomeEvent, TwoAlchemistPlayerFacts, TwoBarkeeperOutcomeEvent,
     TwoBarkeeperPlayerFacts, TwoGuardOutcomeEvent, TwoGuardPlayerFacts, TwoSanwynOutcomeEvent,
     TwoSanwynPlayerFacts, TwoServantOutcomeEvent, TwoServantPlayerFacts, TwoSkellyOutcomeEvent,
-    TwoSkellyPlayerFacts, TwoThiefGuardOutcomeEvent, TwoThiefGuardPlayerFacts, CS_GUEST, LS_CLEAN,
+    TwoSkellyPlayerFacts, TwoThiefGuardOutcomeEvent, TwoThiefGuardPlayerFacts,
+    TwoThiefMasterOutcomeEvent, TwoThiefMasterPlayerFacts, CS_GUEST, LS_CLEAN,
 };
 
 pub(crate) fn two_skelly_player_facts(
@@ -509,6 +510,202 @@ pub(crate) fn apply_two_thiefguard_events(
         };
         player.set_twocity_thief_state(new_state);
         applied += 1;
+    }
+    applied
+}
+
+pub(crate) fn two_thiefmaster_player_facts(
+    runtime: &ServerRuntime,
+) -> HashMap<CharacterId, TwoThiefMasterPlayerFacts> {
+    runtime
+        .players
+        .values()
+        .filter_map(|player| {
+            let character_id = player.character_id?;
+            let mut thief_killed = [0i32; 6];
+            for (index, slot) in thief_killed.iter_mut().enumerate() {
+                *slot = player.twocity_thief_killed(index);
+            }
+            Some((
+                character_id,
+                TwoThiefMasterPlayerFacts {
+                    thief_state: player.twocity_thief_state(),
+                    thief_last_seen: player.twocity_thief_last_seen(),
+                    thief_killed,
+                    quest25_count: player.quest_log.count(25),
+                    quest26_count: player.quest_log.count(26),
+                },
+            ))
+        })
+        .collect()
+}
+
+/// Applies each [`TwoThiefMasterOutcomeEvent`] queued by
+/// `World::process_two_thiefmaster_actions`. The quest-25/26 exp reward
+/// itself is already granted directly inside `World` (see that module's
+/// own doc comment) - this only finishes the `PlayerRuntime`/`ZoneLoader`
+/// side: `twocity_ppd` bookkeeping, `quest_log` open/close/done plus the
+/// matching `sendquestlog` resend, and handing over the reward item.
+pub(crate) fn apply_two_thiefmaster_events(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    zone_loader: &mut ZoneLoader,
+    events: Vec<TwoThiefMasterOutcomeEvent>,
+) -> usize {
+    let mut applied = 0;
+    for event in events {
+        match event {
+            TwoThiefMasterOutcomeEvent::UpdateThiefState {
+                player_id,
+                new_state,
+            } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.set_twocity_thief_state(new_state);
+                applied += 1;
+            }
+            // C `ppd->thief_last_seen = realtime;` (`two.c:2058`).
+            TwoThiefMasterOutcomeEvent::UpdateThiefLastSeen {
+                player_id,
+                realtime,
+            } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.set_twocity_thief_last_seen(realtime);
+                applied += 1;
+            }
+            // C `questlog_open(co, quest)`.
+            TwoThiefMasterOutcomeEvent::QuestOpen { player_id, quest } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.quest_log.open(quest as usize);
+                let payload = legacy_questlog_payload(player);
+                for (session_id, _) in runtime.sessions_for_character(player_id) {
+                    runtime.send_to_session(session_id, payload.clone());
+                }
+                applied += 1;
+            }
+            // C `questlog_close(co, quest)`.
+            TwoThiefMasterOutcomeEvent::QuestClose { player_id, quest } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.quest_log.close(quest as usize);
+                let payload = legacy_questlog_payload(player);
+                for (session_id, _) in runtime.sessions_for_character(player_id) {
+                    runtime.send_to_session(session_id, payload.clone());
+                }
+                applied += 1;
+            }
+            // C `two.c:1881-1899`: quest 25 completion tail.
+            TwoThiefMasterOutcomeEvent::Quest25Reward { player_id } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                for index in 0..6 {
+                    player.set_twocity_thief_killed(index, 0);
+                }
+                player.set_twocity_thief_bits(player.twocity_thief_bits() | 1);
+                player.quest_log.mark_done(25);
+                let payload = legacy_questlog_payload(player);
+                for (session_id, _) in runtime.sessions_for_character(player_id) {
+                    runtime.send_to_session(session_id, payload.clone());
+                }
+                if let Ok(lockpick) =
+                    zone_loader.instantiate_item_template("lockpick", Some(player_id))
+                {
+                    let lockpick_id = lockpick.id;
+                    world.add_item(lockpick);
+                    if !world.give_char_item(player_id, lockpick_id) {
+                        world.destroy_item(lockpick_id);
+                    }
+                }
+                applied += 1;
+            }
+            // C `two.c:1940-1957`: quest 26 completion tail.
+            TwoThiefMasterOutcomeEvent::Quest26Reward { player_id } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.set_twocity_thief_killed(0, 0);
+                player.set_twocity_thief_bits(player.twocity_thief_bits() | 2);
+                player.quest_log.mark_done(26);
+                let payload = legacy_questlog_payload(player);
+                for (session_id, _) in runtime.sessions_for_character(player_id) {
+                    runtime.send_to_session(session_id, payload.clone());
+                }
+                if let Ok(key) =
+                    zone_loader.instantiate_item_template("sewer_key1", Some(player_id))
+                {
+                    let key_id = key.id;
+                    world.add_item(key);
+                    if !world.give_char_item(player_id, key_id) {
+                        world.destroy_item(key_id);
+                    }
+                }
+                applied += 1;
+            }
+            // C `two.c:2124-2139`: quest 27 completion (`NT_GIVE`), real
+            // `exp: 15000` reward via the generic `complete_legacy` path.
+            TwoThiefMasterOutcomeEvent::Quest27Done { player_id } => {
+                let Some(level) = world.characters.get(&player_id).map(|c| c.level) else {
+                    continue;
+                };
+                let level_val = level_value(level);
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                if let Some(completion) = player.quest_log.complete_legacy(27, level, level_val) {
+                    player.set_twocity_thief_bits(player.twocity_thief_bits() | 4);
+                    let payload = legacy_questlog_payload(player);
+                    world.give_exp(player_id, completion.granted_exp, u32::from(world.area_id));
+                    for (session_id, _) in runtime.sessions_for_character(player_id) {
+                        runtime.send_to_session(session_id, payload.clone());
+                    }
+                    if let Ok(key) =
+                        zone_loader.instantiate_item_template("sewer_key2", Some(player_id))
+                    {
+                        let key_id = key.id;
+                        world.add_item(key);
+                        if !world.give_char_item(player_id, key_id) {
+                            world.destroy_item(key_id);
+                        }
+                    }
+                    applied += 1;
+                }
+            }
+            // C `two.c:2140-2154`: quest 28 completion (`NT_GIVE`).
+            TwoThiefMasterOutcomeEvent::Quest28Done { player_id } => {
+                let Some(level) = world.characters.get(&player_id).map(|c| c.level) else {
+                    continue;
+                };
+                let level_val = level_value(level);
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                if let Some(completion) = player.quest_log.complete_legacy(28, level, level_val) {
+                    player.set_twocity_thief_bits(player.twocity_thief_bits() | 8);
+                    let payload = legacy_questlog_payload(player);
+                    world.give_exp(player_id, completion.granted_exp, u32::from(world.area_id));
+                    for (session_id, _) in runtime.sessions_for_character(player_id) {
+                        runtime.send_to_session(session_id, payload.clone());
+                    }
+                    if let Ok(key) =
+                        zone_loader.instantiate_item_template("palace_key3", Some(player_id))
+                    {
+                        let key_id = key.id;
+                        world.add_item(key);
+                        if !world.give_char_item(player_id, key_id) {
+                            world.destroy_item(key_id);
+                        }
+                    }
+                    applied += 1;
+                }
+            }
+        }
     }
     applied
 }

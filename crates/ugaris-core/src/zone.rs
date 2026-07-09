@@ -15,16 +15,16 @@ use crate::{
         NookDriverData, ReskinDriverData, SeymourDriverData, SirJonesDriverData,
         SuperiorDriverData, SupermaxDriverData, TerionDriverData, ThomasDriverData,
         TraderDriverData, TwoAlchemistDriverData, TwoBarkeeperDriverData, TwoSanwynDriverData,
-        TwoSkellyDriverData, TwoThiefGuardDriverData, YoakinDriverData, ARENA_FIGHTER_REST_POS,
-        CDR_ARENAFIGHTER, CDR_ARENAMANAGER, CDR_ARENAMASTER, CDR_ASTRO2, CDR_BRITHILDIE,
-        CDR_CAMHERMIT, CDR_CARLOS, CDR_CLANCLERK, CDR_CLANMASTER, CDR_CLUBMASTER,
+        TwoSkellyDriverData, TwoThiefGuardDriverData, TwoThiefMasterDriverData, YoakinDriverData,
+        ARENA_FIGHTER_REST_POS, CDR_ARENAFIGHTER, CDR_ARENAMANAGER, CDR_ARENAMASTER, CDR_ASTRO2,
+        CDR_BRITHILDIE, CDR_CAMHERMIT, CDR_CARLOS, CDR_CLANCLERK, CDR_CLANMASTER, CDR_CLUBMASTER,
         CDR_DUNGEONMASTER, CDR_FORESTHERMIT, CDR_FORESTIMP, CDR_FORESTMONSTER, CDR_FORESTWILLIAM,
         CDR_FOREST_RANGER, CDR_GATE_FIGHT, CDR_GATE_WELCOME, CDR_GOLEMKEYHOLDER, CDR_GREETER,
         CDR_GWENDYLON, CDR_JANITOR, CDR_JESSICA, CDR_JIU, CDR_KASSIM, CDR_KELLY, CDR_LAB2UNDEAD,
         CDR_NOOK, CDR_RESKIN, CDR_SEYMOUR, CDR_SIMPLEBADDY, CDR_SIRJONES, CDR_SUPERIOR,
         CDR_SUPERMAX, CDR_SWAMPCLARA, CDR_TERION, CDR_THOMAS, CDR_TRADER, CDR_TWOALCHEMIST,
         CDR_TWOBARKEEPER, CDR_TWOGUARD, CDR_TWOSANWYN, CDR_TWOSERVANT, CDR_TWOSKELLY,
-        CDR_TWOTHIEFGUARD, CDR_YOAKIN, NT_CREATE,
+        CDR_TWOTHIEFGUARD, CDR_TWOTHIEFMASTER, CDR_YOAKIN, NT_CREATE,
     },
     entity::{
         Character, CharacterFlags, Item, ItemFlags, CHARACTER_VALUE_COUNT, INVENTORY_SIZE,
@@ -716,6 +716,15 @@ impl ZoneLoader {
             // `thief_guard`), same as `CDR_SWAMPCLARA` above.
             character.driver_state = Some(CharacterDriverState::TwoThiefGuard(
                 TwoThiefGuardDriverData::default(),
+            ));
+        }
+        if template.driver == CDR_TWOTHIEFMASTER {
+            // C never parses zone-file args into `struct
+            // thiefmaster_data` (`set_data` zero-initializes it) - no
+            // `arg=` line exists for this template (`zones/17/two.chr`'s
+            // `thiefmaster`), same as `CDR_SWAMPCLARA` above.
+            character.driver_state = Some(CharacterDriverState::TwoThiefMaster(
+                TwoThiefMasterDriverData::default(),
             ));
         }
         if template.driver == CDR_TWOALCHEMIST {

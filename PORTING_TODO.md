@@ -782,9 +782,9 @@ Ordered by player progression; the C file is the oracle.
   its `monster_dead` death hook (`imp_kills`/`hermit_state` counters +
   hardkill-weapon glow). `IDR_FORESTCHEST` was already fully ported.
   Details in PORTING_LEDGER.md.)*
-- [~] **Area 17 - `src/area/17/two.c`** - Two-City thief/skeleton NPC
+- [x] **Area 17 - `src/area/17/two.c`** - Two-City thief/skeleton NPC
   drivers (`CDR_TWOSKELLY` has state scaffolding).
-  REMAINING: `CDR_TWOSKELLY` ("Scarcewind", the raised governor's-ghost
+  `CDR_TWOSKELLY` ("Scarcewind", the raised governor's-ghost
   quest giver, quest 30) is now fully ported (`world/npc/area17/
   two_skelly.rs`), including its 30-second self-destruct timer and the
   new file-local `TWOCITY_QA` shared table (`world/npc/area17/mod.rs`,
@@ -834,9 +834,10 @@ Ordered by player progression; the C file is the oracle.
   `servant_dead` death hook. `CDR_TWOTHIEFGUARD` (the thieves-guild sewer
   entrance guard, `world/npc/area17/thiefguard.rs`) is now also ported,
   including its own fight-driver hostility toward players caught inside
-  the sewers before joining the guild. Still unported:
-  `CDR_TWOTHIEFMASTER` - see `PORTING_LEDGER.md` for the full driver
-  breakdown.
+  the sewers before joining the guild. `CDR_TWOTHIEFMASTER` ("Guild
+  Master", the 18-state lockpick-chain quest giver behind the sewer
+  entrance covering quests 25-28, `world/npc/area17/thiefmaster.rs`) is
+  now also ported, closing Area 17.
 - [ ] **Area 18 - `src/area/18/bones.c`** - rune quest completion
   (`exec_rune` rewards), bone NPCs.
 - [ ] **Area 19 - `src/area/19/nomad.c`** - nomad camp NPCs/trading.
@@ -908,6 +909,12 @@ Ordered by player progression; the C file is the oracle.
 Keep entries to at most three lines: date, task, one-line result.
 Anything longer belongs in `PORTING_LEDGER.md`; historical verbose
 notes live in `PROGRESS_ARCHIVE.md`.
+
+- 2026-07-09: Area 17 CLOSED: ported `CDR_TWOTHIEFMASTER` ("Guild
+  Master", the 18-state lockpick-chain quest giver, quests 25-28,
+  `world/npc/area17/thiefmaster.rs`), including its own `NT_GOTHIT`
+  self-defense (no shared helper existed for it). 3049 core + 1138 server
+  tests pass, clean build/boot-smoke (area 1 + 17, no panics).
 
 - 2026-07-09: Area 17 progress: ported `CDR_TWOTHIEFGUARD` (thieves-guild
   entrance guard, `world/npc/area17/thiefguard.rs`) + a new `may_follow_

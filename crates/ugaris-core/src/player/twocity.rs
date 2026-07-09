@@ -51,6 +51,39 @@ impl PlayerRuntime {
         );
     }
 
+    /// C `struct twocity_ppd::thief_last_seen`, read by `thiefmaster`'s
+    /// `thief_state == 9` waiting nag (`two.c:1850`).
+    pub fn twocity_thief_last_seen(&self) -> i32 {
+        if self.twocity_ppd.len() < LEGACY_TWOCITY_PPD_SIZE {
+            return 0;
+        }
+        read_i32(&self.twocity_ppd, TWOCITY_PPD_THIEF_LAST_SEEN_OFFSET)
+    }
+
+    pub fn set_twocity_thief_last_seen(&mut self, realtime: i32) {
+        self.twocity_ppd.resize(LEGACY_TWOCITY_PPD_SIZE, 0);
+        write_i32(
+            &mut self.twocity_ppd,
+            TWOCITY_PPD_THIEF_LAST_SEEN_OFFSET,
+            realtime,
+        );
+    }
+
+    /// C `struct twocity_ppd::thief_bits`, `thiefmaster`'s lockpick-chain
+    /// completion mask (see `TWOCITY_PPD_THIEF_BITS_OFFSET`'s own doc
+    /// comment for why it's write-only).
+    pub fn twocity_thief_bits(&self) -> i32 {
+        if self.twocity_ppd.len() < LEGACY_TWOCITY_PPD_SIZE {
+            return 0;
+        }
+        read_i32(&self.twocity_ppd, TWOCITY_PPD_THIEF_BITS_OFFSET)
+    }
+
+    pub fn set_twocity_thief_bits(&mut self, bits: i32) {
+        self.twocity_ppd.resize(LEGACY_TWOCITY_PPD_SIZE, 0);
+        write_i32(&mut self.twocity_ppd, TWOCITY_PPD_THIEF_BITS_OFFSET, bits);
+    }
+
     pub fn twocity_sanwyn_state(&self) -> i32 {
         if self.twocity_ppd.len() < LEGACY_TWOCITY_PPD_SIZE {
             return 0;

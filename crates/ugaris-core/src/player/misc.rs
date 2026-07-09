@@ -887,7 +887,20 @@ pub(crate) const TWOCITY_PPD_SOLVED_LIBRARY_OFFSET: usize = 24 * 4;
 
 pub(crate) const TWOCITY_PPD_THIEF_STATE_OFFSET: usize = 8 * 4;
 
+/// C `struct twocity_ppd::thief_last_seen` (`common/two_ppd.h:18`):
+/// wall-clock `realtime` stamp of the last successful `thiefmaster`
+/// greeting, read back by its own `thief_state == 9` waiting-for-mission
+/// nag (`two.c:1849-1854`).
+pub(crate) const TWOCITY_PPD_THIEF_LAST_SEEN_OFFSET: usize = 9 * 4;
+
 pub(crate) const TWOCITY_PPD_THIEF_KILLED_OFFSET: usize = 10 * 4;
+
+/// C `struct twocity_ppd::thief_bits` (`common/two_ppd.h:24`): a 4-bit
+/// mask (`1`/`2`/`4`/`8`) of which of `thiefmaster`'s four lockpick-chain
+/// missions (quests 25-28) have already been turned in. Write-only in C
+/// itself beyond JSON debug serialization (`character.c:656`) - no other
+/// C code reads it back - ported for `player_state_json` fidelity.
+pub(crate) const TWOCITY_PPD_THIEF_BITS_OFFSET: usize = 18 * 4;
 
 pub(crate) const TWOCITY_PPD_SANWYN_STATE_OFFSET: usize = 16 * 4;
 

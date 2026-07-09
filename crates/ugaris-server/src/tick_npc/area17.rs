@@ -255,3 +255,42 @@ pub(crate) async fn two_thiefguard_driver_103(
         );
     }
 }
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn two_thiefmaster_driver_104(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    zone_loader: &mut ZoneLoader,
+    config: &ServerConfig,
+    _args: &Args,
+    _completed_actions: &[WorldActionCompletion],
+    _achievement_repository: &Option<ugaris_db::PgAchievementRepository>,
+    _character_repository: &Option<ugaris_db::PgCharacterRepository>,
+    _area_repository: &Option<ugaris_db::PgAreaRepository>,
+    _clan_repository: &Option<ugaris_db::PgClanRegistryRepository>,
+    _clan_log_repository: &Option<ugaris_db::PgClanLogRepository>,
+    _merchant_repository: &Option<ugaris_db::PgMerchantRepository>,
+    _military_master_storage_repository: &Option<ugaris_db::PgMilitaryMasterStorageRepository>,
+    _military_advisor_storage_repository: &Option<ugaris_db::PgMilitaryAdvisorStorageRepository>,
+    _notes_repository: &Option<ugaris_db::PgNotesRepository>,
+    _anticheat_repository: &Option<ugaris_db::PgAntiCheatRepository>,
+    _auction_repository: &Option<ugaris_db::PgAuctionRepository>,
+) {
+    // C `thiefmaster`: the Exkordon thieves-guild master, "Guild Master"
+    // (`src/area/17/two.c`).
+    let two_thiefmaster_facts = two_thiefmaster_player_facts(runtime);
+    let two_thiefmaster_events = world.process_two_thiefmaster_actions(
+        &two_thiefmaster_facts,
+        current_unix_time() as i32,
+        config.area_id,
+    );
+    let two_thiefmaster_events_applied =
+        apply_two_thiefmaster_events(world, runtime, zone_loader, two_thiefmaster_events);
+    if two_thiefmaster_events_applied != 0 {
+        info!(
+            two_thiefmaster_events_applied,
+            tick = world.tick.0,
+            "applied two-city thiefmaster dialogue events"
+        );
+    }
+}

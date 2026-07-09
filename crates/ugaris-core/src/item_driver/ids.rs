@@ -501,6 +501,33 @@ pub const IID_AREA17_PALACENOTE2: u32 = (0x01 << 24) | 0x000067;
 /// (`src/common/item_id.h:163`).
 pub const IID_AREA17_PALACENOTE3: u32 = (0x01 << 24) | 0x000068;
 
+/// C `#define IID_AREA17_PALACEKEY3 MAKE_ITEMID(DEV_ID_DB, 0x000065)`
+/// (`src/common/item_id.h:160`): `world::npc::area17::thiefmaster`'s final
+/// quest-28 ("The Golden Lockpick") reward, opening the last sewer door.
+pub const IID_AREA17_PALACEKEY3: u32 = (0x01 << 24) | 0x000065;
+
+/// C `#define IID_AREA17_MERCHANTNOTE1 MAKE_ITEMID(DEV_ID_DB, 0x000069)`
+/// (`src/common/item_id.h:164`): the price-fixing agreement
+/// `world::npc::area17::thiefmaster`'s quest 27 ("Price Fix Exposed")
+/// turn-in accepts.
+pub const IID_AREA17_MERCHANTNOTE1: u32 = (0x01 << 24) | 0x000069;
+
+/// C `#define IID_AREA17_SEWERKEY1 MAKE_ITEMID(DEV_ID_DB, 0x00006C)`
+/// (`src/common/item_id.h:167`): `world::npc::area17::thiefmaster`'s
+/// quest-26 ("Extortion") reward.
+pub const IID_AREA17_SEWERKEY1: u32 = (0x01 << 24) | 0x00006C;
+
+/// C `#define IID_AREA17_SEWERKEY2 MAKE_ITEMID(DEV_ID_DB, 0x00006D)`
+/// (`src/common/item_id.h:168`): `world::npc::area17::thiefmaster`'s
+/// quest-27 ("Price Fix Exposed") reward.
+pub const IID_AREA17_SEWERKEY2: u32 = (0x01 << 24) | 0x00006D;
+
+/// C `#define IID_AREA17_GOLDENLOCKPICK MAKE_ITEMID(DEV_ID_DB, 0x00006E)`
+/// (`src/common/item_id.h:169`): the special lockpick
+/// `world::npc::area17::thiefmaster`'s quest 28 ("The Golden Lockpick")
+/// turn-in accepts.
+pub const IID_AREA17_GOLDENLOCKPICK: u32 = (0x01 << 24) | 0x00006E;
+
 pub const IID_AREA16_ROBBERKEY: u32 = (0x01 << 24) | 0x000060;
 
 pub const IID_AREA16_SKELLYKEY: u32 = (0x01 << 24) | 0x000061;

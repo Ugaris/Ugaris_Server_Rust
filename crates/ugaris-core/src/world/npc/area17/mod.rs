@@ -7,6 +7,7 @@ mod guard_messages;
 pub mod sanwyn;
 pub mod servant;
 pub mod thiefguard;
+pub mod thiefmaster;
 pub mod two_skelly;
 
 #[allow(unused_imports)]
@@ -21,6 +22,8 @@ pub use sanwyn::*;
 pub use servant::*;
 #[allow(unused_imports)]
 pub use thiefguard::*;
+#[allow(unused_imports)]
+pub use thiefmaster::*;
 #[allow(unused_imports)]
 pub use two_skelly::*;
 
@@ -50,18 +53,16 @@ pub const CS_HONOR: i32 = 3;
 /// C `struct qa qa[]` from `src/area/17/two.c:92-112` - the shared
 /// small-talk/command table `analyse_text_driver` matches against for
 /// every Two-City NPC in this file (`guard_driver`/`barkeeper`/`servant`/
-/// `thiefguard`/`thiefmaster`/`sanwyn`/`skelly`/`alchemist`). Every row
-/// except `i am done`/answer_code 16 (belonging to the still-unported
-/// `thiefmaster`) is ported so far - `status`/answer_code 14 is ported
-/// (row present below) even though it is genuinely dead code in C itself:
-/// grepping every `switch (didsay)`/`switch (analyse_text_driver(...))`
-/// block in `two.c` confirms no driver's `NT_TEXT` switch has a `case 14`
-/// arm at all (not even `thiefmaster`, whose own switch only handles `2`/
-/// `16`), so saying "status" to any Two-City NPC has always been a silent
-/// no-op beyond `didsay`'s usual talkdir/current_victim bookkeeping - kept
-/// in the table for parity, not silently dropped. Add the rest here
-/// (never duplicate the table) when `thiefmaster` is ported, same "one
-/// shared file-local table, many drivers" precedent as `world::npc::
+/// `thiefguard`/`thiefmaster`/`sanwyn`/`skelly`/`alchemist`). Every row is
+/// now ported - `status`/answer_code 14 is ported (row present below)
+/// even though it is genuinely dead code in C itself: grepping every
+/// `switch (didsay)`/`switch (analyse_text_driver(...))` block in `two.c`
+/// confirms no driver's `NT_TEXT` switch has a `case 14` arm at all (not
+/// even `thiefmaster`, whose own switch only handles `2`/`16`), so saying
+/// "status" to any Two-City NPC has always been a silent no-op beyond
+/// `didsay`'s usual talkdir/current_victim bookkeeping - kept in the
+/// table for parity, not silently dropped. This is the "one shared
+/// file-local table, many drivers" precedent also used by `world::npc::
 /// area16::FOREST_QA`/`world::npc::area3::AREA3_QA`.
 pub const TWOCITY_QA: &[TextQaEntry] = &[
     TextQaEntry {
@@ -163,6 +164,11 @@ pub const TWOCITY_QA: &[TextQaEntry] = &[
         words: &["pay", "bribe"],
         answer: None,
         answer_code: 11,
+    },
+    TextQaEntry {
+        words: &["i", "am", "done"],
+        answer: None,
+        answer_code: 16,
     },
 ];
 

@@ -648,7 +648,8 @@ impl World {
             | CharacterDriverState::TwoBarkeeper(_)
             | CharacterDriverState::TwoServant(_)
             | CharacterDriverState::TwoGuard(_)
-            | CharacterDriverState::TwoThiefGuard(_) => None,
+            | CharacterDriverState::TwoThiefGuard(_)
+            | CharacterDriverState::TwoThiefMaster(_) => None,
         }
     }
 
