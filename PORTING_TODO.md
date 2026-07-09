@@ -878,10 +878,25 @@ Ordered by player progression; the C file is the oracle.
   Deliberately NOT ported (unreachable without it): the `usurp` god/
   LQMaster-possession `domirror` movement branch, since only the
   `special_driver` admin command table below can ever set `dat->usurp`
-  (see `lqnpc.rs`'s own module doc comment). Still entirely unported: the
-  ~45-subcommand `CDR_LQPARSER` admin command table (NPC template CRUD,
-  quest lifecycle, door lock/unlock, `#usurp`/`#follow` possession),
-  `questsave`/`questload` file I/O, and `#xinfo`.
+  (see `lqnpc.rs`'s own module doc comment). The `CDR_LQPARSER` admin
+  command table's first slice (18 of ~45 subcommands - NPC-template CRUD:
+  `#npc`/`#npcname`/`#npcgold`/`#npcsprite`/`#npcpos`/
+  `#npcdescription`/`#npcgreeting`/`#npcreply`/`#npclist`/
+  `#npcdelete`/`#npcwantitem`/`#npcitem`/`#npcshow`/`#npckillmark`/
+  `#npchurtmark`/`#npcrewarditem`/`#npcmodlevel`/`#npcrespawn`) is now
+  ported (`world/lq_admin.rs`'s `World::apply_lq_admin_command`, wired
+  into `tick_client_actions.rs` right after `apply_clan_command`) - pure
+  `World` logic needing no `ZoneLoader`/`PlayerRuntime`, since every field
+  these commands touch already lived on `LqNpcState`. Still unported:
+  `#thrall`/`#killthrall` (need `DRD_LQ_NPC_DATA.thrallname`), `#usurp`/
+  `#follow`/`#stop`/`#exit` (need a new `PlayerRuntime.usurp` field),
+  `#doorlist`/`#doorlock`/`#nspawn`/`#nremove`/`#nsay`/`#nimmortal`/
+  `#nemote`/`#nattack`/`#wimp` (live-instance control), the whole quest-
+  lifecycle family (`#questsave`/`#questdelete`/`#questend`/
+  `#questload`/`#questshow`/`#questreward`/`#questlevel`/`#questreset`/
+  `#questentrance`/`#queststart`, `#xinfo` - needs a new `lq_data` `World`
+  field C never got ported here), and `#questsave`/`#questload`'s file
+  I/O (a genuinely new pattern for this codebase).
 - [ ] **Area 22 - `src/area/22/lab*.c`** - remaining lab mechanics per
   lab; lab2 undead mostly ported; gatekeeper depends on P2.
 - [ ] **Areas 23/24 - `src/area/23_24/strategy.c` (3,599 lines)** - the
@@ -949,6 +964,10 @@ Keep entries to at most three lines: date, task, one-line result.
 Anything longer belongs in `PORTING_LEDGER.md`; historical verbose
 notes live in `PROGRESS_ARCHIVE.md`.
 
+- 2026-07-09: Area 20 progress: ported the `CDR_LQPARSER` admin command
+  table's NPC-template CRUD slice (18 subcommands, `world/lq_admin.rs`,
+  pure `World` logic, no `ZoneLoader` needed). 3124 core + 1140 server
+  tests pass, clean build/boot-smoke.
 - 2026-07-09: Area 20 STARTED: ported `lqnpc`'s per-tick dialogue/
   movement driver + `lqnpc_died`'s death hook (new `world/npc/area20/`,
   `LqItemSpec`, `PlayerRuntime::lq_marks`). Admin command table (~45

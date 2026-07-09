@@ -916,6 +916,12 @@ pub(crate) async fn process_queued_client_actions(
                         command_feedback_bytes.push((character_id, message));
                     }
                 }
+                // C `special_driver`'s `CDR_LQPARSER` admin command table
+                // (`system/command.c:5855-5859` area-gates into
+                // `lq.c:2505-2742`). All feedback is queued directly onto
+                // `World`'s pending system-text queues and flushed by
+                // `tick_sync::sync_phase` later this same tick.
+                world.apply_lq_admin_command(character_id, config.area_id, &command);
             }
             ClientAction::Container { .. } | ClientAction::LookContainer { .. } => {
                 // C cl_container: validate and prefer the active

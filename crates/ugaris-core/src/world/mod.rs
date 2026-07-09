@@ -40,6 +40,7 @@ mod lockname;
 mod look;
 mod loot;
 mod lq;
+mod lq_admin;
 mod mining;
 pub mod npc;
 mod npc_fight;
