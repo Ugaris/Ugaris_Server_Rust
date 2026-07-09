@@ -12,6 +12,7 @@ pub mod area16;
 pub mod area17;
 pub mod area19;
 pub mod area2;
+pub mod area20;
 pub mod area22;
 pub mod area3;
 pub mod area30;
@@ -47,6 +48,8 @@ pub use area17::*;
 pub use area19::*;
 #[allow(unused_imports)]
 pub use area2::*;
+#[allow(unused_imports)]
+pub use area20::*;
 #[allow(unused_imports)]
 pub use area22::*;
 #[allow(unused_imports)]

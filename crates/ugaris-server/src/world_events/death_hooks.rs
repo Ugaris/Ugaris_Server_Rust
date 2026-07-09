@@ -1005,3 +1005,76 @@ pub(crate) fn apply_fdemon_demon_death_from_hurt_event(
         false
     }
 }
+
+/// C `ch_died_driver`/`CDR_LQNPC` dispatch (`lq.c:3013-3021`) ->
+/// `lqnpc_died` (`:2929-2958`): schedules this NPC's respawn (guarded by
+/// matching its live-instance identity against `World::lq_npcs`, exactly
+/// like C's own `lq_npc[dat->n].cn == cn && ... .cserial == ch[cn]
+/// .serial` check, in case the slot has already been reused by a
+/// different spawn) and sets the killer's Live Quest kill/hurt marks.
+pub(crate) fn apply_lqnpc_death_from_hurt_event(
+    runtime: &mut ServerRuntime,
+    world: &mut World,
+    event: LegacyHurtEvent,
+) -> bool {
+    if !event.outcome.killed {
+        return false;
+    }
+    let Some(target) = world.characters.get(&event.target_id) else {
+        return false;
+    };
+    if target.driver != CDR_LQNPC {
+        return false;
+    }
+    let (slot, kill_mark_id, hurt_mark_id) = match target.driver_state.as_ref() {
+        Some(CharacterDriverState::LqNpc(data)) => {
+            (data.slot, data.kill_mark_id, data.hurt_mark_id)
+        }
+        _ => return false,
+    };
+    let target_id = target.id;
+    let target_serial = target.serial;
+
+    // C `if (lq_npc[dat->n].cn == cn && lq_npc[dat->n].cserial ==
+    // ch[cn].serial) { if (lq_npc[dat->n].respawn) lq_respawn[dat->n] =
+    // ticker + lq_npc[dat->n].respawn * TICKS; lq_npc[dat->n].cn =
+    // lq_npc[dat->n].cserial = 0; }` (`lq.c:2938-2944`).
+    let identity_match = world
+        .lq_npcs
+        .iter()
+        .find(|npc| npc.slot == slot)
+        .and_then(|npc| {
+            (npc.character_id == Some(target_id) && npc.character_serial == target_serial)
+                .then_some(npc.respawn_seconds)
+        });
+    if let Some(respawn_seconds) = identity_match {
+        if respawn_seconds > 0 {
+            let due_tick = world.tick.0 + u64::from(respawn_seconds) * TICKS_PER_SECOND;
+            world.schedule_lq_npc_respawn(slot, due_tick);
+        }
+        if let Some(npc) = world.lq_npcs.iter_mut().find(|npc| npc.slot == slot) {
+            npc.character_id = None;
+            npc.character_serial = 0;
+        }
+    }
+
+    // C `if (co && (ch[co].flags & CF_PLAYER) && (dat->kill_markID ||
+    // dat->hurt_markID)) { ... }` (`lq.c:2945-2956`).
+    if (kill_mark_id != 0 || hurt_mark_id != 0) && event.cause_id.0 != 0 {
+        let killer_is_player = world
+            .characters
+            .get(&event.cause_id)
+            .is_some_and(|killer| killer.flags.contains(CharacterFlags::PLAYER));
+        if killer_is_player {
+            if let Some(player) = runtime.player_for_character_mut(event.cause_id) {
+                if kill_mark_id > 0 {
+                    player.set_lq_mark(kill_mark_id);
+                }
+                if hurt_mark_id > 0 {
+                    player.set_lq_mark(hurt_mark_id);
+                }
+            }
+        }
+    }
+    true
+}

@@ -71,6 +71,7 @@ mod look;
 mod loot;
 mod lostcon;
 mod lq;
+mod lqnpc;
 mod lydia;
 mod macro_npc;
 mod madhermit;

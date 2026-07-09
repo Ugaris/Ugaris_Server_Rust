@@ -6,11 +6,28 @@ pub(crate) const MAX_LQ_NPCS: usize = 512;
 
 pub(crate) const DEV_ID_LQ: u32 = 0x05;
 
+/// C `#define MAXLQMARK 10` (`lq.c:98`): the size of `struct
+/// lq_plr_data::mark[]`. Index `0` is never used by any C code path
+/// (`hurt_markID`/`kill_markID` are only ever compared with `> 0`).
+pub const MAXLQMARK: usize = 10;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LqDoorState {
     pub slot: usize,
     pub item_id: ItemId,
     pub nick: String,
+    pub key_id: u32,
+}
+
+/// C `struct lq_item` (`src/area/20/lq.c:97-102`): the admin-authored spec
+/// for a runtime-created "lq_<base>" quest item (`create_lq_item`), used
+/// by both `lq_npc[n].carry_item` (given at spawn) and
+/// `lq_npc_data.reward_item` (given on a matching quest turn-in).
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct LqItemSpec {
+    pub base: String,
+    pub name: String,
+    pub description: String,
     pub key_id: u32,
 }
 
@@ -29,6 +46,38 @@ pub struct LqNpcState {
     pub nick: [String; 2],
     pub character_id: Option<CharacterId>,
     pub character_serial: u32,
+    /// C `lq_npc[n].sprite` (`0` means "keep the `lq_<basename>` template's
+    /// own sprite", matching `spawn_npc`'s `if (lq_npc[n].sprite) ch[cn]
+    /// .sprite = ...`).
+    pub sprite: i32,
+    /// C `lq_npc[n].greeting` - said once per newly-sighted player
+    /// (`lqnpc`'s `NT_CHAR` handler).
+    pub greeting: String,
+    /// C `lq_npc[n].trigger[5]`/`reply[5]` - substring-matched dialogue
+    /// pairs (`lqnpc`'s `NT_TEXT` handler).
+    pub trigger: [String; 5],
+    pub reply: [String; 5],
+    /// C `lq_npc[n].want_keyID` - the `MAKE_ITEMID(DEV_ID_LQ, ..)` key a
+    /// player must `NT_GIVE` this NPC to trigger `reward_item`.
+    pub want_key_id: u32,
+    /// C `lq_npc[n].reward_item` - handed to the giver on a matching
+    /// turn-in.
+    pub reward_item: LqItemSpec,
+    /// C `lq_npc[n].reward_markID` - unused by `lqnpc`/`lqnpc_died`
+    /// themselves (only the unported `questreward`/admin quest-lifecycle
+    /// commands read it), kept for round-trip fidelity with the C struct.
+    pub reward_mark_id: u32,
+    /// C `lq_npc[n].kill_markID` - set on the killer's `DRD_LQ_PLR_DATA`
+    /// mark array by `lqnpc_died`.
+    pub kill_mark_id: u32,
+    /// C `lq_npc[n].hurt_markID` - set on the attacker's mark array by
+    /// `lqnpc`'s `NT_GOTHIT` handler (and again by `lqnpc_died` on the
+    /// final blow).
+    pub hurt_mark_id: u32,
+    /// C `lq_npc[n].carry_item` - given to the NPC once at spawn time.
+    pub carry_item: LqItemSpec,
+    /// C `lq_npc[n].carry_gold` - `ch[cn].gold` at spawn time.
+    pub carry_gold: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -43,14 +92,34 @@ pub struct LqNpcSpawnRequest {
     pub name: String,
     pub description: String,
     pub nick: [String; 2],
+    pub sprite: i32,
+    pub greeting: String,
+    pub trigger: [String; 5],
+    pub reply: [String; 5],
+    pub want_key_id: u32,
+    pub reward_item: LqItemSpec,
+    pub reward_mark_id: u32,
+    pub kill_mark_id: u32,
+    pub hurt_mark_id: u32,
+    pub carry_item: LqItemSpec,
+    pub carry_gold: u32,
 }
 
 pub(crate) fn write_lq_door_key_id(item: &mut Item, key_id: u32) {
     if item.driver_data.len() < 5 {
         item.driver_data.resize(5, 0);
     }
-    let legacy_item_id = (DEV_ID_LQ << 24) | (key_id & 0x00ff_ffff);
+    let legacy_item_id = make_lq_item_template_id(key_id);
     item.driver_data[1..5].copy_from_slice(&legacy_item_id.to_le_bytes());
+}
+
+/// C `MAKE_ITEMID(DEV_ID_LQ, nr)` (`src/common/item_id.h:58`): the runtime
+/// item-identity value `create_lq_item` writes into `it[in].ID` - modeled
+/// here as [`crate::entity::Item::template_id`] (see [`LqItemSpec`]'s own
+/// doc comment and `ugaris-server`'s `area20::create_lq_item`, the only
+/// place that actually instantiates one of these items).
+pub fn make_lq_item_template_id(key_id: u32) -> u32 {
+    (DEV_ID_LQ << 24) | (key_id & 0x00ff_ffff)
 }
 
 impl World {
@@ -64,6 +133,13 @@ impl World {
         npc.description.truncate(159);
         npc.nick[0].truncate(39);
         npc.nick[1].truncate(39);
+        npc.greeting.truncate(255);
+        for trigger in npc.trigger.iter_mut() {
+            trigger.truncate(39);
+        }
+        for reply in npc.reply.iter_mut() {
+            reply.truncate(255);
+        }
         if let Some(existing) = self
             .lq_npcs
             .iter_mut()
@@ -172,6 +248,17 @@ impl World {
                 name: npc.name.clone(),
                 description: npc.description.clone(),
                 nick: npc.nick.clone(),
+                sprite: npc.sprite,
+                greeting: npc.greeting.clone(),
+                trigger: npc.trigger.clone(),
+                reply: npc.reply.clone(),
+                want_key_id: npc.want_key_id,
+                reward_item: npc.reward_item.clone(),
+                reward_mark_id: npc.reward_mark_id,
+                kill_mark_id: npc.kill_mark_id,
+                hurt_mark_id: npc.hurt_mark_id,
+                carry_item: npc.carry_item.clone(),
+                carry_gold: npc.carry_gold,
             });
             if let Some((_, due_tick)) = self
                 .lq_npc_respawns

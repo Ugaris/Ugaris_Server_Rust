@@ -1611,3 +1611,132 @@ fn apply_arena_master_events_falls_back_to_fighter_bots_own_ledger_when_a_combat
     assert!(entries.iter().any(|e| e.name == "Godmode"));
     assert!(entries.iter().any(|e| e.name == "Fighter"));
 }
+
+#[test]
+fn lethal_lqnpc_hurt_schedules_respawn_and_marks_a_player_killer() {
+    let mut world = World::default();
+    let mut npc = login_character(CharacterId(1), &login_block("Quest Guard"), 20, 10, 10);
+    npc.flags.remove(CharacterFlags::PLAYER);
+    npc.driver = CDR_LQNPC;
+    npc.hp = POWERSCALE;
+    npc.driver_state = Some(CharacterDriverState::LqNpc(
+        ugaris_core::world::npc::area20::LqNpcDriverData {
+            slot: 3,
+            kill_mark_id: 2,
+            hurt_mark_id: 5,
+            ..Default::default()
+        },
+    ));
+    let killer = login_character(CharacterId(2), &login_block("Killer"), 20, 11, 10);
+    world.add_character(npc);
+    world.add_character(killer);
+    assert!(world.configure_lq_npc(ugaris_core::world::LqNpcState {
+        slot: 3,
+        basename: "guard".to_string(),
+        x: 10,
+        y: 10,
+        dir: 0,
+        level: 1,
+        mode: b'f',
+        respawn_seconds: 30,
+        name: String::new(),
+        description: String::new(),
+        nick: [String::new(), String::new()],
+        character_id: None,
+        character_serial: 0,
+        sprite: 0,
+        greeting: String::new(),
+        trigger: [
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new()
+        ],
+        reply: [
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new()
+        ],
+        want_key_id: 0,
+        reward_item: ugaris_core::world::LqItemSpec::default(),
+        reward_mark_id: 0,
+        kill_mark_id: 0,
+        hurt_mark_id: 0,
+        carry_item: ugaris_core::world::LqItemSpec::default(),
+        carry_gold: 0,
+    }));
+    assert!(world.apply_lq_npc_spawn_result(3, CharacterId(1), 1));
+
+    let mut runtime = ServerRuntime::default();
+    let mut player = PlayerRuntime::connected(1, 0);
+    player.character_id = Some(CharacterId(2));
+    runtime.players.insert(1, player);
+
+    world.apply_legacy_hurt(
+        CharacterId(1),
+        Some(CharacterId(2)),
+        POWERSCALE * 2,
+        1,
+        0,
+        0,
+    );
+    apply_pk_hate_from_hurt_events(&mut runtime, &mut world, 0, &ZoneLoader::new());
+
+    assert_eq!(
+        world.lq_npc_respawns,
+        vec![(3, world.tick.0 + 30 * TICKS_PER_SECOND)]
+    );
+    let npc = world.lq_npcs.iter().find(|npc| npc.slot == 3).unwrap();
+    assert_eq!(npc.character_id, None);
+    assert_eq!(npc.character_serial, 0);
+    let player = runtime.player_for_character(CharacterId(2)).unwrap();
+    assert!(player.lq_mark(2));
+    assert!(player.lq_mark(5));
+}
+
+#[test]
+fn lqnpc_death_handler_ignores_non_matching_driver_and_non_lethal_hits() {
+    let mut world = World::default();
+    let mut other_npc = login_character(CharacterId(1), &login_block("Other"), 20, 10, 10);
+    other_npc.flags.remove(CharacterFlags::PLAYER);
+    other_npc.hp = POWERSCALE * 5;
+    world.add_character(other_npc);
+
+    let non_lethal = LegacyHurtEvent {
+        target_id: CharacterId(1),
+        cause_id: CharacterId(2),
+        outcome: LegacyHurtOutcome {
+            killed: false,
+            ..Default::default()
+        },
+    };
+    let mut runtime = ServerRuntime::default();
+    assert!(!apply_lqnpc_death_from_hurt_event(
+        &mut runtime,
+        &mut world,
+        non_lethal
+    ));
+
+    let mut world2 = World::default();
+    let mut wrong_driver_npc = login_character(CharacterId(1), &login_block("Other"), 20, 10, 10);
+    wrong_driver_npc.flags.remove(CharacterFlags::PLAYER);
+    wrong_driver_npc.driver = CDR_LAMPGHOST; // not CDR_LQNPC
+    world2.add_character(wrong_driver_npc);
+
+    let lethal_wrong_driver = LegacyHurtEvent {
+        target_id: CharacterId(1),
+        cause_id: CharacterId(2),
+        outcome: LegacyHurtOutcome {
+            killed: true,
+            ..Default::default()
+        },
+    };
+    assert!(!apply_lqnpc_death_from_hurt_event(
+        &mut runtime,
+        &mut world2,
+        lethal_wrong_driver
+    ));
+}

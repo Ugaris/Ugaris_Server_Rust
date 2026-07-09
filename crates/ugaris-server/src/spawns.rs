@@ -1,4 +1,8 @@
 use super::*;
+use ugaris_core::{
+    character_driver::{CharacterDriverState, FightDriverData},
+    world::npc::area20::LqNpcDriverData,
+};
 
 pub(crate) fn spawn_edemon_gate_character(
     world: &mut World,
@@ -397,12 +401,57 @@ pub(crate) fn spawn_lq_npc_character(
     character.endurance =
         i32::from(character.values[0][CharacterValue::Endurance as usize]) * POWERSCALE;
     character.mana = i32::from(character.values[0][CharacterValue::Mana as usize]) * POWERSCALE;
+    // C `spawn_npc`: `ch[cn].gold = lq_npc[n].carry_gold;` and, when set,
+    // `if (lq_npc[n].sprite) ch[cn].sprite = lq_npc[n].sprite;`
+    // (`lq.c:1751-1754`).
+    character.gold = request.carry_gold;
+    if request.sprite != 0 {
+        character.sprite = request.sprite;
+    }
+    // C `dat = set_data(cn, DRD_LQ_NPC_DATA, ...); dat->n = n; dat->mode =
+    // ...; dat->greeting = ...; ...` (`lq.c:1801-1834`).
+    character.driver_state = Some(CharacterDriverState::LqNpc(LqNpcDriverData {
+        slot: request.slot,
+        mode: request.mode,
+        greeting: request.greeting.clone(),
+        trigger: request.trigger.clone(),
+        reply: request.reply.clone(),
+        want_key_id: request.want_key_id,
+        reward_item: request.reward_item.clone(),
+        reward_mark_id: request.reward_mark_id,
+        kill_mark_id: request.kill_mark_id,
+        hurt_mark_id: request.hurt_mark_id,
+        dir: request.dir,
+        follow: None,
+    }));
+    // C `lqnpc`'s own `NT_CREATE` handler: `fight_driver_set_dist(cn, 30,
+    // 0, 60)` (`lq.c:2761`) - seeded directly at spawn time instead of
+    // round-tripping an `NT_CREATE` message, same precedent as
+    // `world::npc::area19::madhermit`'s own module doc comment.
+    character.fight_driver = Some(FightDriverData {
+        start_dist: 30,
+        char_dist: 0,
+        stop_dist: 60,
+        ..FightDriverData::default()
+    });
     let serial = character.serial;
     if !world.spawn_character(character, usize::from(request.x), usize::from(request.y)) {
         return false;
     }
     for item in inventory_items {
         world.items.insert(item.id, item);
+    }
+    // C `if (lq_npc[n].carry_item.base[0] && (in = create_lq_item(&lq_npc
+    // [n].carry_item)) && !give_char_item(cn, in)) destroy_item(in);`
+    // (`lq.c:1807-1809`).
+    if !request.carry_item.base.is_empty() {
+        if let Some(item_id) =
+            crate::area20::create_lq_item(loader, world, Some(character_id), &request.carry_item)
+        {
+            if !world.give_char_item(character_id, item_id) {
+                world.destroy_item(item_id);
+            }
+        }
     }
     world.apply_lq_npc_spawn_result(request.slot, character_id, serial)
 }

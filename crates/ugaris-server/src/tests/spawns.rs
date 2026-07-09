@@ -31,6 +31,10 @@ fn lq_npc_spawn_request_instantiates_template_and_records_slot_identity() {
                 dagger3q1:
                   name="Quest Dagger"
                 ;
+                lq_key:
+                  name="Key"
+                  description="A key from the Life Quest Area."
+                ;
             "#,
         )
         .unwrap();
@@ -49,6 +53,32 @@ fn lq_npc_spawn_request_instantiates_template_and_records_slot_identity() {
         nick: [String::new(), String::new()],
         character_id: None,
         character_serial: 0,
+        sprite: 0,
+        greeting: String::new(),
+        trigger: [
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+        ],
+        reply: [
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+        ],
+        want_key_id: 0,
+        reward_item: ugaris_core::world::LqItemSpec::default(),
+        reward_mark_id: 0,
+        kill_mark_id: 0,
+        hurt_mark_id: 0,
+        carry_item: ugaris_core::world::LqItemSpec {
+            base: "key".to_string(),
+            ..Default::default()
+        },
+        carry_gold: 42,
     }));
     let request = ugaris_core::world::LqNpcSpawnRequest {
         slot: 2,
@@ -61,6 +91,32 @@ fn lq_npc_spawn_request_instantiates_template_and_records_slot_identity() {
         name: "Quest Guard".to_string(),
         description: "A live quest guard.".to_string(),
         nick: [String::new(), String::new()],
+        sprite: 0,
+        greeting: "Halt!".to_string(),
+        trigger: [
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+        ],
+        reply: [
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+        ],
+        want_key_id: 0,
+        reward_item: ugaris_core::world::LqItemSpec::default(),
+        reward_mark_id: 0,
+        kill_mark_id: 0,
+        hurt_mark_id: 0,
+        carry_item: ugaris_core::world::LqItemSpec {
+            base: "key".to_string(),
+            ..Default::default()
+        },
+        carry_gold: 42,
     };
     let mut runtime = ServerRuntime::default();
     runtime.set_next_character_id(200);
@@ -137,6 +193,30 @@ fn lq_npc_spawn_request_instantiates_template_and_records_slot_identity() {
     let npc = world.lq_npcs.iter().find(|npc| npc.slot == 2).unwrap();
     assert_eq!(npc.character_id, Some(CharacterId(200)));
     assert_eq!(npc.character_serial, character.serial);
+
+    assert_eq!(character.gold, 42);
+    assert_eq!(
+        character.fight_driver,
+        Some(ugaris_core::character_driver::FightDriverData {
+            start_dist: 30,
+            char_dist: 0,
+            stop_dist: 60,
+            ..Default::default()
+        })
+    );
+    match character.driver_state.as_ref() {
+        Some(ugaris_core::character_driver::CharacterDriverState::LqNpc(data)) => {
+            assert_eq!(data.slot, 2);
+            assert_eq!(data.mode, b'n');
+            assert_eq!(data.greeting, "Halt!");
+        }
+        other => panic!("expected LqNpc driver state, got {other:?}"),
+    }
+    let carry_item_id = character.cursor_item.expect("carry item on cursor");
+    let carry_item = world.items.get(&carry_item_id).unwrap();
+    assert_eq!(carry_item.name, "Key");
+    assert_eq!(carry_item.carried_by, Some(CharacterId(200)));
+    assert!(carry_item.flags.contains(ItemFlags::LABITEM));
 }
 
 #[test]

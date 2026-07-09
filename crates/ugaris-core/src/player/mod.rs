@@ -15,6 +15,7 @@ mod arena;
 mod chests;
 mod keyring;
 mod labs;
+mod lq;
 mod military;
 mod misc;
 mod pk;
@@ -44,6 +45,7 @@ use crate::{
     quest::{QuestLog, MAX_QUESTS},
     tell::TellData,
     tick::TICKS_PER_SECOND,
+    world::MAXLQMARK,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -483,6 +485,15 @@ pub struct PlayerRuntime {
     /// field on `PlayerRuntime`, no legacy blob codec needed.
     #[serde(default)]
     pub islena_state: i32,
+    /// C `struct lq_plr_data::mark[MAXLQMARK]` (`src/area/20/lq.c:186-
+    /// 192`, `DRD_LQ_PLR_DATA`): per-player Live Quest bits set by
+    /// `lqnpc`'s `NT_GOTHIT` handler and `lqnpc_died`'s `hurt_markID`/
+    /// `kill_markID` (index `0` unused, matching C's own `mark[1..]`
+    /// convention). See [`crate::player::lq`] for the accessors. New
+    /// persistent state per `AGENTS.md`'s persistence rule: a plain
+    /// `#[serde(default)]` field, no legacy blob codec needed.
+    #[serde(default)]
+    pub lq_marks: [bool; MAXLQMARK],
     /// C `struct pent_debug_data`/`struct pentagram_player_data`
     /// (`command.c:1136-1143`, `area/4/pents.c:130-139`), stored at
     /// `DRD_PENT_NPPD`. Unlike every neighboring `_PPD` id in
@@ -712,6 +723,7 @@ impl PlayerRuntime {
             stats_ppd: Vec::new(),
             teufel_rat_kills: 0,
             teufel_rat_score: 0,
+            lq_marks: [false; MAXLQMARK],
             bank_gold: 0,
             twocity_ppd: Vec::new(),
             lab_ppd: Vec::new(),

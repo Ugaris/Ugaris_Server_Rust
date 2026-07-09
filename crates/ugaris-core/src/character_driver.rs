@@ -522,6 +522,7 @@ pub enum CharacterDriverState {
     ForestHermit(ForestHermitDriverData),
     Nomad(crate::world::npc::area19::NomadDriverData),
     Madhermit(crate::world::npc::area19::MadhermitDriverData),
+    LqNpc(crate::world::npc::area20::LqNpcDriverData),
 }
 /// C `bank_driver_parse` from `src/module/bank.c`. The C driver defaults
 /// opening hours to 6..23 before parsing (`bank_driver` lines 304-309).
@@ -1308,7 +1309,8 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::TwoThiefGuard(_)
             | CharacterDriverState::TwoThiefMaster(_)
             | CharacterDriverState::Nomad(_)
-            | CharacterDriverState::Madhermit(_),
+            | CharacterDriverState::Madhermit(_)
+            | CharacterDriverState::LqNpc(_),
         ) => SimpleBaddyDriverData::default(),
         None => SimpleBaddyDriverData::default(),
     };

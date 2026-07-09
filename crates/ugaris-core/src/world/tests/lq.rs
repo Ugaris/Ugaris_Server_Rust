@@ -88,6 +88,29 @@ fn lq_ticker_queues_due_npc_respawns_and_clears_schedule() {
         nick: ["guard".to_string(), "gate".to_string()],
         character_id: None,
         character_serial: 0,
+        sprite: 0,
+        greeting: String::new(),
+        trigger: [
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new()
+        ],
+        reply: [
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new()
+        ],
+        want_key_id: 0,
+        reward_item: LqItemSpec::default(),
+        reward_mark_id: 0,
+        kill_mark_id: 0,
+        hurt_mark_id: 0,
+        carry_item: LqItemSpec::default(),
+        carry_gold: 0,
     }));
     assert!(world.schedule_lq_npc_respawn(3, 199));
     assert!(!world.schedule_lq_npc_respawn(0, 199));
@@ -122,6 +145,29 @@ fn lq_ticker_queues_due_npc_respawns_and_clears_schedule() {
             name: "Gate Guard".to_string(),
             description: "A stern live quest guard.".to_string(),
             nick: ["guard".to_string(), "gate".to_string()],
+            sprite: 0,
+            greeting: String::new(),
+            trigger: [
+                String::new(),
+                String::new(),
+                String::new(),
+                String::new(),
+                String::new()
+            ],
+            reply: [
+                String::new(),
+                String::new(),
+                String::new(),
+                String::new(),
+                String::new()
+            ],
+            want_key_id: 0,
+            reward_item: LqItemSpec::default(),
+            reward_mark_id: 0,
+            kill_mark_id: 0,
+            hurt_mark_id: 0,
+            carry_item: LqItemSpec::default(),
+            carry_gold: 0,
         }]
     );
 }
@@ -151,6 +197,29 @@ fn lq_ticker_keeps_future_npc_respawns_pending() {
         nick: [String::new(), String::new()],
         character_id: None,
         character_serial: 0,
+        sprite: 0,
+        greeting: String::new(),
+        trigger: [
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new()
+        ],
+        reply: [
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new()
+        ],
+        want_key_id: 0,
+        reward_item: LqItemSpec::default(),
+        reward_mark_id: 0,
+        kill_mark_id: 0,
+        hurt_mark_id: 0,
+        carry_item: LqItemSpec::default(),
+        carry_gold: 0,
     }));
     assert!(world.schedule_lq_npc_respawn(2, 201));
 
@@ -189,6 +258,29 @@ fn lq_spawn_result_records_live_character_identity() {
         nick: [String::new(), String::new()],
         character_id: None,
         character_serial: 0,
+        sprite: 0,
+        greeting: String::new(),
+        trigger: [
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new()
+        ],
+        reply: [
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new()
+        ],
+        want_key_id: 0,
+        reward_item: LqItemSpec::default(),
+        reward_mark_id: 0,
+        kill_mark_id: 0,
+        hurt_mark_id: 0,
+        carry_item: LqItemSpec::default(),
+        carry_gold: 0,
     }));
 
     assert!(world.apply_lq_npc_spawn_result(4, CharacterId(77), 12345));

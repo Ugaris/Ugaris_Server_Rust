@@ -12,6 +12,7 @@ pub(crate) mod area16;
 pub(crate) mod area17;
 pub(crate) mod area19;
 pub(crate) mod area2;
+pub(crate) mod area20;
 pub(crate) mod area22;
 pub(crate) mod area3;
 pub(crate) mod area30;
@@ -2167,6 +2168,27 @@ pub(crate) async fn run_all(
     .await;
 
     area19::madhermit_driver_106(
+        &mut *world,
+        &mut *runtime,
+        &mut *zone_loader,
+        config,
+        args,
+        completed_actions,
+        achievement_repository,
+        character_repository,
+        area_repository,
+        clan_repository,
+        clan_log_repository,
+        merchant_repository,
+        military_master_storage_repository,
+        military_advisor_storage_repository,
+        notes_repository,
+        anticheat_repository,
+        auction_repository,
+    )
+    .await;
+
+    area20::lqnpc_driver_107(
         &mut *world,
         &mut *runtime,
         &mut *zone_loader,

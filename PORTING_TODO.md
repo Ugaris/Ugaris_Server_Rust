@@ -861,8 +861,27 @@ Ordered by player progression; the C file is the oracle.
   to the nomad NPC). `world/npc/area19/{nomad,nomad_dialogue,nomad_text,
   nomad_give,nomad_bet,madhermit}.rs` + `ugaris-server/src/area19.rs` +
   `tick_npc/area19.rs`; details in PORTING_LEDGER.md)*
-- [ ] **Area 20 - `src/area/20/lq.c`** - live-quest admin command table,
+- [~] **Area 20 - `src/area/20/lq.c`** - live-quest admin command table,
   LQ NPC dialogue (spawn/raise/equipment ported).
+  REMAINING: `lqnpc`'s per-tick dialogue/movement driver (`NT_CHAR`
+  greeting, `NT_GOTHIT` hurt-mark plus aggressive-mode self-defense,
+  `NT_TEXT` trigger/reply plus "followme"/"stopfollow" admin-mirroring,
+  `NT_GIVE` quest-item turn-in) and `lqnpc_died`'s respawn-scheduling/
+  kill-hurt-mark death hook are now ported
+  (`world/npc/area20/lqnpc.rs`, `ugaris-server/src/area20.rs` +
+  `tick_npc/area20.rs`, `world_events::death_hooks::
+  apply_lqnpc_death_from_hurt_event`), including a new `LqItemSpec`/
+  `make_lq_item_template_id` (`create_lq_item` port, `Item::template_id`
+  as C's `it[in].ID`) and a new typed `PlayerRuntime::lq_marks`
+  (`DRD_LQ_PLR_DATA`). `LqNpcState`/`LqNpcSpawnRequest` widened with the
+  dialogue/reward fields C's `spawn_npc` copies into `DRD_LQ_NPC_DATA`.
+  Deliberately NOT ported (unreachable without it): the `usurp` god/
+  LQMaster-possession `domirror` movement branch, since only the
+  `special_driver` admin command table below can ever set `dat->usurp`
+  (see `lqnpc.rs`'s own module doc comment). Still entirely unported: the
+  ~45-subcommand `CDR_LQPARSER` admin command table (NPC template CRUD,
+  quest lifecycle, door lock/unlock, `#usurp`/`#follow` possession),
+  `questsave`/`questload` file I/O, and `#xinfo`.
 - [ ] **Area 22 - `src/area/22/lab*.c`** - remaining lab mechanics per
   lab; lab2 undead mostly ported; gatekeeper depends on P2.
 - [ ] **Areas 23/24 - `src/area/23_24/strategy.c` (3,599 lines)** - the
@@ -930,6 +949,11 @@ Keep entries to at most three lines: date, task, one-line result.
 Anything longer belongs in `PORTING_LEDGER.md`; historical verbose
 notes live in `PROGRESS_ARCHIVE.md`.
 
+- 2026-07-09: Area 20 STARTED: ported `lqnpc`'s per-tick dialogue/
+  movement driver + `lqnpc_died`'s death hook (new `world/npc/area20/`,
+  `LqItemSpec`, `PlayerRuntime::lq_marks`). Admin command table (~45
+  subcommands) remains. 3095 core + 1140 server tests pass, clean
+  build/boot-smoke (areas 1 + 20).
 - 2026-07-09: Area 19 CLOSED: ported `CDR_NOMAD` (all 6 personas incl. the
   `Llakal Sla` dice-betting minigame) + `CDR_MADHERMIT`, and fixed a real
   gap (dice rolls never reached the nomad NPC). 3088 core + 1138 server
