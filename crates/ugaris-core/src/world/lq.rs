@@ -237,29 +237,8 @@ impl World {
             let Some(npc) = self.lq_npcs.iter().find(|npc| npc.slot == slot) else {
                 continue;
             };
-            self.pending_lq_npc_spawns.push(LqNpcSpawnRequest {
-                slot: npc.slot,
-                basename: npc.basename.clone(),
-                x: npc.x,
-                y: npc.y,
-                dir: npc.dir,
-                level: npc.level,
-                mode: npc.mode,
-                name: npc.name.clone(),
-                description: npc.description.clone(),
-                nick: npc.nick.clone(),
-                sprite: npc.sprite,
-                greeting: npc.greeting.clone(),
-                trigger: npc.trigger.clone(),
-                reply: npc.reply.clone(),
-                want_key_id: npc.want_key_id,
-                reward_item: npc.reward_item.clone(),
-                reward_mark_id: npc.reward_mark_id,
-                kill_mark_id: npc.kill_mark_id,
-                hurt_mark_id: npc.hurt_mark_id,
-                carry_item: npc.carry_item.clone(),
-                carry_gold: npc.carry_gold,
-            });
+            self.pending_lq_npc_spawns
+                .push(build_lq_npc_spawn_request(npc));
             if let Some((_, due_tick)) = self
                 .lq_npc_respawns
                 .iter_mut()
@@ -269,5 +248,36 @@ impl World {
             }
         }
         self.lq_npc_respawns.retain(|(_, due_tick)| *due_tick != 0);
+    }
+}
+
+/// Builds the `ZoneLoader`-needing spawn payload for `npc` (C `spawn_npc`'s
+/// `lq_npc[n]` field copy, `lq.c:1748-1834`, minus the parts only
+/// `spawn_npc` itself performs). Shared by the scheduled-respawn path
+/// (`queue_due_lq_npc_respawns`) and the immediate `#nspawn` admin command
+/// (`world::lq_admin`).
+pub(crate) fn build_lq_npc_spawn_request(npc: &LqNpcState) -> LqNpcSpawnRequest {
+    LqNpcSpawnRequest {
+        slot: npc.slot,
+        basename: npc.basename.clone(),
+        x: npc.x,
+        y: npc.y,
+        dir: npc.dir,
+        level: npc.level,
+        mode: npc.mode,
+        name: npc.name.clone(),
+        description: npc.description.clone(),
+        nick: npc.nick.clone(),
+        sprite: npc.sprite,
+        greeting: npc.greeting.clone(),
+        trigger: npc.trigger.clone(),
+        reply: npc.reply.clone(),
+        want_key_id: npc.want_key_id,
+        reward_item: npc.reward_item.clone(),
+        reward_mark_id: npc.reward_mark_id,
+        kill_mark_id: npc.kill_mark_id,
+        hurt_mark_id: npc.hurt_mark_id,
+        carry_item: npc.carry_item.clone(),
+        carry_gold: npc.carry_gold,
     }
 }

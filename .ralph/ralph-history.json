@@ -3474,15 +3474,47 @@
         "test result: ok. 45 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 1140 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 7.74s"
       ]
+    },
+    {
+      "iteration": 99,
+      "startedAt": "2026-07-09T03:58:38.681Z",
+      "endedAt": "2026-07-09T04:22:24.535Z",
+      "durationMs": 1424642,
+      "agent": "opencode",
+      "model": "anthropic/claude-sonnet-5",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "PORTING_TODO.md",
+        "crates/ugaris-core/src/world/lq.rs",
+        "crates/ugaris-core/src/world/lq_admin.rs",
+        "crates/ugaris-core/src/world/mod.rs",
+        "crates/ugaris-core/src/world/tests/lq_admin.rs",
+        "crates/ugaris-server/src/tick_client_actions.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "Everything is green: clean `cargo fmt --all`, `cargo test --workspace` (3150 core + 1140 server + all other crates passing, zero failures/warnings), `cargo build -p ugaris-server` clean, and boot-smok",
+        "test result: ok. 1140 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 7.78s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "error: could not compile `ugaris-core` (lib) due to 5 previous errors",
+        "error: could not compile `ugaris-server` (bin \"ugaris-server\") due to 3 previous errors",
+        "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&1 | grep -E \"test result|FAILED|error\\[\"",
+        "test result: ok. 3131 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.26s",
+        "test result: ok. 81 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+      ]
     }
   ],
-  "totalDurationMs": 146575862,
+  "totalDurationMs": 148000504,
   "struggleIndicators": {
     "repeatedErrors": {
       "Everything builds cleanly, all tests pass (2380 core + 1091 server, zero failures, zero warnings), f": 1,
       "Verification: `cargo fmt --all`, `cargo test --workspace` (2380 ugaris-core + 1091 ugaris-server, al": 1,
       "test result: ok. 1089 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.09s": 1,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 98,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 99,
       "The arguments provided to the tool are invalid: Invalid input for tool read: JSON parsing failed: Te": 17,
       "Error message: JSON Parse error: Property name must be a string literal": 14,
       "error: could not compile `ugaris-core` (lib) due to 4 previous errors": 2,
@@ -3499,9 +3531,9 @@
       "test result: ok. 2380 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.19s": 3,
       "test result: ok. 78 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 35,
       "test result: ok. 1091 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.09s": 17,
-      "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&": 62,
+      "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&": 63,
       "test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s": 24,
-      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 36,
+      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 37,
       "test result: ok. 45 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 31,
       "error: could not compile `ugaris-core` (lib) due to 1 previous error; 1 warning emitted": 1,
       "test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 2380 filtered out; finished in 0.00s": 1,
@@ -3632,7 +3664,7 @@
       "All 2534 + 1101 tests unchanged, zero failures. Now let's check file line counts against the ~2,000 ": 1,
       "Everything is clean: zero warnings, zero failures, all 2534 core + 1101 server tests pass, boot-smok": 1,
       "- Verified: `cargo fmt --all`, `cargo test --workspace` (2534 core + 1101 server, zero failures/warn": 1,
-      "test result: ok. 0 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 0.00s": 23,
+      "test result: ok. 0 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 0.00s": 24,
       "Tests pass. Let's check for failures more carefully and then read PORTING_TODO.md.": 1,
       "All tests pass, no failures. Health check green. Now let's read PORTING_TODO.md fully.": 1,
       "All green: 2553 core + 1101 server tests, zero failures. Everything is clean: fmt, build, tests, and": 1,
@@ -3708,7 +3740,7 @@
       "All green, no failures, no build warnings (matches are test names containing \"warning\", not compiler": 1,
       "- `cargo test --workspace`: 2712 core (+1 new regression test) + 81 db + 3 net + 45 protocol + 1108 ": 1,
       "test result: ok. 2711 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.23s": 1,
-      "test result: ok. 81 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 23,
+      "test result: ok. 81 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 24,
       "- **14 new focused tests**, all passing; full workspace suite green (2724 core + 1108 server + other": 1,
       ".ok_or(ZoneError::MapOutOfBounds {": 1,
       "test world::tests::fdemon::build_connects_waypoints_forty_tiles_apart ... FAILED": 1,
@@ -3853,7 +3885,12 @@
       "Build is green. Let's check the full test output for any failures and then read the TODO list.": 1,
       "All green: 3131 core + 81 db + 3 net + 45 protocol + 1140 server tests pass, zero failures, zero war": 1,
       "test result: ok. 3124 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.26s": 1,
-      "test result: ok. 1140 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 7.74s": 1
+      "test result: ok. 1140 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 7.74s": 1,
+      "Everything is green: clean `cargo fmt --all`, `cargo test --workspace` (3150 core + 1140 server + al": 1,
+      "test result: ok. 1140 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 7.78s": 1,
+      "error: could not compile `ugaris-core` (lib) due to 5 previous errors": 1,
+      "error: could not compile `ugaris-server` (bin \"ugaris-server\") due to 3 previous errors": 1,
+      "test result: ok. 3131 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.26s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

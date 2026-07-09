@@ -901,7 +901,30 @@ Ordered by player progression; the C file is the oracle.
   (`world/lq_admin.rs`'s `lq_admin_cmd_doorlist`/`lq_admin_cmd_doorlock`),
   reusing the pre-existing `World::lq_doors`/`discover_lq_doors_once`/
   `write_lq_door_key_id` scaffolding from the `LqTicker` port - pure
-  `World` logic, no `ZoneLoader`/`PlayerRuntime` needed.
+  `World` logic, no `ZoneLoader`/`PlayerRuntime` needed. Third slice
+  done: the live-instance-control family (`#nremove`/`#nsay`/
+  `#nimmortal`/`#nemote`/`#nattack`, all pure `World` logic, plus
+  `#nspawn`, the one command in this family needing `ZoneLoader` for a
+  brand new character) is now ported. `#nspawn` is dispatched via its own
+  `World::try_dispatch_lq_nspawn`/`LqNspawnDispatch` (see that type's doc
+  comment) from `tick_client_actions.rs`, ahead of `apply_lq_admin_command`,
+  reusing `spawns::spawn_lq_npc_character` (the same instantiation path
+  `#npcrespawn`'s scheduled respawns already use) and a new shared
+  `build_lq_npc_spawn_request` (factored out of `queue_due_lq_npc_respawns`).
+  `lq_admin_remove_npc_instance` (shared by `#npcdelete` and the new
+  `#nremove`) now returns C `remove_npc`'s real `bool` (a pending
+  scheduled respawn counts as "removed" even with no live instance) and
+  resets the template's `character_id`/`character_serial` on removal,
+  matching C's `lq_npc[n].cn = lq_npc[n].cserial = 0`. Still unported:
+  `#thrall`/`#killthrall` (need `DRD_LQ_NPC_DATA.thrallname`), `#usurp`/
+  `#follow`/`#stop`/`#exit`/`#wimp` (need a new `PlayerRuntime.usurp`
+  field, `#wimp` also needs a `teleport_char_driver`-equivalent free-tile
+  search), the whole quest-lifecycle family (`#questsave`/`#questdelete`/
+  `#questend`/`#questload`/`#questshow`/`#questreward`/`#questlevel`/
+  `#questreset`/`#questentrance`/`#queststart`, `#xinfo` - needs a new
+  `lq_data` `World` field C never got ported here), and
+  `#questsave`/`#questload`'s file I/O (a genuinely new pattern for this
+  codebase).
 - [ ] **Area 22 - `src/area/22/lab*.c`** - remaining lab mechanics per
   lab; lab2 undead mostly ported; gatekeeper depends on P2.
 - [ ] **Areas 23/24 - `src/area/23_24/strategy.c` (3,599 lines)** - the
@@ -969,6 +992,10 @@ Keep entries to at most three lines: date, task, one-line result.
 Anything longer belongs in `PORTING_LEDGER.md`; historical verbose
 notes live in `PROGRESS_ARCHIVE.md`.
 
+- 2026-07-09: Area 20 progress: ported the `CDR_LQPARSER` admin command
+  table's live-instance-control family (`#nspawn`/`#nremove`/`#nsay`/
+  `#nimmortal`/`#nemote`/`#nattack`, `world/lq_admin.rs`). 3150 core +
+  1140 server tests pass, clean build/boot-smoke.
 - 2026-07-09: Area 20 progress: ported the `CDR_LQPARSER` admin command
   table's `#doorlist`/`#doorlock` pair (`world/lq_admin.rs`, reusing the
   existing `LqDoorState`/`discover_lq_doors_once` scaffolding). 3131 core

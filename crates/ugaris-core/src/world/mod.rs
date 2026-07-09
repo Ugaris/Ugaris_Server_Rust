@@ -41,6 +41,7 @@ mod look;
 mod loot;
 mod lq;
 mod lq_admin;
+pub use lq_admin::LqNspawnDispatch;
 mod mining;
 pub mod npc;
 mod npc_fight;

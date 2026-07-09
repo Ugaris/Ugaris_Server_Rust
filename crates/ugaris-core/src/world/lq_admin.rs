@@ -410,6 +410,26 @@ impl World {
             self.lq_admin_cmd_doorlock(character_id, args);
             return true;
         }
+        if cmd_word_matches(&word, "nremove", 5) {
+            self.lq_admin_cmd_nremove(character_id, args);
+            return true;
+        }
+        if cmd_word_matches(&word, "nsay", 4) {
+            self.lq_admin_cmd_nsay(character_id, args);
+            return true;
+        }
+        if cmd_word_matches(&word, "nimmortal", 4) {
+            self.lq_admin_cmd_nimmortal(character_id, args);
+            return true;
+        }
+        if cmd_word_matches(&word, "nemote", 4) {
+            self.lq_admin_cmd_nemote(character_id, args);
+            return true;
+        }
+        if cmd_word_matches(&word, "nattack", 4) {
+            self.lq_admin_cmd_nattack(character_id, args);
+            return true;
+        }
 
         false
     }
@@ -1213,26 +1233,39 @@ impl World {
         );
     }
 
-    /// C `remove_npc` (`lq.c:1839-1861`), called from `cmd_npcdel`. Any
-    /// pending scheduled respawn is cleared unconditionally; a live
-    /// instance is only destroyed if its serial still matches (the
-    /// template wasn't already respawned into a different character).
-    fn lq_admin_remove_npc_instance(&mut self, slot: usize) {
+    /// C `remove_npc` (`lq.c:1839-1861`), called from both `cmd_npcdel`
+    /// (return value ignored - the caller counts template deletions
+    /// unconditionally) and `cmd_nremove` (return value is the count).
+    /// Returns C's own `flag`/`1`/`0`: `true` if a live instance was
+    /// actually destroyed, or if there was no live instance but a
+    /// scheduled respawn was pending (and got cancelled); `false` only
+    /// when there was neither a live instance nor a pending respawn.
+    fn lq_admin_remove_npc_instance(&mut self, slot: usize) -> bool {
+        let had_scheduled_respawn = self
+            .lq_npc_respawns
+            .iter()
+            .any(|(s, due_tick)| *s == slot && *due_tick > self.tick.0);
         self.lq_npc_respawns.retain(|(s, _)| *s != slot);
         let Some(npc) = self.lq_npcs.iter().find(|npc| npc.slot == slot) else {
-            return;
+            return false;
         };
         let Some(character_id) = npc.character_id else {
-            return;
+            return had_scheduled_respawn;
         };
         let expected_serial = npc.character_serial;
         let live = self
             .characters
             .get(&character_id)
             .is_some_and(|character| character.serial == expected_serial);
-        if live {
-            self.remove_character(character_id);
+        if !live {
+            return had_scheduled_respawn;
         }
+        self.remove_character(character_id);
+        if let Some(npc) = self.lq_npcs.iter_mut().find(|npc| npc.slot == slot) {
+            npc.character_id = None;
+            npc.character_serial = 0;
+        }
+        true
     }
 
     /// C `cmd_npcdel` (`lq.c:1276-1312`).
@@ -1261,6 +1294,240 @@ impl World {
             self.queue_lq_error(character_id, "NPC not found.");
         } else {
             self.queue_system_text(character_id, format!("Deleted {count} NPCs."));
+        }
+    }
+
+    /// C `get_lq_char` (`lq.c:1935-1946`): the live character currently
+    /// spawned for template `slot`, or `None` if it was never spawned, has
+    /// already died/despawned, or was respawned into a different
+    /// character (serial mismatch, same guard as
+    /// [`Self::lq_admin_remove_npc_instance`]).
+    fn get_lq_char(&self, slot: usize) -> Option<CharacterId> {
+        let npc = self.lq_npcs.iter().find(|npc| npc.slot == slot)?;
+        let character_id = npc.character_id?;
+        let character = self.characters.get(&character_id)?;
+        (character.serial == npc.character_serial).then_some(character_id)
+    }
+
+    /// C `cmd_nremove` (`lq.c:1898-1932`): despawns (and cancels any
+    /// pending respawn for) every NPC matching `<npcID|nick|all>`,
+    /// without deleting the template itself (unlike `#npcdelete`).
+    fn lq_admin_cmd_nremove(&mut self, character_id: CharacterId, args: &str) {
+        const USAGE: &str = "/nremove <npcID|nick|all>";
+        let mut reader = ArgReader::new(args);
+        let Some(nick) = reader.take_str() else {
+            self.queue_lq_error(character_id, format!("Missing npcID. Usage is: {USAGE}."));
+            return;
+        };
+        if reader.has_trailing_garbage() {
+            self.queue_lq_error(
+                character_id,
+                format!("Trailing garbage. Usage is: {USAGE}."),
+            );
+            return;
+        }
+        let slots = self.resolve_lq_npc_slots(&nick, true);
+        let count = slots
+            .into_iter()
+            .filter(|slot| self.lq_admin_remove_npc_instance(*slot))
+            .count();
+        if count == 0 {
+            self.queue_lq_error(character_id, "NPC not found.");
+        } else {
+            self.queue_system_text(character_id, format!("Removed {count} NPCs."));
+        }
+    }
+
+    /// C `cmd_nsay` (`lq.c:1953-1988`): makes every live instance of the
+    /// matched template(s) `say` `text` (single already-tokenized word
+    /// unless quoted, matching every other `cmd_*` text argument in this
+    /// table). Only the nick/`all`-scan branch has C's ">10 matches,
+    /// cancel" guard - it never triggers on the single-numeric-ID branch
+    /// since that can only ever match one slot.
+    fn lq_admin_cmd_nsay(&mut self, character_id: CharacterId, args: &str) {
+        const USAGE: &str = "/nsay <npcID|nick> <text:str>";
+        let mut reader = ArgReader::new(args);
+        let Some(nick) = reader.take_str() else {
+            self.queue_lq_error(character_id, format!("Missing npcID. Usage is: {USAGE}."));
+            return;
+        };
+        let Some(text) = reader.take_str() else {
+            self.queue_lq_error(character_id, format!("Missing text. Usage is: {USAGE}."));
+            return;
+        };
+        if reader.has_trailing_garbage() {
+            self.queue_lq_error(
+                character_id,
+                format!("Trailing garbage. Usage is: {USAGE}."),
+            );
+            return;
+        }
+        let mut count = 0usize;
+        for slot in self.resolve_lq_npc_slots(&nick, false) {
+            let Some(target_id) = self.get_lq_char(slot) else {
+                continue;
+            };
+            self.npc_say(target_id, &text);
+            count += 1;
+            if count > 10 {
+                self.queue_lq_error(character_id, "Cancelled, too many NPCs.");
+                break;
+            }
+        }
+        if count == 0 {
+            self.queue_lq_error(character_id, "NPC not found.");
+        }
+    }
+
+    /// C `cmd_nimmortal` (`lq.c:1996-2043`): sets/clears `CF_IMMORTAL|
+    /// CF_NOATTACK` on every live instance of the matched template(s).
+    fn lq_admin_cmd_nimmortal(&mut self, character_id: CharacterId, args: &str) {
+        const USAGE: &str = "/nimmortal <npcID|nick> <0|1>";
+        let mut reader = ArgReader::new(args);
+        let Some(nick) = reader.take_str() else {
+            self.queue_lq_error(character_id, format!("Missing npcID. Usage is: {USAGE}."));
+            return;
+        };
+        let Some(onoff) = reader.take_int() else {
+            self.queue_lq_error(character_id, format!("Missing 0|1. Usage is: {USAGE}."));
+            return;
+        };
+        if reader.has_trailing_garbage() {
+            self.queue_lq_error(
+                character_id,
+                format!("Trailing garbage. Usage is: {USAGE}."),
+            );
+            return;
+        }
+        let mut count = 0usize;
+        for slot in self.resolve_lq_npc_slots(&nick, false) {
+            let Some(target_id) = self.get_lq_char(slot) else {
+                continue;
+            };
+            let Some(target) = self.characters.get_mut(&target_id) else {
+                continue;
+            };
+            if onoff != 0 {
+                target
+                    .flags
+                    .insert(CharacterFlags::IMMORTAL | CharacterFlags::NOATTACK);
+            } else {
+                target
+                    .flags
+                    .remove(CharacterFlags::IMMORTAL | CharacterFlags::NOATTACK);
+            }
+            count += 1;
+        }
+        if count == 0 {
+            self.queue_lq_error(character_id, "NPC not found.");
+        } else {
+            self.queue_system_text(
+                character_id,
+                format!(
+                    "Set immortal to {} on {} NPCs",
+                    if onoff != 0 { "ON" } else { "OFF" },
+                    count
+                ),
+            );
+        }
+    }
+
+    /// C `cmd_nemote` (`lq.c:2045-2087`): same shape as
+    /// [`Self::lq_admin_cmd_nsay`], but `emote` instead of `say`.
+    fn lq_admin_cmd_nemote(&mut self, character_id: CharacterId, args: &str) {
+        const USAGE: &str = "/nemote <npcID|nick> <text:str>";
+        let mut reader = ArgReader::new(args);
+        let Some(nick) = reader.take_str() else {
+            self.queue_lq_error(character_id, format!("Missing npcID. Usage is: {USAGE}."));
+            return;
+        };
+        let Some(text) = reader.take_str() else {
+            self.queue_lq_error(character_id, format!("Missing text. Usage is: {USAGE}."));
+            return;
+        };
+        if reader.has_trailing_garbage() {
+            self.queue_lq_error(
+                character_id,
+                format!("Trailing garbage. Usage is: {USAGE}."),
+            );
+            return;
+        }
+        let mut count = 0usize;
+        for slot in self.resolve_lq_npc_slots(&nick, false) {
+            let Some(target_id) = self.get_lq_char(slot) else {
+                continue;
+            };
+            self.npc_emote(target_id, &text);
+            count += 1;
+            if count > 10 {
+                self.queue_lq_error(character_id, "Cancelled, too many NPCs.");
+                break;
+            }
+        }
+        if count == 0 {
+            self.queue_lq_error(character_id, "NPC not found.");
+        }
+    }
+
+    /// C `cmd_nattack` (`lq.c:2088-2137`): looks up `<player:str>` among
+    /// every currently loaded character (`getfirst_char`/`getnext_char`,
+    /// no `CF_PLAYER` filter, matching the exact case-insensitive-name
+    /// idiom already established by
+    /// `world::admin_flag::find_loaded_character_by_name`), then queues
+    /// it as a `fight_driver` enemy on every live instance of the matched
+    /// NPC template(s). The single-numeric-ID branch passes C's
+    /// `hurtme=0` (bypasses `start_dist`/`char_dist` gating in the full
+    /// `fight_driver_add_enemy` - not modeled here, see
+    /// [`crate::character_driver::add_simple_baddy_enemy_unchecked`]'s own
+    /// doc comment); the nick/`all`-scan branch passes `hurtme=1`. Neither
+    fn lq_admin_cmd_nattack(&mut self, character_id: CharacterId, args: &str) {
+        const USAGE: &str = "/nattack <npcID|nick> <player:str>";
+        let mut reader = ArgReader::new(args);
+        let Some(nick) = reader.take_str() else {
+            self.queue_lq_error(character_id, format!("Missing npcID. Usage is: {USAGE}."));
+            return;
+        };
+        let Some(player_name) = reader.take_str() else {
+            self.queue_lq_error(character_id, format!("Missing text. Usage is: {USAGE}."));
+            return;
+        };
+        if reader.has_trailing_garbage() {
+            self.queue_lq_error(
+                character_id,
+                format!("Trailing garbage. Usage is: {USAGE}."),
+            );
+            return;
+        }
+        let Some(target_player_id) = self
+            .characters
+            .values()
+            .find(|character| character.name.eq_ignore_ascii_case(&player_name))
+            .map(|character| character.id)
+        else {
+            self.queue_lq_error(character_id, format!("Player {player_name} not found."));
+            return;
+        };
+        let numeric_id_branch = {
+            let numeric = legacy_atoi(&nick);
+            numeric > 0 && (numeric as usize) < MAX_LQ_NPCS
+        };
+        let priority = if numeric_id_branch { 0 } else { 1 };
+        let tick = self.tick.0 as i32;
+        let mut count = 0usize;
+        for slot in self.resolve_lq_npc_slots(&nick, false) {
+            let Some(target_id) = self.get_lq_char(slot) else {
+                continue;
+            };
+            let Some(target) = self.characters.get_mut(&target_id) else {
+                continue;
+            };
+            let _ = add_simple_baddy_enemy_unchecked(target, target_player_id, priority, tick);
+            count += 1;
+        }
+        if count == 0 {
+            self.queue_lq_error(character_id, "NPC not found.");
+        } else {
+            self.queue_system_text(character_id, format!("{count} NPCs attacking."));
         }
     }
 
@@ -1345,6 +1612,122 @@ impl World {
             self.queue_lq_error(character_id, "Door not found.");
         } else {
             self.queue_system_text(character_id, format!("Set key for {count} doors."));
+        }
+    }
+}
+
+/// Result of [`World::try_dispatch_lq_nspawn`] - unlike every other
+/// command in this table, `#nspawn`'s underlying C `spawn_npc`
+/// (`lq.c:1724-1822`) needs a fresh character (`create_char`/`drop_char`),
+/// which only `ugaris-server`'s `ZoneLoader`/`ServerRuntime` can provide.
+/// This type lets the pure-`World` half (area/permission gate, arg
+/// parsing, and the `already there`/`still respawning` eligibility checks
+/// `spawn_npc` itself performs before ever touching a character) stay
+/// here, while the caller performs the actual instantiation via
+/// `ugaris-server::spawns::spawn_lq_npc_character` and reports the result
+/// back through [`World::report_lq_nspawn_result`].
+pub enum LqNspawnDispatch {
+    /// Not `#nspawn`/`/nspawn`, or the caller lacked area/permission -
+    /// the caller should try other command dispatch tables next.
+    NotMatched,
+    /// Command matched but failed argument validation; the usage error is
+    /// already queued, nothing more to do.
+    Rejected,
+    /// Command matched and parsed; these NPC-template slots are eligible
+    /// to spawn right now (C's `spawn_npc` per-slot checks already
+    /// passed) - possibly empty, in which case the caller should still
+    /// call `report_lq_nspawn_result` with `count = 0` to get the
+    /// "NPC not found." message.
+    Requests(Vec<LqNpcSpawnRequest>),
+}
+
+impl World {
+    /// C `cmd_nspawn`'s pure-`World` half (`lq.c:1863-1896`) plus
+    /// `spawn_npc`'s own `already there`/`still respawning` guard
+    /// (`lq.c:1734-1741`) - see [`LqNspawnDispatch`]'s own doc comment for
+    /// why the actual character creation is deferred to the caller.
+    pub fn try_dispatch_lq_nspawn(
+        &mut self,
+        character_id: CharacterId,
+        area_id: u16,
+        command: &str,
+    ) -> LqNspawnDispatch {
+        if area_id != 20 && area_id != 35 {
+            return LqNspawnDispatch::NotMatched;
+        }
+        let trimmed = command.trim_start();
+        let Some(rest) = trimmed
+            .strip_prefix('#')
+            .or_else(|| trimmed.strip_prefix('/'))
+        else {
+            return LqNspawnDispatch::NotMatched;
+        };
+        let mut reader = ArgReader::new(rest);
+        let Some(word) = reader.take_str() else {
+            return LqNspawnDispatch::NotMatched;
+        };
+        if !cmd_word_matches(&word, "nspawn", 5) {
+            return LqNspawnDispatch::NotMatched;
+        }
+        let Some(flags) = self
+            .characters
+            .get(&character_id)
+            .map(|character| character.flags)
+        else {
+            return LqNspawnDispatch::NotMatched;
+        };
+        if !flags.intersects(CharacterFlags::GOD | CharacterFlags::LQMASTER) {
+            return LqNspawnDispatch::NotMatched;
+        }
+
+        const USAGE: &str = "/nspawn <npcID|nick|all>";
+        let Some(nick) = reader.take_str() else {
+            self.queue_lq_error(character_id, format!("Missing npcID. Usage is: {USAGE}."));
+            return LqNspawnDispatch::Rejected;
+        };
+        if reader.has_trailing_garbage() {
+            self.queue_lq_error(
+                character_id,
+                format!("Trailing garbage. Usage is: {USAGE}."),
+            );
+            return LqNspawnDispatch::Rejected;
+        }
+
+        let now = self.tick.0;
+        let requests = self
+            .resolve_lq_npc_slots(&nick, true)
+            .into_iter()
+            .filter(|slot| self.lq_nspawn_slot_eligible(*slot, now))
+            .filter_map(|slot| self.lq_npcs.iter().find(|npc| npc.slot == slot))
+            .map(build_lq_npc_spawn_request)
+            .collect();
+        LqNspawnDispatch::Requests(requests)
+    }
+
+    /// C `spawn_npc`'s own early-out guard (`lq.c:1734-1741`, the
+    /// `isthrall == 0` branch only - `#nspawn` never spawns thralls):
+    /// skip a slot whose live instance is still there, or whose scheduled
+    /// respawn cooldown (`#npcrespawn`/a previous death) hasn't elapsed
+    /// yet.
+    fn lq_nspawn_slot_eligible(&self, slot: usize, now: u64) -> bool {
+        if self.get_lq_char(slot).is_some() {
+            return false;
+        }
+        !self
+            .lq_npc_respawns
+            .iter()
+            .any(|(s, due_tick)| *s == slot && *due_tick >= now)
+    }
+
+    /// Reports the actual spawn count (`ugaris-server` already attempted
+    /// every [`LqNspawnDispatch::Requests`] candidate via `ZoneLoader`) -
+    /// C `cmd_nspawn`'s trailing `if (!cnt) ... else ...` (`lq.c:1892-
+    /// 1896`).
+    pub fn report_lq_nspawn_result(&mut self, character_id: CharacterId, count: usize) {
+        if count == 0 {
+            self.queue_lq_error(character_id, "NPC not found.");
+        } else {
+            self.queue_system_text(character_id, format!("Spawned {count} NPCs."));
         }
     }
 }

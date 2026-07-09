@@ -567,3 +567,301 @@ fn doorlock_rejects_trailing_garbage() {
     assert!(world.apply_lq_admin_command(caller, 20, "#doorlock north-gate 5 extra"));
     assert!(error_text(&mut world).starts_with("Trailing garbage. Usage is: /doorlock"));
 }
+
+/// Creates an `lq_npcs` template (slot 1, nick `nick`) then attaches a
+/// live character to it via `apply_lq_npc_spawn_result`, simulating a
+/// completed `ugaris-server::spawns::spawn_lq_npc_character` (this test
+/// file never exercises the real `ZoneLoader`-needing spawn path).
+fn spawn_live_lq_npc(
+    world: &mut World,
+    caller: CharacterId,
+    nick: &str,
+    live_id: u32,
+) -> CharacterId {
+    world.apply_lq_admin_command(caller, 20, &format!("#npc base 1 a 0 {nick}"));
+    plain_texts(world);
+    let character_id = CharacterId(live_id);
+    let mut spawned = character(live_id);
+    spawned.name = "Spawned NPC".to_string();
+    world.characters.insert(character_id, spawned);
+    assert!(world.apply_lq_npc_spawn_result(1, character_id, live_id));
+    character_id
+}
+
+#[test]
+fn nremove_despawns_live_instance_but_keeps_template() {
+    let mut world = World::default();
+    let caller = god(&mut world, 1, 1, 1);
+    let npc_id = spawn_live_lq_npc(&mut world, caller, "gate", 50);
+
+    assert!(world.apply_lq_admin_command(caller, 20, "#nremove gate"));
+    assert_eq!(plain_texts(&mut world), vec!["Removed 1 NPCs.".to_string()]);
+    assert!(!world.characters.contains_key(&npc_id));
+    // The template itself survives - unlike `#npcdelete`.
+    assert_eq!(world.lq_npcs.len(), 1);
+    assert_eq!(world.lq_npcs[0].nick[0], "gate");
+}
+
+#[test]
+fn nremove_supports_all_keyword() {
+    let mut world = World::default();
+    let caller = god(&mut world, 1, 1, 1);
+    spawn_live_lq_npc(&mut world, caller, "one", 50);
+    let caller2 = god(&mut world, 2, 2, 2);
+    world.apply_lq_admin_command(caller2, 20, "#npc base2 1 a 0 two");
+    plain_texts(&mut world);
+    let live2 = CharacterId(51);
+    world.characters.insert(live2, character(51));
+    assert!(world.apply_lq_npc_spawn_result(2, live2, 51));
+
+    assert!(world.apply_lq_admin_command(caller, 20, "#nremove all"));
+    assert_eq!(plain_texts(&mut world), vec!["Removed 2 NPCs.".to_string()]);
+    assert_eq!(world.lq_npcs.len(), 2);
+}
+
+#[test]
+fn nremove_reports_npc_not_found_when_nothing_matches() {
+    let mut world = World::default();
+    let caller = god(&mut world, 1, 1, 1);
+
+    assert!(world.apply_lq_admin_command(caller, 20, "#nremove missing"));
+    assert_eq!(error_text(&mut world), "NPC not found.");
+}
+
+#[test]
+fn nsay_makes_the_live_npc_say_the_given_text() {
+    let mut world = World::default();
+    let caller = god(&mut world, 1, 1, 1);
+    spawn_live_lq_npc(&mut world, caller, "gate", 50);
+
+    assert!(world.apply_lq_admin_command(caller, 20, "#nsay gate Hello"));
+    let texts = world.drain_pending_area_texts();
+    assert_eq!(texts.len(), 1);
+    assert_eq!(texts[0].message, "Spawned NPC says: \"Hello\"");
+}
+
+#[test]
+fn nsay_reports_npc_not_found_when_template_never_spawned() {
+    let mut world = World::default();
+    let caller = god(&mut world, 1, 1, 1);
+    world.apply_lq_admin_command(caller, 20, "#npc base 1 a 0 gate");
+    plain_texts(&mut world);
+
+    assert!(world.apply_lq_admin_command(caller, 20, "#nsay gate Hello"));
+    assert_eq!(error_text(&mut world), "NPC not found.");
+}
+
+#[test]
+fn nsay_missing_text_reports_usage() {
+    let mut world = World::default();
+    let caller = god(&mut world, 1, 1, 1);
+
+    assert!(world.apply_lq_admin_command(caller, 20, "#nsay gate"));
+    assert!(error_text(&mut world).starts_with("Missing text. Usage is: /nsay"));
+}
+
+#[test]
+fn nemote_makes_the_live_npc_emote_the_given_text() {
+    let mut world = World::default();
+    let caller = god(&mut world, 1, 1, 1);
+    spawn_live_lq_npc(&mut world, caller, "gate", 50);
+
+    assert!(world.apply_lq_admin_command(caller, 20, "#nemote gate waves"));
+    let texts = world.drain_pending_area_texts();
+    assert_eq!(texts.len(), 1);
+    assert_eq!(texts[0].message, "Spawned NPC waves.");
+}
+
+#[test]
+fn nimmortal_sets_and_clears_immortal_and_noattack_flags() {
+    let mut world = World::default();
+    let caller = god(&mut world, 1, 1, 1);
+    let npc_id = spawn_live_lq_npc(&mut world, caller, "gate", 50);
+
+    assert!(world.apply_lq_admin_command(caller, 20, "#nimmortal gate 1"));
+    assert_eq!(
+        plain_texts(&mut world),
+        vec!["Set immortal to ON on 1 NPCs".to_string()]
+    );
+    let flags = world.characters[&npc_id].flags;
+    assert!(flags.contains(CharacterFlags::IMMORTAL | CharacterFlags::NOATTACK));
+
+    assert!(world.apply_lq_admin_command(caller, 20, "#nimmortal gate 0"));
+    assert_eq!(
+        plain_texts(&mut world),
+        vec!["Set immortal to OFF on 1 NPCs".to_string()]
+    );
+    let flags = world.characters[&npc_id].flags;
+    assert!(!flags.intersects(CharacterFlags::IMMORTAL | CharacterFlags::NOATTACK));
+}
+
+#[test]
+fn nimmortal_missing_onoff_reports_usage() {
+    let mut world = World::default();
+    let caller = god(&mut world, 1, 1, 1);
+
+    assert!(world.apply_lq_admin_command(caller, 20, "#nimmortal gate"));
+    assert!(error_text(&mut world).starts_with("Missing 0|1. Usage is: /nimmortal"));
+}
+
+fn player(world: &mut World, id: u32, name: &str) -> CharacterId {
+    let character_id = CharacterId(id);
+    let mut spawned = character(id);
+    spawned.name = name.to_string();
+    world.characters.insert(character_id, spawned);
+    character_id
+}
+
+#[test]
+fn nattack_by_numeric_slot_queues_enemy_with_hurtme_zero() {
+    let mut world = World::default();
+    let caller = god(&mut world, 1, 1, 1);
+    let npc_id = spawn_live_lq_npc(&mut world, caller, "gate", 50);
+    let target = player(&mut world, 60, "Victim");
+
+    assert!(world.apply_lq_admin_command(caller, 20, "#nattack 1 Victim"));
+    assert_eq!(
+        plain_texts(&mut world),
+        vec!["1 NPCs attacking.".to_string()]
+    );
+    let enemies = &world.characters[&npc_id]
+        .fight_driver
+        .as_ref()
+        .unwrap()
+        .enemies;
+    assert_eq!(enemies.len(), 1);
+    assert_eq!(enemies[0].target_id, target);
+    assert_eq!(enemies[0].priority, 0);
+}
+
+#[test]
+fn nattack_by_nick_queues_enemy_with_hurtme_one() {
+    let mut world = World::default();
+    let caller = god(&mut world, 1, 1, 1);
+    let npc_id = spawn_live_lq_npc(&mut world, caller, "gate", 50);
+    player(&mut world, 60, "Victim");
+
+    assert!(world.apply_lq_admin_command(caller, 20, "#nattack gate Victim"));
+    let enemies = &world.characters[&npc_id]
+        .fight_driver
+        .as_ref()
+        .unwrap()
+        .enemies;
+    assert_eq!(enemies[0].priority, 1);
+}
+
+#[test]
+fn nattack_reports_player_not_found() {
+    let mut world = World::default();
+    let caller = god(&mut world, 1, 1, 1);
+    spawn_live_lq_npc(&mut world, caller, "gate", 50);
+
+    assert!(world.apply_lq_admin_command(caller, 20, "#nattack gate NoSuchPlayer"));
+    assert_eq!(error_text(&mut world), "Player NoSuchPlayer not found.");
+}
+
+#[test]
+fn nspawn_is_not_matched_outside_the_lq_areas() {
+    let mut world = World::default();
+    let caller = god(&mut world, 1, 1, 1);
+    assert!(matches!(
+        world.try_dispatch_lq_nspawn(caller, 1, "#nspawn gate"),
+        LqNspawnDispatch::NotMatched
+    ));
+}
+
+#[test]
+fn nspawn_is_not_matched_for_other_words() {
+    let mut world = World::default();
+    let caller = god(&mut world, 1, 1, 1);
+    assert!(matches!(
+        world.try_dispatch_lq_nspawn(caller, 20, "#nremove gate"),
+        LqNspawnDispatch::NotMatched
+    ));
+}
+
+#[test]
+fn nspawn_rejects_missing_args() {
+    let mut world = World::default();
+    let caller = god(&mut world, 1, 1, 1);
+    assert!(matches!(
+        world.try_dispatch_lq_nspawn(caller, 20, "#nspawn"),
+        LqNspawnDispatch::Rejected
+    ));
+    assert!(error_text(&mut world).starts_with("Missing npcID. Usage is: /nspawn"));
+}
+
+#[test]
+fn nspawn_returns_a_request_for_a_template_with_no_live_instance() {
+    let mut world = World::default();
+    let caller = god(&mut world, 1, 1, 1);
+    world.apply_lq_admin_command(caller, 20, "#npc gate_base 1 a 0 gate");
+    plain_texts(&mut world);
+
+    let LqNspawnDispatch::Requests(requests) =
+        world.try_dispatch_lq_nspawn(caller, 20, "#nspawn gate")
+    else {
+        panic!("expected Requests");
+    };
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].basename, "gate_base");
+
+    world.report_lq_nspawn_result(caller, requests.len());
+    assert_eq!(plain_texts(&mut world), vec!["Spawned 1 NPCs.".to_string()]);
+}
+
+#[test]
+fn nspawn_reports_npc_not_found_via_report_helper_when_no_candidates() {
+    let mut world = World::default();
+    let caller = god(&mut world, 1, 1, 1);
+    let LqNspawnDispatch::Requests(requests) =
+        world.try_dispatch_lq_nspawn(caller, 20, "#nspawn missing")
+    else {
+        panic!("expected Requests");
+    };
+    assert!(requests.is_empty());
+    world.report_lq_nspawn_result(caller, requests.len());
+    assert_eq!(error_text(&mut world), "NPC not found.");
+}
+
+#[test]
+fn nspawn_skips_a_slot_whose_live_instance_is_still_there() {
+    let mut world = World::default();
+    let caller = god(&mut world, 1, 1, 1);
+    spawn_live_lq_npc(&mut world, caller, "gate", 50);
+
+    let LqNspawnDispatch::Requests(requests) =
+        world.try_dispatch_lq_nspawn(caller, 20, "#nspawn gate")
+    else {
+        panic!("expected Requests");
+    };
+    assert!(requests.is_empty());
+}
+
+#[test]
+fn nspawn_skips_a_slot_still_in_its_respawn_cooldown() {
+    let mut world = World::default();
+    let caller = god(&mut world, 1, 1, 1);
+    world.apply_lq_admin_command(caller, 20, "#npc gate_base 1 a 0 gate");
+    plain_texts(&mut world);
+    world.tick = Tick(100);
+    assert!(world.schedule_lq_npc_respawn(1, 150));
+
+    let LqNspawnDispatch::Requests(requests) =
+        world.try_dispatch_lq_nspawn(caller, 20, "#nspawn gate")
+    else {
+        panic!("expected Requests");
+    };
+    assert!(requests.is_empty());
+
+    // C `spawn_npc`'s guard is `lq_respawn[n] >= ticker`, so the slot only
+    // becomes eligible once the tick strictly *exceeds* the scheduled
+    // `due_tick`, not merely on reaching it.
+    world.tick = Tick(151);
+    let LqNspawnDispatch::Requests(requests) =
+        world.try_dispatch_lq_nspawn(caller, 20, "#nspawn gate")
+    else {
+        panic!("expected Requests");
+    };
+    assert_eq!(requests.len(), 1);
+}

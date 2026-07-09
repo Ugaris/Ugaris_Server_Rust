@@ -921,7 +921,30 @@ pub(crate) async fn process_queued_client_actions(
                 // `lq.c:2505-2742`). All feedback is queued directly onto
                 // `World`'s pending system-text queues and flushed by
                 // `tick_sync::sync_phase` later this same tick.
-                world.apply_lq_admin_command(character_id, config.area_id, &command);
+                // `#nspawn` is the one command in this table needing
+                // `ZoneLoader` (a brand new character), so it is checked
+                // first via its own dispatcher - see
+                // `ugaris_core::world::LqNspawnDispatch`'s doc comment.
+                match world.try_dispatch_lq_nspawn(character_id, config.area_id, &command) {
+                    ugaris_core::world::LqNspawnDispatch::NotMatched => {
+                        world.apply_lq_admin_command(character_id, config.area_id, &command);
+                    }
+                    ugaris_core::world::LqNspawnDispatch::Rejected => {}
+                    ugaris_core::world::LqNspawnDispatch::Requests(requests) => {
+                        let mut spawned = 0usize;
+                        for request in &requests {
+                            if crate::spawns::spawn_lq_npc_character(
+                                &mut world,
+                                &mut zone_loader,
+                                &mut runtime,
+                                request,
+                            ) {
+                                spawned += 1;
+                            }
+                        }
+                        world.report_lq_nspawn_result(character_id, spawned);
+                    }
+                }
             }
             ClientAction::Container { .. } | ClientAction::LookContainer { .. } => {
                 // C cl_container: validate and prefer the active
