@@ -219,6 +219,79 @@ fn world_places_and_ages_area18_bone_bridge_segments() {
 }
 
 #[test]
+fn world_adds_and_removes_bones_on_a_carried_area18_bridge() {
+    let mut world = World::default();
+    let mut character = character(1);
+    character.cursor_item = Some(ItemId(9));
+    assert!(world.spawn_character(character, 10, 10));
+
+    // A carried, partially-built bridge (`drdata[0] == 3`, not yet placed).
+    let mut bridge = item(7, ItemFlags::USED | ItemFlags::USE | ItemFlags::TAKE);
+    bridge.driver = IDR_BONEBRIDGE;
+    bridge.template_id = IID_AREA18_BONE;
+    bridge.carried_by = Some(CharacterId(1));
+    bridge.driver_data = vec![3, 0];
+    world.add_item(bridge);
+
+    // A single bone on the cursor (`drdata[0] == 1`).
+    let mut cursor_bone = item(9, ItemFlags::USED | ItemFlags::TAKE | ItemFlags::USE);
+    cursor_bone.driver = IDR_BONEBRIDGE;
+    cursor_bone.template_id = IID_AREA18_BONE;
+    cursor_bone.carried_by = Some(CharacterId(1));
+    cursor_bone.driver_data = vec![1, 0];
+    world.add_item(cursor_bone);
+
+    let outcome = world.execute_item_driver_request(
+        ItemDriverRequest::Driver {
+            driver: IDR_BONEBRIDGE,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        },
+        18,
+    );
+
+    assert_eq!(
+        outcome,
+        ItemDriverOutcome::BoneBridgeAddBone {
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            cursor_item_id: ItemId(9),
+        }
+    );
+    let bridge = world.items.get(&ItemId(7)).unwrap();
+    assert_eq!(bridge.driver_data[0], 4);
+    assert_eq!(bridge.sprite, 13034);
+    // The single cursor bone was exhausted and destroyed, freeing the cursor.
+    assert!(!world.items.contains_key(&ItemId(9)));
+    assert_eq!(
+        world.characters.get(&CharacterId(1)).unwrap().cursor_item,
+        None
+    );
+
+    // Now pull one bone back out with an empty cursor.
+    let outcome = world.execute_item_driver_request(
+        ItemDriverRequest::Driver {
+            driver: IDR_BONEBRIDGE,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        },
+        18,
+    );
+    assert_eq!(
+        outcome,
+        ItemDriverOutcome::BoneBridgeRemoveBone {
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+        }
+    );
+    let bridge = world.items.get(&ItemId(7)).unwrap();
+    assert_eq!(bridge.driver_data[0], 3);
+    assert_eq!(bridge.sprite, 13033);
+}
+
+#[test]
 fn world_opens_and_restores_area18_bone_walls_like_c() {
     let mut world = World::default();
     assert!(world.spawn_character(character(1), 10, 10));

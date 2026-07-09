@@ -1017,6 +1017,64 @@ impl World {
         true
     }
 
+    /// C `bonebridge`'s "bones in inventory" add-bone branch
+    /// (`bones.c:236-252`): increments the carried bridge item's own bone
+    /// count (the caller already checked `<= 4`), consumes one bone from
+    /// the cursor stack item, and destroys the cursor item once its own
+    /// count reaches zero.
+    pub(crate) fn add_bone_to_bridge(
+        &mut self,
+        item_id: ItemId,
+        character_id: CharacterId,
+        cursor_item_id: ItemId,
+    ) {
+        if let Some(item) = self.items.get_mut(&item_id) {
+            if item.driver_data.is_empty() {
+                item.driver_data.resize(1, 0);
+            }
+            item.driver_data[0] = item.driver_data[0].saturating_add(1);
+            item.sprite = 13030 + i32::from(item.driver_data[0]);
+        }
+        if let Some(character) = self.characters.get_mut(&character_id) {
+            character.flags.insert(CharacterFlags::ITEMS);
+        }
+        let exhausted = if let Some(cursor) = self.items.get_mut(&cursor_item_id) {
+            if cursor.driver_data.is_empty() {
+                cursor.driver_data.resize(1, 0);
+            }
+            cursor.driver_data[0] = cursor.driver_data[0].saturating_sub(1);
+            cursor.sprite = 13030 + i32::from(cursor.driver_data[0]);
+            cursor.driver_data[0] == 0
+        } else {
+            false
+        };
+        if exhausted {
+            self.destroy_item(cursor_item_id);
+            if let Some(character) = self.characters.get_mut(&character_id) {
+                character.cursor_item = None;
+            }
+        }
+    }
+
+    /// C `bonebridge`'s "bones in inventory" remove-bone branch
+    /// (`bones.c:257-269`): decrements the carried bridge item's own bone
+    /// count (the caller already checked `>= 2`). The new "bone" item
+    /// that lands on the cursor needs a `ZoneLoader` template
+    /// instantiation the server crate applies (same precedent as
+    /// `BoneHolderRemoveRune`).
+    pub(crate) fn remove_bone_from_bridge(&mut self, item_id: ItemId, character_id: CharacterId) {
+        if let Some(item) = self.items.get_mut(&item_id) {
+            if item.driver_data.is_empty() {
+                item.driver_data.resize(1, 0);
+            }
+            item.driver_data[0] = item.driver_data[0].saturating_sub(1);
+            item.sprite = 13030 + i32::from(item.driver_data[0]);
+        }
+        if let Some(character) = self.characters.get_mut(&character_id) {
+            character.flags.insert(CharacterFlags::ITEMS);
+        }
+    }
+
     pub(crate) fn tick_bone_bridge(&mut self, item_id: ItemId) -> bool {
         let Some(item) = self.items.get(&item_id) else {
             return false;

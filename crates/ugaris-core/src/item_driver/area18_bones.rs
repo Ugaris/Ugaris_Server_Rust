@@ -17,9 +17,40 @@ pub(crate) fn bonebridge_driver(
     }
 
     if drdata(item, 0) != 0 && drdata(item, 1) == 0 {
-        // Adding/removing bones from a partial carried bridge depends on creating
-        // the generic "bone" template and is applied as a later area-18 slice.
-        return ItemDriverOutcome::Noop;
+        // C `bonebridge`'s "bones in inventory" branch (`bones.c:235-270`):
+        // the carried, not-yet-placed bridge item (`drdata[0]` counts the
+        // bones already assembled, 1-5).
+        return if let Some(cursor_item_id) = character.cursor_item {
+            if context.cursor_template_id == Some(IID_AREA18_BONE) {
+                if drdata(item, 0) > 4 {
+                    ItemDriverOutcome::BoneBridgeFinished {
+                        item_id: item.id,
+                        character_id: character.id,
+                    }
+                } else {
+                    ItemDriverOutcome::BoneBridgeAddBone {
+                        item_id: item.id,
+                        character_id: character.id,
+                        cursor_item_id,
+                    }
+                }
+            } else {
+                ItemDriverOutcome::BoneBridgeWrongCursorItem {
+                    item_id: item.id,
+                    character_id: character.id,
+                }
+            }
+        } else if drdata(item, 0) < 2 {
+            ItemDriverOutcome::BoneBridgeNotEnoughBones {
+                item_id: item.id,
+                character_id: character.id,
+            }
+        } else {
+            ItemDriverOutcome::BoneBridgeRemoveBone {
+                item_id: item.id,
+                character_id: character.id,
+            }
+        };
     }
 
     let Some(cursor_item_id) = character.cursor_item else {

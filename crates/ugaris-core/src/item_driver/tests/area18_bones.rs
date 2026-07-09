@@ -73,6 +73,113 @@ fn bonebridge_driver_requires_full_area18_bone_cursor_and_ports_timer_boundary()
 }
 
 #[test]
+fn bonebridge_driver_adds_and_finishes_carried_bones() {
+    let mut actor = character(1);
+    actor.cursor_item = Some(ItemId(9));
+    // `drdata[0] != 0 && drdata[1] == 0`: a carried, partially-built bridge.
+    let mut bridge = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_BONEBRIDGE);
+    bridge.driver_data = vec![3, 0];
+    let request = ItemDriverRequest::Driver {
+        driver: IDR_BONEBRIDGE,
+        item_id: ItemId(8),
+        character_id: CharacterId(1),
+        spec: 0,
+    };
+
+    // Cursor holds a bone: adds to the bridge.
+    assert_eq!(
+        execute_item_driver_with_context(
+            &mut actor,
+            &mut bridge,
+            request,
+            18,
+            false,
+            &ItemDriverContext {
+                cursor_template_id: Some(IID_AREA18_BONE),
+                ..ItemDriverContext::default()
+            },
+        ),
+        ItemDriverOutcome::BoneBridgeAddBone {
+            item_id: ItemId(8),
+            character_id: CharacterId(1),
+            cursor_item_id: ItemId(9),
+        }
+    );
+
+    // Cursor holds something else: "Hu?".
+    assert_eq!(
+        execute_item_driver_with_context(
+            &mut actor,
+            &mut bridge,
+            request,
+            18,
+            false,
+            &ItemDriverContext {
+                cursor_template_id: Some(0xdead),
+                ..ItemDriverContext::default()
+            },
+        ),
+        ItemDriverOutcome::BoneBridgeWrongCursorItem {
+            item_id: ItemId(8),
+            character_id: CharacterId(1),
+        }
+    );
+
+    // Bridge already full (`drdata[0] > 4`): finished, cannot add more.
+    bridge.driver_data = vec![5, 0];
+    assert_eq!(
+        execute_item_driver_with_context(
+            &mut actor,
+            &mut bridge,
+            request,
+            18,
+            false,
+            &ItemDriverContext {
+                cursor_template_id: Some(IID_AREA18_BONE),
+                ..ItemDriverContext::default()
+            },
+        ),
+        ItemDriverOutcome::BoneBridgeFinished {
+            item_id: ItemId(8),
+            character_id: CharacterId(1),
+        }
+    );
+}
+
+#[test]
+fn bonebridge_driver_removes_carried_bones_with_empty_cursor() {
+    let mut actor = character(1);
+    actor.cursor_item = None;
+    let mut bridge = item(8, ItemFlags::USED | ItemFlags::USE, 0, IDR_BONEBRIDGE);
+    let request = ItemDriverRequest::Driver {
+        driver: IDR_BONEBRIDGE,
+        item_id: ItemId(8),
+        character_id: CharacterId(1),
+        spec: 0,
+    };
+
+    // Only 1 bone assembled: cannot remove without destroying the base.
+    bridge.driver_data = vec![1, 0];
+    assert_eq!(
+        execute_item_driver(&mut actor, &mut bridge, request, 18, false),
+        ItemDriverOutcome::BoneBridgeNotEnoughBones {
+            item_id: ItemId(8),
+            character_id: CharacterId(1),
+        }
+    );
+
+    // 2+ bones assembled: pulls one back out onto the (empty) cursor.
+    bridge.driver_data = vec![2, 0];
+    assert_eq!(
+        execute_item_driver(&mut actor, &mut bridge, request, 18, false),
+        ItemDriverOutcome::BoneBridgeRemoveBone {
+            item_id: ItemId(8),
+            character_id: CharacterId(1),
+        }
+    );
+}
+
+#[test]
 fn boneholder_driver_inserts_and_expires_owned_runes() {
     let mut actor = character(1);
     actor.cursor_item = Some(ItemId(9));

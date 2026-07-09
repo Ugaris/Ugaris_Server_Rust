@@ -1245,6 +1245,25 @@ impl World {
                     ItemDriverOutcome::Noop
                 }
             }
+            ItemDriverOutcome::BoneBridgeAddBone {
+                item_id,
+                character_id,
+                cursor_item_id,
+            } => {
+                if self.character_holds_cursor_item(character_id, cursor_item_id) {
+                    self.add_bone_to_bridge(item_id, character_id, cursor_item_id);
+                    outcome
+                } else {
+                    ItemDriverOutcome::Noop
+                }
+            }
+            ItemDriverOutcome::BoneBridgeRemoveBone {
+                item_id,
+                character_id,
+            } => {
+                self.remove_bone_from_bridge(item_id, character_id);
+                outcome
+            }
             ItemDriverOutcome::BoneWallTick { item_id, .. } => {
                 if self.tick_bone_wall(item_id) {
                     outcome

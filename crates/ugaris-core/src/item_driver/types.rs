@@ -1798,6 +1798,37 @@ pub enum ItemDriverOutcome {
     BoneBridgeTimerTick {
         item_id: ItemId,
     },
+    /// C `bonebridge`'s "bones in inventory" add-bone branch
+    /// (`bones.c:236-252`): the cursor holds another `IID_AREA18_BONE`
+    /// item and the carried bridge still has room (`drdata[0] <= 4`).
+    BoneBridgeAddBone {
+        item_id: ItemId,
+        character_id: CharacterId,
+        cursor_item_id: ItemId,
+    },
+    /// C `bonebridge:239`: the carried bridge already holds 5 bones.
+    BoneBridgeFinished {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    /// C `bonebridge:254`: the cursor holds an item that is not a bone.
+    BoneBridgeWrongCursorItem {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    /// C `bonebridge`'s "bones in inventory" remove-bone branch
+    /// (`bones.c:257-269`): the cursor is empty and the carried bridge
+    /// has at least 2 bones, so one is pulled back out onto the cursor.
+    BoneBridgeRemoveBone {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    /// C `bonebridge:259`: the cursor is empty but the carried bridge has
+    /// fewer than 2 bones (removing would destroy the base item).
+    BoneBridgeNotEnoughBones {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
     BoneHolderInsertRune {
         item_id: ItemId,
         character_id: CharacterId,

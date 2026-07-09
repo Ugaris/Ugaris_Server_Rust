@@ -1085,8 +1085,50 @@ pub(crate) async fn process_completed_action_outcomes(
                                 blocked += 1;
                             }
                             ugaris_core::item_driver::ItemDriverOutcome::BoneBridgePlace { .. }
-                            | ugaris_core::item_driver::ItemDriverOutcome::BoneBridgeTimerTick { .. } => {
+                            | ugaris_core::item_driver::ItemDriverOutcome::BoneBridgeTimerTick { .. }
+                            | ugaris_core::item_driver::ItemDriverOutcome::BoneBridgeAddBone { .. } => {
                                 executed += 1;
+                            }
+                            ugaris_core::item_driver::ItemDriverOutcome::BoneBridgeFinished {
+                                character_id, ..
+                            } => {
+                                feedback.push((
+                                    character_id,
+                                    "The bridge is finished. You cannot add more bones."
+                                        .to_string(),
+                                ));
+                                blocked += 1;
+                            }
+                            ugaris_core::item_driver::ItemDriverOutcome::BoneBridgeWrongCursorItem {
+                                character_id, ..
+                            }
+                            | ugaris_core::item_driver::ItemDriverOutcome::BoneBridgeNotEnoughBones {
+                                character_id, ..
+                            } => {
+                                feedback.push((character_id, "Hu?".to_string()));
+                                blocked += 1;
+                            }
+                            ugaris_core::item_driver::ItemDriverOutcome::BoneBridgeRemoveBone {
+                                character_id, ..
+                            } => {
+                                // C `bonebridge:266-268`: `create_item("bone")` is
+                                // unconditional in C (no failure check); the Rust
+                                // `ZoneLoader` path can fail if the template is
+                                // missing, so fall back to a no-op like the other
+                                // `instantiate_item_template` call sites do.
+                                match zone_loader
+                                    .instantiate_item_template("bone", Some(character_id))
+                                {
+                                    Ok(item) => {
+                                        let item_id = item.id;
+                                        world.add_item(item);
+                                        world.give_char_item(character_id, item_id);
+                                        executed += 1;
+                                    }
+                                    Err(_) => {
+                                        failed += 1;
+                                    }
+                                }
                             }
                             outcome @ (ugaris_core::item_driver::ItemDriverOutcome::MineWallInitialized { .. }
                             | ugaris_core::item_driver::ItemDriverOutcome::MineWallDig { .. }
