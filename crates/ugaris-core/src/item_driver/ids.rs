@@ -813,6 +813,17 @@ pub const IID_LAB2_ELIASBELT: u32 = make_item_id(DEV_ID_MR, 0x000004);
 /// `lab3_prisoner_driver` checks for on `NT_GIVE` to unlock its note-giving
 /// state (`world::npc::area22::lab3_prisoner`).
 pub const IID_LAB3_PRISONKEY: u32 = make_item_id(DEV_ID_MR, 0x000007);
+/// C `IID_LAB4_MAGEKEY` (`src/common/item_id.h:288`): the key
+/// `lab4_item`'s fireplace-key branch (`IDR_LAB4_ITEM`, `drdata[0]==1`)
+/// creates on the using player's cursor.
+pub const IID_LAB4_MAGEKEY: u32 = make_item_id(DEV_ID_MR, 0x000008);
+/// C `IID_LAB4_SZEPTER` (`src/common/item_id.h:291`): one of the two
+/// `lab4_seyan_driver` `NT_GIVE` turn-in items (`world::npc::area22::
+/// lab4_seyan`).
+pub const IID_LAB4_SZEPTER: u32 = make_item_id(DEV_ID_MR, 0x00000B);
+/// C `IID_LAB4_CROWN` (`src/common/item_id.h:292`): the other
+/// `lab4_seyan_driver` `NT_GIVE` turn-in item.
+pub const IID_LAB4_CROWN: u32 = make_item_id(DEV_ID_MR, 0x00000C);
 /// C `IID_MAX_CHRONICLES` (`src/common/item_id.h:372`): swept alongside
 /// `IID_MAX_RITUAL`'s turn-in in `carlos_driver`.
 pub const IID_MAX_CHRONICLES: u32 = make_item_id(DEV_ID_MAX, 0x000003);

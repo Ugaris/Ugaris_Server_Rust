@@ -178,6 +178,33 @@ impl PlayerRuntime {
         }
         self.lab_ppd[LEGACY_LAB3_GUARD_TALKSTEP_OFFSET] = value;
     }
+
+    /// C `set_seyan_state` (`src/area/22/lab4.c:94-104`): recomputes
+    /// `ppd->seyan4state` from the `seyan4got` bitfield (bit 0 = crown,
+    /// bit 1 = szepter) after either bit changes. Writes both fields
+    /// (`self.lab4_seyan_got` is assumed already updated by the caller).
+    pub fn recompute_lab4_seyan_state(&mut self) {
+        self.lab4_seyan_state = lab4_seyan_state_from_got(self.lab4_seyan_got);
+    }
+}
+
+/// Pure half of C `set_seyan_state` (`src/area/22/lab4.c:94-104`), split
+/// out so `world::npc::area22::lab4_seyan` can recompute the outcome
+/// state without a `PlayerRuntime` handle (the driver only sees a
+/// [`Lab4SeyanPlayerFacts`](crate::world::npc::area22::lab4_seyan::Lab4SeyanPlayerFacts)
+/// snapshot).
+pub fn lab4_seyan_state_from_got(got: u8) -> u8 {
+    const GOT_CROWN: u8 = 1 << 0;
+    const GOT_SZEPTER: u8 = 1 << 1;
+    if got & GOT_CROWN != 0 && got & GOT_SZEPTER != 0 {
+        30
+    } else if got & GOT_CROWN != 0 {
+        10
+    } else if got & GOT_SZEPTER != 0 {
+        20
+    } else {
+        0
+    }
 }
 
 /// Reads an 8-byte nul-padded ASCII field, trimming trailing zero bytes

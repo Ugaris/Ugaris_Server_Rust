@@ -7,6 +7,8 @@ pub mod lab2_herald;
 pub mod lab2_undead;
 pub mod lab3_passguard;
 pub mod lab3_prisoner;
+pub mod lab4_gnalb;
+pub mod lab4_seyan;
 
 #[allow(unused_imports)]
 pub use gatekeeper::*;
@@ -22,3 +24,7 @@ pub use lab2_undead::*;
 pub use lab3_passguard::*;
 #[allow(unused_imports)]
 pub use lab3_prisoner::*;
+#[allow(unused_imports)]
+pub use lab4_gnalb::*;
+#[allow(unused_imports)]
+pub use lab4_seyan::*;

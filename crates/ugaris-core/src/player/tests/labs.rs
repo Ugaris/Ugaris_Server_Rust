@@ -114,3 +114,24 @@ fn lab_ppd_blob_round_trips_with_legacy_block_framing() {
     assert!(decoded.decode_legacy_ppd_blob(&encoded));
     assert_eq!(decoded.lab_solved_bits, (1_u64 << 15) | (1_u64 << 20));
 }
+
+#[test]
+fn lab4_seyan_state_from_got_matches_c_set_seyan_state() {
+    // C `set_seyan_state` (`src/area/22/lab4.c:94-104`).
+    assert_eq!(lab4_seyan_state_from_got(0), 0);
+    assert_eq!(lab4_seyan_state_from_got(1 << 0), 10); // crown only
+    assert_eq!(lab4_seyan_state_from_got(1 << 1), 20); // szepter only
+    assert_eq!(lab4_seyan_state_from_got((1 << 0) | (1 << 1)), 30); // both
+}
+
+#[test]
+fn recompute_lab4_seyan_state_writes_derived_state_from_got() {
+    let mut player = PlayerRuntime::connected(1, 0);
+    player.lab4_seyan_got = 1 << 1;
+    player.recompute_lab4_seyan_state();
+    assert_eq!(player.lab4_seyan_state, 20);
+
+    player.lab4_seyan_got |= 1 << 0;
+    player.recompute_lab4_seyan_state();
+    assert_eq!(player.lab4_seyan_state, 30);
+}

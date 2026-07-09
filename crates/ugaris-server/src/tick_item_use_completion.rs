@@ -987,7 +987,9 @@ pub(crate) async fn process_completed_action_outcomes(
                             | ugaris_core::item_driver::ItemDriverOutcome::Lab3TeleportDoor { .. }
                             | ugaris_core::item_driver::ItemDriverOutcome::Lab3NoteGivingBlocked { .. }
                             | ugaris_core::item_driver::ItemDriverOutcome::Lab3NoteGivingSkeleton { .. }
-                            | ugaris_core::item_driver::ItemDriverOutcome::Lab3NoteRead { .. }) => {
+                            | ugaris_core::item_driver::ItemDriverOutcome::Lab3NoteRead { .. }
+                            | ugaris_core::item_driver::ItemDriverOutcome::Lab4FireplaceKeyBlocked { .. }
+                            | ugaris_core::item_driver::ItemDriverOutcome::Lab4FireplaceKeyGive { .. }) => {
                                 tick_item_use_lab::dispatch_lab_outcome(
                                     &mut world,
                                     &mut zone_loader,

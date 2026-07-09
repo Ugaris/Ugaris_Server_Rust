@@ -27,6 +27,7 @@ mod transport;
 mod tunnel;
 mod twocity;
 
+pub use labs::lab4_seyan_state_from_got;
 pub use misc::*;
 pub use settings::*;
 
@@ -359,6 +360,20 @@ pub struct PlayerRuntime {
     /// instead of the full one. See `world::npc::area22::lab2_deamon`.
     #[serde(default)]
     pub lab2_deamon_checked: bool,
+    /// C `struct lab4_player_data { unsigned char seyan4state; unsigned
+    /// char seyan4got; }` (`src/area/22/lab4.c:83-86`, `DRD_LAB4_PLAYER`,
+    /// a distinct `set_data` slot from `DRD_LAB_PPD`/`lab_ppd` above, same
+    /// precedent as `lab2_deamon_checked`). C's slot lacks the
+    /// `PERSISTENT_PLAYER_DATA` bit (wiped on logout); this port persists
+    /// it like every other typed field per `AGENTS.md` - a documented,
+    /// low-stakes deviation (a relogging player keeps their seyan
+    /// dialogue/item progress instead of C resetting it). `seyan4got` is a
+    /// 2-bit field: bit 0 = crown handed in, bit 1 = szepter handed in.
+    /// See `world::npc::area22::lab4_seyan`.
+    #[serde(default)]
+    pub lab4_seyan_state: u8,
+    #[serde(default)]
+    pub lab4_seyan_got: u8,
     #[serde(default)]
     pub pk_kills: u32,
     #[serde(default)]
@@ -748,6 +763,8 @@ impl PlayerRuntime {
             lab_solved_bits: 0,
             lab2_grave_bits: Vec::new(),
             lab2_deamon_checked: false,
+            lab4_seyan_state: 0,
+            lab4_seyan_got: 0,
             pk_kills: 0,
             pk_deaths: 0,
             pk_last_kill: 0,

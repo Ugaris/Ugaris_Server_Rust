@@ -68,6 +68,8 @@ mod lab2_undead;
 mod lab3_passguard;
 mod lab3_prisoner;
 mod lab3_special;
+mod lab4_gnalb;
+mod lab4_seyan;
 mod lampghost;
 mod lastseen;
 mod light;

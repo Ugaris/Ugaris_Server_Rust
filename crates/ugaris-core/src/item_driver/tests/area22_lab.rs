@@ -1252,6 +1252,106 @@ fn lab3_special_note_read_returns_its_own_note_value() {
 }
 
 #[test]
+fn lab4_item_zero_character_is_a_no_op() {
+    let mut timer = character(0);
+    let mut key_fireplace = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_LAB4_ITEM);
+    key_fireplace.driver_data = vec![1];
+
+    let outcome = execute_item_driver(
+        &mut timer,
+        &mut key_fireplace,
+        ItemDriverRequest::Driver {
+            driver: IDR_LAB4_ITEM,
+            item_id: ItemId(7),
+            character_id: CharacterId(0),
+            spec: 0,
+        },
+        22,
+        false,
+    );
+
+    assert_eq!(outcome, ItemDriverOutcome::Noop);
+}
+
+#[test]
+fn lab4_item_wrong_drdata_is_a_no_op() {
+    let mut player = character(1);
+    let mut key_fireplace = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_LAB4_ITEM);
+    key_fireplace.driver_data = vec![0];
+
+    let outcome = execute_item_driver(
+        &mut player,
+        &mut key_fireplace,
+        ItemDriverRequest::Driver {
+            driver: IDR_LAB4_ITEM,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        },
+        22,
+        false,
+    );
+
+    assert_eq!(outcome, ItemDriverOutcome::Noop);
+}
+
+#[test]
+fn lab4_item_fireplace_key_blocked_when_cursor_occupied() {
+    let mut player = character(1);
+    player.cursor_item = Some(ItemId(99));
+    let mut key_fireplace = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_LAB4_ITEM);
+    key_fireplace.driver_data = vec![1];
+
+    let outcome = execute_item_driver(
+        &mut player,
+        &mut key_fireplace,
+        ItemDriverRequest::Driver {
+            driver: IDR_LAB4_ITEM,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        },
+        22,
+        false,
+    );
+
+    assert_eq!(
+        outcome,
+        ItemDriverOutcome::Lab4FireplaceKeyBlocked {
+            character_id: CharacterId(1),
+        }
+    );
+}
+
+#[test]
+fn lab4_item_fireplace_key_gives_key_when_cursor_empty() {
+    let mut player = character(1);
+    let mut key_fireplace = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_LAB4_ITEM);
+    key_fireplace.driver_data = vec![1];
+
+    let outcome = execute_item_driver(
+        &mut player,
+        &mut key_fireplace,
+        ItemDriverRequest::Driver {
+            driver: IDR_LAB4_ITEM,
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            spec: 0,
+        },
+        22,
+        false,
+    );
+
+    assert_eq!(
+        outcome,
+        ItemDriverOutcome::Lab4FireplaceKeyGive {
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+        }
+    );
+}
+
+#[test]
 fn deathfibrin_timer_call_is_a_no_op() {
     let mut timer = character(0);
     let mut staff = item(

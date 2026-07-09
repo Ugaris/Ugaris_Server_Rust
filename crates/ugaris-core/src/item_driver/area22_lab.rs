@@ -396,6 +396,26 @@ pub(crate) fn lab3_special_driver(
     }
 }
 
+/// C `lab4_item` (`src/area/22/lab4.c:645-672`). `drdata[0]==1` is the
+/// only branch (`gnalb_fireplace_key`'s own `arg="01"`) - C's `switch`
+/// falls through to a no-op `return;` for any other `drdata[0]`, so no
+/// other case exists to port.
+pub(crate) fn lab4_item_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
+    if character.id.0 == 0 || drdata(item, 0) != 1 {
+        return ItemDriverOutcome::Noop;
+    }
+    // C `if (ch[cn].citem) return;` (`lab4.c:657-659`).
+    if character.cursor_item.is_some() {
+        return ItemDriverOutcome::Lab4FireplaceKeyBlocked {
+            character_id: character.id,
+        };
+    }
+    ItemDriverOutcome::Lab4FireplaceKeyGive {
+        item_id: item.id,
+        character_id: character.id,
+    }
+}
+
 pub(crate) fn legacy_lab_destination(lab_level: u8) -> Option<(u16, u16, u16, u16)> {
     match lab_level {
         10 => Some((10, 22, 27, 242)),

@@ -1033,8 +1033,17 @@ Ordered by player progression; the C file is the oracle.
   `lab3_init_password` - `tick_item_use_lab.rs`'s new `lab3_note_text`,
   the first real writer of `PlayerRuntime::legacy_lab3_password1`/`_2`,
   closing the gap `lab3_passguard.rs`'s own module doc comment used to
-  flag). Still open: all of lab4/5 (`CDR_LAB4SEYAN`/`GNALB`,
-  `CDR_LAB5DAEMON`/`SEYAN`/`MAGE`).
+  flag). Lab4 is now closed: `CDR_LAB4SEYAN` (the "Observer" crown/
+  szepter quest giver, `world/npc/area22/lab4_seyan.rs`) and
+  `CDR_LAB4GNALB` (the patrol-guard/crazy-gnalb triad, including a new
+  branching-path-graph patrol mechanism transcribed digit-for-digit from
+  C's `gnalb_path[]` table, `world/npc/area22/lab4_gnalb.rs`) are both
+  ported end to end, plus `IDR_LAB4_ITEM`'s fireplace-key branch (new
+  `Lab4FireplaceKeyGive`/`Blocked` outcomes). New plain `PlayerRuntime::
+  lab4_seyan_state`/`_got` fields (C's non-persistent `DRD_LAB4_PLAYER`,
+  intentionally made persistent per `AGENTS.md`) and three new
+  `IID_LAB4_MAGEKEY`/`_SZEPTER`/`_CROWN` item ids. Still open: all of
+  lab5 (`CDR_LAB5DAEMON`/`SEYAN`/`MAGE`).
 - [ ] **Areas 23/24 - `src/area/23_24/strategy.c` (3,599 lines)** - the
   strategy minigame (mission ownership, worker spawning, resources).
   Item dispatch is stubbed as no-ops; this is a full subsystem - plan in
@@ -1100,6 +1109,11 @@ Keep entries to at most three lines: date, task, one-line result.
 Anything longer belongs in `PORTING_LEDGER.md`; historical verbose
 notes live in `PROGRESS_ARCHIVE.md`.
 
+- 2026-07-09: Area 22 progress: ported Lab4 (`CDR_LAB4SEYAN`/`CDR_LAB4GNALB`
+  + `IDR_LAB4_ITEM`, new `world/npc/area22/lab4_seyan.rs`+`lab4_gnalb.rs`,
+  a new branching-path patrol mechanism). Only lab5 remains for Area 22.
+  3325 core + 1162 server tests pass, clean build/boot-smoke (area 22, 3
+  gnalb NPCs ticking, no panics).
 - 2026-07-09: Area 22 progress: ported `IDR_LAB3_SPECIAL` (teleport door +
   note-giving skeleton + note-reading/password switch, closing the
   `lab3_passguard.rs` password-write gap). 3299 core + 1162 server tests

@@ -552,7 +552,9 @@ impl World {
                 | CharacterDriverState::Lab2Herald(_)
                 | CharacterDriverState::Lab2Deamon(_)
                 | CharacterDriverState::Lab3Passguard(_)
-                | CharacterDriverState::Lab3Prisoner(_) => None,
+                | CharacterDriverState::Lab3Prisoner(_)
+                | CharacterDriverState::Lab4Seyan(_)
+                | CharacterDriverState::Lab4Gnalb(_) => None,
             });
         let Some(target_id) = target_id else {
             return false;

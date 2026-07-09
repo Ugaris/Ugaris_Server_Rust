@@ -303,6 +303,7 @@ pub fn execute_item_driver_with_context(
                 IDR_DEATHFIBRIN => deathfibrin_driver(character, item, context),
                 IDR_LABEXIT => labexit_driver(character, item, context),
                 IDR_LABENTRANCE => labentrance_driver(character, item, context),
+                IDR_LAB4_ITEM => lab4_item_driver(character, item),
                 IDR_LQ_TICKER => lq_ticker_driver(character, item),
                 IDR_LQ_ENTRANCE => lq_entrance_driver(character, item, context),
                 IDR_STR_MINE | IDR_STR_STORAGE | IDR_STR_SPAWNER | IDR_STR_DEPOT
@@ -356,7 +357,7 @@ pub(crate) fn legacy_libload_required_area(driver: u16) -> Option<u16> {
         IDR_BRANNINGTONFOREST => Some(28),
         IDR_STAFFER => Some(26),
         IDR_LAB2_WATER | IDR_LAB2_STEPACTION | IDR_LAB2_REGENERATE | IDR_LAB2_GRAVE
-        | IDR_LABTORCH | IDR_DEATHFIBRIN => Some(22),
+        | IDR_LABTORCH | IDR_DEATHFIBRIN | IDR_LAB4_ITEM => Some(22),
         IDR_STAFFER2 => Some(29),
         IDR_OXYPOTION | IDR_LIZARDFLOWER => Some(31),
         IDR_TEUFELDOOR | IDR_TEUFELARENA | IDR_TEUFELRATNEST | IDR_TEUFELARENAEXIT => Some(34),

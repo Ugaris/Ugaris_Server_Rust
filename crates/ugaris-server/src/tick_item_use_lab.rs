@@ -452,6 +452,29 @@ pub(crate) async fn dispatch_lab_outcome(
             }
             *executed += 1;
         }
+        // C `lab4_item`'s `if (ch[cn].citem) return;` (`lab4.c:657-659`):
+        // a truly silent no-op in C, no `log_char` call - see the item
+        // driver's own doc comment.
+        ugaris_core::item_driver::ItemDriverOutcome::Lab4FireplaceKeyBlocked { .. } => {
+            *blocked += 1;
+        }
+        ugaris_core::item_driver::ItemDriverOutcome::Lab4FireplaceKeyGive {
+            character_id, ..
+        } => {
+            if grant_template_item_to_cursor(world, zone_loader, character_id, "lab4_mage_key")
+                .is_some()
+            {
+                // C `log_char(cn, LOG_SYSTEM, 0, "You took the key out of
+                // the fire.");` (`lab4.c:662`).
+                feedback.push((
+                    character_id,
+                    "You took the key out of the fire.".to_string(),
+                ));
+                *executed += 1;
+            } else {
+                *failed += 1;
+            }
+        }
         _ => {}
     }
 }

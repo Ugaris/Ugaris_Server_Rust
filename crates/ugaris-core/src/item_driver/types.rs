@@ -1667,6 +1667,17 @@ pub enum ItemDriverOutcome {
         character_id: CharacterId,
         note_value: u8,
     },
+    /// C `lab4_item`'s `drdata[0]==1` fireplace-key branch, blocked path
+    /// (`ch[cn].citem` already occupied, `lab4.c:657-659`).
+    Lab4FireplaceKeyBlocked {
+        character_id: CharacterId,
+    },
+    /// The same branch's success path (`lab4.c:660-669`): creates a fresh
+    /// `"lab4_mage_key"` on the using player's cursor.
+    Lab4FireplaceKeyGive {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
     Lab2WaterWell {
         item_id: ItemId,
         character_id: CharacterId,

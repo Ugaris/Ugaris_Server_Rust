@@ -181,6 +181,15 @@ pub const CDR_LAB3PASSGUARD: u16 = 194;
 /// lab3_prisoner_driver`), see `world::npc::area22::lab3_prisoner`'s
 /// module doc comment.
 pub const CDR_LAB3PRISONER: u16 = 195;
+/// C `#define CDR_LAB4SEYAN 192` (`src/system/drvlib.h:218`): the lab4
+/// seyan quest giver (`src/area/22/lab4.c::lab4_seyan_driver`), see
+/// `world::npc::area22::lab4_seyan`'s module doc comment.
+pub const CDR_LAB4SEYAN: u16 = 192;
+/// C `#define CDR_LAB4GNALB 193` (`src/system/drvlib.h:219`): the lab4
+/// gnalb guard/crazy-gnalb driver (`src/area/22/lab4.c::
+/// lab4_gnalb_driver`), see `world::npc::area22::lab4_gnalb`'s module
+/// doc comment.
+pub const CDR_LAB4GNALB: u16 = 193;
 /// C `#define CDR_CAMHERMIT 14` (`src/system/drvlib.h`): the forest
 /// hermit NPC in area 1 (`src/area/1/gwendylon.c::camhermit_driver`).
 pub const CDR_CAMHERMIT: u16 = 14;
@@ -549,6 +558,8 @@ pub enum CharacterDriverState {
     LqNpc(crate::world::npc::area20::LqNpcDriverData),
     Lab3Passguard(crate::world::npc::area22::lab3_passguard::Lab3PassguardDriverData),
     Lab3Prisoner(crate::world::npc::area22::lab3_prisoner::Lab3PrisonerDriverData),
+    Lab4Seyan(crate::world::npc::area22::lab4_seyan::Lab4SeyanDriverData),
+    Lab4Gnalb(crate::world::npc::area22::lab4_gnalb::Lab4GnalbDriverData),
 }
 /// C `bank_driver_parse` from `src/module/bank.c`. The C driver defaults
 /// opening hours to 6..23 before parsing (`bank_driver` lines 304-309).
@@ -1341,7 +1352,9 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::Lab2Herald(_)
             | CharacterDriverState::Lab2Deamon(_)
             | CharacterDriverState::Lab3Passguard(_)
-            | CharacterDriverState::Lab3Prisoner(_),
+            | CharacterDriverState::Lab3Prisoner(_)
+            | CharacterDriverState::Lab4Seyan(_)
+            | CharacterDriverState::Lab4Gnalb(_),
         ) => SimpleBaddyDriverData::default(),
         None => SimpleBaddyDriverData::default(),
     };
@@ -3847,6 +3860,12 @@ pub use crate::world::npc::area22::lab2_herald::{
 };
 pub use crate::world::npc::area22::lab2_undead::{
     apply_lab2_undead_create_message, parse_lab2_undead_driver_args, Lab2UndeadDriverData,
+};
+pub use crate::world::npc::area22::lab4_gnalb::{
+    apply_lab4_gnalb_create_message, Lab4GnalbDriverData,
+};
+pub use crate::world::npc::area22::lab4_seyan::{
+    apply_lab4_seyan_create_message, Lab4SeyanDriverData,
 };
 pub use crate::world::npc::area3::astro1::Astro1DriverData;
 pub use crate::world::npc::area3::astro2::Astro2DriverData;
