@@ -116,6 +116,31 @@ pub struct LqNpcSpawnRequest {
     pub thrall_name: String,
 }
 
+/// C `struct lq_data` (`src/area/20/lq.c:151-158`): the single, area-wide
+/// Live Quest admin-authored quest-lifecycle state - unlike `lq_npc[]`/
+/// `lq_door[]` there is only ever one instance. `reward`/`reward_desc` are
+/// `#questreward`'s per-mark exp-percentage table (index `0` unused, same
+/// "index 1..MAXLQMARK" convention as `PlayerRuntime::lq_marks`).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct LqData {
+    /// C `lq_data.min_level` (`#questlevel`'s first argument).
+    pub min_level: u32,
+    /// C `lq_data.max_level` (`#questlevel`'s second argument).
+    pub max_level: u32,
+    /// C `lq_data.reward[MAXLQMARK]`: percentage (1-100) of a player's
+    /// level-appropriate max reward, set by `#questreward`.
+    pub reward: [i32; MAXLQMARK],
+    /// C `lq_data.reward_desc[MAXLQMARK][80]`.
+    pub reward_desc: [String; MAXLQMARK],
+    /// C `lq_data.open`: set by `#queststart`, cleared by `#questreset`/
+    /// `#questload`.
+    pub open: bool,
+    /// C `lq_data.entrance_x`/`entrance_y`: set by `#questentrance` to the
+    /// issuing character's current position.
+    pub entrance_x: u16,
+    pub entrance_y: u16,
+}
+
 pub(crate) fn write_lq_door_key_id(item: &mut Item, key_id: u32) {
     if item.driver_data.len() < 5 {
         item.driver_data.resize(5, 0);

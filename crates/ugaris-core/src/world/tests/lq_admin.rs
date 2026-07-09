@@ -1082,3 +1082,252 @@ fn killthrall_ignores_non_thrall_lqnpc_characters() {
     );
     assert!(world.characters.contains_key(&npc_id));
 }
+
+// -- Quest-lifecycle family (sixth slice: #questlevel/#questreward/
+// #questshow/#questentrance/#queststart/#questreset) --
+
+#[test]
+fn questlevel_rejects_missing_args() {
+    let mut world = World::default();
+    let caller = god(&mut world, 1, 1, 1);
+    assert!(world.apply_lq_admin_command(caller, 20, "#questlevel"));
+    assert!(error_text(&mut world).starts_with("Missing mini. Usage is: /questlevel"));
+
+    assert!(world.apply_lq_admin_command(caller, 20, "#questlevel 5"));
+    assert!(error_text(&mut world).starts_with("Missing maxi. Usage is: /questlevel"));
+}
+
+#[test]
+fn questlevel_rejects_trailing_garbage() {
+    let mut world = World::default();
+    let caller = god(&mut world, 1, 1, 1);
+    assert!(world.apply_lq_admin_command(caller, 20, "#questlevel 5 50 extra"));
+    assert!(error_text(&mut world).starts_with("Trailing garbage. Usage is: /questlevel"));
+}
+
+#[test]
+fn questlevel_rejects_out_of_bounds() {
+    let mut world = World::default();
+    let caller = god(&mut world, 1, 1, 1);
+
+    assert!(world.apply_lq_admin_command(caller, 20, "#questlevel 0 10"));
+    assert_eq!(
+        error_text(&mut world),
+        "Min Level is out of bounds (1 to 200)."
+    );
+
+    assert!(world.apply_lq_admin_command(caller, 20, "#questlevel 1 201"));
+    assert_eq!(
+        error_text(&mut world),
+        "Max Level is out of bounds (1 to 200)."
+    );
+
+    assert!(world.apply_lq_admin_command(caller, 20, "#questlevel 10 5"));
+    assert_eq!(
+        error_text(&mut world),
+        "Min Level cannot be greater than Max Level."
+    );
+
+    assert_eq!(world.lq_data, LqData::default());
+}
+
+#[test]
+fn questlevel_sets_min_and_max() {
+    let mut world = World::default();
+    let caller = god(&mut world, 1, 1, 1);
+    assert!(world.apply_lq_admin_command(caller, 20, "#questlevel 5 50"));
+    assert_eq!(
+        plain_texts(&mut world),
+        vec!["Set min level to 5 and max level to 50.".to_string()]
+    );
+    assert_eq!(world.lq_data.min_level, 5);
+    assert_eq!(world.lq_data.max_level, 50);
+}
+
+#[test]
+fn questreward_rejects_out_of_bounds_nr() {
+    let mut world = World::default();
+    let caller = god(&mut world, 1, 1, 1);
+
+    assert!(world.apply_lq_admin_command(caller, 20, "#questreward 0 50 dummy"));
+    assert_eq!(error_text(&mut world), "Nr is out of bounds (1-9)");
+
+    assert!(world.apply_lq_admin_command(caller, 20, "#questreward 10 50 dummy"));
+    assert_eq!(error_text(&mut world), "Nr is out of bounds (1-9)");
+}
+
+#[test]
+fn questreward_rejects_out_of_bounds_amount() {
+    let mut world = World::default();
+    let caller = god(&mut world, 1, 1, 1);
+
+    assert!(world.apply_lq_admin_command(caller, 20, "#questreward 1 0 dummy"));
+    assert_eq!(
+        error_text(&mut world),
+        "Amount is out of bounds. It must be in the range 1..100. \
+(Percentage of maximum allowed reward)."
+    );
+
+    assert!(world.apply_lq_admin_command(caller, 20, "#questreward 1 101 dummy"));
+    assert_eq!(
+        error_text(&mut world),
+        "Amount is out of bounds. It must be in the range 1..100. \
+(Percentage of maximum allowed reward)."
+    );
+}
+
+#[test]
+fn questreward_sets_mark_and_shows_up_in_questshow() {
+    let mut world = World::default();
+    let caller = god(&mut world, 1, 1, 1);
+    assert!(world.apply_lq_admin_command(caller, 20, "#questreward 3 40 rescue"));
+    assert_eq!(
+        plain_texts(&mut world),
+        vec!["Set reward for mark rescue (3) to 40 exp.".to_string()]
+    );
+    assert_eq!(world.lq_data.reward[3], 40);
+    assert_eq!(world.lq_data.reward_desc[3], "rescue");
+
+    world.apply_lq_admin_command(caller, 20, "#questlevel 5 50");
+    plain_texts(&mut world);
+
+    assert!(world.apply_lq_admin_command(caller, 20, "#questshow"));
+    assert_eq!(
+        plain_texts(&mut world),
+        vec![
+            "Min level: 5".to_string(),
+            "Max level: 50".to_string(),
+            "Reward for mark rescue (3) is 40 exp.".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn questentrance_sets_to_callers_position() {
+    let mut world = World::default();
+    let caller = god(&mut world, 1, 12, 34);
+    assert!(world.apply_lq_admin_command(caller, 20, "#questentrance"));
+    assert_eq!(
+        plain_texts(&mut world),
+        vec!["Set quest entrance.".to_string()]
+    );
+    assert_eq!(world.lq_data.entrance_x, 12);
+    assert_eq!(world.lq_data.entrance_y, 34);
+}
+
+#[test]
+fn queststart_requires_level_then_entrance_then_opens() {
+    let mut world = World::default();
+    let caller = god(&mut world, 1, 12, 34);
+
+    assert!(world.apply_lq_admin_command(caller, 20, "#queststart"));
+    assert_eq!(
+        plain_texts(&mut world),
+        vec!["You have to set min/max levels first (/questlevel)".to_string()]
+    );
+    assert!(!world.lq_data.open);
+
+    world.apply_lq_admin_command(caller, 20, "#questlevel 1 100");
+    plain_texts(&mut world);
+    assert!(world.apply_lq_admin_command(caller, 20, "#queststart"));
+    assert_eq!(
+        plain_texts(&mut world),
+        vec!["You have to set entrance position first (/questentrance)".to_string()]
+    );
+    assert!(!world.lq_data.open);
+
+    world.apply_lq_admin_command(caller, 20, "#questentrance");
+    plain_texts(&mut world);
+    assert!(world.apply_lq_admin_command(caller, 20, "#queststart"));
+    assert_eq!(plain_texts(&mut world), vec!["Quest starts...".to_string()]);
+    assert!(world.lq_data.open);
+}
+
+#[test]
+fn questreset_removes_lqnpc_characters_and_teleports_players() {
+    let mut world = World::default();
+    let caller = god(&mut world, 1, 5, 5);
+    let npc_id = CharacterId(2);
+    world
+        .characters
+        .insert(npc_id, thrall_character(2, "anything"));
+
+    let bystander = plain_player(&mut world, 3);
+    if let Some(character) = world.characters.get_mut(&bystander) {
+        character.flags.insert(CharacterFlags::PLAYER);
+        character.x = 9;
+        character.y = 9;
+    }
+
+    assert!(world.apply_lq_admin_command(caller, 20, "#questreset"));
+    assert_eq!(plain_texts(&mut world), vec!["Done.".to_string()]);
+
+    assert!(
+        !world.characters.contains_key(&npc_id),
+        "CDR_LQNPC character should be removed"
+    );
+    let bystander_pos = world.characters.get(&bystander).map(|c| (c.x, c.y));
+    assert_eq!(bystander_pos, Some((240, 240)));
+}
+
+#[test]
+fn questreset_clears_every_quest_registry() {
+    let mut world = World::default();
+    let caller = god(&mut world, 1, 5, 5);
+    world.apply_lq_admin_command(caller, 20, "#npc gate_base 5 a 0 gate");
+    plain_texts(&mut world);
+    world.apply_lq_admin_command(caller, 20, "#questlevel 1 100");
+    plain_texts(&mut world);
+    world.apply_lq_admin_command(caller, 20, "#questentrance");
+    plain_texts(&mut world);
+    world.apply_lq_admin_command(caller, 20, "#queststart");
+    plain_texts(&mut world);
+    door(&mut world, 10, "north-gate", 12, 34);
+    world.apply_lq_admin_command(caller, 20, "#doorlist");
+    plain_texts(&mut world);
+
+    assert!(!world.lq_npcs.is_empty());
+    assert!(world.lq_data.open);
+    assert!(world.lq_doors_initialized);
+
+    assert!(world.apply_lq_admin_command(caller, 20, "#questreset"));
+    plain_texts(&mut world);
+
+    assert!(world.lq_npcs.is_empty());
+    assert!(world.lq_npc_respawns.is_empty());
+    assert!(world.lq_doors.is_empty());
+    assert!(!world.lq_doors_initialized);
+    assert_eq!(world.lq_data, LqData::default());
+}
+
+#[test]
+fn questreset_destroys_take_items_and_relocates_player_bodies() {
+    let mut world = World::default();
+    let caller = god(&mut world, 1, 5, 5);
+
+    let mut take_item = item(50, ItemFlags::USED | ItemFlags::TAKE);
+    take_item.x = 60;
+    take_item.y = 60;
+    world.add_item(take_item);
+
+    let mut body_item = item(
+        51,
+        ItemFlags::USED | ItemFlags::TAKE | ItemFlags::PLAYERBODY,
+    );
+    body_item.x = 61;
+    body_item.y = 61;
+    world.add_item(body_item);
+
+    assert!(world.apply_lq_admin_command(caller, 20, "#questreset"));
+    plain_texts(&mut world);
+
+    assert!(
+        !world.items.contains_key(&ItemId(50)),
+        "IF_TAKE item should be destroyed"
+    );
+    let relocated = world
+        .items
+        .get(&ItemId(51))
+        .expect("player body should still exist somewhere");
+    assert_eq!((relocated.x, relocated.y), (240, 240));
+}

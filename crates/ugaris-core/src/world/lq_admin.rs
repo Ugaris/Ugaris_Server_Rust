@@ -43,17 +43,32 @@
 //! - see [`crate::world::lq_usurp`] (a separate file/module: this one was
 //! already near the ~2,000-line hard cap).
 //!
+//! Sixth slice: the non-file-I/O half of the quest-lifecycle family -
+//! `#questlevel`/`#questreward`/`#questshow`/`#questentrance`/
+//! `#queststart`/`#questreset` - operating on the new [`LqData`] (`struct
+//! lq_data`, previously not modeled at all). All six are pure `World`
+//! logic; `#questreset` additionally reuses `teleport_char_driver`/
+//! `destroy_item`/`remove_character` (already ported) plus a new
+//! `World::lq_reset_drop_body_item` (the `remove_item_map`+`drop_item`
+//! sequence for a body *already* on the map, unlike the fresh-body
+//! [`World::drop_body_item`] used by `die_char`). `#npcshow`'s hurt/
+//! killmark exp-preview line now reads the real `lq_data.reward[]`/
+//! `reward_desc[]` table instead of the previously-always-empty
+//! placeholder.
+//!
 //! Still unported (see `PORTING_TODO.md`'s Area 20 entry for the
 //! follow-on plan):
 //! - The `c9`/`mirror` possessed-NPC relay sub-command
 //!   (`lq_usurp`'s own doc comment) - needs `src/system/chat/chat.c`'s
 //!   `server_chat`, permanently deferred cross-server chat transport per
 //!   `AGENTS.md`'s "Not Applicable / Deferred" list.
-//! - `#questsave`/`#questdelete`/`#questend`/`#questload`/`#questshow`/
-//!   `#questreward`/`#questlevel`/`#questreset`/`#questentrance`/
-//!   `#queststart`, `#xinfo` - quest-lifecycle state (`struct lq_data` has
-//!   no `World` equivalent yet) plus (for save/delete/load) novel file
-//!   I/O this codebase has no precedent for.
+//! - `#questsave`/`#questdelete`/`#questload` - need file I/O, a
+//!   genuinely new pattern for this codebase.
+//! - `#questend`/`#xinfo` - both need to read/mutate *every online
+//!   player's* `PlayerRuntime::lq_marks`, which `World` has no access to
+//!   (only `ugaris-server`'s session map does); needs a queued-dispatch
+//!   pattern analogous to `#nspawn`/`#thrall`/`#usurp` but iterating all
+//!   sessions instead of resolving a single target.
 //!
 //! Two C existence checks are permanently deferred rather than ported:
 //! `cmd_npc`'s `lookup_char("lq_"+basename)` and `get_lq_item`'s
@@ -64,13 +79,6 @@
 //! `#nspawn` reaches `ZoneLoader::instantiate_character_template`,
 //! matching the existing `spawns.rs::spawn_lq_npc_character` precedent
 //! for the *scheduled*-respawn path.
-//!
-//! `#npcshow`'s hurt/killmark exp-preview line reads `lq_data.reward[]`/
-//! `reward_desc[]` in C - genuinely always empty/zero here (`0 exp`, no
-//! description) since `struct lq_data` and `#questreward` (the only C
-//! code path that ever populates it) are not ported yet either, so this
-//! is not a simplification, just an accurate reflection of a table with
-//! no ported writer.
 
 use crate::character_driver::CDR_LQNPC;
 
@@ -463,6 +471,30 @@ impl World {
         }
         if cmd_word_matches(&word, "nattack", 4) {
             self.lq_admin_cmd_nattack(character_id, args);
+            return true;
+        }
+        if cmd_word_matches(&word, "questlevel", 8) {
+            self.lq_admin_cmd_questlevel(character_id, args);
+            return true;
+        }
+        if cmd_word_matches(&word, "questreward", 8) {
+            self.lq_admin_cmd_questreward(character_id, args);
+            return true;
+        }
+        if cmd_word_matches(&word, "questshow", 8) {
+            self.lq_admin_cmd_questshow(character_id, args);
+            return true;
+        }
+        if cmd_word_matches(&word, "questentrance", 8) {
+            self.lq_admin_cmd_questentrance(character_id, args);
+            return true;
+        }
+        if cmd_word_matches(&word, "queststart", 8) {
+            self.lq_admin_cmd_queststart(character_id, args);
+            return true;
+        }
+        if cmd_word_matches(&word, "questreset", 10) {
+            self.lq_admin_cmd_questreset(character_id, args);
             return true;
         }
 
@@ -1207,17 +1239,23 @@ impl World {
             );
         }
         if npc.hurt_mark_id != 0 {
-            // C reads `lq_data.reward_desc[]`/`reward[]` here - see the
-            // module doc comment for why this is genuinely always empty/0.
+            let idx = npc.hurt_mark_id as usize;
             self.queue_system_text(
                 character_id,
-                format!("Hurtmark ID:  ({}), 0 exp", npc.hurt_mark_id),
+                format!(
+                    "Hurtmark ID: {} ({}), {} exp",
+                    self.lq_data.reward_desc[idx], npc.hurt_mark_id, self.lq_data.reward[idx]
+                ),
             );
         }
         if npc.kill_mark_id != 0 {
+            let idx = npc.kill_mark_id as usize;
             self.queue_system_text(
                 character_id,
-                format!("Killmark ID:  ({}), 0 exp", npc.kill_mark_id),
+                format!(
+                    "Killmark ID: {} ({}), {} exp",
+                    self.lq_data.reward_desc[idx], npc.kill_mark_id, self.lq_data.reward[idx]
+                ),
             );
         }
     }
@@ -1688,7 +1726,271 @@ impl World {
             self.queue_system_text(character_id, format!("Set key for {count} doors."));
         }
     }
+
+    /// C `cmd_questlevel` (`lq.c:2393-2428`).
+    fn lq_admin_cmd_questlevel(&mut self, character_id: CharacterId, args: &str) {
+        const USAGE: &str = "/questlevel <min:int> <max:int>";
+        let mut reader = ArgReader::new(args);
+        let Some(min_level) = reader.take_int() else {
+            self.queue_lq_error(character_id, format!("Missing mini. Usage is: {USAGE}."));
+            return;
+        };
+        let Some(max_level) = reader.take_int() else {
+            self.queue_lq_error(character_id, format!("Missing maxi. Usage is: {USAGE}."));
+            return;
+        };
+        if reader.has_trailing_garbage() {
+            self.queue_lq_error(
+                character_id,
+                format!("Trailing garbage. Usage is: {USAGE}."),
+            );
+            return;
+        }
+        if !(1..=200).contains(&min_level) {
+            self.queue_lq_error(character_id, "Min Level is out of bounds (1 to 200).");
+            return;
+        }
+        if !(1..=200).contains(&max_level) {
+            self.queue_lq_error(character_id, "Max Level is out of bounds (1 to 200).");
+            return;
+        }
+        if min_level > max_level {
+            self.queue_lq_error(character_id, "Min Level cannot be greater than Max Level.");
+            return;
+        }
+        self.lq_data.min_level = min_level as u32;
+        self.lq_data.max_level = max_level as u32;
+        self.queue_system_text(
+            character_id,
+            format!("Set min level to {min_level} and max level to {max_level}."),
+        );
+    }
+
+    /// C `cmd_questreward` (`lq.c:2357-2391`).
+    fn lq_admin_cmd_questreward(&mut self, character_id: CharacterId, args: &str) {
+        const USAGE: &str = "/questreward <nr:int> <amount:int> <desc:str>";
+        let mut reader = ArgReader::new(args);
+        let Some(nr) = reader.take_int() else {
+            self.queue_lq_error(character_id, format!("Missing nr. Usage is: {USAGE}."));
+            return;
+        };
+        let Some(amount) = reader.take_int() else {
+            self.queue_lq_error(character_id, format!("Missing amount. Usage is: {USAGE}."));
+            return;
+        };
+        let Some(mut desc) = reader.take_str() else {
+            self.queue_lq_error(
+                character_id,
+                format!("Missing description. Usage is: {USAGE}."),
+            );
+            return;
+        };
+        if reader.has_trailing_garbage() {
+            self.queue_lq_error(
+                character_id,
+                format!("Trailing garbage. Usage is: {USAGE}."),
+            );
+            return;
+        }
+        if nr < 1 || nr >= MAXLQMARK as i64 {
+            self.queue_lq_error(
+                character_id,
+                format!("Nr is out of bounds (1-{})", MAXLQMARK - 1),
+            );
+            return;
+        }
+        if !(1..=100).contains(&amount) {
+            self.queue_lq_error(
+                character_id,
+                "Amount is out of bounds. It must be in the range 1..100. (Percentage of maximum allowed reward).",
+            );
+            return;
+        }
+        // C `char desc[sizeof(lq_data.reward_desc[0])]` = `char[80]`.
+        desc.truncate(79);
+        let idx = nr as usize;
+        self.lq_data.reward[idx] = amount as i32;
+        self.lq_data.reward_desc[idx] = desc.clone();
+        self.queue_system_text(
+            character_id,
+            format!("Set reward for mark {desc} ({nr}) to {amount} exp."),
+        );
+    }
+
+    /// C `cmd_questshow` (`lq.c:2430-2441`). Like `#doorlist`, C never
+    /// validates `ptr` here - any extra text after `/questshow` is
+    /// silently ignored.
+    fn lq_admin_cmd_questshow(&mut self, character_id: CharacterId, _args: &str) {
+        self.queue_system_text(
+            character_id,
+            format!("Min level: {}", self.lq_data.min_level),
+        );
+        self.queue_system_text(
+            character_id,
+            format!("Max level: {}", self.lq_data.max_level),
+        );
+        for n in 1..MAXLQMARK {
+            if self.lq_data.reward[n] != 0 {
+                self.queue_system_text(
+                    character_id,
+                    format!(
+                        "Reward for mark {} ({}) is {} exp.",
+                        self.lq_data.reward_desc[n], n, self.lq_data.reward[n]
+                    ),
+                );
+            }
+        }
+    }
+
+    /// C `cmd_questentrance` (`lq.c:2336-2341`). Like `#questshow`, C
+    /// never validates `ptr`.
+    fn lq_admin_cmd_questentrance(&mut self, character_id: CharacterId, _args: &str) {
+        let Some(character) = self.characters.get(&character_id) else {
+            return;
+        };
+        self.lq_data.entrance_x = character.x;
+        self.lq_data.entrance_y = character.y;
+        self.queue_system_text(character_id, "Set quest entrance.");
+    }
+
+    /// C `cmd_queststart` (`lq.c:2343-2355`). Unlike most of this table,
+    /// C's own "not ready yet" replies here have no `COL_LIGHT_RED` prefix.
+    fn lq_admin_cmd_queststart(&mut self, character_id: CharacterId, _args: &str) {
+        if self.lq_data.min_level == 0 || self.lq_data.max_level == 0 {
+            self.queue_system_text(
+                character_id,
+                "You have to set min/max levels first (/questlevel)",
+            );
+            return;
+        }
+        if self.lq_data.entrance_x == 0 || self.lq_data.entrance_y == 0 {
+            self.queue_system_text(
+                character_id,
+                "You have to set entrance position first (/questentrance)",
+            );
+            return;
+        }
+        self.lq_data.open = true;
+        self.queue_system_text(character_id, "Quest starts...");
+    }
+
+    /// C `remove_item_map(n); drop_item(n, x, y)` sequence used only by
+    /// `#questreset`'s player-body branch (`lq.c:2299-2306`): unlike
+    /// [`World::drop_body_item`] (used for a freshly-created body that was
+    /// never registered on the map), this item is already placed on the
+    /// map, so its old tile registration and light must be cleared first.
+    fn lq_reset_drop_body_item(&mut self, item_id: ItemId) -> bool {
+        let Some(mut item) = self.items.remove(&item_id) else {
+            return false;
+        };
+        remove_item_light(&mut self.map, &item);
+        self.map.remove_item_map(&mut item);
+        for (x, y) in QUESTRESET_FALLBACK_POSITIONS {
+            if self
+                .map
+                .drop_item(&mut item, usize::from(x), usize::from(y))
+            {
+                add_item_light(&mut self.map, &item);
+                self.mark_item_light_area(&item);
+                let (ix, iy) = (usize::from(item.x), usize::from(item.y));
+                self.items.insert(item_id, item);
+                self.mark_dirty_sector(ix, iy);
+                return true;
+            }
+        }
+        // C leaves the item off the map entirely if every fallback spot is
+        // blocked (`remove_item_map` already zeroed `it[n].x/y`, and
+        // `drop_item` never restores them on failure) - the item still
+        // exists, just landless, matching that exactly.
+        self.items.insert(item_id, item);
+        false
+    }
+
+    /// C `cmd_questreset` (`lq.c:2278-2321`): wipes the Live Quest area
+    /// back to a blank slate - removes every live `CDR_LQNPC` character,
+    /// evicts every player to one of 7 fallback positions, clears every
+    /// `IF_PLAYERBODY`/`IF_TAKE` item off the map, and resets every quest
+    /// registry (`lq_npcs`/`lq_npc_respawns`/`lq_doors`+
+    /// `lq_doors_initialized`/`lq_data`). Like `#questshow`, C never
+    /// validates `ptr`. Note this also evicts the issuing admin
+    /// themselves if they are a player standing in the reset area -
+    /// matching C's unconditional `ch[n].flags & CF_PLAYER` scan.
+    fn lq_admin_cmd_questreset(&mut self, character_id: CharacterId, _args: &str) {
+        let character_ids: Vec<CharacterId> = self.characters.keys().copied().collect();
+        for id in character_ids {
+            let Some((driver, is_player)) = self.characters.get(&id).map(|character| {
+                (
+                    character.driver,
+                    character.flags.contains(CharacterFlags::PLAYER),
+                )
+            }) else {
+                continue;
+            };
+            if driver == CDR_LQNPC {
+                self.remove_character(id);
+            } else if is_player {
+                let moved = QUESTRESET_FALLBACK_POSITIONS
+                    .iter()
+                    .any(|&(x, y)| self.teleport_char_driver(id, x, y));
+                if !moved {
+                    self.queue_lq_error(
+                        character_id,
+                        "Could not remove all players, please try again soon.",
+                    );
+                }
+            }
+        }
+
+        let item_ids: Vec<ItemId> = self
+            .items
+            .iter()
+            .filter(|(_, item)| item.x != 0)
+            .map(|(item_id, _)| *item_id)
+            .collect();
+        for item_id in item_ids {
+            let Some((is_body, is_take)) = self.items.get(&item_id).map(|item| {
+                (
+                    item.flags.contains(ItemFlags::PLAYERBODY),
+                    item.flags.contains(ItemFlags::TAKE),
+                )
+            }) else {
+                continue;
+            };
+            if is_body {
+                if self.lq_reset_drop_body_item(item_id) {
+                    self.set_item_expire(item_id, self.settings.item_decay_time.max(1) as u64);
+                } else {
+                    self.queue_lq_error(
+                        character_id,
+                        "Could not remove all player bodies, please try again soon.",
+                    );
+                }
+            } else if is_take {
+                self.destroy_item(item_id);
+            }
+        }
+
+        self.lq_npcs.clear();
+        self.lq_npc_respawns.clear();
+        self.lq_doors.clear();
+        self.lq_doors_initialized = false;
+        self.lq_data = LqData::default();
+
+        self.queue_system_text(character_id, "Done.");
+    }
 }
+
+/// C's 7-position fallback spot list used by both the player-teleport and
+/// item-drop halves of `#questreset` (`lq.c:2285-2288`/`2300-2302`).
+const QUESTRESET_FALLBACK_POSITIONS: [(u16, u16); 7] = [
+    (240, 240),
+    (235, 240),
+    (240, 235),
+    (235, 235),
+    (245, 240),
+    (240, 245),
+    (245, 245),
+];
 
 /// Result of [`World::try_dispatch_lq_nspawn`] - unlike every other
 /// command in this table, `#nspawn`'s underlying C `spawn_npc`

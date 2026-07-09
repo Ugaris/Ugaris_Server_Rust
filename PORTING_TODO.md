@@ -952,15 +952,24 @@ Ordered by player progression; the C file is the oracle.
   this file's earlier note); `cmd_wimp`'s `ppd->last_lq_death` write is a
   new `World::pending_lq_wimps` drain queue (`PlayerRuntime::
   set_last_lq_death`, `misc_ppd` offset 8) applied by `tick_client_
-  actions.rs` right after the queued-action loop. Deliberately NOT
-  ported: the `c9`/`mirror` relay sub-command (needs `chat.c`'s
-  `server_chat`, permanently deferred cross-server transport per
-  `AGENTS.md`). 20 new focused tests (`world/tests/lq_usurp.rs` +
-  3 `domirror` tests in `world/tests/lqnpc.rs`). Still unported: the
-  whole quest-lifecycle family (`#questsave`/`#questdelete`/`#questend`/
-  `#questload`/`#questshow`/`#questreward`/`#questlevel`/`#questreset`/
-  `#questentrance`/`#queststart`, `#xinfo` - needs a new `lq_data` `World`
-  field C never got ported here), and `#questsave`/`#questload`'s file I/O.
+   actions.rs` right after the queued-action loop. Deliberately NOT
+   ported: the `c9`/`mirror` relay sub-command (needs `chat.c`'s
+   `server_chat`, permanently deferred cross-server transport per
+   `AGENTS.md`). 20 new focused tests (`world/tests/lq_usurp.rs` +
+   3 `domirror` tests in `world/tests/lqnpc.rs`). Sixth slice done: the
+   non-file-I/O half of the quest-lifecycle family - `#questlevel`/
+   `#questreward`/`#questshow`/`#questentrance`/`#queststart`/
+   `#questreset` - is now ported (`world/lq_admin.rs`, new `LqData`
+   struct = C's `struct lq_data`, plus a new `World::
+   lq_reset_drop_body_item` for `#questreset`'s already-on-the-map body
+   relocation). All six are pure `World` logic; `#npcshow`'s hurt/
+   killmark exp-preview line now reads the real table instead of a
+   placeholder. Still unported: `#questsave`/`#questdelete`/`#questload`
+   (need file I/O, a genuinely new pattern for this codebase), and
+   `#questend`/`#xinfo` (need to read/mutate every *online* player's
+   `PlayerRuntime::lq_marks`, which `World` has no access to - needs a
+   queued-dispatch pattern analogous to `#nspawn`/`#thrall`/`#usurp` but
+   iterating all sessions instead of one target).
 - [ ] **Area 22 - `src/area/22/lab*.c`** - remaining lab mechanics per
   lab; lab2 undead mostly ported; gatekeeper depends on P2.
 - [ ] **Areas 23/24 - `src/area/23_24/strategy.c` (3,599 lines)** - the
@@ -1028,6 +1037,11 @@ Keep entries to at most three lines: date, task, one-line result.
 Anything longer belongs in `PORTING_LEDGER.md`; historical verbose
 notes live in `PROGRESS_ARCHIVE.md`.
 
+- 2026-07-09: Area 20 progress: ported the non-file-I/O quest-lifecycle
+  commands `#questlevel`/`#questreward`/`#questshow`/`#questentrance`/
+  `#queststart`/`#questreset` (new `LqData`, `World::
+  lq_reset_drop_body_item`). 3196 core + 1141 server tests pass, clean
+  build/boot-smoke.
 - 2026-07-09: Area 20 progress: ported `#usurp`/`#follow`/`#stop`/`#exit`/
   `#wimp` + the possessed-NPC relay + `domirror` tick mirroring (new
   `world/lq_usurp.rs`, `Character::lq_usurp`). 3184 core + 1141 server

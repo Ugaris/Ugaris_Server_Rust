@@ -329,6 +329,9 @@ pub struct World {
     pub lq_doors: Vec<LqDoorState>,
     pub lq_npcs: Vec<LqNpcState>,
     pub lq_npc_respawns: Vec<(usize, u64)>,
+    /// C's single-instance `struct lq_data lq_data` (`src/area/20/lq.c:162`)
+    /// - see [`LqData`]'s own doc comment.
+    pub lq_data: LqData,
     pub npc_respawn_slots: Vec<NpcRespawnSlot>,
     pub merchant_stores: HashMap<CharacterId, MerchantStore>,
     /// Parsed death/spawn-mode loot tables (`src/system/loot/loot.c`'s

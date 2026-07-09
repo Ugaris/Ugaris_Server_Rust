@@ -618,7 +618,7 @@ impl World {
         id
     }
 
-    fn drop_body_item(&mut self, item_id: ItemId, x: usize, y: usize) -> bool {
+    pub(super) fn drop_body_item(&mut self, item_id: ItemId, x: usize, y: usize) -> bool {
         let Some(mut item) = self.items.remove(&item_id) else {
             return false;
         };
