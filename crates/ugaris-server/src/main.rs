@@ -36,6 +36,7 @@ mod events;
 mod inventory;
 mod item_apply;
 mod keyring;
+mod lab;
 mod legacy_backfill;
 mod login;
 mod loot;
@@ -1215,7 +1216,7 @@ async fn main() -> anyhow::Result<()> {
                 // periodic map/action diffs, final frame flush) lives in
                 // `tick_sync::sync_phase`; it returns whether the scheduled
                 // shutdown time was reached this tick.
-                if tick_sync::sync_phase(&mut world, &mut runtime, &zone_loader) {
+                if tick_sync::sync_phase(&mut world, &mut runtime, &mut zone_loader) {
                     break;
                 }
             }

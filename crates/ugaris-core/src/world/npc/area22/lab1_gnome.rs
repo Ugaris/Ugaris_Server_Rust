@@ -52,18 +52,15 @@
 //!   ARE both reproduced digit-for-digit.
 //! - `labgnome_died_driver`'s `dat->master` branch (`create_lab_exit(co,
 //!   20)`, spawning the `"labexit"` reward item at the killer's
-//!   position) is not ported yet: `create_lab_exit` is shared verbatim
-//!   by all five `src/area/22/lab*.c` files and its `IDR_LABEXIT` use-
-//!   side (`set_solved_lab` + `change_area(cn, 3, 183, 199)`) is
-//!   likewise still an inert stub in `ugaris-server`'s completed-action
-//!   dispatch (`ItemDriverOutcome::LabExitUse` currently only increments
-//!   the executed counter - see `crates/ugaris-server/src/
-//!   tick_item_use_completion.rs`). Wiring the full "kill a lab master,
-//!   get a labexit, use it to solve the level and warp to Aston" loop is
-//!   tracked as a single follow-up slice shared by all five lab areas
-//!   rather than five one-off half-features; `apply_labgnome_death_driver`
-//!   below still ports the `dat->text` speech branch, which IS fully
-//!   self-contained.
+//!   position) IS now ported: `World::queue_lab_exit_spawn` (`world::
+//!   lab`, shared verbatim by all five `src/area/22/lab*.c` files) queues
+//!   the drop for `ugaris-server`'s `lab::create_lab_exit` to apply
+//!   (needs `ZoneLoader`), and the `IDR_LABEXIT` use-side (`set_solved_lab`
+//!   + `change_area(cn, 3, 183, 199)`) is ported in `ugaris-server`'s
+//!   `tick_item_use_lab::dispatch_lab_outcome` (`ItemDriverOutcome::
+//!   LabExitUse`). The full "kill a lab master, get a labexit, use it to
+//!   solve the level and warp to Aston" loop is therefore live end to end
+//!   for every one of the five lab areas that calls `create_lab_exit`.
 //! - `tabunga` (the `CF_GOD` debug stat dump `NT_TEXT` triggers) reuses
 //!   the already-ported `World::apply_tabunga_text_notification`
 //!   (`world::text`), same as `CDR_SIMPLEBADDY`'s own generic `NT_TEXT`
@@ -638,8 +635,7 @@ impl World {
         (false, blocker)
     }
 
-    /// C `labgnome_died_driver` (`lab1.c:388-406`): see module doc
-    /// comment for the not-yet-ported `create_lab_exit` reward branch.
+    /// C `labgnome_died_driver` (`lab1.c:388-406`).
     pub fn apply_labgnome_death_driver(&mut self, gnome_id: CharacterId, killer_id: CharacterId) {
         let Some(CharacterDriverState::LabGnome(data)) = self
             .characters
@@ -662,6 +658,16 @@ impl World {
                      behind door. Master can be killed only by Deathfibrin."
                 ),
             );
+        }
+        // C `if (co && (ch[co].flags & CF_PLAYER)) create_lab_exit(co, 20);`
+        if data.master
+            && killer_id.0 != 0
+            && self
+                .characters
+                .get(&killer_id)
+                .is_some_and(|killer| killer.flags.contains(CharacterFlags::PLAYER))
+        {
+            self.queue_lab_exit_spawn(killer_id, 20);
         }
     }
 

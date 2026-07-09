@@ -34,6 +34,7 @@ mod hurt;
 mod item_outcomes;
 mod items;
 mod jail;
+mod lab;
 mod lastseen;
 mod light;
 mod lockname;
@@ -97,6 +98,7 @@ pub use hurt::*;
 pub(crate) use item_outcomes::*;
 pub(crate) use items::*;
 pub use jail::*;
+pub use lab::*;
 #[allow(unused_imports)]
 pub use lastseen::*;
 pub(crate) use light::*;
@@ -458,6 +460,10 @@ pub struct World {
     /// `change_area(co, 36, 240, 10)`, `src/area/1/gwendylon.c:637`) - see
     /// `world/gwendylon.rs`'s module doc comment.
     pending_gwendylon_cross_area_transfers: Vec<GwendylonCrossAreaTransfer>,
+    /// `create_lab_exit(co, level)` reward-gate drops queued by every
+    /// area-22 lab master's own death hook - see `world/lab.rs`'s module
+    /// doc comment.
+    pending_lab_exit_spawns: Vec<LabExitSpawnRequest>,
     /// `/rmdeath` targets not found among the currently loaded characters
     /// yet - see `world/rmdeath.rs`'s module doc comment.
     pending_rmdeath_lookups: Vec<RmdeathLookup>,

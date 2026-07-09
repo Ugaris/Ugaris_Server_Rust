@@ -751,7 +751,6 @@ pub(crate) async fn process_completed_action_outcomes(
                             | ugaris_core::item_driver::ItemDriverOutcome::DecayItemToggled { .. }
                             | ugaris_core::item_driver::ItemDriverOutcome::LabExitAnimating { .. }
                             | ugaris_core::item_driver::ItemDriverOutcome::LabExitExpired { .. }
-                            | ugaris_core::item_driver::ItemDriverOutcome::LabExitUse { .. }
                             | ugaris_core::item_driver::ItemDriverOutcome::BeyondPotion { .. }
                             | ugaris_core::item_driver::ItemDriverOutcome::AlchemyFlaskPotion { .. }
                             | ugaris_core::item_driver::ItemDriverOutcome::OxygenPotion { .. }
@@ -977,6 +976,7 @@ pub(crate) async fn process_completed_action_outcomes(
                             | ugaris_core::item_driver::ItemDriverOutcome::LabEntranceSolvedAll { .. }
                             | ugaris_core::item_driver::ItemDriverOutcome::LabEntranceTooLow { .. }
                             | ugaris_core::item_driver::ItemDriverOutcome::LabExitWrongOwner { .. }
+                            | ugaris_core::item_driver::ItemDriverOutcome::LabExitUse { .. }
                             | ugaris_core::item_driver::ItemDriverOutcome::DeathfibrinShrineGive { .. }
                             | ugaris_core::item_driver::ItemDriverOutcome::DeathfibrinShrineOccupied { .. }
                             | ugaris_core::item_driver::ItemDriverOutcome::DeathfibrinNeedsCarry { .. }
@@ -986,12 +986,16 @@ pub(crate) async fn process_completed_action_outcomes(
                                     &mut world,
                                     &mut zone_loader,
                                     &mut runtime,
+                                    &character_repository,
+                                    &area_repository,
+                                    &config,
                                     outcome,
                                     &mut feedback,
                                     &mut executed,
                                     &mut blocked,
                                     &mut failed,
-                                );
+                                )
+                                .await;
                             }
                             ugaris_core::item_driver::ItemDriverOutcome::EmptyPotionTemplateNeeded {
                                 item_id,

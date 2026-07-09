@@ -25,6 +25,7 @@ mod events;
 mod inventory;
 mod item_apply;
 mod keyring;
+mod lab;
 mod login;
 mod lostcon;
 mod macro_daemon;

@@ -998,12 +998,16 @@ Ordered by player progression; the C file is the oracle.
 - [~] **Area 22 - `src/area/22/lab*.c`** - remaining lab mechanics per
   lab; lab2 undead mostly ported; gatekeeper depends on P2.
   REMAINING: lab1's `CDR_LABGNOMEDRIVER` torch-gnome triad and
-  `IDR_DEATHFIBRIN` (shrine + staff) are now ported. Still open: the
-  shared `create_lab_exit`/`IDR_LABEXIT` reward loop (spawn on master
-  death + `set_solved_lab`/`change_area` on use, currently an inert
-  stub - see `world::npc::area22::lab1_gnome`'s doc comment) for all
-  five lab files; lab2's `CDR_LAB2HERALD`/`CDR_LAB2DEAMON`; all of
-  lab3/4/5 (`CDR_LAB3PASSGUARD`/`PRISONER`, `CDR_LAB4SEYAN`/`GNALB`,
+  `IDR_DEATHFIBRIN` (shrine + staff) are now ported. The shared
+  `create_lab_exit`/`IDR_LABEXIT` reward loop (spawn on master death +
+  `set_solved_lab`/`change_area` on use) is now also ported end to end
+  (`world::lab`'s queue + `ugaris-server`'s `lab::create_lab_exit` +
+  `tick_item_use_lab::dispatch_lab_outcome`'s `LabExitUse` handling),
+  wired into `labgnome_died_driver`'s `dat->master` branch; the other
+  four lab areas' own master-kill hooks still need porting to actually
+  call `World::queue_lab_exit_spawn` (the shared machinery they'll call
+  now exists). Still open: lab2's `CDR_LAB2HERALD`/`CDR_LAB2DEAMON`; all
+  of lab3/4/5 (`CDR_LAB3PASSGUARD`/`PRISONER`, `CDR_LAB4SEYAN`/`GNALB`,
   `CDR_LAB5DAEMON`/`SEYAN`/`MAGE`).
 - [ ] **Areas 23/24 - `src/area/23_24/strategy.c` (3,599 lines)** - the
   strategy minigame (mission ownership, worker spawning, resources).
@@ -1070,6 +1074,10 @@ Keep entries to at most three lines: date, task, one-line result.
 Anything longer belongs in `PORTING_LEDGER.md`; historical verbose
 notes live in `PROGRESS_ARCHIVE.md`.
 
+- 2026-07-09: Area 22 progress: ported the shared `create_lab_exit`/
+  `IDR_LABEXIT` reward loop (`world::lab` queue, `ugaris-server::lab`,
+  `tick_item_use_lab::dispatch_lab_outcome`'s `LabExitUse`), wired into
+  lab1's master-kill hook. 3245 core + 1154 server tests pass, clean boot-smoke.
 - 2026-07-09: Area 22 progress: ported lab1's `CDR_LABGNOMEDRIVER`
   (torch-gnome guard/fighter/immortal-master triad) and `IDR_DEATHFIBRIN`
   (shrine + staff). 3236 core + 1148 server tests pass, clean boot-smoke.

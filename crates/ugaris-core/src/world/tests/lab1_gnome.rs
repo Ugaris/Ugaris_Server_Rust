@@ -260,6 +260,49 @@ fn deathfibrin_strike_hurts_master_and_restores_immortality() {
 }
 
 #[test]
+fn labgnome_death_driver_queues_lab_exit_spawn_when_master_killed_by_player() {
+    let mut world = World::default();
+    let mut gnome = gnome_npc(1);
+    gnome.driver_state = Some(CharacterDriverState::LabGnome(LabGnomeDriverData {
+        master: true,
+        ..Default::default()
+    }));
+    assert!(world.spawn_character(gnome, 20, 20));
+    let mut killer = character(7);
+    killer.flags.insert(CharacterFlags::PLAYER);
+    assert!(world.spawn_character(killer, 21, 20));
+
+    world.apply_labgnome_death_driver(CharacterId(1), CharacterId(7));
+
+    let spawns = world.drain_pending_lab_exit_spawns();
+    assert_eq!(
+        spawns,
+        vec![LabExitSpawnRequest {
+            killer_id: CharacterId(7),
+            level: 20,
+        }]
+    );
+}
+
+#[test]
+fn labgnome_death_driver_skips_lab_exit_spawn_for_non_player_killer() {
+    let mut world = World::default();
+    let mut gnome = gnome_npc(1);
+    gnome.driver_state = Some(CharacterDriverState::LabGnome(LabGnomeDriverData {
+        master: true,
+        ..Default::default()
+    }));
+    assert!(world.spawn_character(gnome, 20, 20));
+    // Not a player - e.g. killed by another NPC/self-defense.
+    let killer = character(7);
+    assert!(world.spawn_character(killer, 21, 20));
+
+    world.apply_labgnome_death_driver(CharacterId(1), CharacterId(7));
+
+    assert!(world.drain_pending_lab_exit_spawns().is_empty());
+}
+
+#[test]
 fn labgnome_death_driver_silent_without_text_flag() {
     let mut world = World::default();
     let mut gnome = gnome_npc(1);

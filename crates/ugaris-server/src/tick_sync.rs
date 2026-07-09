@@ -14,16 +14,29 @@ use super::*;
 pub(crate) fn sync_phase(
     world: &mut World,
     runtime: &mut ServerRuntime,
-    zone_loader: &ZoneLoader,
+    zone_loader: &mut ZoneLoader,
 ) -> bool {
     let realtime_seconds = world.tick.0 / TICKS_PER_SECOND;
     let pk_hate_updates =
-        apply_pk_hate_from_hurt_events(runtime, world, realtime_seconds, zone_loader);
+        apply_pk_hate_from_hurt_events(runtime, world, realtime_seconds, &*zone_loader);
     if pk_hate_updates != 0 {
         info!(
             pk_hate_updates,
             tick = world.tick.0,
             "applied PK hate updates from hurt events"
+        );
+    }
+
+    // C's five `src/area/22/lab*.c` master-kill death hooks all call
+    // `create_lab_exit` directly; this port defers the actual
+    // `ZoneLoader`-backed item creation to here - see `world::lab`'s
+    // module doc comment.
+    let lab_exit_spawns = lab::apply_pending_lab_exit_spawns(world, zone_loader);
+    if lab_exit_spawns != 0 {
+        info!(
+            lab_exit_spawns,
+            tick = world.tick.0,
+            "spawned lab exit reward gates"
         );
     }
 
