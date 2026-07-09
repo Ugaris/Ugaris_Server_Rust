@@ -256,6 +256,7 @@ mod tests {
             class: 0,
             dungeonfighter: None,
             fight_driver: None,
+            lq_usurp: None,
         }
     }
 

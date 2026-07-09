@@ -417,6 +417,28 @@ impl PlayerRuntime {
         write_i32(&mut self.misc_ppd, MISC_PPD_COMPLAINT_DATE_OFFSET, value);
     }
 
+    /// C `struct misc_ppd::last_lq_death` read - see
+    /// `MISC_PPD_LAST_LQ_DEATH_OFFSET`'s own doc comment. `0` (matching a
+    /// freshly zeroed C `struct misc_ppd`) means never.
+    pub fn last_lq_death(&self) -> i32 {
+        if self.misc_ppd.len() < LEGACY_MISC_PPD_SIZE {
+            return 0;
+        }
+        read_i32(&self.misc_ppd, MISC_PPD_LAST_LQ_DEATH_OFFSET)
+    }
+
+    /// C `ppd->last_lq_death = realtime;` (`cmd_wimp`, `lq.c:2331-2333`).
+    pub fn set_last_lq_death(&mut self, realtime_seconds: i32) {
+        if self.misc_ppd.len() < LEGACY_MISC_PPD_SIZE {
+            self.misc_ppd.resize(LEGACY_MISC_PPD_SIZE, 0);
+        }
+        write_i32(
+            &mut self.misc_ppd,
+            MISC_PPD_LAST_LQ_DEATH_OFFSET,
+            realtime_seconds,
+        );
+    }
+
     /// C `struct misc_ppd::supermax_state` read (`supermax_driver`,
     /// `src/area/3/area3.c`). `0` (matching a freshly zeroed C `struct
     /// misc_ppd`) means the greeting sequence has never started.

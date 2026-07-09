@@ -126,5 +126,6 @@ fn character(id: u32) -> Character {
         class: 0,
         dungeonfighter: None,
         fight_driver: None,
+        lq_usurp: None,
     }
 }

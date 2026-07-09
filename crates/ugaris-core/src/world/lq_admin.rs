@@ -37,12 +37,18 @@
 //! character's `thrallname` directly - a thrall has no `world::LqNpcState`
 //! template row to look up by).
 //!
+//! Fifth slice: `#usurp`/`#follow`/`#stop`/`#exit`, `#wimp`, the
+//! possessed-NPC "me"/"emote" relay sub-command, the possessed-NPC plain-
+//! speech relay, and the per-tick `domirror` movement mirroring it drives
+//! - see [`crate::world::lq_usurp`] (a separate file/module: this one was
+//! already near the ~2,000-line hard cap).
+//!
 //! Still unported (see `PORTING_TODO.md`'s Area 20 entry for the
 //! follow-on plan):
-//! - `#usurp`/`#follow`/`#stop`/`#exit`, `#wimp`, and the possessed-NPC-
-//!   relay plain-speech branch - need a new `PlayerRuntime.usurp` field
-//!   (`#wimp` also needs a `teleport_char_driver`-equivalent free-tile
-//!   search).
+//! - The `c9`/`mirror` possessed-NPC relay sub-command
+//!   (`lq_usurp`'s own doc comment) - needs `src/system/chat/chat.c`'s
+//!   `server_chat`, permanently deferred cross-server chat transport per
+//!   `AGENTS.md`'s "Not Applicable / Deferred" list.
 //! - `#questsave`/`#questdelete`/`#questend`/`#questload`/`#questshow`/
 //!   `#questreward`/`#questlevel`/`#questreset`/`#questentrance`/
 //!   `#queststart`, `#xinfo` - quest-lifecycle state (`struct lq_data` has
@@ -72,7 +78,7 @@ use super::*;
 
 /// C `cmdcmp(ptr, cmd, minlen)` (`system/command.c:217-234`): `word` is a
 /// case-insensitive prefix of `full`, at least `minlen` characters long.
-fn cmd_word_matches(word: &str, full: &str, minlen: usize) -> bool {
+pub(super) fn cmd_word_matches(word: &str, full: &str, minlen: usize) -> bool {
     let lower = word.to_ascii_lowercase();
     lower.len() >= minlen && full.starts_with(&lower)
 }
@@ -115,12 +121,12 @@ fn legacy_atoi(input: &str) -> i64 {
 /// C `get_str`/`get_int`/`get_chr`/`check_anything` (`lq.c:238-317`): the
 /// tiny space/quote-aware argument tokenizer shared by every `cmd_*`
 /// handler in `special_driver`'s command table.
-struct ArgReader<'a> {
+pub(super) struct ArgReader<'a> {
     rest: &'a str,
 }
 
 impl<'a> ArgReader<'a> {
-    fn new(input: &'a str) -> Self {
+    pub(super) fn new(input: &'a str) -> Self {
         ArgReader { rest: input }
     }
 
@@ -129,7 +135,7 @@ impl<'a> ArgReader<'a> {
     }
 
     /// C `get_str`.
-    fn take_str(&mut self) -> Option<String> {
+    pub(super) fn take_str(&mut self) -> Option<String> {
         self.skip_ws();
         if self.rest.is_empty() {
             return None;
@@ -203,8 +209,18 @@ impl<'a> ArgReader<'a> {
     }
 
     /// C `check_anything`.
-    fn has_trailing_garbage(&self) -> bool {
+    pub(super) fn has_trailing_garbage(&self) -> bool {
         !self.rest.trim_start().is_empty()
+    }
+
+    /// The raw, not-yet-tokenized remainder (C's own `ptr` after however
+    /// many `get_str`/`cmdcmp` calls already advanced it) - used by
+    /// callers that hand the rest of the line to another function
+    /// verbatim instead of tokenizing it further (e.g. `cmd_usurp`'s
+    /// name-only argument doubling as `emote`/`c9`'s free-text payload
+    /// in `world::lq_usurp`).
+    pub(super) fn remaining(&self) -> &'a str {
+        self.rest
     }
 }
 
@@ -219,7 +235,7 @@ impl World {
     /// byte-payload sibling of [`Self::queue_system_text`] (see
     /// [`WorldSystemTextBytes`]'s own doc comment for the same pattern
     /// used by `give_money_message`).
-    fn queue_lq_error(&mut self, character_id: CharacterId, message: impl AsRef<str>) {
+    pub(super) fn queue_lq_error(&mut self, character_id: CharacterId, message: impl AsRef<str>) {
         let mut bytes = crate::text::COL_LIGHT_RED.to_vec();
         bytes.extend_from_slice(message.as_ref().as_bytes());
         self.queue_system_text_bytes(character_id, bytes);

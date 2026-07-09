@@ -478,6 +478,7 @@ impl ZoneLoader {
             class: template.class,
             dungeonfighter: None,
             fight_driver: None,
+            lq_usurp: None,
         };
 
         if template.driver == CDR_SIMPLEBADDY {

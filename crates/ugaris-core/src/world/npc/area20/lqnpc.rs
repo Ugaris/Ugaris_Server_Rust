@@ -10,18 +10,15 @@
 //! which core `World` has no access to - same split as every other
 //! `apply_*_death_from_hurt_event` hook).
 //!
-//! Two deliberate, documented gaps, both parts of C's `usurp`
-//! god/LQMaster-possession mechanic (`dat->usurp`/`pdat->usurp`): the
-//! `domirror` movement-mirroring branch (`lq.c:2855-2868`) and the
-//! `#usurp`/`#follow`/`#stop`/`#exit` admin commands that are the *only*
-//! C code path that ever writes `dat->usurp` are both part of the
-//! not-yet-ported `CDR_LQPARSER` admin command table
-//! (`special_driver`/`cmd_usurp`, `lq.c:2505-2742`) - `dat->usurp` can
-//! never be non-`None` without it, so the branch is unreachable dead code
-//! in this port exactly as it would be in a stock C server with no admin
-//! ever issuing `#usurp`. The `NT_TEXT` "followme"/"stopfollow" mechanic
-//! (`dat->follow`, driven by any `CF_LQMASTER` player's own speech, no
-//! admin command needed) *is* ported - see [`LqNpcDriverData::follow`].
+//! The `domirror` movement-mirroring branch (`lq.c:2855-2868`) is also
+//! ported here - see [`LqNpcDriverData::usurp`]/[`process_lqnpc_tick`]'s
+//! body. The `#usurp`/`#follow`/`#stop`/`#exit`/`#wimp` admin commands
+//! that write `dat->usurp`/`pdat->usurp` (the only place they're ever
+//! set) live in [`crate::world::lq_usurp`] instead, alongside the
+//! possessed-NPC relay (`special_driver`'s own `lq.c:2704-2739`). The
+//! `NT_TEXT` "followme"/"stopfollow" mechanic (`dat->follow`, driven by
+//! any `CF_LQMASTER` player's own speech, no admin command needed) is
+//! ported here too - see [`LqNpcDriverData::follow`].
 
 use crate::character_driver::{mem_add_driver, mem_check_driver, CDR_LQNPC};
 use crate::world::*;
@@ -62,6 +59,22 @@ pub struct LqNpcDriverData {
     /// following (set/cleared by its own "followme"/"stopfollow" speech,
     /// `lq.c:2787-2792`). `None` is C's `0` ("nobody").
     pub follow: Option<CharacterId>,
+    /// C `dat->usurp` (`lq.c:183`) - the `CF_GOD`/`CF_LQMASTER` player
+    /// currently possessing this NPC via `#usurp` (`world::lq_usurp`'s
+    /// `cmd_usurp`/`cmd_exit`), mirrored back from
+    /// [`crate::entity::Character::lq_usurp`] for the mutual-pairing
+    /// check both sides perform (`lq.c:2704-2705,2734-2735,2855-2856`).
+    /// `None` is C's `0`.
+    #[serde(default)]
+    pub usurp: Option<CharacterId>,
+    /// C `dat->udx`/`dat->udy` (`lq.c:183`) - the possessor's position
+    /// offset from this NPC at the moment `#usurp` was issued
+    /// (`ch[cn].x - ch[bco].x`/`ch[cn].y - ch[bco].y`), preserved while
+    /// mirroring the possessor's movement (`domirror`, `lq.c:2855-2868`).
+    #[serde(default)]
+    pub udx: i32,
+    #[serde(default)]
+    pub udy: i32,
 }
 
 /// Side effects of [`World::process_lqnpc_actions`] that need
@@ -126,12 +139,71 @@ impl World {
     ) {
         self.process_lqnpc_messages(lqnpc_id, events);
 
+        // C `if ((co = dat->usurp) && (ch[co].flags & (CF_GOD |
+        // CF_LQMASTER)) && (pdat = ...) && pdat->usurp == cn) { ... }`
+        // (`lq.c:2855-2868`): mirror the possessor's movement/facing
+        // while actively usurped. C's own `ch[cn].tmpx = ch[cn].x;
+        // ch[cn].tmpy = ch[cn].y;` tail (only reached when the mirroring
+        // move itself didn't already `return`) is dropped here, matching
+        // the same simplification the pre-existing `follow` branch below
+        // already makes (see its own comment) - both would only matter
+        // for a subtle "does an idle NPC's rest position drift while
+        // being remote-controlled" edge case, not the mirroring itself.
+        let mut domirror = false;
+        if let Some(possessor_id) = self.lq_usurp_possessor_of(lqnpc_id) {
+            let Some((possessor_x, possessor_y, possessor_dir)) = self
+                .characters
+                .get(&possessor_id)
+                .map(|p| (p.x, p.y, p.dir))
+            else {
+                return;
+            };
+            let (udx, udy) = match self
+                .characters
+                .get(&lqnpc_id)
+                .and_then(|character| character.driver_state.as_ref())
+            {
+                Some(CharacterDriverState::LqNpc(data)) => (data.udx, data.udy),
+                _ => return,
+            };
+            let Some((npc_x, npc_y)) = self.characters.get(&lqnpc_id).map(|c| (c.x, c.y)) else {
+                return;
+            };
+            if i32::from(possessor_x) - i32::from(npc_x) != udx
+                || i32::from(possessor_y) - i32::from(npc_y) != udy
+            {
+                let target_x = i32::from(possessor_x) - udx;
+                let target_y = i32::from(possessor_y) - udy;
+                if target_x >= 0
+                    && target_y >= 0
+                    && self.setup_walk_toward(
+                        lqnpc_id,
+                        target_x as usize,
+                        target_y as usize,
+                        0,
+                        area_id,
+                        false,
+                    )
+                {
+                    return;
+                }
+            }
+            if let Some(npc) = self.characters.get_mut(&lqnpc_id) {
+                if npc.dir != possessor_dir
+                    && !npc.flags.contains(CharacterFlags::DEAD)
+                    && (1..=8).contains(&possessor_dir)
+                {
+                    npc.dir = possessor_dir;
+                }
+            }
+            domirror = true;
+        }
+
         // C `if (!domirror && (co = dat->follow) && (ch[co].flags &
         // (CF_GOD | CF_LQMASTER))) { if (move_driver(cn, ch[co].x,
         // ch[co].y, 2)) return; ch[cn].tmpx = ch[cn].x; ch[cn].tmpy =
-        // ch[cn].y; }` (`lq.c:2870-2876`) - `domirror` (the unported
-        // `usurp` branch) is always false here, see the module doc
-        // comment.
+        // ch[cn].y; }` (`lq.c:2870-2876`) - the `tmpx`/`tmpy` tail is
+        // dropped, see this function's own top comment.
         let follow = match self
             .characters
             .get(&lqnpc_id)
@@ -140,27 +212,29 @@ impl World {
             Some(CharacterDriverState::LqNpc(data)) => data.follow,
             _ => return,
         };
-        if let Some(target_id) = follow {
-            let target_ok = self.characters.get(&target_id).is_some_and(|target| {
-                target
-                    .flags
-                    .intersects(CharacterFlags::GOD | CharacterFlags::LQMASTER)
-            });
-            if target_ok {
-                let Some((target_x, target_y)) =
-                    self.characters.get(&target_id).map(|t| (t.x, t.y))
-                else {
-                    return;
-                };
-                if self.setup_walk_toward(
-                    lqnpc_id,
-                    usize::from(target_x),
-                    usize::from(target_y),
-                    2,
-                    area_id,
-                    false,
-                ) {
-                    return;
+        if !domirror {
+            if let Some(target_id) = follow {
+                let target_ok = self.characters.get(&target_id).is_some_and(|target| {
+                    target
+                        .flags
+                        .intersects(CharacterFlags::GOD | CharacterFlags::LQMASTER)
+                });
+                if target_ok {
+                    let Some((target_x, target_y)) =
+                        self.characters.get(&target_id).map(|t| (t.x, t.y))
+                    else {
+                        return;
+                    };
+                    if self.setup_walk_toward(
+                        lqnpc_id,
+                        usize::from(target_x),
+                        usize::from(target_y),
+                        2,
+                        area_id,
+                        false,
+                    ) {
+                        return;
+                    }
                 }
             }
         }
@@ -177,7 +251,7 @@ impl World {
             &lqnpc,
             area_id,
             FightDriverSuppressions::default(),
-            true,
+            !domirror,
             &mut |below| legacy_random_below_from_seed(&mut seed, below),
         );
         self.legacy_random_seed = seed;
@@ -190,16 +264,18 @@ impl World {
         // - `ch[cn].tmpx`/`tmpy` is the spawn-time home position, modeled
         // as `Character::rest_x`/`rest_y` (same precedent as `world::npc::
         // area19::madhermit`/`nomad`).
-        let Some(lqnpc) = self.characters.get(&lqnpc_id) else {
-            return;
-        };
-        let (rest_x, rest_y) = (lqnpc.rest_x, lqnpc.rest_y);
-        let dir = match lqnpc.driver_state.as_ref() {
-            Some(CharacterDriverState::LqNpc(data)) => data.dir,
-            _ => return,
-        };
-        if self.secure_move_driver(lqnpc_id, rest_x, rest_y, dir, 0, 0, area_id) {
-            return;
+        if !domirror {
+            let Some(lqnpc) = self.characters.get(&lqnpc_id) else {
+                return;
+            };
+            let (rest_x, rest_y) = (lqnpc.rest_x, lqnpc.rest_y);
+            let dir = match lqnpc.driver_state.as_ref() {
+                Some(CharacterDriverState::LqNpc(data)) => data.dir,
+                _ => return,
+            };
+            if self.secure_move_driver(lqnpc_id, rest_x, rest_y, dir, 0, 0, area_id) {
+                return;
+            }
         }
 
         // C `if (regenerate_driver(cn)) return; if (spell_self_driver(cn))
@@ -454,6 +530,34 @@ impl World {
         self.destroy_item(item_id);
         if let Some(lqnpc_mut) = self.characters.get_mut(&lqnpc_id) {
             lqnpc_mut.cursor_item = None;
+        }
+    }
+
+    /// C's mutual-pairing check (`lq.c:2855-2856`): `dat->usurp` names a
+    /// live player whose own `pdat->usurp`
+    /// ([`crate::entity::Character::lq_usurp`]) still names this NPC
+    /// back, and who still holds `CF_GOD`/`CF_LQMASTER`. Also reused by
+    /// `world::lq_usurp`'s relay dispatch (same mutual check C's
+    /// `special_driver` performs independently at `lq.c:2704-2705,2734-
+    /// 2735`).
+    pub(crate) fn lq_usurp_possessor_of(&self, lqnpc_id: CharacterId) -> Option<CharacterId> {
+        let possessor_id = match self
+            .characters
+            .get(&lqnpc_id)
+            .and_then(|character| character.driver_state.as_ref())
+        {
+            Some(CharacterDriverState::LqNpc(data)) => data.usurp?,
+            _ => return None,
+        };
+        let possessor = self.characters.get(&possessor_id)?;
+        if possessor
+            .flags
+            .intersects(CharacterFlags::GOD | CharacterFlags::LQMASTER)
+            && possessor.lq_usurp == Some(lqnpc_id)
+        {
+            Some(possessor_id)
+        } else {
+            None
         }
     }
 

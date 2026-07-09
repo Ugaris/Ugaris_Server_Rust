@@ -442,6 +442,9 @@ pub(crate) fn spawn_lq_npc_character(
         hurt_mark_id: request.hurt_mark_id,
         dir: request.dir,
         follow: None,
+        usurp: None,
+        udx: 0,
+        udy: 0,
     }));
     // C `lqnpc`'s own `NT_CREATE` handler: `fight_driver_set_dist(cn, 30,
     // 0, 60)` (`lq.c:2761`) - seeded directly at spawn time instead of

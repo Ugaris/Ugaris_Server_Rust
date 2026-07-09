@@ -982,6 +982,16 @@ pub(crate) const TWOCITY_PPD_GUARD_INTRO_OFFSET: usize = 7 * 4;
 
 pub(crate) const MISC_PPD_COMPLAINT_DATE_OFFSET: usize = 4;
 
+/// C `struct misc_ppd::last_lq_death` (`src/common/misc_ppd.h:26`):
+/// real-time-seconds timestamp of this player's last Live Quest area
+/// (20/35) death/`#wimp`, gating `lq_entrance`'s 5-minute re-entry
+/// penalty (`lq.c:2979-2982` - not yet ported, see `PORTING_TODO.md`'s
+/// Area 20 entry) and set by `cmd_wimp` (`lq.c:2323-2334`, ported in
+/// `world::lq_usurp`) and the LQ-area no-real-death `hurt_char` branch
+/// (`death.c:1238-1249` - not yet ported, an unrelated gap in the P1
+/// player-death-saves system, not this admin-command-table task).
+pub(crate) const MISC_PPD_LAST_LQ_DEATH_OFFSET: usize = 8;
+
 /// C `struct misc_ppd::supermax_state` (`src/common/misc_ppd.h:28`): the
 /// `supermax_driver` (`src/area/3/area3.c`) greeting-sequence counter
 /// (0..3, plateauing at 4 once the full greeting has played).

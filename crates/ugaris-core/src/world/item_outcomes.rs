@@ -2481,5 +2481,6 @@ pub(crate) fn timer_callback_character() -> Character {
         class: 0,
         dungeonfighter: None,
         fight_driver: None,
+        lq_usurp: None,
     }
 }

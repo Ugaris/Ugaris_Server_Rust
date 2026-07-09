@@ -437,6 +437,15 @@ pub struct Character {
     /// task).
     #[serde(default)]
     pub fight_driver: Option<crate::character_driver::FightDriverData>,
+    /// C `struct lq_plr_data::usurp` (`src/area/20/lq.c:194`,
+    /// `DRD_LQ_PLR_DATA`, no `PERSISTENT_PLAYER_DATA` bit - session-only,
+    /// same "independently-set-data" precedent as `merchant`/
+    /// `dungeonfighter`/`fight_driver` above): the `CDR_LQNPC` character
+    /// this `CF_GOD`/`CF_LQMASTER` player is currently possessing via
+    /// `#usurp` (`world::lq_usurp`'s `cmd_usurp`/`cmd_exit`). `None` is
+    /// C's `0` ("not usurping").
+    #[serde(default)]
+    pub lq_usurp: Option<CharacterId>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -642,6 +651,7 @@ mod tests {
             class: 0,
             dungeonfighter: None,
             fight_driver: None,
+            lq_usurp: None,
         };
 
         character.push_driver_message(crate::character_driver::NT_CREATE, 1, 2, 3);

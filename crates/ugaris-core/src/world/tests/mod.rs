@@ -72,6 +72,7 @@ mod loot;
 mod lostcon;
 mod lq;
 mod lq_admin;
+mod lq_usurp;
 mod lqnpc;
 mod lydia;
 mod macro_npc;
@@ -229,6 +230,7 @@ fn character(id: u32) -> Character {
         class: 0,
         dungeonfighter: None,
         fight_driver: None,
+        lq_usurp: None,
     }
 }
 

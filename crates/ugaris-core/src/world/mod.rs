@@ -42,6 +42,7 @@ mod loot;
 mod lq;
 mod lq_admin;
 pub use lq_admin::{LqNspawnDispatch, LqThrallDispatch};
+pub mod lq_usurp;
 mod mining;
 pub mod npc;
 mod npc_fight;
@@ -362,6 +363,13 @@ pub struct World {
     pending_military_mission_checks: Vec<MilitaryMissionKillCheck>,
     pending_level_achievements: Vec<LevelAchievementCheck>,
     pending_lq_npc_spawns: Vec<LqNpcSpawnRequest>,
+    /// C `cmd_wimp`'s `ppd->last_lq_death = realtime;` write (`lq.c:2332`,
+    /// `world::lq_usurp`) - needs `PlayerRuntime`, drained by
+    /// `ugaris-server`'s area 20 glue. Holds character ids, not
+    /// timestamps; the server stamps `current_realtime_seconds()` itself
+    /// at drain time (same "server owns the clock" precedent as every
+    /// other `realtime_seconds` parameter threaded in from `ugaris-server`).
+    pending_lq_wimps: Vec<CharacterId>,
     pending_look_maps: Vec<LookMapRequest>,
     pending_sound_specials: Vec<WorldSoundSpecial>,
     pending_player_specials: Vec<WorldPlayerSpecial>,

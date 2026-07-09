@@ -937,10 +937,27 @@ Ordered by player progression; the C file is the oracle.
   independent `RANDOM(4)`-based drop position per spawned thrall.
   `#killthrall` is pure `World::lq_admin_cmd_killthrall`, scanning every
   live `CDR_LQNPC` character directly (a thrall has no template row to
-  resolve via `lq_npcs`). Still unported: `#usurp`/`#follow`/`#stop`/
-  `#exit`/`#wimp` (need a new `PlayerRuntime.usurp` field, `#wimp` also
-  needs a `teleport_char_driver`-equivalent free-tile search), the whole
-  quest-lifecycle family (`#questsave`/`#questdelete`/`#questend`/
+  resolve via `lq_npcs`). Fifth slice done: `#usurp`/`#follow`/`#stop`/
+  `#exit`/`#wimp`, the possessed-NPC "me"/"emote" relay sub-command, the
+  possessed-NPC plain-speech relay, and the per-tick `domirror` movement-
+  mirroring branch this all drives are now ported (new `world/lq_usurp.rs`
+  - `lq_admin.rs` was already near the 2,000-line cap - plus a new
+  `Character::lq_usurp` field, C's `pdat->usurp`; `LqNpcDriverData` gained
+  `usurp`/`udx`/`udy`). Dispatched from `tick_client_actions.rs` right
+  after alias expansion (before any chat/tell/who handling), matching C's
+  real priority (`special_driver` runs before `command()`'s own switch) -
+  this is what lets the plain-speech relay actually intercept ordinary
+  `say` text. `#wimp`'s free-tile search reuses the already-ported
+  `teleport_char_driver` (turned out not to need a new helper, despite
+  this file's earlier note); `cmd_wimp`'s `ppd->last_lq_death` write is a
+  new `World::pending_lq_wimps` drain queue (`PlayerRuntime::
+  set_last_lq_death`, `misc_ppd` offset 8) applied by `tick_client_
+  actions.rs` right after the queued-action loop. Deliberately NOT
+  ported: the `c9`/`mirror` relay sub-command (needs `chat.c`'s
+  `server_chat`, permanently deferred cross-server transport per
+  `AGENTS.md`). 20 new focused tests (`world/tests/lq_usurp.rs` +
+  3 `domirror` tests in `world/tests/lqnpc.rs`). Still unported: the
+  whole quest-lifecycle family (`#questsave`/`#questdelete`/`#questend`/
   `#questload`/`#questshow`/`#questreward`/`#questlevel`/`#questreset`/
   `#questentrance`/`#queststart`, `#xinfo` - needs a new `lq_data` `World`
   field C never got ported here), and `#questsave`/`#questload`'s file I/O.
@@ -1011,6 +1028,10 @@ Keep entries to at most three lines: date, task, one-line result.
 Anything longer belongs in `PORTING_LEDGER.md`; historical verbose
 notes live in `PROGRESS_ARCHIVE.md`.
 
+- 2026-07-09: Area 20 progress: ported `#usurp`/`#follow`/`#stop`/`#exit`/
+  `#wimp` + the possessed-NPC relay + `domirror` tick mirroring (new
+  `world/lq_usurp.rs`, `Character::lq_usurp`). 3184 core + 1141 server
+  tests pass, clean build/boot-smoke.
 - 2026-07-09: Area 20 progress: ported the `CDR_LQPARSER` admin command
   table's `#thrall`/`#killthrall` pair (`world/lq_admin.rs`, new
   `LqNpcDriverData::thrallname`/`LqNpcSpawnRequest::is_thrall`). 3164

@@ -241,6 +241,101 @@ fn lqnpc_follows_its_lqmaster_target_when_not_adjacent() {
 }
 
 #[test]
+fn lqnpc_mirrors_its_possessors_movement_when_usurped() {
+    let mut world = World::default();
+    let possessor_id = CharacterId(2);
+    assert!(world.spawn_character(
+        lqnpc(
+            1,
+            LqNpcDriverData {
+                slot: 1,
+                usurp: Some(possessor_id),
+                udx: 0,
+                udy: -2,
+                ..Default::default()
+            },
+        ),
+        10,
+        10,
+    ));
+    let mut possessor = player(2, "Godmode");
+    possessor.flags |= CharacterFlags::GOD;
+    possessor.lq_usurp = Some(CharacterId(1));
+    // `udx`/`udy` were captured when the possessor stood at (10,8); it
+    // has since moved 5 tiles east, so the NPC must mirror that offset.
+    assert!(world.spawn_character(possessor, 15, 8));
+
+    world.process_lqnpc_actions(20);
+    let npc = world.characters.get(&CharacterId(1)).unwrap();
+    assert_eq!(npc.action, crate::legacy::action::WALK);
+    assert_ne!((npc.tox, npc.toy), (0, 0));
+}
+
+#[test]
+fn lqnpc_domirror_turns_to_match_possessors_facing_when_already_aligned() {
+    let mut world = World::default();
+    let possessor_id = CharacterId(2);
+    let mut npc = lqnpc(
+        1,
+        LqNpcDriverData {
+            slot: 1,
+            usurp: Some(possessor_id),
+            udx: 0,
+            udy: 0,
+            ..Default::default()
+        },
+    );
+    npc.dir = 1;
+    assert!(world.spawn_character(npc, 10, 10));
+    let mut possessor = player(2, "Godmode");
+    possessor.flags |= CharacterFlags::GOD;
+    possessor.lq_usurp = Some(CharacterId(1));
+    possessor.dir = 5;
+    // Same tile offset as `udx`/`udy` (both zero) - no move is needed,
+    // only the facing sync (`turn(cn, ch[co].dir)`, `lq.c:2862-2864`).
+    assert!(world.spawn_character(possessor, 10, 10));
+
+    world.process_lqnpc_actions(20);
+    let npc = world.characters.get(&CharacterId(1)).unwrap();
+    assert_eq!(npc.dir, 5);
+    assert_eq!(npc.action, 0);
+}
+
+#[test]
+fn lqnpc_does_not_mirror_movement_without_mutual_pairing() {
+    let mut world = World::default();
+    let possessor_id = CharacterId(2);
+    assert!(world.spawn_character(
+        lqnpc(
+            1,
+            LqNpcDriverData {
+                slot: 1,
+                usurp: Some(possessor_id),
+                udx: 0,
+                udy: 0,
+                ..Default::default()
+            },
+        ),
+        10,
+        10,
+    ));
+    // The possessor's own `lq_usurp` was never set back to this NPC (a
+    // stale/racy state) - C's own `pdat->usurp == cn` check
+    // (`lq.c:2856`) rejects mirroring here too.
+    let mut possessor = player(2, "Godmode");
+    possessor.flags |= CharacterFlags::GOD;
+    assert!(world.spawn_character(possessor, 15, 15));
+
+    world.process_lqnpc_actions(20);
+    let npc = world.characters.get(&CharacterId(1)).unwrap();
+    // No mirroring toward (15,15) happened; the NPC is already at its
+    // own rest position (10,10, matching `lqnpc()`'s helper), so the
+    // fallback idle-return-home path is also a no-op.
+    assert_eq!(npc.action, 0);
+    assert_eq!((npc.x, npc.y), (10, 10));
+}
+
+#[test]
 fn lqnpc_give_matching_key_queues_reward_and_destroys_cursor_item() {
     let mut world = World::default();
     assert!(world.spawn_character(

@@ -73,6 +73,20 @@ pub(crate) async fn process_queued_client_actions(
                     }
                     command = player.expand_aliases(&command);
                 }
+                // C `special_driver`'s `CDR_LQPARSER` "usurp" possession
+                // mechanic (`system/command.c:5855-5859` area-gates into
+                // `lq.c:2504-2742`): dispatched before *any* other command/
+                // chat handling, matching C's own priority exactly - this
+                // is the only way a possessed NPC's plain-speech relay can
+                // actually intercept ordinary `say` text before the local-
+                // speech handler further down claims it. The rest of the
+                // `CDR_LQPARSER` table (`#npc`/`#thrall`/etc, needing no
+                // such early priority since none of their verbs collide
+                // with any earlier handler) stays at its existing, later
+                // dispatch point below.
+                if world.apply_lq_usurp_command(character_id, config.area_id, &command) {
+                    continue;
+                }
                 if command.eq_ignore_ascii_case("sort") {
                     inventory_sort(&mut world, character_id);
                     command_inventory_refresh.push(character_id);
@@ -1345,6 +1359,18 @@ pub(crate) async fn process_queued_client_actions(
                 );
             }
             _ => {}
+        }
+    }
+    // C `cmd_wimp`'s `ppd->last_lq_death = realtime;` write (`lq.c:2332`) -
+    // needs `PlayerRuntime`, drained here right after the queued-action
+    // loop that could have produced it (`World::apply_lq_usurp_command`).
+    let wimped_characters = world.drain_pending_lq_wimps();
+    if !wimped_characters.is_empty() {
+        let realtime_seconds = current_realtime_seconds() as i32;
+        for character_id in wimped_characters {
+            if let Some(player) = runtime.player_for_character_mut(character_id) {
+                player.set_last_lq_death(realtime_seconds);
+            }
         }
     }
     if !command_feedback.is_empty()
