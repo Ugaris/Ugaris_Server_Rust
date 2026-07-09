@@ -924,7 +924,26 @@ Ordered by player progression; the C file is the oracle.
   `#questreset`/`#questentrance`/`#queststart`, `#xinfo` - needs a new
   `lq_data` `World` field C never got ported here), and
   `#questsave`/`#questload`'s file I/O (a genuinely new pattern for this
-  codebase).
+  codebase). Fourth slice done: `#thrall`/`#killthrall` (`lq.c:427-503`,
+  `spawn_npc`'s on-the-fly template-detached `isthrall` spawn/despawn
+  pair) are now ported. `LqNpcDriverData` gained the `thrallname` field;
+  `LqNpcSpawnRequest` gained `is_thrall`/`thrall_name`; `spawn_lq_npc_
+  character` branches on `is_thrall` to skip `slot`/`greeting`/`trigger`/
+  `reply`/the `lq_npcs` slot-bookkeeping registration, matching C's own
+  `isthrall` guard. `#thrall` is `World::try_dispatch_lq_thrall`/
+  `LqThrallDispatch` (same `#nspawn`-precedent split, dispatched ahead of
+  `apply_lq_admin_command`), resolving only the *first* matching template
+  slot (unlike `#nspawn`'s all-matches-plus-`"all"`) and rolling an
+  independent `RANDOM(4)`-based drop position per spawned thrall.
+  `#killthrall` is pure `World::lq_admin_cmd_killthrall`, scanning every
+  live `CDR_LQNPC` character directly (a thrall has no template row to
+  resolve via `lq_npcs`). Still unported: `#usurp`/`#follow`/`#stop`/
+  `#exit`/`#wimp` (need a new `PlayerRuntime.usurp` field, `#wimp` also
+  needs a `teleport_char_driver`-equivalent free-tile search), the whole
+  quest-lifecycle family (`#questsave`/`#questdelete`/`#questend`/
+  `#questload`/`#questshow`/`#questreward`/`#questlevel`/`#questreset`/
+  `#questentrance`/`#queststart`, `#xinfo` - needs a new `lq_data` `World`
+  field C never got ported here), and `#questsave`/`#questload`'s file I/O.
 - [ ] **Area 22 - `src/area/22/lab*.c`** - remaining lab mechanics per
   lab; lab2 undead mostly ported; gatekeeper depends on P2.
 - [ ] **Areas 23/24 - `src/area/23_24/strategy.c` (3,599 lines)** - the
@@ -992,6 +1011,10 @@ Keep entries to at most three lines: date, task, one-line result.
 Anything longer belongs in `PORTING_LEDGER.md`; historical verbose
 notes live in `PROGRESS_ARCHIVE.md`.
 
+- 2026-07-09: Area 20 progress: ported the `CDR_LQPARSER` admin command
+  table's `#thrall`/`#killthrall` pair (`world/lq_admin.rs`, new
+  `LqNpcDriverData::thrallname`/`LqNpcSpawnRequest::is_thrall`). 3164
+  core + 1141 server tests pass, clean build/boot-smoke.
 - 2026-07-09: Area 20 progress: ported the `CDR_LQPARSER` admin command
   table's live-instance-control family (`#nspawn`/`#nremove`/`#nsay`/
   `#nimmortal`/`#nemote`/`#nattack`, `world/lq_admin.rs`). 3150 core +

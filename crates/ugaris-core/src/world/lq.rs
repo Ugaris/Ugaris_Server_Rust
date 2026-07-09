@@ -103,6 +103,17 @@ pub struct LqNpcSpawnRequest {
     pub hurt_mark_id: u32,
     pub carry_item: LqItemSpec,
     pub carry_gold: u32,
+    /// C `spawn_npc`'s `isthrall` parameter (`lq.c:1724`): `true` for the
+    /// `#thrall` admin command's on-the-fly, template-detached spawns.
+    /// When set, the spawned character's `DRD_LQ_NPC_DATA.n` stays `0`
+    /// (not `slot`), `greeting`/`trigger`/`reply` are NOT copied (C's own
+    /// `if (!isthrall) { ... }` guard, `lq.c:1819-1825`), and no
+    /// `lq_npc[n].cn`/`cserial` bookkeeping happens (`World::
+    /// apply_lq_npc_spawn_result` is skipped).
+    pub is_thrall: bool,
+    /// C `spawn_npc`'s `thrallname` parameter, copied into
+    /// `dat->thrallname` only when `is_thrall` is set (`lq.c:1818`).
+    pub thrall_name: String,
 }
 
 pub(crate) fn write_lq_door_key_id(item: &mut Item, key_id: u32) {
@@ -279,5 +290,7 @@ pub(crate) fn build_lq_npc_spawn_request(npc: &LqNpcState) -> LqNpcSpawnRequest 
         hurt_mark_id: npc.hurt_mark_id,
         carry_item: npc.carry_item.clone(),
         carry_gold: npc.carry_gold,
+        is_thrall: false,
+        thrall_name: String::new(),
     }
 }

@@ -921,13 +921,33 @@ pub(crate) async fn process_queued_client_actions(
                 // `lq.c:2505-2742`). All feedback is queued directly onto
                 // `World`'s pending system-text queues and flushed by
                 // `tick_sync::sync_phase` later this same tick.
-                // `#nspawn` is the one command in this table needing
-                // `ZoneLoader` (a brand new character), so it is checked
-                // first via its own dispatcher - see
-                // `ugaris_core::world::LqNspawnDispatch`'s doc comment.
+                // `#nspawn`/`#thrall` are the two commands in this table
+                // needing `ZoneLoader` (a brand new character), so they
+                // are checked first via their own dispatchers - see
+                // `ugaris_core::world::LqNspawnDispatch`/`LqThrallDispatch`'s
+                // doc comments.
                 match world.try_dispatch_lq_nspawn(character_id, config.area_id, &command) {
                     ugaris_core::world::LqNspawnDispatch::NotMatched => {
-                        world.apply_lq_admin_command(character_id, config.area_id, &command);
+                        match world.try_dispatch_lq_thrall(character_id, config.area_id, &command) {
+                            ugaris_core::world::LqThrallDispatch::NotMatched => {
+                                world.apply_lq_admin_command(
+                                    character_id,
+                                    config.area_id,
+                                    &command,
+                                );
+                            }
+                            ugaris_core::world::LqThrallDispatch::Rejected => {}
+                            ugaris_core::world::LqThrallDispatch::Requests(requests) => {
+                                for request in &requests {
+                                    crate::spawns::spawn_lq_npc_character(
+                                        &mut world,
+                                        &mut zone_loader,
+                                        &mut runtime,
+                                        request,
+                                    );
+                                }
+                            }
+                        }
                     }
                     ugaris_core::world::LqNspawnDispatch::Rejected => {}
                     ugaris_core::world::LqNspawnDispatch::Requests(requests) => {

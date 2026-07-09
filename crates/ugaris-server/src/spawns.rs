@@ -409,13 +409,32 @@ pub(crate) fn spawn_lq_npc_character(
         character.sprite = request.sprite;
     }
     // C `dat = set_data(cn, DRD_LQ_NPC_DATA, ...); dat->n = n; dat->mode =
-    // ...; dat->greeting = ...; ...` (`lq.c:1801-1834`).
+    // ...; dat->greeting = ...; ...` (`lq.c:1801-1834`) - the `isthrall`
+    // branch (`lq.c:1815-1818`) skips `n`/`greeting`/`trigger`/`reply` and
+    // sets `thrallname` instead.
     character.driver_state = Some(CharacterDriverState::LqNpc(LqNpcDriverData {
-        slot: request.slot,
+        slot: if request.is_thrall { 0 } else { request.slot },
         mode: request.mode,
-        greeting: request.greeting.clone(),
-        trigger: request.trigger.clone(),
-        reply: request.reply.clone(),
+        greeting: if request.is_thrall {
+            String::new()
+        } else {
+            request.greeting.clone()
+        },
+        trigger: if request.is_thrall {
+            Default::default()
+        } else {
+            request.trigger.clone()
+        },
+        reply: if request.is_thrall {
+            Default::default()
+        } else {
+            request.reply.clone()
+        },
+        thrallname: if request.is_thrall {
+            request.thrall_name.clone()
+        } else {
+            String::new()
+        },
         want_key_id: request.want_key_id,
         reward_item: request.reward_item.clone(),
         reward_mark_id: request.reward_mark_id,
@@ -453,7 +472,16 @@ pub(crate) fn spawn_lq_npc_character(
             }
         }
     }
-    world.apply_lq_npc_spawn_result(request.slot, character_id, serial)
+    // C `if (!isthrall) { lq_npc[n].cn = cn; lq_npc[n].cserial = ...; dat
+    // ->n = n; } else { dat->n = 0; strcpy(dat->thrallname, thrallname); }`
+    // (`lq.c:1811-1818`) - a thrall never registers into `lq_npc[]`'s own
+    // `cn`/`cserial` slot bookkeeping (it has no owning template slot);
+    // `spawn_npc` itself still returns success (`lq.c:1836`) unconditionally.
+    if request.is_thrall {
+        true
+    } else {
+        world.apply_lq_npc_spawn_result(request.slot, character_id, serial)
+    }
 }
 
 pub(crate) fn add_lq_statboost_items(

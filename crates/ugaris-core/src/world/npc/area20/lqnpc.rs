@@ -34,15 +34,14 @@ const LQNPC_GREET_MEMORY_SLOT: usize = 7;
 /// per-instance state a spawned `CDR_LQNPC` character carries, copied from
 /// its [`crate::world::LqNpcState`] template at spawn time
 /// (`ugaris-server`'s `spawn_lq_npc_character`, mirroring C's own
-/// `spawn_npc`, `lq.c:1801-1834`). `thrallname`/the `isthrall` spawn path
-/// (`spawn_npc`'s second, admin-`#nspawn`-summoned-thrall branch) is not
-/// modeled - only the `special_driver` admin command table can trigger it
-/// and that table is not ported (see the module doc comment).
+/// `spawn_npc`, `lq.c:1801-1834`).
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct LqNpcDriverData {
     /// C `dat->n` - the index into `lq_npc[]`/[`crate::world::World::lq_npcs`]
     /// this live character was spawned from (`lqnpc_died`'s respawn-
-    /// scheduling identity check).
+    /// scheduling identity check). Always `0` for a `#thrall`-spawned
+    /// character (C `spawn_npc`'s `isthrall` branch: `dat->n = 0;`,
+    /// `lq.c:1816`) - a thrall has no owning template slot.
     pub slot: usize,
     pub mode: u8,
     pub greeting: String,
@@ -51,8 +50,13 @@ pub struct LqNpcDriverData {
     pub want_key_id: u32,
     pub reward_item: LqItemSpec,
     pub reward_mark_id: u32,
-    pub kill_mark_id: u32,
     pub hurt_mark_id: u32,
+    /// C `dat->thrallname` (`lq.c:174`) - only ever non-empty for a
+    /// `#thrall`-spawned character (`spawn_npc`'s `isthrall` branch:
+    /// `strcpy(dat->thrallname, thrallname)`, `lq.c:1818`); `#killthrall`
+    /// matches on it (`cmd_killthrall`, `lq.c:482-503`).
+    pub thrallname: String,
+    pub kill_mark_id: u32,
     pub dir: u8,
     /// C `dat->follow` - a `CF_LQMASTER` player this NPC is currently
     /// following (set/cleared by its own "followme"/"stopfollow" speech,

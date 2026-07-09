@@ -168,6 +168,8 @@ fn lq_ticker_queues_due_npc_respawns_and_clears_schedule() {
             hurt_mark_id: 0,
             carry_item: LqItemSpec::default(),
             carry_gold: 0,
+            is_thrall: false,
+            thrall_name: String::new(),
         }]
     );
 }

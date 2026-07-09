@@ -117,6 +117,8 @@ fn lq_npc_spawn_request_instantiates_template_and_records_slot_identity() {
             ..Default::default()
         },
         carry_gold: 42,
+        is_thrall: false,
+        thrall_name: String::new(),
     };
     let mut runtime = ServerRuntime::default();
     runtime.set_next_character_id(200);
@@ -217,6 +219,124 @@ fn lq_npc_spawn_request_instantiates_template_and_records_slot_identity() {
     assert_eq!(carry_item.name, "Key");
     assert_eq!(carry_item.carried_by, Some(CharacterId(200)));
     assert!(carry_item.flags.contains(ItemFlags::LABITEM));
+}
+
+#[test]
+fn lq_thrall_spawn_request_skips_slot_bookkeeping_and_dialogue_fields() {
+    // C `spawn_npc`'s `isthrall` branch (`lq.c:1811-1818`): `dat->n` stays
+    // `0`, `greeting`/`trigger`/`reply` are never copied, `thrallname` is
+    // set, and `lq_npc[n].cn`/`cserial` are never touched.
+    let mut loader = ZoneLoader::new();
+    loader
+        .load_character_templates_str(
+            r#"
+                lq_bandit:
+                  name="Template Bandit"
+                ;
+            "#,
+        )
+        .unwrap();
+    let mut world = World::default();
+    assert!(world.configure_lq_npc(ugaris_core::world::LqNpcState {
+        slot: 5,
+        basename: "bandit".to_string(),
+        x: 20,
+        y: 21,
+        dir: ugaris_core::direction::Direction::Left as u8,
+        level: 3,
+        mode: b'a',
+        respawn_seconds: 60,
+        name: String::new(),
+        description: String::new(),
+        nick: [String::new(), String::new()],
+        character_id: None,
+        character_serial: 0,
+        sprite: 0,
+        greeting: "Halt!".to_string(),
+        trigger: [
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+        ],
+        reply: [
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+        ],
+        want_key_id: 0,
+        reward_item: ugaris_core::world::LqItemSpec::default(),
+        reward_mark_id: 0,
+        kill_mark_id: 0,
+        hurt_mark_id: 0,
+        carry_item: ugaris_core::world::LqItemSpec::default(),
+        carry_gold: 0,
+    }));
+    let request = ugaris_core::world::LqNpcSpawnRequest {
+        slot: 5,
+        basename: "bandit".to_string(),
+        x: 20,
+        y: 21,
+        dir: ugaris_core::direction::Direction::Left as u8,
+        level: 3,
+        mode: b'a',
+        name: String::new(),
+        description: String::new(),
+        nick: [String::new(), String::new()],
+        sprite: 0,
+        greeting: "Halt!".to_string(),
+        trigger: [
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+        ],
+        reply: [
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+        ],
+        want_key_id: 0,
+        reward_item: ugaris_core::world::LqItemSpec::default(),
+        reward_mark_id: 0,
+        kill_mark_id: 0,
+        hurt_mark_id: 0,
+        carry_item: ugaris_core::world::LqItemSpec::default(),
+        carry_gold: 0,
+        is_thrall: true,
+        thrall_name: "Bob".to_string(),
+    };
+    let mut runtime = ServerRuntime::default();
+    runtime.set_next_character_id(300);
+
+    assert!(spawn_lq_npc_character(
+        &mut world,
+        &mut loader,
+        &mut runtime,
+        &request,
+    ));
+
+    let character = world.characters.get(&CharacterId(300)).unwrap();
+    assert_eq!(character.driver, CDR_LQNPC);
+    match character.driver_state.as_ref() {
+        Some(ugaris_core::character_driver::CharacterDriverState::LqNpc(data)) => {
+            assert_eq!(data.slot, 0);
+            assert_eq!(data.greeting, "");
+            assert_eq!(data.thrallname, "Bob");
+        }
+        other => panic!("expected LqNpc driver state, got {other:?}"),
+    }
+    // C `if (!isthrall) { lq_npc[n].cn = cn; ... }` never runs for a
+    // thrall - the template slot's own `cn`/`cserial` bookkeeping is
+    // untouched.
+    let npc = world.lq_npcs.iter().find(|npc| npc.slot == 5).unwrap();
+    assert_eq!(npc.character_id, None);
 }
 
 #[test]

@@ -18,22 +18,31 @@
 //! `ZoneLoader`/`PlayerRuntime`, so the entire slice is pure `World`
 //! logic, unlike most of the rest of this port.
 //!
-//! Deliberately NOT ported in this slice (see `PORTING_TODO.md`'s Area 20
-//! entry for the follow-on plan):
-//! - `#thrall`/`#killthrall` - need `DRD_LQ_NPC_DATA.thrallname`, not
-//!   modeled on [`crate::world::npc::area20::lqnpc::LqNpcDriverData`].
-//! - `#usurp`/`#follow`/`#stop`/`#exit`, and the possessed-NPC-relay
-//!   plain-speech branch - need a new `PlayerRuntime.usurp` field.
-//! - `#nspawn`/`#nremove`/`#nsay`/`#nimmortal`/`#nemote`/`#nattack`,
-//!   `#wimp` - live-instance control, some need `ZoneLoader`/
-//!   `ServerRuntime`.
-//!
 //! Second slice: `#doorlist`/`#doorlock` (`lq.c:2443-2503`), operating on
 //! [`crate::world::LqDoorState`] (`world::lq`'s `discover_lq_doors_once`,
 //! already ported for the `LqTicker` periodic scan). Both commands call
 //! `discover_lq_doors_once` themselves first, matching C's own lazy
 //! `lq_ticker`-driven `init_done` populate-on-first-use behavior in case
 //! no `LqTicker` tick has run yet.
+//!
+//! Third slice: the live-instance-control family (`#nspawn`/`#nremove`/
+//! `#nsay`/`#nimmortal`/`#nemote`/`#nattack`).
+//!
+//! Fourth slice: `#thrall`/`#killthrall` (`lq.c:427-503`) - the on-the-fly,
+//! template-detached NPC spawn/despawn pair, `spawn_npc`'s `isthrall`
+//! branch. Like `#nspawn`, `#thrall` needs a fresh character
+//! (`World::try_dispatch_lq_thrall`, dispatched ahead of
+//! `apply_lq_admin_command` the same way); `#killthrall` needs none (pure
+//! `World::lq_admin_cmd_killthrall`, matching every live `CDR_LQNPC`
+//! character's `thrallname` directly - a thrall has no `world::LqNpcState`
+//! template row to look up by).
+//!
+//! Still unported (see `PORTING_TODO.md`'s Area 20 entry for the
+//! follow-on plan):
+//! - `#usurp`/`#follow`/`#stop`/`#exit`, `#wimp`, and the possessed-NPC-
+//!   relay plain-speech branch - need a new `PlayerRuntime.usurp` field
+//!   (`#wimp` also needs a `teleport_char_driver`-equivalent free-tile
+//!   search).
 //! - `#questsave`/`#questdelete`/`#questend`/`#questload`/`#questshow`/
 //!   `#questreward`/`#questlevel`/`#questreset`/`#questentrance`/
 //!   `#queststart`, `#xinfo` - quest-lifecycle state (`struct lq_data` has
@@ -56,6 +65,8 @@
 //! code path that ever populates it) are not ported yet either, so this
 //! is not a simplification, just an accurate reflection of a table with
 //! no ported writer.
+
+use crate::character_driver::CDR_LQNPC;
 
 use super::*;
 
@@ -334,6 +345,14 @@ impl World {
             self.lq_admin_cmd_npc(character_id, args);
             return true;
         }
+        // C checks `thrall` here too (`lq.c:2531-2534`), but it needs a
+        // fresh character (`spawn_npc`'s `isthrall` branch), so it is
+        // dispatched by its own `World::try_dispatch_lq_thrall` first -
+        // see that method's doc comment (same precedent as `#nspawn`).
+        if cmd_word_matches(&word, "killthrall", 3) {
+            self.lq_admin_cmd_killthrall(character_id, args);
+            return true;
+        }
         if cmd_word_matches(&word, "npcname", 5) {
             self.lq_admin_cmd_npcname(character_id, args);
             return true;
@@ -529,6 +548,45 @@ impl World {
         self.lq_npcs.sort_by_key(|npc| npc.slot);
 
         self.queue_system_text(character_id, format!("Added NPC {slot}"));
+    }
+
+    /// C `cmd_killthrall` (`lq.c:482-503`): despawns every live
+    /// `CDR_LQNPC` character whose `DRD_LQ_NPC_DATA.thrallname`
+    /// case-insensitively matches `args` (a `#thrall`-spawned character
+    /// only - template-spawned NPCs always have an empty `thrallname`).
+    fn lq_admin_cmd_killthrall(&mut self, character_id: CharacterId, args: &str) {
+        const USAGE: &str = "/killthrall <thrallname:str>";
+        let mut reader = ArgReader::new(args);
+        let Some(name) = reader.take_str() else {
+            self.queue_lq_error(character_id, format!("Missing name. Usage is: {USAGE}."));
+            return;
+        };
+        if reader.has_trailing_garbage() {
+            self.queue_lq_error(
+                character_id,
+                format!("Trailing garbage. Usage is: {USAGE}."),
+            );
+            return;
+        }
+
+        let targets: Vec<CharacterId> = self
+            .characters
+            .values()
+            .filter(|character| {
+                character.driver == CDR_LQNPC
+                    && matches!(
+                        character.driver_state.as_ref(),
+                        Some(CharacterDriverState::LqNpc(data))
+                            if data.thrallname.eq_ignore_ascii_case(&name)
+                    )
+            })
+            .map(|character| character.id)
+            .collect();
+        let count = targets.len();
+        for target_id in targets {
+            self.remove_character(target_id);
+        }
+        self.queue_system_text(character_id, format!("Killed {count} thralls."));
     }
 
     /// C `cmd_npcname` (`lq.c:512-551`).
@@ -1641,6 +1699,22 @@ pub enum LqNspawnDispatch {
     Requests(Vec<LqNpcSpawnRequest>),
 }
 
+/// Result of [`World::try_dispatch_lq_thrall`] - same split rationale as
+/// [`LqNspawnDispatch`]: `#thrall`'s underlying `spawn_npc(.., isthrall=1,
+/// ..)` call needs a fresh character, only `ugaris-server` can provide.
+pub enum LqThrallDispatch {
+    /// Not `#thrall`/`/thrall`, or the caller lacked area/permission - the
+    /// caller should try other command dispatch tables next.
+    NotMatched,
+    /// Command matched but failed argument validation, or the named
+    /// template doesn't exist; the message is already queued.
+    Rejected,
+    /// Command matched and parsed: one [`LqNpcSpawnRequest`] per thrall to
+    /// spawn (`count`, already clamped/validated), each with its own
+    /// independently-rolled drop position.
+    Requests(Vec<LqNpcSpawnRequest>),
+}
+
 impl World {
     /// C `cmd_nspawn`'s pure-`World` half (`lq.c:1863-1896`) plus
     /// `spawn_npc`'s own `already there`/`still respawning` guard
@@ -1729,5 +1803,123 @@ impl World {
         } else {
             self.queue_system_text(character_id, format!("Spawned {count} NPCs."));
         }
+    }
+
+    /// C `cmd_thrall`'s pure-`World` half (`lq.c:427-475`): like
+    /// `#nspawn`, `spawn_npc`'s `isthrall` branch needs a fresh character,
+    /// so the caller performs the actual instantiation (once per
+    /// `LqNpcSpawnRequest` in [`LqThrallDispatch::Requests`]) via
+    /// `ugaris-server::spawns::spawn_lq_npc_character`; no result report
+    /// call is needed afterward (unlike `#nspawn`) - C's `cmd_thrall`
+    /// never inspects `spawn_npc`'s return value at all.
+    pub fn try_dispatch_lq_thrall(
+        &mut self,
+        character_id: CharacterId,
+        area_id: u16,
+        command: &str,
+    ) -> LqThrallDispatch {
+        if area_id != 20 && area_id != 35 {
+            return LqThrallDispatch::NotMatched;
+        }
+        let trimmed = command.trim_start();
+        let Some(rest) = trimmed
+            .strip_prefix('#')
+            .or_else(|| trimmed.strip_prefix('/'))
+        else {
+            return LqThrallDispatch::NotMatched;
+        };
+        let mut reader = ArgReader::new(rest);
+        let Some(word) = reader.take_str() else {
+            return LqThrallDispatch::NotMatched;
+        };
+        if !cmd_word_matches(&word, "thrall", 3) {
+            return LqThrallDispatch::NotMatched;
+        }
+        let Some(flags) = self
+            .characters
+            .get(&character_id)
+            .map(|character| character.flags)
+        else {
+            return LqThrallDispatch::NotMatched;
+        };
+        if !flags.intersects(CharacterFlags::GOD | CharacterFlags::LQMASTER) {
+            return LqThrallDispatch::NotMatched;
+        }
+
+        const USAGE: &str = "/thrall <nick|ID> <count:int> [thrallname:str]";
+        let Some(nick) = reader.take_str() else {
+            self.queue_lq_error(character_id, format!("Missing nick. Usage is: {USAGE}."));
+            return LqThrallDispatch::Rejected;
+        };
+        let Some(count) = reader.take_int() else {
+            self.queue_lq_error(character_id, format!("Missing count. Usage is: {USAGE}."));
+            return LqThrallDispatch::Rejected;
+        };
+        let mut thrall_name = reader.take_str().unwrap_or_default();
+        thrall_name.truncate(39);
+        if reader.has_trailing_garbage() {
+            self.queue_lq_error(
+                character_id,
+                format!("Trailing garbage. Usage is: {USAGE}."),
+            );
+            return LqThrallDispatch::Rejected;
+        }
+
+        // C `if (MAXCHARS - used_chars < 150) { ... return; }`
+        // (`lq.c:448-451`) is not ported - `World`'s character store is an
+        // unbounded `HashMap`, not a fixed-capacity array (see e.g.
+        // `commands_admin/character.rs`'s `/memstats` doc comment for the
+        // established precedent).
+        if count > 20 {
+            self.queue_system_text(
+                character_id,
+                "Sorry, maximum number of NPCs you can spawn in one call is 20.",
+            );
+            return LqThrallDispatch::Rejected;
+        }
+
+        // C `n = atoi(nick); if (n>0 && n<MAXLQNPC) { ... } else { for
+        // (n=1..MAXLQNPC) if nick[0]/nick[1] match break; }` (`lq.c:454-
+        // 469`) - unlike `#nspawn`'s `resolve_lq_npc_slots(.., true)`
+        // (which collects every match plus `"all"`), `cmd_thrall` stops
+        // at its first (lowest-slot) match and never supports `"all"`.
+        let Some(slot) = self.resolve_lq_npc_slots(&nick, false).into_iter().next() else {
+            self.queue_system_text(character_id, "Template not found");
+            return LqThrallDispatch::Rejected;
+        };
+
+        let Some(caller) = self.characters.get(&character_id) else {
+            return LqThrallDispatch::Rejected;
+        };
+        let (caller_x, caller_y) = (i32::from(caller.x), i32::from(caller.y));
+        // C `dx2offset(ch[cn].dir, &dx, &dy, NULL);` (`lq.c:470`).
+        let (dx, dy) = Direction::try_from(caller.dir)
+            .map(Direction::delta)
+            .unwrap_or((0, 0));
+        let base_x = caller_x + i32::from(dx) * 3;
+        let base_y = caller_y + i32::from(dy) * 3;
+
+        let Some(npc) = self.lq_npcs.iter().find(|npc| npc.slot == slot) else {
+            self.queue_system_text(character_id, "Template not found");
+            return LqThrallDispatch::Rejected;
+        };
+        let template = build_lq_npc_spawn_request(npc);
+
+        let mut requests = Vec::new();
+        for _ in 0..count.max(0) {
+            // C `spawn_npc`'s own `isthrall` position roll: `ch[cn].tmpx =
+            // tx + 2 - RANDOM(4); ch[cn].tmpy = ty + 2 - RANDOM(4);`
+            // (`lq.c:1772-1773`) - rolled independently per spawned
+            // thrall, same as C's per-call `spawn_npc` invocation.
+            let roll_x = legacy_random_below_from_seed(&mut self.legacy_random_seed, 4) as i32;
+            let roll_y = legacy_random_below_from_seed(&mut self.legacy_random_seed, 4) as i32;
+            let mut request = template.clone();
+            request.x = clamp_world_coordinate(base_x + 2 - roll_x);
+            request.y = clamp_world_coordinate(base_y + 2 - roll_y);
+            request.is_thrall = true;
+            request.thrall_name = thrall_name.clone();
+            requests.push(request);
+        }
+        LqThrallDispatch::Requests(requests)
     }
 }

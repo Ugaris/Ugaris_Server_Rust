@@ -1,3 +1,6 @@
+use crate::character_driver::CDR_LQNPC;
+use crate::world::npc::area20::LqNpcDriverData;
+
 use super::*;
 
 fn god(world: &mut World, id: u32, x: u16, y: u16) -> CharacterId {
@@ -864,4 +867,218 @@ fn nspawn_skips_a_slot_still_in_its_respawn_cooldown() {
         panic!("expected Requests");
     };
     assert_eq!(requests.len(), 1);
+}
+
+fn thrall_character(id: u32, thrallname: &str) -> Character {
+    let mut npc = character(id);
+    npc.driver = CDR_LQNPC;
+    npc.driver_state = Some(CharacterDriverState::LqNpc(LqNpcDriverData {
+        thrallname: thrallname.to_string(),
+        ..Default::default()
+    }));
+    npc
+}
+
+#[test]
+fn thrall_is_not_matched_outside_the_lq_areas() {
+    let mut world = World::default();
+    let caller = god(&mut world, 1, 1, 1);
+    assert!(matches!(
+        world.try_dispatch_lq_thrall(caller, 1, "#thrall gate 1"),
+        LqThrallDispatch::NotMatched
+    ));
+}
+
+#[test]
+fn thrall_is_not_matched_for_other_words() {
+    let mut world = World::default();
+    let caller = god(&mut world, 1, 1, 1);
+    assert!(matches!(
+        world.try_dispatch_lq_thrall(caller, 20, "#killthrall bob"),
+        LqThrallDispatch::NotMatched
+    ));
+}
+
+#[test]
+fn thrall_rejects_missing_nick() {
+    let mut world = World::default();
+    let caller = god(&mut world, 1, 1, 1);
+    assert!(matches!(
+        world.try_dispatch_lq_thrall(caller, 20, "#thrall"),
+        LqThrallDispatch::Rejected
+    ));
+    assert!(error_text(&mut world).starts_with("Missing nick. Usage is: /thrall"));
+}
+
+#[test]
+fn thrall_rejects_missing_count() {
+    let mut world = World::default();
+    let caller = god(&mut world, 1, 1, 1);
+    assert!(matches!(
+        world.try_dispatch_lq_thrall(caller, 20, "#thrall gate"),
+        LqThrallDispatch::Rejected
+    ));
+    assert!(error_text(&mut world).starts_with("Missing count. Usage is: /thrall"));
+}
+
+#[test]
+fn thrall_rejects_trailing_garbage() {
+    let mut world = World::default();
+    let caller = god(&mut world, 1, 1, 1);
+    assert!(matches!(
+        world.try_dispatch_lq_thrall(caller, 20, "#thrall gate 1 bob extra"),
+        LqThrallDispatch::Rejected
+    ));
+    assert!(error_text(&mut world).starts_with("Trailing garbage. Usage is: /thrall"));
+}
+
+#[test]
+fn thrall_rejects_more_than_twenty() {
+    let mut world = World::default();
+    let caller = god(&mut world, 1, 1, 1);
+    assert!(matches!(
+        world.try_dispatch_lq_thrall(caller, 20, "#thrall gate 21"),
+        LqThrallDispatch::Rejected
+    ));
+    assert_eq!(
+        plain_texts(&mut world),
+        vec!["Sorry, maximum number of NPCs you can spawn in one call is 20.".to_string()]
+    );
+}
+
+#[test]
+fn thrall_reports_template_not_found() {
+    let mut world = World::default();
+    let caller = god(&mut world, 1, 1, 1);
+    assert!(matches!(
+        world.try_dispatch_lq_thrall(caller, 20, "#thrall missing 1"),
+        LqThrallDispatch::Rejected
+    ));
+    assert_eq!(
+        plain_texts(&mut world),
+        vec!["Template not found".to_string()]
+    );
+}
+
+#[test]
+fn thrall_builds_one_request_per_count_with_thrall_fields_set() {
+    let mut world = World::default();
+    let caller = god(&mut world, 1, 100, 100);
+    world.apply_lq_admin_command(caller, 20, "#npc gate_base 5 a 0 gate");
+    plain_texts(&mut world);
+
+    let LqThrallDispatch::Requests(requests) =
+        world.try_dispatch_lq_thrall(caller, 20, "#thrall gate 3 Bob")
+    else {
+        panic!("expected Requests");
+    };
+    assert_eq!(requests.len(), 3);
+    for request in &requests {
+        assert_eq!(request.basename, "gate_base");
+        assert!(request.is_thrall);
+        assert_eq!(request.thrall_name, "Bob");
+        // C `ch[cn].x + dx*3 + 2 - RANDOM(4)`: within the `[base-1,
+        // base+2]` window around the caller's own position plus its
+        // facing offset (default `dir == 0` here maps to `dx=dy=0`).
+        assert!((99..=102).contains(&request.x));
+        assert!((99..=102).contains(&request.y));
+    }
+}
+
+#[test]
+fn thrall_defaults_to_an_empty_thrallname_when_omitted() {
+    let mut world = World::default();
+    let caller = god(&mut world, 1, 1, 1);
+    world.apply_lq_admin_command(caller, 20, "#npc gate_base 5 a 0 gate");
+    plain_texts(&mut world);
+
+    let LqThrallDispatch::Requests(requests) =
+        world.try_dispatch_lq_thrall(caller, 20, "#thrall gate 1")
+    else {
+        panic!("expected Requests");
+    };
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].thrall_name, "");
+}
+
+#[test]
+fn thrall_zero_count_yields_no_requests() {
+    let mut world = World::default();
+    let caller = god(&mut world, 1, 1, 1);
+    world.apply_lq_admin_command(caller, 20, "#npc gate_base 5 a 0 gate");
+    plain_texts(&mut world);
+
+    let LqThrallDispatch::Requests(requests) =
+        world.try_dispatch_lq_thrall(caller, 20, "#thrall gate 0")
+    else {
+        panic!("expected Requests");
+    };
+    assert!(requests.is_empty());
+}
+
+#[test]
+fn killthrall_rejects_missing_name() {
+    let mut world = World::default();
+    let caller = god(&mut world, 1, 1, 1);
+    assert!(world.apply_lq_admin_command(caller, 20, "#killthrall"));
+    assert!(error_text(&mut world).starts_with("Missing name. Usage is: /killthrall"));
+}
+
+#[test]
+fn killthrall_despawns_matching_thralls_case_insensitively() {
+    let mut world = World::default();
+    let caller = god(&mut world, 1, 1, 1);
+    let bob1 = CharacterId(50);
+    let bob2 = CharacterId(51);
+    let other = CharacterId(52);
+    world.characters.insert(bob1, thrall_character(50, "Bob"));
+    world.characters.insert(bob2, thrall_character(51, "Bob"));
+    world
+        .characters
+        .insert(other, thrall_character(52, "Alice"));
+
+    assert!(world.apply_lq_admin_command(caller, 20, "#killthrall bob"));
+    assert_eq!(
+        plain_texts(&mut world),
+        vec!["Killed 2 thralls.".to_string()]
+    );
+    assert!(!world.characters.contains_key(&bob1));
+    assert!(!world.characters.contains_key(&bob2));
+    assert!(world.characters.contains_key(&other));
+}
+
+#[test]
+fn killthrall_reports_zero_when_nothing_matches() {
+    let mut world = World::default();
+    let caller = god(&mut world, 1, 1, 1);
+    world
+        .characters
+        .insert(CharacterId(50), thrall_character(50, "Alice"));
+
+    assert!(world.apply_lq_admin_command(caller, 20, "#killthrall bob"));
+    assert_eq!(
+        plain_texts(&mut world),
+        vec!["Killed 0 thralls.".to_string()]
+    );
+    assert!(world.characters.contains_key(&CharacterId(50)));
+}
+
+#[test]
+fn killthrall_ignores_non_thrall_lqnpc_characters() {
+    let mut world = World::default();
+    let caller = god(&mut world, 1, 1, 1);
+    let npc_id = spawn_live_lq_npc(&mut world, caller, "gate", 50);
+    // The default `LqNpcDriverData::thrallname` is empty - matches C's
+    // `set_data`-zeroed `dat->thrallname` for a template-spawned NPC.
+    if let Some(character) = world.characters.get_mut(&npc_id) {
+        character.driver = CDR_LQNPC;
+        character.driver_state = Some(CharacterDriverState::LqNpc(LqNpcDriverData::default()));
+    }
+
+    assert!(world.apply_lq_admin_command(caller, 20, "#killthrall bob"));
+    assert_eq!(
+        plain_texts(&mut world),
+        vec!["Killed 0 thralls.".to_string()]
+    );
+    assert!(world.characters.contains_key(&npc_id));
 }
