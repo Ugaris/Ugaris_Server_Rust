@@ -195,6 +195,10 @@ pub const CDR_LAB4GNALB: u16 = 193;
 /// lab5_daemon_driver`), see `world::npc::area22::lab5_daemon`'s module
 /// doc comment.
 pub const CDR_LAB5DAEMON: u16 = 189;
+/// C `#define CDR_LAB5MAGE 190` (`src/system/drvlib.h:216`): the lab5
+/// mage "Mathor" (`src/area/22/lab5.c::lab5_mage_driver`), see
+/// `world::npc::area22::lab5_mage`'s module doc comment.
+pub const CDR_LAB5MAGE: u16 = 190;
 /// C `#define CDR_LAB5SEYAN 191` (`src/system/drvlib.h:217`): the lab5
 /// "Laros" quest giver who collects the three demon heads
 /// (`src/area/22/lab5.c::lab5_seyan_driver`), see `world::npc::area22::
@@ -572,6 +576,7 @@ pub enum CharacterDriverState {
     Lab4Gnalb(crate::world::npc::area22::lab4_gnalb::Lab4GnalbDriverData),
     Lab5Seyan(crate::world::npc::area22::lab5_seyan::Lab5SeyanDriverData),
     Lab5Daemon(crate::world::npc::area22::lab5_daemon::Lab5DaemonDriverData),
+    Lab5Mage(crate::world::npc::area22::lab5_mage::Lab5MageDriverData),
 }
 /// C `bank_driver_parse` from `src/module/bank.c`. The C driver defaults
 /// opening hours to 6..23 before parsing (`bank_driver` lines 304-309).
@@ -1368,7 +1373,8 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::Lab4Seyan(_)
             | CharacterDriverState::Lab4Gnalb(_)
             | CharacterDriverState::Lab5Seyan(_)
-            | CharacterDriverState::Lab5Daemon(_),
+            | CharacterDriverState::Lab5Daemon(_)
+            | CharacterDriverState::Lab5Mage(_),
         ) => SimpleBaddyDriverData::default(),
         None => SimpleBaddyDriverData::default(),
     };
@@ -3883,6 +3889,9 @@ pub use crate::world::npc::area22::lab4_seyan::{
 };
 pub use crate::world::npc::area22::lab5_daemon::{
     apply_lab5_daemon_create_message, Lab5DaemonDriverData,
+};
+pub use crate::world::npc::area22::lab5_mage::{
+    apply_lab5_mage_create_message, Lab5MageDriverData,
 };
 pub use crate::world::npc::area22::lab5_seyan::{
     apply_lab5_seyan_create_message, Lab5SeyanDriverData,

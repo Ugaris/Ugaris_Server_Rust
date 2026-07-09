@@ -661,7 +661,8 @@ impl World {
             | CharacterDriverState::Lab4Seyan(_)
             | CharacterDriverState::Lab4Gnalb(_)
             | CharacterDriverState::Lab5Seyan(_)
-            | CharacterDriverState::Lab5Daemon(_) => None,
+            | CharacterDriverState::Lab5Daemon(_)
+            | CharacterDriverState::Lab5Mage(_) => None,
         }
     }
 

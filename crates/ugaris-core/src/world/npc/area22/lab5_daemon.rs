@@ -23,25 +23,22 @@
 //!   NPC (see `world::asturin`'s module doc comment): C's generic 10-slot
 //!   `struct fight_driver_data` is narrowed to a single tracked `victim`.
 //! - `namecoordy[0]` (`lab5.c:107`, the gunned-demon aggro-line y
-//!   coordinate) is only ever the mage's own spawn position or a
-//!   nameplate item's position in C - neither `lab5_mage_driver` nor
-//!   `IDR_LAB5_ITEM`'s nameplate branch is ported yet, so this port uses
-//!   C's static initializer default (`33`) directly. Revisit once those
-//!   are ported (see `world::npc::area22::lab5_seyan`'s module doc
-//!   comment for what else is still open in this file).
+//!   coordinate) now reads `World::lab5_namecoord(0)`, live-updated by
+//!   the mage's own `NT_CREATE` (`world::npc::area22::lab5_mage`) - see
+//!   that module's doc comment. `IDR_LAB5_ITEM`'s nameplate branch
+//!   (indices 1-3, not needed by this file) is still not ported.
 //! - `lab5_daemon_driver_parse`'s `type=` arg parse itself runs at spawn
 //!   time ([`apply_lab5_daemon_create_message`], `ZoneLoader` has no
 //!   ticker to compute `attackstart` from); the `attackstart` tail that
 //!   does need the ticker still runs from the real `NT_CREATE` message on
-//!   this character's first live tick, same "map/tick-dependent remainder
-//!   deferred to first tick" precedent as `CDR_LABGNOMEDRIVER`'s own
-//!   `NT_CREATE` split.
-//! - `ritual_create_char`'s post-spawn `dir`/`attackstart` override for
-//!   ritual-summoned demons (`lab5.c:158-167`) is not ported - the
-//!   dynamic ritual-room spawning system itself
-//!   (`ritual_start`/`ritual_create_char`, `lab5_mage_driver`'s `SET`/
-//!   `shouts:` handling) is not yet ported. Every demon reachable today
-//!   is the always-present, zone-file-spawned kind.
+//!   this character's first live tick instead, same "map/tick-dependent
+//!   remainder deferred to first tick" precedent as `CDR_LABGNOMEDRIVER`'s
+//!   own `NT_CREATE` split. That tail now does C's real `dat->attackstart
+//!   += ticker` (not a flat overwrite) so `world::npc::area22::
+//!   lab5_mage::ritual_demon_spawns`' pre-set relative `attackstart`
+//!   (`ritual_create_char`'s `attackstart * TICKS`, `lab5.c:166`) survives
+//!   through to this tick-dependent conversion to an absolute deadline,
+//!   exactly like the always-`0`-pre-set zone-spawned case already did.
 
 use crate::character_driver::next_legacy_name_value;
 use crate::item_driver::IID_LAB5_WEAPON;
@@ -51,11 +48,6 @@ use crate::world::*;
 /// weapon slot, same constant `world::npc::area8::fdemon_army` already
 /// established.
 const WN_RHAND: usize = 6;
-
-/// C's static `int namecoordy[4] = {33, 28, 23, 28};` initializer
-/// (`lab5.c:107`) - `namecoordy[0]`'s default before any mage/nameplate
-/// write. See module doc comment.
-const LAB5_NAMECOORDY0_DEFAULT: i32 = 33;
 
 impl World {
     /// C `lab5_daemon_driver`'s per-tick body (`lab5.c:861-943`).
@@ -104,10 +96,13 @@ impl World {
                 // C `lab5_daemon_driver_parse`'s ticker-dependent tail
                 // (`lab5.c:851-858`), run from the real `NT_CREATE`
                 // message - see module doc comment.
+                // C `dat->attackstart += ticker;` for `type` 0/1
+                // (`lab5.c:852,857`); `type` 2 always resets to "never"
+                // (`lab5.c:855`). See module doc comment for why this is
+                // an addition, not a flat overwrite.
                 NT_CREATE => match data.daemon_type {
-                    1 => data.attackstart = self.tick.0,
                     2 => data.attackstart = u64::MAX,
-                    _ => data.attackstart = self.tick.0,
+                    _ => data.attackstart = data.attackstart.saturating_add(self.tick.0),
                 },
                 // C `lab5.c:879-882`.
                 NT_TEXT => {
@@ -155,7 +150,7 @@ impl World {
                     // aggro line.
                     if data.daemon_type == 2
                         && seen.flags.contains(CharacterFlags::PLAYER)
-                        && i32::from(seen.y) < LAB5_NAMECOORDY0_DEFAULT + 25
+                        && i32::from(seen.y) < self.lab5_namecoord(0).1 + 25
                         && char_see_char(&daemon, &seen, &self.map, self.date.daylight)
                     {
                         data.victim = Some(seen_id);

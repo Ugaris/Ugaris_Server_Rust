@@ -556,3 +556,35 @@ pub(crate) async fn lab5daemon_driver_116(
         );
     }
 }
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn lab5mage_driver_117(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    zone_loader: &mut ZoneLoader,
+    config: &ServerConfig,
+    _args: &Args,
+    _completed_actions: &[WorldActionCompletion],
+    _achievement_repository: &Option<ugaris_db::PgAchievementRepository>,
+    _character_repository: &Option<ugaris_db::PgCharacterRepository>,
+    _area_repository: &Option<ugaris_db::PgAreaRepository>,
+    _clan_repository: &Option<ugaris_db::PgClanRegistryRepository>,
+    _clan_log_repository: &Option<ugaris_db::PgClanLogRepository>,
+    _merchant_repository: &Option<ugaris_db::PgMerchantRepository>,
+    _military_master_storage_repository: &Option<ugaris_db::PgMilitaryMasterStorageRepository>,
+    _military_advisor_storage_repository: &Option<ugaris_db::PgMilitaryAdvisorStorageRepository>,
+    _notes_repository: &Option<ugaris_db::PgNotesRepository>,
+    _anticheat_repository: &Option<ugaris_db::PgAntiCheatRepository>,
+    _auction_repository: &Option<ugaris_db::PgAuctionRepository>,
+) {
+    // C `lab5_mage_driver`: the area-22 lab5 mage "Mathor", plus the
+    // force-summon ritual he explains/invokes.
+    let player_facts = crate::area22::lab5_mage_player_facts(runtime);
+    let events = world.process_lab5_mage_actions(&player_facts, config.area_id);
+    if !events.is_empty() {
+        let applied = crate::area22::apply_lab5_mage_events(world, zone_loader, runtime, events);
+        if applied != 0 {
+            info!(applied, tick = world.tick.0, "processed lab-5 mage actions");
+        }
+    }
+}

@@ -12,8 +12,8 @@ use super::*;
 use ugaris_core::world::{
     Lab2DeamonOutcomeEvent, Lab2DeamonPlayerFacts, Lab2HeraldOutcomeEvent, Lab2HeraldPlayerFacts,
     Lab3PassguardOutcomeEvent, Lab3PassguardPlayerFacts, Lab3PrisonerOutcomeEvent,
-    Lab3PrisonerPlayerFacts, Lab4SeyanOutcomeEvent, Lab4SeyanPlayerFacts, Lab5SeyanOutcomeEvent,
-    Lab5SeyanPlayerFacts,
+    Lab3PrisonerPlayerFacts, Lab4SeyanOutcomeEvent, Lab4SeyanPlayerFacts, Lab5MageOutcomeEvent,
+    Lab5MagePlayerFacts, Lab5SeyanOutcomeEvent, Lab5SeyanPlayerFacts,
 };
 
 pub(crate) fn lab2_herald_player_facts(
@@ -311,6 +311,86 @@ pub(crate) fn apply_lab5_seyan_events(
                 player.lab5_seyan_state = seyanstate;
                 player.lab5_seyan_got = seyangot;
                 applied += 1;
+            }
+        }
+    }
+    applied
+}
+
+/// Server-side wiring for area 22's lab5 mage "Mathor"
+/// (`CDR_LAB5MAGE`/`ugaris_core::world::npc::area22::lab5_mage::
+/// process_lab5_mage_actions`). Same `World`/`PlayerRuntime` split as
+/// above; additionally applies [`Lab5MageOutcomeEvent::
+/// AttemptRitualStart`] via `crate::lab5_ritual::apply_ritual_start`
+/// (needs `ZoneLoader` to spawn the planned demons).
+pub(crate) fn lab5_mage_player_facts(
+    runtime: &ServerRuntime,
+) -> HashMap<CharacterId, Lab5MagePlayerFacts> {
+    runtime
+        .players
+        .values()
+        .filter_map(|player| {
+            let character_id = player.character_id?;
+            Some((
+                character_id,
+                Lab5MagePlayerFacts {
+                    magestate: player.lab5_mage_state,
+                    ritualdaemon: player.lab5_ritual_daemon,
+                    ritualstate: player.lab5_ritual_state,
+                },
+            ))
+        })
+        .collect()
+}
+
+/// Applies each [`Lab5MageOutcomeEvent`] queued by
+/// `World::process_lab5_mage_actions`.
+pub(crate) fn apply_lab5_mage_events(
+    world: &mut World,
+    zone_loader: &mut ZoneLoader,
+    runtime: &mut ServerRuntime,
+    events: Vec<Lab5MageOutcomeEvent>,
+) -> usize {
+    let mut applied = 0;
+    for event in events {
+        match event {
+            Lab5MageOutcomeEvent::SetMageState {
+                player_id,
+                magestate,
+            } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.lab5_mage_state = magestate;
+                applied += 1;
+            }
+            Lab5MageOutcomeEvent::SetRitual {
+                player_id,
+                ritualdaemon,
+                ritualstate,
+            } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.lab5_ritual_daemon = ritualdaemon;
+                player.lab5_ritual_state = ritualstate;
+                applied += 1;
+            }
+            Lab5MageOutcomeEvent::AttemptRitualStart {
+                player_id,
+                mage_id,
+                plan,
+            } => {
+                if crate::lab5_ritual::apply_ritual_start(
+                    world,
+                    zone_loader,
+                    runtime,
+                    player_id,
+                    mage_id,
+                    &plan,
+                ) {
+                    applied += 1;
+                }
             }
         }
     }

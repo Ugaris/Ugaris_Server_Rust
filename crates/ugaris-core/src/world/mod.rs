@@ -329,6 +329,17 @@ pub struct World {
     /// doc comment. `in`/registration membership is already `Item::
     /// driver_data[6]` (see `Area3PalaceLampState`'s own doc comment).
     pub area3_lamp_claims: HashMap<ItemId, (CharacterId, i32)>,
+    /// C `int namecoordx[4]`/`int namecoordy[4]` (`src/area/22/lab5.c:
+    /// 105-107`): dynamic overrides of the Master Demons' nameplate/
+    /// entrance/mage-spawn coordinates, indexed by daemon number
+    /// (`namecoordx[0]`/`namecoordy[0]` is the mage's own spawn tile,
+    /// `[1..=3]` are the three nameplate items' positions). `None` means
+    /// "still C's static initializer default" - see
+    /// [`crate::world::npc::area22::lab5_mage::LAB5_NAMECOORD_DEFAULTS`]
+    /// and `World::lab5_namecoord`. Only index 0 (written by the mage's
+    /// own `NT_CREATE`) is wired today; `IDR_LAB5_ITEM`'s nameplate
+    /// branch (`drdata[0]==5`, indices 1-3) is not yet ported.
+    pub lab5_namecoords: [Option<(i32, i32)>; 4],
     pub legacy_random_seed: u32,
     pub lq_doors_initialized: bool,
     pub lq_doors: Vec<LqDoorState>,

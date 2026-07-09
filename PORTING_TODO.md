@@ -1052,12 +1052,28 @@ Ordered by player progression; the C file is the oracle.
   `_WEAPON` item ids. The trophy heads drop via the existing generic
   death-drop mechanic (no scripted reward call in C), so this closes a
   fully playable "kill 3 master demons, turn in heads, get the lab
-  exit" loop on its own. Still open: `CDR_LAB5MAGE` (the ritual/lore
-  dialogue NPC) and `IDR_LAB5_ITEM` (13 drdata types: obelisk/fireface/
-  chestbox/combopotion/nameplate/realnameplate/entrance/backdoor/gun/
-  pike/no-potion-door/manapotion/lightface), plus the dynamic
-  `ritual_start`/`ritual_create_char` room-spawning system those two
-  drive together.
+  exit" loop on its own. `CDR_LAB5MAGE` ("Mathor", `world/npc/area22/
+  lab5_mage.rs`) is now also ported: the full intro/force/demon/ritual-
+  explanation dialogue ladder, the `REPEAT`/`FORCE`/`DEMON`/`RITUAL`
+  `NT_TEXT` keyword jumps (`DEMONS` is unreachable dead code in C itself -
+  documented, not ported), the god-only `SET 1/2/3` ritual-state debug
+  command, and the full "inside the name square, shouted the real name"
+  ritual invocation - `ritual_hurt` (pure `World`) plus the dynamic
+  `ritual_start`/`ritual_create_char` room-spawning system (room search/
+  clear/statue-placement in `World::attempt_ritual_start`, the
+  `ZoneLoader`-needing demon instantiation in `ugaris-server`'s new
+  `lab5_ritual.rs`, wired through a new `Lab5MageOutcomeEvent::
+  AttemptRitualStart` + `World::finish_ritual_start`). New `PlayerRuntime::
+  lab5_mage_state`/`lab5_ritual_daemon`/`lab5_ritual_state` fields and a
+  new `World::lab5_namecoords` dynamic override array (mage's own
+  `NT_CREATE` writes index 0, also closing a documented gap in the
+  already-ported `lab5_daemon`'s gunned-demon aggro line). Still open:
+  `IDR_LAB5_ITEM` (13 drdata types: obelisk/fireface/chestbox/combopotion/
+  nameplate/realnameplate/entrance/backdoor/gun/pike/no-potion-door/
+  manapotion/lightface) - today the ritual is reachable only via the
+  god-only `SET` command, since the nameplate/realnameplate/entrance
+  branches that normally progress `ritualstate` in-game are part of this
+  still-unported item driver.
 - [ ] **Areas 23/24 - `src/area/23_24/strategy.c` (3,599 lines)** - the
   strategy minigame (mission ownership, worker spawning, resources).
   Item dispatch is stubbed as no-ops; this is a full subsystem - plan in
@@ -1122,6 +1138,11 @@ Ordered by player progression; the C file is the oracle.
 Keep entries to at most three lines: date, task, one-line result.
 Anything longer belongs in `PORTING_LEDGER.md`; historical verbose
 notes live in `PROGRESS_ARCHIVE.md`.
+
+- 2026-07-09: Area 22 progress: ported `CDR_LAB5MAGE` (dialogue + the
+  full force-summon ritual invocation/room-spawn system). Only
+  `IDR_LAB5_ITEM` remains for Area 22. 3358 core + 1162 server tests
+  pass, clean build/boot-smoke (area 22, no panics).
 
 - 2026-07-09: Area 22 progress: ported Lab5's `CDR_LAB5SEYAN` (head-
   collection quest giver) and `CDR_LAB5DAEMON` (servant/master/gunned

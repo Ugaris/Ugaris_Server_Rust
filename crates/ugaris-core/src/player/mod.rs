@@ -381,14 +381,27 @@ pub struct PlayerRuntime {
     /// field: bit 0/1/2 = head 1/2/3 handed in. C's slot lacks the
     /// `PERSISTENT_PLAYER_DATA` bit (wiped on logout); this port persists
     /// it like every other typed field per `AGENTS.md`, same documented
-    /// deviation as `lab4_seyan_state`/`_got`. The struct's remaining
-    /// fields (`magegot`/`magestate`/`ritualdaemon`/`ritualstate`) are not
-    /// yet ported - see `world::npc::area22::lab5_seyan`'s module doc
-    /// comment.
+    /// deviation as `lab4_seyan_state`/`_got`. `magegot` (`lab5.c:84`) is
+    /// never read or written anywhere in the C source (its own comment
+    /// admits "not implemented") - genuinely dead, not ported.
     #[serde(default)]
     pub lab5_seyan_state: u8,
     #[serde(default)]
     pub lab5_seyan_got: u8,
+    /// `struct lab5_player_data.magestate` (`lab5.c:86`): the mage
+    /// Mathor's own dialogue ladder, a distinct state counter from
+    /// `lab5_seyan_state` sharing the same `DRD_LAB5_PLAYER` slot. See
+    /// `world::npc::area22::lab5_mage`.
+    #[serde(default)]
+    pub lab5_mage_state: u8,
+    /// `struct lab5_player_data.ritualdaemon` (`lab5.c:88`): which Master
+    /// Demon (1/2/3) the player's in-progress force-summon ritual targets.
+    #[serde(default)]
+    pub lab5_ritual_daemon: u8,
+    /// `struct lab5_player_data.ritualstate` (`lab5.c:89`): 0=none,
+    /// 1=touched name plate, 2=touched real-name plate, 3=ready to call.
+    #[serde(default)]
+    pub lab5_ritual_state: u8,
     #[serde(default)]
     pub pk_kills: u32,
     #[serde(default)]
@@ -782,6 +795,9 @@ impl PlayerRuntime {
             lab4_seyan_got: 0,
             lab5_seyan_state: 0,
             lab5_seyan_got: 0,
+            lab5_mage_state: 0,
+            lab5_ritual_daemon: 0,
+            lab5_ritual_state: 0,
             pk_kills: 0,
             pk_deaths: 0,
             pk_last_kill: 0,

@@ -38,6 +38,7 @@ mod inventory;
 mod item_apply;
 mod keyring;
 mod lab;
+mod lab5_ritual;
 mod legacy_backfill;
 mod login;
 mod loot;
