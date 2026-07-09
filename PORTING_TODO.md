@@ -861,7 +861,7 @@ Ordered by player progression; the C file is the oracle.
   to the nomad NPC). `world/npc/area19/{nomad,nomad_dialogue,nomad_text,
   nomad_give,nomad_bet,madhermit}.rs` + `ugaris-server/src/area19.rs` +
   `tick_npc/area19.rs`; details in PORTING_LEDGER.md)*
-- [~] **Area 20 - `src/area/20/lq.c`** - live-quest admin command table,
+- [x] **Area 20 - `src/area/20/lq.c`** - live-quest admin command table,
   LQ NPC dialogue (spawn/raise/equipment ported).
   REMAINING: `lqnpc`'s per-tick dialogue/movement driver (`NT_CHAR`
   greeting, `NT_GOTHIT` hurt-mark plus aggressive-mode self-defense,
@@ -974,9 +974,27 @@ Ordered by player progression; the C file is the oracle.
   `World::apply_lq_questend_reward`/`report_lq_xinfo` do the pure-`World`
   reward-math/formatting half, and `ugaris-server` supplies the
   `PlayerRuntime::lq_marks` `World` can't see by iterating
-  `ServerRuntime::players`. Still unported: `#questsave`/`#questdelete`/
-  `#questload` (need file I/O, a genuinely new pattern for this
-  codebase - the only remaining gap in this task).
+  `ServerRuntime::players`. Eighth (final) slice done: `#questsave`/
+  `#questdelete`/`#questload` (`world/lq_quest_file.rs`, another new
+  sibling file for the same "`lq_admin.rs` near/over the 2,000-line cap"
+  reason) - the last file-I/O gap. `LqQuestSnapshot`/`LqQuestFile` are
+  this port's JSON replacement for C's raw `lq_data`+`lq_npc[]`+
+  `lq_door[]` byte dump (no cross-version binary-compat requirement to
+  preserve for a save format this port owns end to end); the pure-`World`
+  half (area/permission gate, `get_str` name/password parsing, the
+  per-character `isalpha` name validation, `LqQuestFileDispatch`) stays in
+  `ugaris-core`, the actual `quest/<name>.qst` `read`/`write`/`remove_file`
+  (plus the stored-password compare gating overwrite/delete/load) is new
+  `ugaris-server::area20::handle_lq_quest_file_dispatch`, dispatched from
+  `tick_client_actions.rs` ahead of `apply_lq_admin_command`'s fallback,
+  same split precedent as `#nspawn`/`#thrall`. C's `cmd_questload`'s
+  `init_done = 0` (defers the door-`keyID` restore to the next
+  `lq_ticker` rescan tick) is reproduced as a synchronous
+  `discover_lq_doors_once` rescan inside `apply_lq_quest_snapshot`
+  instead, restoring each rescanned slot's `key_id` immediately rather
+  than a tick later - see that function's own doc comment for why this is
+  an equivalent, not a behavior change. This closes every subcommand in
+  the `CDR_LQPARSER` table and closes Area 20.
 - [ ] **Area 22 - `src/area/22/lab*.c`** - remaining lab mechanics per
   lab; lab2 undead mostly ported; gatekeeper depends on P2.
 - [ ] **Areas 23/24 - `src/area/23_24/strategy.c` (3,599 lines)** - the
@@ -1044,6 +1062,10 @@ Keep entries to at most three lines: date, task, one-line result.
 Anything longer belongs in `PORTING_LEDGER.md`; historical verbose
 notes live in `PROGRESS_ARCHIVE.md`.
 
+- 2026-07-09: Area 20 CLOSED: ported `#questsave`/`#questdelete`/
+  `#questload` (new `world/lq_quest_file.rs` + `ugaris-server::area20::
+  handle_lq_quest_file_dispatch`, JSON save files under `quest/`). 3226
+  core + 1148 server tests pass, clean build/boot-smoke.
 - 2026-07-09: Area 20 progress: ported `#questend`/`#xinfo` (new
   `world/lq_quest_admin.rs`, `tick_client_actions.rs::
   dispatch_lq_questend_or_xinfo`). Only `#questsave`/`#questdelete`/

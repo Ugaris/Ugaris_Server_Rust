@@ -73,6 +73,7 @@ mod lostcon;
 mod lq;
 mod lq_admin;
 mod lq_quest_admin;
+mod lq_quest_file;
 mod lq_usurp;
 mod lqnpc;
 mod lydia;

@@ -43,6 +43,8 @@ mod lq;
 mod lq_admin;
 pub use lq_admin::{LqNspawnDispatch, LqThrallDispatch};
 mod lq_quest_admin;
+mod lq_quest_file;
+pub use lq_quest_file::{LqQuestFile, LqQuestFileDispatch, LqQuestSnapshot};
 pub mod lq_usurp;
 mod mining;
 pub mod npc;

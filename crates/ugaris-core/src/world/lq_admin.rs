@@ -56,19 +56,19 @@
 //! `reward_desc[]` table instead of the previously-always-empty
 //! placeholder.
 //!
-//! Still unported (see `PORTING_TODO.md`'s Area 20 entry for the
-//! follow-on plan):
-//! - The `c9`/`mirror` possessed-NPC relay sub-command
-//!   (`lq_usurp`'s own doc comment) - needs `src/system/chat/chat.c`'s
-//!   `server_chat`, permanently deferred cross-server chat transport per
-//!   `AGENTS.md`'s "Not Applicable / Deferred" list.
-//! - `#questsave`/`#questdelete`/`#questload` - need file I/O, a
-//!   genuinely new pattern for this codebase.
-//! - `#questend`/`#xinfo` - both need to read/mutate *every online
-//!   player's* `PlayerRuntime::lq_marks`, which `World` has no access to
-//!   (only `ugaris-server`'s session map does); needs a queued-dispatch
-//!   pattern analogous to `#nspawn`/`#thrall`/`#usurp` but iterating all
-//!   sessions instead of resolving a single target.
+//! Seventh slice: `#questend`/`#xinfo` - see `world::lq_quest_admin`
+//! (split into its own file: this one was already over the ~2,000-line
+//! hard cap).
+//!
+//! Eighth (final) slice: `#questsave`/`#questdelete`/`#questload` - see
+//! `world::lq_quest_file` (also its own file, for the same reason). This
+//! closes every subcommand in the `CDR_LQPARSER` table.
+//!
+//! Only the `c9`/`mirror` possessed-NPC relay sub-command remains
+//! deliberately unported (`lq_usurp`'s own doc comment) - it needs
+//! `src/system/chat/chat.c`'s `server_chat`, permanently deferred
+//! cross-server chat transport per `AGENTS.md`'s "Not Applicable /
+//! Deferred" list.
 //!
 //! Two C existence checks are permanently deferred rather than ported:
 //! `cmd_npc`'s `lookup_char("lq_"+basename)` and `get_lq_item`'s
@@ -243,7 +243,7 @@ impl World {
     /// byte-payload sibling of [`Self::queue_system_text`] (see
     /// [`WorldSystemTextBytes`]'s own doc comment for the same pattern
     /// used by `give_money_message`).
-    pub(super) fn queue_lq_error(&mut self, character_id: CharacterId, message: impl AsRef<str>) {
+    pub fn queue_lq_error(&mut self, character_id: CharacterId, message: impl AsRef<str>) {
         let mut bytes = crate::text::COL_LIGHT_RED.to_vec();
         bytes.extend_from_slice(message.as_ref().as_bytes());
         self.queue_system_text_bytes(character_id, bytes);

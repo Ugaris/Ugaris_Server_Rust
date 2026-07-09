@@ -944,18 +944,40 @@ pub(crate) async fn process_queued_client_actions(
                     ugaris_core::world::LqNspawnDispatch::NotMatched => {
                         match world.try_dispatch_lq_thrall(character_id, config.area_id, &command) {
                             ugaris_core::world::LqThrallDispatch::NotMatched => {
-                                if !dispatch_lq_questend_or_xinfo(
-                                    &mut world,
-                                    &mut runtime,
+                                // `#questsave`/`#questdelete`/`#questload`
+                                // need real filesystem I/O, which only
+                                // `ugaris-server` can perform - see
+                                // `ugaris_core::world::LqQuestFileDispatch`'s
+                                // doc comment (same split precedent as
+                                // `#nspawn`/`#thrall` above).
+                                match world.try_dispatch_lq_quest_file(
                                     character_id,
                                     config.area_id,
                                     &command,
                                 ) {
-                                    world.apply_lq_admin_command(
-                                        character_id,
-                                        config.area_id,
-                                        &command,
-                                    );
+                                    ugaris_core::world::LqQuestFileDispatch::NotMatched => {
+                                        if !dispatch_lq_questend_or_xinfo(
+                                            &mut world,
+                                            &mut runtime,
+                                            character_id,
+                                            config.area_id,
+                                            &command,
+                                        ) {
+                                            world.apply_lq_admin_command(
+                                                character_id,
+                                                config.area_id,
+                                                &command,
+                                            );
+                                        }
+                                    }
+                                    dispatch => {
+                                        crate::area20::handle_lq_quest_file_dispatch(
+                                            &mut world,
+                                            character_id,
+                                            dispatch,
+                                            std::path::Path::new(crate::area20::LQ_QUEST_DIR),
+                                        );
+                                    }
                                 }
                             }
                             ugaris_core::world::LqThrallDispatch::Rejected => {}

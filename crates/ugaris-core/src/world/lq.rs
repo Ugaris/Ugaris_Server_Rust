@@ -11,7 +11,7 @@ pub(crate) const DEV_ID_LQ: u32 = 0x05;
 /// (`hurt_markID`/`kill_markID` are only ever compared with `> 0`).
 pub const MAXLQMARK: usize = 10;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct LqDoorState {
     pub slot: usize,
     pub item_id: ItemId,
@@ -31,7 +31,7 @@ pub struct LqItemSpec {
     pub key_id: u32,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct LqNpcState {
     pub slot: usize,
     pub basename: String,
@@ -121,7 +121,7 @@ pub struct LqNpcSpawnRequest {
 /// `lq_door[]` there is only ever one instance. `reward`/`reward_desc` are
 /// `#questreward`'s per-mark exp-percentage table (index `0` unused, same
 /// "index 1..MAXLQMARK" convention as `PlayerRuntime::lq_marks`).
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct LqData {
     /// C `lq_data.min_level` (`#questlevel`'s first argument).
     pub min_level: u32,
