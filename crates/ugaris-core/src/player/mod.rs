@@ -23,6 +23,7 @@ mod questlog;
 mod settings;
 mod shrines;
 mod staffer;
+mod strategy;
 mod transport;
 mod tunnel;
 mod twocity;
@@ -30,6 +31,7 @@ mod twocity;
 pub use labs::{lab4_seyan_state_from_got, lab5_seyan_state_from_got};
 pub use misc::*;
 pub use settings::*;
+pub use strategy::StrategyPpd;
 
 #[cfg(test)]
 mod tests;
@@ -443,6 +445,11 @@ pub struct PlayerRuntime {
     /// [`TutorialPpd`].
     #[serde(default)]
     pub tutorial: TutorialPpd,
+    /// C `struct strategy_ppd` (`DRD_STRATEGY_PPD`, `src/area/23_24/
+    /// strategy.c:117-138`): the Areas 23/24 strategy-minigame profile.
+    /// See [`StrategyPpd`].
+    #[serde(default)]
+    pub strategy: StrategyPpd,
     #[serde(default)]
     pub keyring_auto_add: bool,
     #[serde(default)]
@@ -820,6 +827,7 @@ impl PlayerRuntime {
             achievement_data: AccountAchievements::default(),
             achievement_stats: AchievementStats::default(),
             tutorial: TutorialPpd::default(),
+            strategy: StrategyPpd::default(),
             keyring_auto_add: false,
             current_section_id: 0,
             special_shrine_hcsc_last_touch_seconds: 0,

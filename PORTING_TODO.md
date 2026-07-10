@@ -1084,10 +1084,22 @@ Ordered by player progression; the C file is the oracle.
   sweep with an `IDR_LAB5_ITEM` entry was sufficient (verified against
   real zone data: `scheduled_light_timers` 0 -> 29 on `--area-id 22`,
   matching the real placement count). This closes Area 22.
-- [ ] **Areas 23/24 - `src/area/23_24/strategy.c` (3,599 lines)** - the
+- [~] **Areas 23/24 - `src/area/23_24/strategy.c` (3,599 lines)** - the
   strategy minigame (mission ownership, worker spawning, resources).
   Item dispatch is stubbed as no-ops; this is a full subsystem - plan in
   ledger first.
+  REMAINING: plan + first slice done - `crates/ugaris-core/src/world/
+  strategy.rs` (order constants, the 14-row `MISSIONS` table and 24-row
+  `AI_PRESETS` table digit-for-digit from C, `str_exp_cost`/
+  `str_increment`/`str_raise` upgrade economy) plus a new
+  `PlayerRuntime::strategy: StrategyPpd` persistent field
+  (`crates/ugaris-core/src/player/strategy.rs`). See `world::strategy`'s
+  module doc comment for the full remaining-work breakdown: the
+  `str_area` registry + `init_areas`/`str_ticker`, the worker character
+  driver (`strategy_driver`), the `mine`/`storage`/`depot`/`spawner`
+  item drivers (currently no-op), the AI-opponent driver (`ai_main`,
+  538 lines), the mission queue, and the `strategy_boss` NPC dialogue
+  driver.
 - [ ] **Area 25 - `src/area/25/warped.c`** - warped NPC dialogue,
   `DRD_WARPFIGHTER` full fight driver.
 - [ ] **Area 26 - `src/area/26/staffer.c`** - vault skull PPD/quest, Rouven
@@ -1149,6 +1161,12 @@ Keep entries to at most three lines: date, task, one-line result.
 Anything longer belongs in `PORTING_LEDGER.md`; historical verbose
 notes live in `PROGRESS_ARCHIVE.md`.
 
+- 2026-07-11: Areas 23/24 strategy minigame: first slice - ported the
+  pure `MISSIONS`/`AI_PRESETS` content tables, order constants, and
+  `str_exp_cost`/`str_increment`/`str_raise` upgrade economy plus a new
+  persistent `PlayerRuntime::strategy` field. Full plan for the
+  remaining worker/AI/item-driver machinery in `world::strategy`'s doc
+  comment. 3400 core [+19] tests pass, clean build/boot-smoke.
 - 2026-07-11: Area 22 CLOSED: ported `fireface`/`lightface`
   (`IDR_LAB5_ITEM` drdata[0]==2/13), extending `schedule_existing_light_
   timers` to prime them (both are static zone data). 3381 core [+6] +

@@ -20,6 +20,7 @@ mod questlog;
 mod settings;
 mod shrines;
 mod staffer;
+mod strategy;
 mod transport;
 mod tunnel;
 mod twocity;

@@ -65,6 +65,7 @@ mod special_item;
 mod speed;
 mod spells;
 mod steal;
+mod strategy;
 mod teleport;
 mod text;
 mod traps_hazards;
@@ -127,6 +128,7 @@ pub use special_item::RandomShrineWeldingResult;
 #[allow(unused_imports)]
 pub(crate) use spells::*;
 pub use steal::*;
+pub use strategy::*;
 #[allow(unused_imports)]
 pub(crate) use teleport::*;
 pub use text::*;

@@ -120,6 +120,7 @@ mod special_item;
 mod speed;
 mod spells;
 mod steal;
+mod strategy;
 mod superior;
 mod supermax;
 mod teleport;
