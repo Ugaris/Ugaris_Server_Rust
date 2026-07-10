@@ -1,4 +1,5 @@
 use super::*;
+use crate::world::character_value_present;
 
 pub(crate) fn labtorch_driver(character: &Character, item: &mut Item) -> ItemDriverOutcome {
     item.driver_data.resize(2, 0);
@@ -413,6 +414,265 @@ pub(crate) fn lab4_item_driver(character: &Character, item: &Item) -> ItemDriver
     ItemDriverOutcome::Lab4FireplaceKeyGive {
         item_id: item.id,
         character_id: character.id,
+    }
+}
+
+/// C `GUNRELOAD` (`lab5.c:1025`): `2 * TICKS / 3` with `TICKS == 24`.
+const LAB5_GUNRELOAD_TICKS: u64 = TICKS_PER_SECOND * 2 / 3;
+
+/// C `lab5_item` (`src/area/22/lab5.c:1027-1376`). `drdata[0]` selects the
+/// object flavor (see the C file's own comment table, `lab5.c:947-970`).
+/// Every branch that only mutates `character`/`item` (heals, drdata/sprite
+/// writes) is applied directly here, matching `potion_driver`'s own
+/// precedent of mutating through the `&mut Character`/`&mut Item` this
+/// function already receives; branches needing `World`/`ZoneLoader`/
+/// `PlayerRuntime` (sound, pulseback effects, item creation/destruction,
+/// ritual-state persistence) return one of the new `Lab5*` outcomes for
+/// `ugaris-server`'s `tick_item_use_lab.rs` to resolve.
+///
+/// Not ported (documented gap, see module doc precedent in
+/// `deathfibrin_driver`): `drdata[0]==2` (fireface) and `drdata[0]==13`
+/// (lightface), C's two "shoot a projectile down the corridor forever"
+/// perpetual ambient statues. Both are *only* ever driven by their own
+/// `cn==0` self-rescheduling timer chain, which - like every other
+/// `IDR_*` driver anywhere in this port - has no code path that ever
+/// schedules its *first* call (C's `create_item` unconditionally arms
+/// every newly created item's driver via `call_item(driver, n, 0,
+/// ticker+1)`, `src/system/create.c:979-981`; nothing in this port's
+/// `ZoneLoader`/`World::add_item` does the same yet - a pre-existing,
+/// cross-cutting gap affecting any always-on ambient item driver, not
+/// specific to lab5). Both are purely decorative (no player-visible state,
+/// no `cn!=0` branch at all) and can be ported once that generic gap is
+/// closed. `drdata[0]==5`/`6`/`7`/`8`'s `cn==0` branches (map-setup writes
+/// to `namecoordx/y`/`daemondoorx/y`) are likewise not ported - they are
+/// superseded by `World::lab5_namecoords`' hardcoded
+/// `LAB5_NAMECOORD_DEFAULTS`/`lab5.rs`'s `LAB5_DAEMON_DOORS`, already
+/// used by the previously-ported ritual system.
+pub(crate) fn lab5_item_driver(
+    character: &mut Character,
+    item: &mut Item,
+    context: &ItemDriverContext,
+) -> ItemDriverOutcome {
+    if character.id.0 == 0 {
+        // Timer-tick branches: chestbox close, gun reload, pike reset.
+        return match drdata(item, 0) {
+            3 => {
+                if drdata(item, 3) == 0 {
+                    ItemDriverOutcome::Noop
+                } else {
+                    set_drdata(item, 3, 0);
+                    item.sprite -= 1;
+                    ItemDriverOutcome::Lab5ChestboxClose { item_id: item.id }
+                }
+            }
+            9 => {
+                let remaining = drdata(item, 1);
+                if remaining == 0 {
+                    ItemDriverOutcome::Noop
+                } else {
+                    let remaining = remaining - 1;
+                    set_drdata(item, 1, remaining);
+                    item.sprite -= 1;
+                    ItemDriverOutcome::Lab5GunReloadTick {
+                        item_id: item.id,
+                        schedule_after_ticks: (remaining != 0).then_some(LAB5_GUNRELOAD_TICKS),
+                    }
+                }
+            }
+            10 => {
+                if drdata(item, 1) == 0 {
+                    ItemDriverOutcome::Noop
+                } else {
+                    set_drdata(item, 1, 0);
+                    item.sprite -= 1;
+                    ItemDriverOutcome::Lab5PikeReset { item_id: item.id }
+                }
+            }
+            _ => ItemDriverOutcome::Noop,
+        };
+    }
+
+    match drdata(item, 0) {
+        1 => {
+            // C `lab5.c:1148-1154`: full heal, sound resolved by the
+            // caller.
+            character.hp = max_value(character, CharacterValue::Hp) * POWERSCALE;
+            character.mana = max_value(character, CharacterValue::Mana) * POWERSCALE;
+            character.endurance = max_value(character, CharacterValue::Endurance) * POWERSCALE;
+            character.lifeshield = lab5_lifeshield_max(character) * POWERSCALE;
+            ItemDriverOutcome::Lab5Obelisk {
+                character_id: character.id,
+            }
+        }
+        3 => {
+            // C `lab5.c:1157-1219`.
+            if drdata(item, 3) != 0 || character.cursor_item.is_some() {
+                return ItemDriverOutcome::Noop;
+            }
+            if context.lab5_chestbox_already_opened {
+                return ItemDriverOutcome::Lab5ChestboxAlreadyOpened {
+                    character_id: character.id,
+                };
+            }
+            set_drdata(item, 3, 1);
+            item.sprite += 1;
+            ItemDriverOutcome::Lab5ChestboxOpen {
+                item_id: item.id,
+                character_id: character.id,
+                reward: drdata(item, 1),
+            }
+        }
+        4 => {
+            // C `lab5.c:1222-1232`: combopotion, full heal + destroy.
+            character.hp = max_value(character, CharacterValue::Hp) * POWERSCALE;
+            character.mana = max_value(character, CharacterValue::Mana) * POWERSCALE;
+            character.endurance = max_value(character, CharacterValue::Endurance) * POWERSCALE;
+            if character_value_present(character, CharacterValue::MagicShield) != 0 {
+                character.lifeshield = lab5_lifeshield_max(character) * POWERSCALE;
+            }
+            ItemDriverOutcome::Lab5PotionDrunk {
+                item_id: item.id,
+                character_id: character.id,
+            }
+        }
+        5 => {
+            // C `lab5.c:1248-1265`.
+            let ritualstate = context.lab5_ritual_state.unwrap_or(0);
+            if ritualstate == 0 {
+                ItemDriverOutcome::Lab5RitualStart {
+                    character_id: character.id,
+                    daemon: drdata(item, 1),
+                }
+            } else {
+                ItemDriverOutcome::Lab5RitualHurtAtItem {
+                    item_id: item.id,
+                    character_id: character.id,
+                    stored_daemon: context.lab5_ritual_daemon.unwrap_or(0),
+                }
+            }
+        }
+        6 => {
+            // C `lab5.c:1268-1289`.
+            let ritualstate = context.lab5_ritual_state.unwrap_or(0);
+            let ritualdaemon = context.lab5_ritual_daemon.unwrap_or(0);
+            if ritualstate == 0 {
+                ItemDriverOutcome::Lab5RitualNothing {
+                    character_id: character.id,
+                }
+            } else if ritualstate == 1 && ritualdaemon == drdata(item, 1) {
+                ItemDriverOutcome::Lab5RitualProgress {
+                    character_id: character.id,
+                    daemon: drdata(item, 1),
+                    new_state: 2,
+                }
+            } else {
+                ItemDriverOutcome::Lab5RitualHurtAtItem {
+                    item_id: item.id,
+                    character_id: character.id,
+                    stored_daemon: ritualdaemon,
+                }
+            }
+        }
+        7 => {
+            // C `lab5.c:1292-1319`.
+            let ritualstate = context.lab5_ritual_state.unwrap_or(0);
+            let ritualdaemon = context.lab5_ritual_daemon.unwrap_or(0);
+            if ritualstate == 0 {
+                return ItemDriverOutcome::Noop;
+            }
+            let entrance_index = drdata(item, 1);
+            if ritualstate == 2 && ritualdaemon == entrance_index {
+                ItemDriverOutcome::Lab5RitualProgress {
+                    character_id: character.id,
+                    daemon: entrance_index,
+                    new_state: 3,
+                }
+            } else {
+                ItemDriverOutcome::Lab5EntranceRitualHurt {
+                    character_id: character.id,
+                    entrance_index,
+                    stored_daemon: ritualdaemon,
+                    forced_message: entrance_index == 2,
+                }
+            }
+        }
+        8 => ItemDriverOutcome::Lab5Backdoor {
+            character_id: character.id,
+        },
+        9 => {
+            // C `lab5.c:1336-1347`.
+            if drdata(item, 1) != 0 {
+                return ItemDriverOutcome::Lab5GunLocked {
+                    character_id: character.id,
+                };
+            }
+            set_drdata(item, 1, 7);
+            item.sprite += 7;
+            ItemDriverOutcome::FireballMachineProjectile {
+                item_id: item.id,
+                character_id: character.id,
+                start_x: item.x.saturating_add(2),
+                start_y: item.y,
+                target_x: item.x.saturating_add(60),
+                target_y: item.y,
+                power: 100,
+                schedule_after_ticks: Some(LAB5_GUNRELOAD_TICKS),
+            }
+        }
+        10 => {
+            // C `lab5.c:1350-1359`.
+            let arming = drdata(item, 1) == 0;
+            if arming {
+                set_drdata(item, 1, 1);
+                item.sprite += 1;
+            }
+            ItemDriverOutcome::Lab5PikeHurt {
+                item_id: item.id,
+                character_id: character.id,
+                arming,
+            }
+        }
+        11 => {
+            // C `lab5.c:1362-1374`.
+            let approaching_from_west = character.x < item.x;
+            if approaching_from_west && context.has_potion {
+                return ItemDriverOutcome::Lab5NoPotionDoorBlocked {
+                    character_id: character.id,
+                };
+            }
+            let (target_x, target_y) = if approaching_from_west {
+                (item.x.saturating_sub(9), item.y.saturating_sub(7))
+            } else {
+                (item.x.saturating_add(9), item.y.saturating_add(7))
+            };
+            ItemDriverOutcome::Lab5NoPotionDoorPass {
+                character_id: character.id,
+                target_x,
+                target_y,
+            }
+        }
+        12 => {
+            // C `lab5.c:1235-1245`: manapotion, mana-only heal + destroy.
+            character.mana = max_value(character, CharacterValue::Mana) * POWERSCALE;
+            if character_value_present(character, CharacterValue::MagicShield) != 0 {
+                character.lifeshield = lab5_lifeshield_max(character) * POWERSCALE;
+            }
+            ItemDriverOutcome::Lab5PotionDrunk {
+                item_id: item.id,
+                character_id: character.id,
+            }
+        }
+        _ => ItemDriverOutcome::Noop,
+    }
+}
+
+/// C `get_lifeshield_max` (`src/system/tool.c:3880-3885`).
+fn lab5_lifeshield_max(character: &Character) -> i32 {
+    let magicshield = max_value(character, CharacterValue::MagicShield);
+    if magicshield != 0 {
+        magicshield
+    } else {
+        max_value(character, CharacterValue::Warcry)
     }
 }
 

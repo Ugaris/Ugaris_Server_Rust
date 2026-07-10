@@ -186,6 +186,21 @@ impl PlayerRuntime {
     pub fn recompute_lab4_seyan_state(&mut self) {
         self.lab4_seyan_state = lab4_seyan_state_from_got(self.lab4_seyan_got);
     }
+
+    /// C `check_chestbox`'s read half (`lab5.c:1000-1023`), `ItemId`-keyed
+    /// (see [`Self::lab5_chestbox_opened`]'s own doc comment).
+    pub fn lab5_chestbox_already_opened(&self, item_id: u32) -> bool {
+        self.lab5_chestbox_opened.contains(&item_id)
+    }
+
+    /// C `check_chestbox`'s write half: unconditionally marks the chest
+    /// opened (matching C's `dat[byte] |= (1 << bit);`, which always
+    /// stores the bit regardless of its prior value).
+    pub fn mark_lab5_chestbox_opened(&mut self, item_id: u32) {
+        if !self.lab5_chestbox_opened.contains(&item_id) {
+            self.lab5_chestbox_opened.push(item_id);
+        }
+    }
 }
 
 /// Pure half of C `set_seyan_state` (`src/area/22/lab4.c:94-104`), split

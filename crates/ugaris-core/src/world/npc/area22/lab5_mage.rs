@@ -84,6 +84,19 @@ const LAB5_MAGE_RETURN_TO_POST_TICKS: u64 = TICKS_PER_SECOND * 30;
 const DAEMONNAME: [&str; 4] = ["xxnamexx", "Asfaloth", "Beronath", "Cyradeth"];
 /// C `char *daemonreal[4]` (`lab5.c:104`).
 const DAEMONREAL: [&str; 4] = ["xxrealxx", "Fao Thals", "Breth Ona", "Ch Dae Tyr"];
+
+/// C `daemonname[daemon]` read, exposed for `ugaris-server`'s
+/// `IDR_LAB5_ITEM` nameplate/realnameplate ritual-progress messages
+/// (`tick_item_use_lab.rs`), which need the same table this module's own
+/// `lab5_ritual_hurt`/`apply_lab5_ritual_hurt_at` use.
+pub fn lab5_daemon_name(daemon: u8) -> &'static str {
+    DAEMONNAME[usize::from(daemon).min(3)]
+}
+
+/// C `daemonreal[daemon]` read, same precedent as [`lab5_daemon_name`].
+pub fn lab5_daemon_real_name(daemon: u8) -> &'static str {
+    DAEMONREAL[usize::from(daemon).min(3)]
+}
 /// C `int namecoordx[4]`/`int namecoordy[4]` static initializers
 /// (`lab5.c:105-107`). See `World::lab5_namecoord`.
 pub(crate) const LAB5_NAMECOORD_DEFAULTS: [(i32, i32); 4] =
@@ -163,9 +176,12 @@ pub enum Lab5MageOutcomeEvent {
 
 impl World {
     /// C `namecoordx[i]`/`namecoordy[i]` read (`lab5.c:105-107`): `None`
-    /// (not yet overridden by the mage's `NT_CREATE` or - not yet ported -
-    /// a nameplate item) falls back to C's static initializer default.
-    pub(crate) fn lab5_namecoord(&self, index: usize) -> (i32, i32) {
+    /// (not yet overridden by the mage's `NT_CREATE`) falls back to C's
+    /// static initializer default. `pub` (not `pub(crate)`) so
+    /// `ugaris-server`'s `IDR_LAB5_ITEM` backdoor/entrance-hurt
+    /// resolution (`tick_item_use_lab.rs`) can read the same live
+    /// coordinates this module's own ritual logic uses.
+    pub fn lab5_namecoord(&self, index: usize) -> (i32, i32) {
         self.lab5_namecoords
             .get(index)
             .copied()
@@ -740,9 +756,39 @@ impl World {
     /// C `ritual_hurt` (`lab5.c:114-129`): ends the ritual attempt with a
     /// pulseback effect at the offending name plate's position plus 5
     /// `POWERSCALE` of unarmored self-damage. May kill `player_id` (same
-    /// warning C's own comment carries).
+    /// warning C's own comment carries). This is the `lab5_mage_driver`
+    /// NT_TEXT call site's own coordinate source (`lab5.c:816`,
+    /// `namecoordx/y[pd->ritualdaemon]`); see
+    /// [`Self::apply_lab5_ritual_hurt_at`] for the shared explicit-(x,y)
+    /// half the `IDR_LAB5_ITEM` item driver's three other call sites
+    /// (`lab5.c:1263,1287,1317`) need.
     fn lab5_ritual_hurt(&mut self, player_id: CharacterId, ritualdaemon: u8) {
         let (x, y) = self.lab5_namecoord(usize::from(ritualdaemon));
+        self.apply_lab5_ritual_hurt_at(player_id, x, y, ritualdaemon);
+    }
+
+    /// Shared body of C `ritual_hurt` (`lab5.c:114-129`), taking an
+    /// explicit effect position instead of always resolving it via
+    /// `namecoordx/y[ritualdaemon]` - `IDR_LAB5_ITEM`'s nameplate/
+    /// realnameplate branches use the touched item's own position
+    /// (`it[in].x`/`it[in].y`) and its entrance branch uses
+    /// `namecoordx/y[hurttrans[drdata[1]]]`, neither of which is
+    /// `namecoordx/y[ritualdaemon]`. `pub` so `ugaris-server`'s
+    /// `tick_item_use_lab.rs` can call it once it has resolved the
+    /// item-driver-specific (x, y); does *not* touch
+    /// `PlayerRuntime::lab5_ritual_daemon`/`_state` (C's `pd->ritualdaemon
+    /// = 0; pd->ritualstate = 0;`) since `World` cannot see
+    /// `PlayerRuntime` - the caller resets both after this returns,
+    /// matching the existing `lab5_mage_driver` NT_TEXT call site's own
+    /// post-call reset (`lab5_mage.rs`'s `ritualdaemon = 0; ritualstate =
+    /// 0;` right after its own `lab5_ritual_hurt` call).
+    pub fn apply_lab5_ritual_hurt_at(
+        &mut self,
+        player_id: CharacterId,
+        x: i32,
+        y: i32,
+        daemon: u8,
+    ) {
         let effect_id = self.create_show_effect(
             EF_PULSEBACK,
             player_id,
@@ -759,7 +805,7 @@ impl World {
             player_id,
             format!(
                 "{COL_STR_LIGHT_RED}The Ritual Of {} ended.{COL_STR_RESET}",
-                DAEMONNAME[usize::from(ritualdaemon).min(3)]
+                DAEMONNAME[usize::from(daemon).min(3)]
             ),
         );
         let _ = self.apply_legacy_hurt(player_id, None, 5 * POWERSCALE, 1, 0, 0);

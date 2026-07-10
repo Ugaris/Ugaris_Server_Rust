@@ -34,6 +34,7 @@
 //! outcome`.
 
 use super::*;
+use ugaris_core::text::{COL_STR_LIGHT_RED, COL_STR_RESET};
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn dispatch_lab_outcome(
@@ -45,6 +46,7 @@ pub(crate) async fn dispatch_lab_outcome(
     config: &ServerConfig,
     outcome: ugaris_core::item_driver::ItemDriverOutcome,
     feedback: &mut Vec<(CharacterId, String)>,
+    area_feedback: &mut Vec<(CharacterId, String, u16)>,
     executed: &mut i32,
     blocked: &mut i32,
     failed: &mut i32,
@@ -474,6 +476,235 @@ pub(crate) async fn dispatch_lab_outcome(
             } else {
                 *failed += 1;
             }
+        }
+        ugaris_core::item_driver::ItemDriverOutcome::Lab5Obelisk { character_id } => {
+            if let Some(character) = world.characters.get(&character_id) {
+                let (x, y) = (usize::from(character.x), usize::from(character.y));
+                world.queue_sound_area(x, y, 41);
+            }
+            *executed += 1;
+        }
+        ugaris_core::item_driver::ItemDriverOutcome::Lab5PotionDrunk {
+            item_id,
+            character_id,
+        } => {
+            area_feedback.push((character_id, potion_area_message(world, character_id), 10));
+            world.destroy_item(item_id);
+            *executed += 1;
+        }
+        ugaris_core::item_driver::ItemDriverOutcome::Lab5ChestboxAlreadyOpened { character_id } => {
+            feedback.push((
+                character_id,
+                "Thou canst not open the chest again.".to_string(),
+            ));
+            *blocked += 1;
+        }
+        ugaris_core::item_driver::ItemDriverOutcome::Lab5ChestboxOpen {
+            item_id,
+            character_id,
+            reward,
+        } => {
+            // C `lab5_item`'s `switch (drdata[1])` (`lab5.c:1180-1205`).
+            let template = match reward {
+                1 => "lab5_combopotion",
+                2 => "lab5_staff",
+                3 => "lab5_dagger",
+                4 => "lab5_sword",
+                5 => "lab5_twohanded",
+                6 => "lab5_manapotion",
+                7 => "lab5_manslayer",
+                _ => "oops",
+            };
+            if let Some(item_name) =
+                grant_template_item_to_cursor(world, zone_loader, character_id, template)
+            {
+                feedback.push((character_id, format!("You received a {item_name}.")));
+                if let Some(player) = runtime.player_for_character_mut(character_id) {
+                    player.mark_lab5_chestbox_opened(item_id.0);
+                }
+                // C `call_item(it[in].driver, in, 0, ticker + 2 * TICKS)`
+                // (`lab5.c:1177`): schedules the close timer.
+                world.schedule_item_driver_timer(item_id, CharacterId(0), TICKS_PER_SECOND * 2);
+                *executed += 1;
+            } else {
+                *failed += 1;
+            }
+        }
+        ugaris_core::item_driver::ItemDriverOutcome::Lab5ChestboxClose { .. } => {
+            *executed += 1;
+        }
+        ugaris_core::item_driver::ItemDriverOutcome::Lab5RitualStart {
+            character_id,
+            daemon,
+        } => {
+            if let Some(character) = world.characters.get(&character_id) {
+                let (x, y) = (usize::from(character.x), usize::from(character.y));
+                world.queue_sound_area(x, y, 41);
+            }
+            if let Some(player) = runtime.player_for_character_mut(character_id) {
+                player.lab5_ritual_daemon = daemon;
+                player.lab5_ritual_state = 1;
+            }
+            world.queue_system_text(
+                character_id,
+                "Thou canst read the symbols now. They form the words:".to_string(),
+            );
+            world.queue_system_text(
+                character_id,
+                format!(
+                    "{COL_STR_LIGHT_RED}The Ritual of {} started.{COL_STR_RESET}",
+                    ugaris_core::world::lab5_daemon_name(daemon)
+                ),
+            );
+            *executed += 1;
+        }
+        ugaris_core::item_driver::ItemDriverOutcome::Lab5RitualProgress {
+            character_id,
+            daemon,
+            new_state,
+        } => {
+            if let Some(character) = world.characters.get(&character_id) {
+                let (x, y) = (usize::from(character.x), usize::from(character.y));
+                world.queue_sound_area(x, y, 41);
+            }
+            if let Some(player) = runtime.player_for_character_mut(character_id) {
+                player.lab5_ritual_daemon = daemon;
+                player.lab5_ritual_state = new_state;
+            }
+            if new_state == 2 {
+                world.queue_system_text(
+                    character_id,
+                    "Thou canst read the symbols now. They form the words:".to_string(),
+                );
+                world.queue_system_text(
+                    character_id,
+                    format!(
+                        "{COL_STR_LIGHT_RED}The ritual of {} is the Ritual of {}.{COL_STR_RESET}",
+                        ugaris_core::world::lab5_daemon_name(daemon),
+                        ugaris_core::world::lab5_daemon_real_name(daemon)
+                    ),
+                );
+            } else if let Some(character) = world.characters.get(&character_id) {
+                let name = character.name.clone();
+                world.queue_system_text(
+                    character_id,
+                    format!(
+                        "Mathor tells you: \"The ritual continues. Well done so far, {name}.\""
+                    ),
+                );
+            }
+            *executed += 1;
+        }
+        ugaris_core::item_driver::ItemDriverOutcome::Lab5RitualNothing { character_id } => {
+            feedback.push((character_id, "Nothing happens.".to_string()));
+            *blocked += 1;
+        }
+        ugaris_core::item_driver::ItemDriverOutcome::Lab5RitualHurtAtItem {
+            item_id,
+            character_id,
+            stored_daemon,
+        } => {
+            let (x, y) = world
+                .items
+                .get(&item_id)
+                .map(|item| (i32::from(item.x), i32::from(item.y)))
+                .unwrap_or_default();
+            world.apply_lab5_ritual_hurt_at(character_id, x, y, stored_daemon);
+            if let Some(player) = runtime.player_for_character_mut(character_id) {
+                player.lab5_ritual_daemon = 0;
+                player.lab5_ritual_state = 0;
+            }
+            *executed += 1;
+        }
+        ugaris_core::item_driver::ItemDriverOutcome::Lab5EntranceRitualHurt {
+            character_id,
+            entrance_index,
+            stored_daemon,
+            forced_message,
+        } => {
+            if forced_message {
+                world.queue_system_text(
+                    character_id,
+                    "Mathor tells you: \"Sorry. But a strange power forced me.\"".to_string(),
+                );
+            }
+            // C `hurttrans[4] = {2, 3, 0, 1}` (`lab5.c:1293`).
+            const HURTTRANS: [usize; 4] = [2, 3, 0, 1];
+            let coord_index = HURTTRANS[usize::from(entrance_index).min(3)];
+            let (x, y) = world.lab5_namecoord(coord_index);
+            world.apply_lab5_ritual_hurt_at(character_id, x, y, stored_daemon);
+            if let Some(player) = runtime.player_for_character_mut(character_id) {
+                player.lab5_ritual_daemon = 0;
+                player.lab5_ritual_state = 0;
+            }
+            *executed += 1;
+        }
+        ugaris_core::item_driver::ItemDriverOutcome::Lab5Backdoor { character_id } => {
+            // C's 5-way `teleport_char_driver` fallback chain
+            // (`lab5.c:1322-1333`), including the first attempt's
+            // mismatched `namecoordx[2]`/`namecoordy[1]` indices.
+            let (x2, _) = world.lab5_namecoord(2);
+            let (_, y1) = world.lab5_namecoord(1);
+            let (x0, y0) = world.lab5_namecoord(0);
+            let (x1, y1b) = world.lab5_namecoord(1);
+            let (x2b, y2) = world.lab5_namecoord(2);
+            let (x3, y3) = world.lab5_namecoord(3);
+            let teleported = world.teleport_char_driver(character_id, x2 as u16, y1 as u16)
+                || world.teleport_char_driver(character_id, x0 as u16, y0 as u16)
+                || world.teleport_char_driver(character_id, x1 as u16, y1b as u16)
+                || world.teleport_char_driver(character_id, x2b as u16, y2 as u16)
+                || world.teleport_char_driver(character_id, x3 as u16, y3 as u16);
+            if teleported {
+                *executed += 1;
+            } else {
+                *blocked += 1;
+            }
+        }
+        ugaris_core::item_driver::ItemDriverOutcome::Lab5GunLocked { character_id } => {
+            feedback.push((character_id, "Thou canst not push the lever.".to_string()));
+            *blocked += 1;
+        }
+        ugaris_core::item_driver::ItemDriverOutcome::Lab5GunReloadTick {
+            item_id,
+            schedule_after_ticks,
+        } => {
+            if let Some(after_ticks) = schedule_after_ticks {
+                world.schedule_item_driver_timer(item_id, CharacterId(0), after_ticks);
+            }
+            *executed += 1;
+        }
+        ugaris_core::item_driver::ItemDriverOutcome::Lab5PikeHurt {
+            item_id,
+            character_id,
+            arming,
+        } => {
+            // C `hurt(cn, 5 * POWERSCALE, 0, 1, 0, 0)` (`lab5.c:1351`):
+            // always applied, before the arm/reschedule check.
+            let _ = world.apply_legacy_hurt(character_id, None, 5 * POWERSCALE, 1, 0, 0);
+            if arming {
+                // C `call_item(it[in].driver, in, 0, ticker + 5 * TICKS)`
+                // (`lab5.c:1358`).
+                world.schedule_item_driver_timer(item_id, CharacterId(0), TICKS_PER_SECOND * 5);
+            }
+            *executed += 1;
+        }
+        ugaris_core::item_driver::ItemDriverOutcome::Lab5PikeReset { .. } => {
+            *executed += 1;
+        }
+        ugaris_core::item_driver::ItemDriverOutcome::Lab5NoPotionDoorBlocked { character_id } => {
+            feedback.push((
+                character_id,
+                "Thou canst not enter carrying a mana, healing or combo potion!".to_string(),
+            ));
+            *blocked += 1;
+        }
+        ugaris_core::item_driver::ItemDriverOutcome::Lab5NoPotionDoorPass {
+            character_id,
+            target_x,
+            target_y,
+        } => {
+            world.teleport_char_driver(character_id, target_x, target_y);
+            *executed += 1;
         }
         _ => {}
     }

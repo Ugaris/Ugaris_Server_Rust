@@ -463,6 +463,35 @@ pub(crate) fn item_driver_context_for_request(
             ..ugaris_core::item_driver::ItemDriverContext::default()
         };
     }
+    if *driver == ugaris_core::item_driver::IDR_LAB5_ITEM {
+        // C `has_potion(cn)` (`lab5.c:245-259`): only meaningful for
+        // `drdata[0]==11`, but harmless (and simpler) to compute
+        // unconditionally, same precedent as `has_curse_spell` above.
+        let has_potion = world.characters.get(character_id).is_some_and(|character| {
+            let carries_potion = |item_id: &ItemId| {
+                world
+                    .items
+                    .get(item_id)
+                    .is_some_and(|item| item.driver == ugaris_core::item_driver::IDR_POTION)
+            };
+            character
+                .inventory
+                .iter()
+                .skip(30)
+                .flatten()
+                .any(carries_potion)
+                || character.cursor_item.as_ref().is_some_and(carries_potion)
+        });
+        let lab5_chestbox_already_opened =
+            player.is_some_and(|player| player.lab5_chestbox_already_opened(item_id.0));
+        return ugaris_core::item_driver::ItemDriverContext {
+            has_potion,
+            lab5_chestbox_already_opened,
+            lab5_ritual_daemon: Some(player.map(|player| player.lab5_ritual_daemon).unwrap_or(0)),
+            lab5_ritual_state: Some(player.map(|player| player.lab5_ritual_state).unwrap_or(0)),
+            ..ugaris_core::item_driver::ItemDriverContext::default()
+        };
+    }
     if *driver != ugaris_core::item_driver::IDR_DOOR
         && *driver != ugaris_core::item_driver::IDR_EDEMONDOOR
         && *driver != ugaris_core::item_driver::IDR_INFINITE_CHEST

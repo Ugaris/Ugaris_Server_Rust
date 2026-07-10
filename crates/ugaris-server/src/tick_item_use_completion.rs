@@ -989,7 +989,24 @@ pub(crate) async fn process_completed_action_outcomes(
                             | ugaris_core::item_driver::ItemDriverOutcome::Lab3NoteGivingSkeleton { .. }
                             | ugaris_core::item_driver::ItemDriverOutcome::Lab3NoteRead { .. }
                             | ugaris_core::item_driver::ItemDriverOutcome::Lab4FireplaceKeyBlocked { .. }
-                            | ugaris_core::item_driver::ItemDriverOutcome::Lab4FireplaceKeyGive { .. }) => {
+                            | ugaris_core::item_driver::ItemDriverOutcome::Lab4FireplaceKeyGive { .. }
+                            | ugaris_core::item_driver::ItemDriverOutcome::Lab5Obelisk { .. }
+                            | ugaris_core::item_driver::ItemDriverOutcome::Lab5PotionDrunk { .. }
+                            | ugaris_core::item_driver::ItemDriverOutcome::Lab5ChestboxAlreadyOpened { .. }
+                            | ugaris_core::item_driver::ItemDriverOutcome::Lab5ChestboxOpen { .. }
+                            | ugaris_core::item_driver::ItemDriverOutcome::Lab5ChestboxClose { .. }
+                            | ugaris_core::item_driver::ItemDriverOutcome::Lab5RitualStart { .. }
+                            | ugaris_core::item_driver::ItemDriverOutcome::Lab5RitualProgress { .. }
+                            | ugaris_core::item_driver::ItemDriverOutcome::Lab5RitualNothing { .. }
+                            | ugaris_core::item_driver::ItemDriverOutcome::Lab5RitualHurtAtItem { .. }
+                            | ugaris_core::item_driver::ItemDriverOutcome::Lab5EntranceRitualHurt { .. }
+                            | ugaris_core::item_driver::ItemDriverOutcome::Lab5Backdoor { .. }
+                            | ugaris_core::item_driver::ItemDriverOutcome::Lab5GunLocked { .. }
+                            | ugaris_core::item_driver::ItemDriverOutcome::Lab5GunReloadTick { .. }
+                            | ugaris_core::item_driver::ItemDriverOutcome::Lab5PikeHurt { .. }
+                            | ugaris_core::item_driver::ItemDriverOutcome::Lab5PikeReset { .. }
+                            | ugaris_core::item_driver::ItemDriverOutcome::Lab5NoPotionDoorBlocked { .. }
+                            | ugaris_core::item_driver::ItemDriverOutcome::Lab5NoPotionDoorPass { .. }) => {
                                 tick_item_use_lab::dispatch_lab_outcome(
                                     &mut world,
                                     &mut zone_loader,
@@ -999,6 +1016,7 @@ pub(crate) async fn process_completed_action_outcomes(
                                     &config,
                                     outcome,
                                     &mut feedback,
+                                    &mut area_feedback,
                                     &mut executed,
                                     &mut blocked,
                                     &mut failed,

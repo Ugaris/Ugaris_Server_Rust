@@ -402,6 +402,18 @@ pub struct PlayerRuntime {
     /// 1=touched name plate, 2=touched real-name plate, 3=ready to call.
     #[serde(default)]
     pub lab5_ritual_state: u8,
+    /// C `check_chestbox`'s per-player opened-chest bitset
+    /// (`DRD_LAB5_CHESTBOX`, `lab5.c:1000-1023`), keyed here by the
+    /// chestbox item's own [`ItemId`] instead of C's lazily-assigned
+    /// sequential `drdata[2]` index (`count_chestboxes`, `lab5.c:973-998`)
+    /// - a documented deviation: this port has no boot-time "scan the
+    /// whole map and number every `IDR_LAB5_ITEM` chestbox" pass, and
+    /// `drdata[2]` is write-only in C (nothing else ever reads it), so an
+    /// `ItemId`-keyed set is behaviorally equivalent without needing one.
+    /// Only 9 chestboxes exist in the zone (`ugaris_data/zones/22/
+    /// lab5.itm`), so an unbounded `Vec` never grows meaningfully.
+    #[serde(default)]
+    pub lab5_chestbox_opened: Vec<u32>,
     #[serde(default)]
     pub pk_kills: u32,
     #[serde(default)]
@@ -798,6 +810,7 @@ impl PlayerRuntime {
             lab5_mage_state: 0,
             lab5_ritual_daemon: 0,
             lab5_ritual_state: 0,
+            lab5_chestbox_opened: Vec::new(),
             pk_kills: 0,
             pk_deaths: 0,
             pk_last_kill: 0,

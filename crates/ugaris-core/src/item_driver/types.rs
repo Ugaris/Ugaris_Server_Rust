@@ -96,6 +96,26 @@ pub struct ItemDriverContext {
     /// `0`, matching a freshly-allocated `struct lab_ppd`) when the item
     /// isn't `IDR_LAB3_SPECIAL`.
     pub lab3_guard_talkstep: Option<u8>,
+    /// C `has_potion(cn)` (`src/area/22/lab5.c:245-259`): whether the
+    /// using character carries an `IDR_POTION` item in inventory slots
+    /// `30..` or on the cursor. Only meaningful for `IDR_LAB5_ITEM`'s
+    /// `drdata[0]==11` "no potion door" branch.
+    pub has_potion: bool,
+    /// C `check_chestbox(cn, in)` (`lab5.c:1000-1023`): whether *this*
+    /// chestbox item has already been opened by the using character. See
+    /// `PlayerRuntime::lab5_chestbox_opened`'s own doc comment for the
+    /// `ItemId`-keyed deviation from C's sequential bitset.
+    pub lab5_chestbox_already_opened: bool,
+    /// `struct lab5_player_data.ritualdaemon` (`lab5.c:88`,
+    /// `PlayerRuntime::lab5_ritual_daemon`), read before the
+    /// `IDR_LAB5_ITEM` nameplate/realnameplate/entrance branches run -
+    /// `None` when the item isn't `IDR_LAB5_ITEM` (treated as `0`,
+    /// matching a freshly-allocated `struct lab5_player_data`).
+    pub lab5_ritual_daemon: Option<u8>,
+    /// `struct lab5_player_data.ritualstate` (`lab5.c:89`,
+    /// `PlayerRuntime::lab5_ritual_state`), same precedent as
+    /// `lab5_ritual_daemon`.
+    pub lab5_ritual_state: Option<u8>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -1677,6 +1697,159 @@ pub enum ItemDriverOutcome {
     Lab4FireplaceKeyGive {
         item_id: ItemId,
         character_id: CharacterId,
+    },
+    /// C `lab5_item`'s `drdata[0]==1` obelisk branch (`lab5.c:1148-1154`):
+    /// full hp/mana/endurance/lifeshield heal (already applied directly
+    /// to `character` by `lab5_item_driver`, which has `&mut Character`)
+    /// plus `sound_area(ch[cn].x, ch[cn].y, 41)`, resolved by
+    /// `ugaris-server` since `World` alone has no reusable non-`pub(crate)`
+    /// sound helper convenient here - trivial enough to keep in
+    /// `tick_item_use_lab.rs` alongside the rest of this family.
+    Lab5Obelisk {
+        character_id: CharacterId,
+    },
+    /// C `lab5_item`'s `drdata[0]==4` combopotion / `drdata[0]==12`
+    /// manapotion branches (`lab5.c:1222-1245`): the heal itself (full
+    /// hp/mana/endurance for combopotion, mana-only for manapotion, both
+    /// lifeshield-if-magicshield) is already applied directly to
+    /// `character`; this outcome only carries what the caller can't do
+    /// without `World`/`ZoneLoader`: the `log_area(..., "%s drinks a
+    /// potion.")` broadcast and `remove_item`/`free_item` destruction.
+    Lab5PotionDrunk {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    /// C `lab5_item`'s `drdata[0]==3` chestbox branch, blocked path
+    /// (`check_chestbox` already-opened, `lab5.c:1168-1171`).
+    Lab5ChestboxAlreadyOpened {
+        character_id: CharacterId,
+    },
+    /// The same branch's success path (`lab5.c:1174-1219`): creates one
+    /// of 7 named reward items (keyed by `reward`, the chestbox's own
+    /// `drdata[1]`) on the using player's cursor and schedules the
+    /// close timer.
+    Lab5ChestboxOpen {
+        item_id: ItemId,
+        character_id: CharacterId,
+        reward: u8,
+    },
+    /// The chestbox's `drdata[0]==3`, `cn==0` timer branch
+    /// (`lab5.c:1094-1101`): closes the box (`drdata[3]=0`, `sprite--`),
+    /// already applied directly to `item` by `lab5_item_driver`.
+    Lab5ChestboxClose {
+        item_id: ItemId,
+    },
+    /// C `lab5_item`'s `drdata[0]==5` nameplate branch, first-touch path
+    /// (`lab5.c:1255-1261`, `pd->ritualstate==0`): stores `daemon` (the
+    /// plate's own `drdata[1]`) as the in-progress ritual target and
+    /// advances `PlayerRuntime::lab5_ritual_state` to `1`.
+    Lab5RitualStart {
+        character_id: CharacterId,
+        daemon: u8,
+    },
+    /// C `lab5_item`'s `drdata[0]==6` realnameplate branch, matching-touch
+    /// path (`lab5.c:1280-1285`, `ritualstate==1 && ritualdaemon==
+    /// drdata[1]`) and `drdata[0]==7` entrance branch, matching-touch path
+    /// (`lab5.c:1305-1312`, `ritualstate==2 && ritualdaemon==drdata[1]`):
+    /// both advance `PlayerRuntime::lab5_ritual_state` to `new_state`
+    /// (`2`/`3` respectively) and play a `sound_area(ch[cn].x, ch[cn].y,
+    /// 41)` at the *player's own* position (unlike the failure path's
+    /// name-plate-position pulseback). The entrance branch additionally
+    /// sends Mathor's "ritual continues" line, gated on `new_state == 3`.
+    Lab5RitualProgress {
+        character_id: CharacterId,
+        daemon: u8,
+        new_state: u8,
+    },
+    /// C `lab5_item`'s `drdata[0]==6` realnameplate branch, untouched path
+    /// (`lab5.c:1276-1278`, `ritualstate==0`): "Nothing happens.", no
+    /// state change (matching C's `return;` before ever reaching
+    /// `ritual_hurt`).
+    Lab5RitualNothing {
+        character_id: CharacterId,
+    },
+    /// C `lab5_item`'s `drdata[0]==5`/`6` "wrong touch" `ritual_hurt` call
+    /// (`lab5.c:1263`/`1287`, `it[in].x`/`it[in].y` as the pulseback
+    /// position): `stored_daemon` is `PlayerRuntime::lab5_ritual_daemon`
+    /// *as it stood before this touch* (C's `pd->ritualdaemon`, which the
+    /// message reads and which then gets reset to `0` alongside
+    /// `lab5_ritual_state`).
+    Lab5RitualHurtAtItem {
+        item_id: ItemId,
+        character_id: CharacterId,
+        stored_daemon: u8,
+    },
+    /// C `lab5_item`'s `drdata[0]==7` entrance branch, "wrong touch"
+    /// `ritual_hurt` call (`lab5.c:1313-1318`): `entrance_index` is the
+    /// touched entrance's own `drdata[1]` (`0..=3`, used for both the
+    /// `hurttrans` pulseback-position lookup and the `drdata[1]==2`
+    /// `forced_message` gate); `stored_daemon` is
+    /// `PlayerRuntime::lab5_ritual_daemon` as it stood before this touch,
+    /// same precedent as [`Self::Lab5RitualHurtAtItem`].
+    Lab5EntranceRitualHurt {
+        character_id: CharacterId,
+        entrance_index: u8,
+        stored_daemon: u8,
+        forced_message: bool,
+    },
+    /// C `lab5_item`'s `drdata[0]==8` backdoor branch (`lab5.c:1322-1333`):
+    /// a 5-way `teleport_char_driver` fallback chain against
+    /// `namecoordx/y[2/1]`, then `[0]`, `[1]`, `[2]`, `[3]` (note the first
+    /// attempt's mismatched `x[2]`/`y[1]` indices - a C oddity reproduced
+    /// digit-for-digit). Resolved entirely by `ugaris-server` since it
+    /// only needs `World::lab5_namecoord`/`teleport_char_driver`, both
+    /// `pub`.
+    Lab5Backdoor {
+        character_id: CharacterId,
+    },
+    /// C `lab5_item`'s `drdata[0]==9` gun branch, locked path
+    /// (`lab5.c:1337-1340`, `drdata[1]` already nonzero - "cannot push the
+    /// lever").
+    Lab5GunLocked {
+        character_id: CharacterId,
+    },
+    /// The same branch's fire path (`lab5.c:1341-1346`): `drdata[1]=7`/
+    /// `sprite+=7` (already applied directly to `item` by
+    /// `lab5_item_driver`) plus a `create_fireball` down the corridor -
+    /// `lab5_item_driver` reuses the existing `FireballMachineProjectile`
+    /// outcome directly for the projectile half instead of a new variant.
+    ///
+    /// C `lab5_item`'s `drdata[0]==9`, `cn==0` timer branch
+    /// (`lab5.c:1124-1134`): decrements `drdata[1]`/`sprite--`, already
+    /// applied directly to `item`; carries whether to reschedule
+    /// `GUNRELOAD` again (`drdata[1]` still nonzero after decrementing).
+    Lab5GunReloadTick {
+        item_id: ItemId,
+        schedule_after_ticks: Option<u64>,
+    },
+    /// C `lab5_item`'s `drdata[0]==10` pike branch (`lab5.c:1350-1359`):
+    /// always `hurt(cn, 5*POWERSCALE, ...)`; `arming` is C's `!drdata[1]`
+    /// check (already applied directly to `item` - `drdata[1]=1`/
+    /// `sprite++` - by `lab5_item_driver`), gating whether to schedule the
+    /// 5-second auto-reset timer.
+    Lab5PikeHurt {
+        item_id: ItemId,
+        character_id: CharacterId,
+        arming: bool,
+    },
+    /// The pike's `cn==0` timer branch (`lab5.c:1137-1144`): resets
+    /// `drdata[1]=0`/`sprite--`, already applied directly to `item`.
+    Lab5PikeReset {
+        item_id: ItemId,
+    },
+    /// C `lab5_item`'s `drdata[0]==11` no-potion-door branch, blocked path
+    /// (`lab5.c:1363-1367`, approaching from the west while carrying a
+    /// potion).
+    Lab5NoPotionDoorBlocked {
+        character_id: CharacterId,
+    },
+    /// The same branch's pass-through path (`lab5.c:1369-1373`):
+    /// `teleport_char_driver` to a fixed offset from the door depending on
+    /// approach side.
+    Lab5NoPotionDoorPass {
+        character_id: CharacterId,
+        target_x: u16,
+        target_y: u16,
     },
     Lab2WaterWell {
         item_id: ItemId,

@@ -1067,13 +1067,24 @@ Ordered by player progression; the C file is the oracle.
   lab5_mage_state`/`lab5_ritual_daemon`/`lab5_ritual_state` fields and a
   new `World::lab5_namecoords` dynamic override array (mage's own
   `NT_CREATE` writes index 0, also closing a documented gap in the
-  already-ported `lab5_daemon`'s gunned-demon aggro line). Still open:
-  `IDR_LAB5_ITEM` (13 drdata types: obelisk/fireface/chestbox/combopotion/
-  nameplate/realnameplate/entrance/backdoor/gun/pike/no-potion-door/
-  manapotion/lightface) - today the ritual is reachable only via the
-  god-only `SET` command, since the nameplate/realnameplate/entrance
-  branches that normally progress `ritualstate` in-game are part of this
-  still-unported item driver.
+  already-ported `lab5_daemon`'s gunned-demon aggro line).
+  REMAINING: `IDR_LAB5_ITEM` is now ported for 11 of its 13 `drdata[0]`
+  flavors (obelisk/chestbox/combopotion/manapotion/nameplate/
+  realnameplate/entrance/backdoor/gun/pike/no-potion-door,
+  `crates/ugaris-core/src/item_driver/area22_lab.rs::lab5_item_driver` +
+  `crates/ugaris-server/src/tick_item_use_lab.rs`), closing the gap this
+  checkbox itself called out - the force-summon ritual (nameplate ->
+  realnameplate -> entrance) is now reachable through normal gameplay,
+  not just the god-only `SET` command. Two decorative flavors remain
+  unported: `fireface`/`lightface` (`drdata[0]==2`/`13`), pure ambient
+  "shoot a projectile down the corridor forever" statues with no
+  player-visible state and no `cn!=0` branch at all - both are blocked on
+  a pre-existing, cross-cutting gap affecting *any* always-on ambient
+  item driver in this port (nothing schedules an `IDR_*` driver's very
+  first timer call at item-creation time, unlike C's own
+  `create_item`/`call_item(driver, n, 0, ticker+1)`; see
+  `lab5_item_driver`'s own doc comment). Left `[~]` for that reason, not
+  because any reachable gameplay path is missing.
 - [ ] **Areas 23/24 - `src/area/23_24/strategy.c` (3,599 lines)** - the
   strategy minigame (mission ownership, worker spawning, resources).
   Item dispatch is stubbed as no-ops; this is a full subsystem - plan in
@@ -1139,6 +1150,11 @@ Keep entries to at most three lines: date, task, one-line result.
 Anything longer belongs in `PORTING_LEDGER.md`; historical verbose
 notes live in `PROGRESS_ARCHIVE.md`.
 
+- 2026-07-10: Area 22 progress: ported `IDR_LAB5_ITEM` for 11/13
+  `drdata[0]` flavors (obelisk/chestbox/potions/nameplate/realnameplate/
+  entrance/backdoor/gun/pike/no-potion-door) - the ritual is now reachable
+  via normal gameplay. fireface/lightface remain (pre-existing ambient-
+  timer-priming gap). 3375 core + 1168 server tests pass, clean boot-smoke.
 - 2026-07-09: Area 22 progress: ported `CDR_LAB5MAGE` (dialogue + the
   full force-summon ritual invocation/room-spawn system). Only
   `IDR_LAB5_ITEM` remains for Area 22. 3358 core + 1162 server tests

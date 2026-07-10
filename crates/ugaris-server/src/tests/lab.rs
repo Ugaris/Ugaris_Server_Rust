@@ -108,6 +108,7 @@ async fn dispatch_lab_outcome_labexit_use_awards_exp_and_teleports_same_area() {
         ..ServerConfig::default()
     };
     let mut feedback = Vec::new();
+    let mut area_feedback = Vec::new();
     let (mut executed, mut blocked, mut failed) = (0, 0, 0);
 
     tick_item_use_lab::dispatch_lab_outcome(
@@ -119,6 +120,7 @@ async fn dispatch_lab_outcome_labexit_use_awards_exp_and_teleports_same_area() {
         &config,
         labexit_use_outcome(character_id),
         &mut feedback,
+        &mut area_feedback,
         &mut executed,
         &mut blocked,
         &mut failed,
@@ -156,6 +158,7 @@ async fn dispatch_lab_outcome_labexit_use_does_not_regrant_exp_on_repeat_visit()
         ..ServerConfig::default()
     };
     let mut feedback = Vec::new();
+    let mut area_feedback = Vec::new();
     let (mut executed, mut blocked, mut failed) = (0, 0, 0);
 
     tick_item_use_lab::dispatch_lab_outcome(
@@ -167,6 +170,7 @@ async fn dispatch_lab_outcome_labexit_use_does_not_regrant_exp_on_repeat_visit()
         &config,
         labexit_use_outcome(character_id),
         &mut feedback,
+        &mut area_feedback,
         &mut executed,
         &mut blocked,
         &mut failed,
@@ -201,6 +205,7 @@ async fn dispatch_lab_outcome_labexit_use_reports_down_message_without_repositor
         ..ServerConfig::default()
     };
     let mut feedback = Vec::new();
+    let mut area_feedback = Vec::new();
     let (mut executed, mut blocked, mut failed) = (0, 0, 0);
 
     tick_item_use_lab::dispatch_lab_outcome(
@@ -212,6 +217,7 @@ async fn dispatch_lab_outcome_labexit_use_reports_down_message_without_repositor
         &config,
         labexit_use_outcome(character_id),
         &mut feedback,
+        &mut area_feedback,
         &mut executed,
         &mut blocked,
         &mut failed,
@@ -254,6 +260,7 @@ async fn run_dispatch_lab_outcome(
         ..ServerConfig::default()
     };
     let mut feedback = Vec::new();
+    let mut area_feedback = Vec::new();
     let (mut executed, mut blocked, mut failed) = (0, 0, 0);
     tick_item_use_lab::dispatch_lab_outcome(
         world,
@@ -264,6 +271,7 @@ async fn run_dispatch_lab_outcome(
         &config,
         outcome,
         &mut feedback,
+        &mut area_feedback,
         &mut executed,
         &mut blocked,
         &mut failed,
@@ -573,4 +581,243 @@ async fn dispatch_lab_outcome_lab3_note_read_password_notes_reveal_and_persist_t
         String::from_utf8_lossy(&player.legacy_lab3_password2()),
         password2
     );
+}
+
+fn lab5_chestbox_zone_loader() -> ZoneLoader {
+    let mut loader = ZoneLoader::new();
+    loader
+        .load_item_templates_str(
+            r#"
+                lab5_manapotion:
+                    name="Mana Potion"
+                    sprite=11040
+                    flag=IF_USE
+                    flag=IF_TAKE
+                    driver=190
+                    arg="0C"
+                ;
+                "#,
+        )
+        .unwrap();
+    loader
+}
+
+#[tokio::test]
+async fn dispatch_lab_outcome_lab5_potion_drunk_destroys_item_and_broadcasts_drink_message() {
+    let mut world = World::default();
+    let mut zone_loader = ZoneLoader::new();
+    let mut runtime = ServerRuntime::default();
+    let character_id = CharacterId(7);
+    let character = login_character(character_id, &login_block("Hero"), 22, 10, 10);
+    world.add_character(character);
+    let mut potion = test_item_with_driver(ItemId(9), ugaris_core::item_driver::IDR_LAB5_ITEM);
+    potion.carried_by = Some(character_id);
+    world.add_item(potion);
+
+    let config = ServerConfig {
+        area_id: 22,
+        ..ServerConfig::default()
+    };
+    let mut feedback = Vec::new();
+    let mut area_feedback = Vec::new();
+    let (mut executed, mut blocked, mut failed) = (0, 0, 0);
+    tick_item_use_lab::dispatch_lab_outcome(
+        &mut world,
+        &mut zone_loader,
+        &mut runtime,
+        &None,
+        &None,
+        &config,
+        ugaris_core::item_driver::ItemDriverOutcome::Lab5PotionDrunk {
+            item_id: ItemId(9),
+            character_id,
+        },
+        &mut feedback,
+        &mut area_feedback,
+        &mut executed,
+        &mut blocked,
+        &mut failed,
+    )
+    .await;
+
+    assert_eq!((executed, blocked, failed), (1, 0, 0));
+    assert!(!world.items.contains_key(&ItemId(9)));
+    assert!(area_feedback
+        .iter()
+        .any(|(id, message, radius)| *id == character_id
+            && message == "Hero drinks a potion."
+            && *radius == 10));
+}
+
+#[tokio::test]
+async fn dispatch_lab_outcome_lab5_chestbox_open_grants_reward_and_marks_it_opened() {
+    let mut world = World::default();
+    let mut zone_loader = lab5_chestbox_zone_loader();
+    let mut runtime = ServerRuntime::default();
+    let character_id = CharacterId(7);
+    let character = login_character(character_id, &login_block("Hero"), 22, 10, 10);
+    world.add_character(character);
+    let (commands, _rx) = mpsc::channel(16);
+    runtime.connect(1, commands, 0);
+    if let Some(player) = runtime.players.get_mut(&1) {
+        player.character_id = Some(character_id);
+    }
+
+    let (feedback, executed, blocked, failed) = run_dispatch_lab_outcome(
+        &mut world,
+        &mut zone_loader,
+        &mut runtime,
+        ugaris_core::item_driver::ItemDriverOutcome::Lab5ChestboxOpen {
+            item_id: ItemId(11),
+            character_id,
+            reward: 6,
+        },
+    )
+    .await;
+
+    assert_eq!((executed, blocked, failed), (1, 0, 0));
+    assert!(feedback
+        .iter()
+        .any(|(_, message)| message == "You received a Mana Potion."));
+    let player = runtime.player_for_character(character_id).unwrap();
+    assert!(player.lab5_chestbox_already_opened(11));
+    assert!(!player.lab5_chestbox_already_opened(12));
+}
+
+#[tokio::test]
+async fn dispatch_lab_outcome_lab5_ritual_start_persists_daemon_and_state() {
+    let mut world = World::default();
+    let mut zone_loader = ZoneLoader::new();
+    let mut runtime = ServerRuntime::default();
+    let character_id = CharacterId(7);
+    let character = login_character(character_id, &login_block("Hero"), 22, 10, 10);
+    world.add_character(character);
+    let (commands, _rx) = mpsc::channel(16);
+    runtime.connect(1, commands, 0);
+    if let Some(player) = runtime.players.get_mut(&1) {
+        player.character_id = Some(character_id);
+    }
+
+    let (_, executed, blocked, failed) = run_dispatch_lab_outcome(
+        &mut world,
+        &mut zone_loader,
+        &mut runtime,
+        ugaris_core::item_driver::ItemDriverOutcome::Lab5RitualStart {
+            character_id,
+            daemon: 2,
+        },
+    )
+    .await;
+
+    assert_eq!((executed, blocked, failed), (1, 0, 0));
+    let player = runtime.player_for_character(character_id).unwrap();
+    assert_eq!(player.lab5_ritual_daemon, 2);
+    assert_eq!(player.lab5_ritual_state, 1);
+    assert!(world
+        .drain_pending_system_texts()
+        .iter()
+        .any(|text| text.message.contains("The Ritual of Beronath started.")));
+}
+
+#[tokio::test]
+async fn dispatch_lab_outcome_lab5_ritual_hurt_at_item_resets_daemon_and_state() {
+    let mut world = World::default();
+    let mut zone_loader = ZoneLoader::new();
+    let mut runtime = ServerRuntime::default();
+    let character_id = CharacterId(7);
+    let character = login_character(character_id, &login_block("Hero"), 22, 10, 10);
+    assert!(world.spawn_character(character, 10, 10));
+    let (commands, _rx) = mpsc::channel(16);
+    runtime.connect(1, commands, 0);
+    if let Some(player) = runtime.players.get_mut(&1) {
+        player.character_id = Some(character_id);
+        player.lab5_ritual_daemon = 1;
+        player.lab5_ritual_state = 1;
+    }
+    let mut plate = test_item_with_driver(ItemId(9), ugaris_core::item_driver::IDR_LAB5_ITEM);
+    plate.x = 90;
+    plate.y = 28;
+    world.add_item(plate);
+
+    let (_, executed, blocked, failed) = run_dispatch_lab_outcome(
+        &mut world,
+        &mut zone_loader,
+        &mut runtime,
+        ugaris_core::item_driver::ItemDriverOutcome::Lab5RitualHurtAtItem {
+            item_id: ItemId(9),
+            character_id,
+            stored_daemon: 1,
+        },
+    )
+    .await;
+
+    assert_eq!((executed, blocked, failed), (1, 0, 0));
+    let player = runtime.player_for_character(character_id).unwrap();
+    assert_eq!(player.lab5_ritual_daemon, 0);
+    assert_eq!(player.lab5_ritual_state, 0);
+}
+
+#[tokio::test]
+async fn dispatch_lab_outcome_lab5_entrance_ritual_hurt_forced_message_is_queued_first() {
+    let mut world = World::default();
+    let mut zone_loader = ZoneLoader::new();
+    let mut runtime = ServerRuntime::default();
+    let character_id = CharacterId(7);
+    let character = login_character(character_id, &login_block("Hero"), 22, 10, 10);
+    assert!(world.spawn_character(character, 10, 10));
+    let (commands, _rx) = mpsc::channel(16);
+    runtime.connect(1, commands, 0);
+    if let Some(player) = runtime.players.get_mut(&1) {
+        player.character_id = Some(character_id);
+        player.lab5_ritual_daemon = 1;
+        player.lab5_ritual_state = 3;
+    }
+
+    let (_, executed, blocked, failed) = run_dispatch_lab_outcome(
+        &mut world,
+        &mut zone_loader,
+        &mut runtime,
+        ugaris_core::item_driver::ItemDriverOutcome::Lab5EntranceRitualHurt {
+            character_id,
+            entrance_index: 2,
+            stored_daemon: 1,
+            forced_message: true,
+        },
+    )
+    .await;
+
+    assert_eq!((executed, blocked, failed), (1, 0, 0));
+    let texts = world.drain_pending_system_texts();
+    assert!(texts
+        .iter()
+        .any(|text| text.message == "Mathor tells you: \"Sorry. But a strange power forced me.\""));
+    let player = runtime.player_for_character(character_id).unwrap();
+    assert_eq!(player.lab5_ritual_daemon, 0);
+    assert_eq!(player.lab5_ritual_state, 0);
+}
+
+#[tokio::test]
+async fn dispatch_lab_outcome_lab5_no_potion_door_pass_teleports_the_player() {
+    let mut world = World::default();
+    let mut zone_loader = ZoneLoader::new();
+    let mut runtime = ServerRuntime::default();
+    let character_id = CharacterId(7);
+    let character = login_character(character_id, &login_block("Hero"), 22, 10, 10);
+    assert!(world.spawn_character(character, 10, 10));
+
+    let (_, executed, blocked, failed) = run_dispatch_lab_outcome(
+        &mut world,
+        &mut zone_loader,
+        &mut runtime,
+        ugaris_core::item_driver::ItemDriverOutcome::Lab5NoPotionDoorPass {
+            character_id,
+            target_x: 50,
+            target_y: 60,
+        },
+    )
+    .await;
+
+    assert_eq!((executed, blocked, failed), (1, 0, 0));
+    let character = world.characters.get(&character_id).unwrap();
+    assert_eq!((character.x, character.y), (50, 60));
 }
