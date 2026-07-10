@@ -1755,6 +1755,152 @@ fn lab5_backdoor_always_reports_the_teleport_attempt() {
 }
 
 #[test]
+fn lab5_fireface_first_call_arms_and_schedules_by_position() {
+    let mut timer = character(0);
+    let mut statue = lab5_item(7, vec![2, 0]);
+    statue.x = 100;
+    statue.y = 50;
+    statue.sprite = 11135; // faces right (dx=1, dy=0)
+
+    let outcome = execute_item_driver(&mut timer, &mut statue, lab5_request(7, 0), 22, false);
+    assert_eq!(
+        outcome,
+        ItemDriverOutcome::FireballMachineProjectile {
+            item_id: ItemId(7),
+            character_id: CharacterId(0),
+            start_x: 101,
+            start_y: 50,
+            target_x: 102,
+            target_y: 50,
+            power: 50,
+            // (100 + 50) % 17 + 1 = 15, * TICKS_PER_SECOND.
+            schedule_after_ticks: Some(15 * TICKS_PER_SECOND),
+        }
+    );
+    assert_eq!(statue.driver_data[1], 1);
+}
+
+#[test]
+fn lab5_fireface_subsequent_calls_reschedule_every_five_seconds() {
+    let mut timer = character(0);
+    let mut statue = lab5_item(7, vec![2, 1]);
+    statue.x = 10;
+    statue.y = 20;
+    statue.sprite = 11136; // faces up (dx=0, dy=-1)
+
+    let outcome = execute_item_driver(&mut timer, &mut statue, lab5_request(7, 0), 22, false);
+    assert_eq!(
+        outcome,
+        ItemDriverOutcome::FireballMachineProjectile {
+            item_id: ItemId(7),
+            character_id: CharacterId(0),
+            start_x: 10,
+            start_y: 19,
+            target_x: 10,
+            target_y: 18,
+            power: 50,
+            schedule_after_ticks: Some(5 * TICKS_PER_SECOND),
+        }
+    );
+    assert_eq!(statue.driver_data[1], 1);
+}
+
+#[test]
+fn lab5_fireface_default_direction_faces_down_for_unknown_sprite() {
+    let mut timer = character(0);
+    let mut statue = lab5_item(7, vec![2, 1]);
+    statue.x = 10;
+    statue.y = 20;
+    statue.sprite = 11138; // faces down (dx=0, dy=1), same as any unmatched sprite
+
+    let outcome = execute_item_driver(&mut timer, &mut statue, lab5_request(7, 0), 22, false);
+    assert_eq!(
+        outcome,
+        ItemDriverOutcome::FireballMachineProjectile {
+            item_id: ItemId(7),
+            character_id: CharacterId(0),
+            start_x: 10,
+            start_y: 21,
+            target_x: 10,
+            target_y: 22,
+            power: 50,
+            schedule_after_ticks: Some(5 * TICKS_PER_SECOND),
+        }
+    );
+}
+
+#[test]
+fn lab5_lightface_first_call_arms_and_schedules_by_position() {
+    let mut timer = character(0);
+    let mut statue = lab5_item(7, vec![13, 0, 0]);
+    statue.x = 10;
+    statue.y = 5;
+    statue.sprite = 11137; // faces left (dx=-1, dy=0)
+
+    let outcome = execute_item_driver(&mut timer, &mut statue, lab5_request(7, 0), 22, false);
+    assert_eq!(
+        outcome,
+        ItemDriverOutcome::BallTrapProjectile {
+            item_id: ItemId(7),
+            character_id: CharacterId(0),
+            start_x: 9,
+            start_y: 5,
+            target_x: 8,
+            target_y: 5,
+            power: 40,
+            // (10 + 5) % 10 + 1 = 6, * TICKS_PER_SECOND.
+            schedule_after_ticks: Some(6 * TICKS_PER_SECOND),
+        }
+    );
+    assert_eq!(statue.driver_data[1], 1);
+}
+
+#[test]
+fn lab5_lightface_cycles_four_quick_reschedules_then_one_long_one() {
+    let mut timer = character(0);
+    let mut statue = lab5_item(7, vec![13, 1, 0]);
+    statue.x = 1;
+    statue.y = 1;
+    statue.sprite = 11138; // faces down (dx=0, dy=1)
+
+    for expected_counter in 1..=4_u8 {
+        let outcome = execute_item_driver(&mut timer, &mut statue, lab5_request(7, 0), 22, false);
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::BallTrapProjectile {
+                item_id: ItemId(7),
+                character_id: CharacterId(0),
+                start_x: 1,
+                start_y: 2,
+                target_x: 1,
+                target_y: 3,
+                power: 40,
+                schedule_after_ticks: Some(7 * TICKS_PER_SECOND / 4),
+            }
+        );
+        assert_eq!(statue.driver_data[2], expected_counter);
+    }
+
+    // The 5th call (counter reached 4) resets the counter and reschedules
+    // after the long 9-second interval instead.
+    let outcome = execute_item_driver(&mut timer, &mut statue, lab5_request(7, 0), 22, false);
+    assert_eq!(
+        outcome,
+        ItemDriverOutcome::BallTrapProjectile {
+            item_id: ItemId(7),
+            character_id: CharacterId(0),
+            start_x: 1,
+            start_y: 2,
+            target_x: 1,
+            target_y: 3,
+            power: 40,
+            schedule_after_ticks: Some(9 * TICKS_PER_SECOND),
+        }
+    );
+    assert_eq!(statue.driver_data[2], 0);
+}
+
+#[test]
 fn lab5_gun_locked_then_fires_and_reloads() {
     let mut actor = character(1);
     let mut gun = lab5_item(7, vec![9, 0]);

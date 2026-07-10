@@ -31,6 +31,7 @@ fn balltrap_non_player_launches_projectile_from_driver_data() {
             target_x: 103,
             target_y: 98,
             power: 42,
+            schedule_after_ticks: None,
         }
     );
 }

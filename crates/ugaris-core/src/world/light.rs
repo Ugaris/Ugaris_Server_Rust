@@ -175,6 +175,20 @@ impl World {
                 IDR_CALIGAR if matches!(item.driver_data.first().copied(), Some(2 | 4)) => {
                     Some(item_id)
                 }
+                // C `create_item_nr` (`src/system/create.c:947-949`) arms
+                // *every* driver-bearing item's first `call_item` at
+                // creation time; this port only reproduces that for the
+                // always-on ambient drivers above, resolved once per
+                // static zone item at load time (see this function's own
+                // callers). `IDR_LAB5_ITEM`'s fireface (`drdata[0]==2`)
+                // and lightface (`drdata[0]==13`) flavors are the same
+                // class of perpetual `cn==0`-only ambient statue, always
+                // placed as static `.itm` zone data (never runtime-
+                // `create_item`'d) - see `lab5_item_driver`'s own doc
+                // comment.
+                IDR_LAB5_ITEM if matches!(item.driver_data.first().copied(), Some(2 | 13)) => {
+                    Some(item_id)
+                }
                 _ => None,
             })
             .collect();

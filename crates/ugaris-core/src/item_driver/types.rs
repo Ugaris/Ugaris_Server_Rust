@@ -617,6 +617,7 @@ pub enum ItemDriverOutcome {
         target_x: u16,
         target_y: u16,
         power: u8,
+        schedule_after_ticks: Option<u64>,
     },
     FireballMachineProjectile {
         item_id: ItemId,

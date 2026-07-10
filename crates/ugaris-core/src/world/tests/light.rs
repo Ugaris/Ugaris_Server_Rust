@@ -378,3 +378,50 @@ fn schedule_existing_light_timers_includes_caligar_weights() {
         vec![ItemDriverOutcome::CaligarWeightTimer { item_id: ItemId(8) }]
     );
 }
+
+#[test]
+fn schedule_existing_light_timers_includes_lab5_fireface_and_lightface_but_not_other_flavors() {
+    let mut world = World::default();
+    let mut fireface = item(9, ItemFlags::USED | ItemFlags::USE);
+    fireface.driver = IDR_LAB5_ITEM;
+    fireface.driver_data = vec![2, 0];
+    fireface.x = 10;
+    fireface.y = 10;
+    fireface.sprite = 11135;
+    world.add_item(fireface);
+    let mut lightface = item(10, ItemFlags::USED | ItemFlags::USE);
+    lightface.driver = IDR_LAB5_ITEM;
+    lightface.driver_data = vec![13, 0, 0];
+    lightface.x = 20;
+    lightface.y = 20;
+    lightface.sprite = 11136;
+    world.add_item(lightface);
+    // A non-ambient lab5 flavor (obelisk) must not be primed.
+    let mut obelisk = item(11, ItemFlags::USED | ItemFlags::USE);
+    obelisk.driver = IDR_LAB5_ITEM;
+    obelisk.driver_data = vec![1];
+    world.add_item(obelisk);
+
+    assert_eq!(world.schedule_existing_light_timers(), 2);
+
+    world.advance();
+    let outcomes = world.process_due_timers(22);
+
+    assert_eq!(outcomes.len(), 2);
+    assert!(outcomes.iter().any(|outcome| matches!(
+        outcome,
+        ItemDriverOutcome::FireballMachineProjectile {
+            item_id: ItemId(9),
+            character_id: CharacterId(0),
+            ..
+        }
+    )));
+    assert!(outcomes.iter().any(|outcome| matches!(
+        outcome,
+        ItemDriverOutcome::BallTrapProjectile {
+            item_id: ItemId(10),
+            character_id: CharacterId(0),
+            ..
+        }
+    )));
+}

@@ -1331,14 +1331,19 @@ impl World {
                 }
             }
             ItemDriverOutcome::BallTrapProjectile {
+                item_id,
                 start_x,
                 start_y,
                 target_x,
                 target_y,
                 power,
+                schedule_after_ticks,
                 ..
             } => {
                 self.create_ball_trap_effect(start_x, start_y, target_x, target_y, power);
+                if let Some(after_ticks) = schedule_after_ticks {
+                    self.schedule_item_driver_timer(item_id, CharacterId(0), after_ticks);
+                }
                 outcome
             }
             ItemDriverOutcome::FireballMachineProjectile {

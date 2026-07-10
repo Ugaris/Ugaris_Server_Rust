@@ -995,9 +995,9 @@ Ordered by player progression; the C file is the oracle.
   than a tick later - see that function's own doc comment for why this is
   an equivalent, not a behavior change. This closes every subcommand in
   the `CDR_LQPARSER` table and closes Area 20.
-- [~] **Area 22 - `src/area/22/lab*.c`** - remaining lab mechanics per
+- [x] **Area 22 - `src/area/22/lab*.c`** - remaining lab mechanics per
   lab; lab2 undead mostly ported; gatekeeper depends on P2.
-  REMAINING: lab1's `CDR_LABGNOMEDRIVER` torch-gnome triad and
+  lab1's `CDR_LABGNOMEDRIVER` torch-gnome triad and
   `IDR_DEATHFIBRIN` (shrine + staff) are now ported. The shared
   `create_lab_exit`/`IDR_LABEXIT` reward loop (spawn on master death +
   `set_solved_lab`/`change_area` on use) is now also ported end to end
@@ -1068,23 +1068,22 @@ Ordered by player progression; the C file is the oracle.
   new `World::lab5_namecoords` dynamic override array (mage's own
   `NT_CREATE` writes index 0, also closing a documented gap in the
   already-ported `lab5_daemon`'s gunned-demon aggro line).
-  REMAINING: `IDR_LAB5_ITEM` is now ported for 11 of its 13 `drdata[0]`
-  flavors (obelisk/chestbox/combopotion/manapotion/nameplate/
-  realnameplate/entrance/backdoor/gun/pike/no-potion-door,
+  `IDR_LAB5_ITEM` is now ported for all 13 of its `drdata[0]` flavors
+  (obelisk/chestbox/combopotion/manapotion/nameplate/realnameplate/
+  entrance/backdoor/gun/pike/no-potion-door/fireface/lightface,
   `crates/ugaris-core/src/item_driver/area22_lab.rs::lab5_item_driver` +
-  `crates/ugaris-server/src/tick_item_use_lab.rs`), closing the gap this
-  checkbox itself called out - the force-summon ritual (nameplate ->
-  realnameplate -> entrance) is now reachable through normal gameplay,
-  not just the god-only `SET` command. Two decorative flavors remain
-  unported: `fireface`/`lightface` (`drdata[0]==2`/`13`), pure ambient
-  "shoot a projectile down the corridor forever" statues with no
-  player-visible state and no `cn!=0` branch at all - both are blocked on
-  a pre-existing, cross-cutting gap affecting *any* always-on ambient
-  item driver in this port (nothing schedules an `IDR_*` driver's very
-  first timer call at item-creation time, unlike C's own
-  `create_item`/`call_item(driver, n, 0, ticker+1)`; see
-  `lab5_item_driver`'s own doc comment). Left `[~]` for that reason, not
-  because any reachable gameplay path is missing.
+  `crates/ugaris-server/src/tick_item_use_lab.rs`) - the force-summon
+  ritual (nameplate -> realnameplate -> entrance) is reachable through
+  normal gameplay, not just the god-only `SET` command. The last two
+  decorative flavors, `fireface`/`lightface` (pure ambient "shoot a
+  projectile down the corridor forever" statues, `cn==0`-only), needed a
+  narrow slice of the generic "nothing arms an always-on ambient item
+  driver's very first timer call" gap: since both are always static
+  `.itm` zone data (never runtime-created), extending the existing
+  `World::schedule_existing_light_timers` per-area-load batch-prime
+  sweep with an `IDR_LAB5_ITEM` entry was sufficient (verified against
+  real zone data: `scheduled_light_timers` 0 -> 29 on `--area-id 22`,
+  matching the real placement count). This closes Area 22.
 - [ ] **Areas 23/24 - `src/area/23_24/strategy.c` (3,599 lines)** - the
   strategy minigame (mission ownership, worker spawning, resources).
   Item dispatch is stubbed as no-ops; this is a full subsystem - plan in
@@ -1150,6 +1149,10 @@ Keep entries to at most three lines: date, task, one-line result.
 Anything longer belongs in `PORTING_LEDGER.md`; historical verbose
 notes live in `PROGRESS_ARCHIVE.md`.
 
+- 2026-07-11: Area 22 CLOSED: ported `fireface`/`lightface`
+  (`IDR_LAB5_ITEM` drdata[0]==2/13), extending `schedule_existing_light_
+  timers` to prime them (both are static zone data). 3381 core [+6] +
+  1168 server tests pass, clean build/boot-smoke (29 statues live).
 - 2026-07-10: Area 22 progress: ported `IDR_LAB5_ITEM` for 11/13
   `drdata[0]` flavors (obelisk/chestbox/potions/nameplate/realnameplate/
   entrance/backdoor/gun/pike/no-potion-door) - the ritual is now reachable

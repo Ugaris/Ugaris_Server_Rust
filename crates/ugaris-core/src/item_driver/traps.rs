@@ -20,6 +20,7 @@ pub(crate) fn balltrap_driver(character: &Character, item: &Item) -> ItemDriverO
         target_x: clamp_legacy_coordinate(item_x + i32::from(dx)),
         target_y: clamp_legacy_coordinate(item_y + i32::from(dy)),
         power: drdata(item, 2),
+        schedule_after_ticks: None,
     }
 }
 

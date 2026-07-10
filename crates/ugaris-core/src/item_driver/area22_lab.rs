@@ -430,21 +430,28 @@ const LAB5_GUNRELOAD_TICKS: u64 = TICKS_PER_SECOND * 2 / 3;
 /// ritual-state persistence) return one of the new `Lab5*` outcomes for
 /// `ugaris-server`'s `tick_item_use_lab.rs` to resolve.
 ///
-/// Not ported (documented gap, see module doc precedent in
-/// `deathfibrin_driver`): `drdata[0]==2` (fireface) and `drdata[0]==13`
-/// (lightface), C's two "shoot a projectile down the corridor forever"
-/// perpetual ambient statues. Both are *only* ever driven by their own
-/// `cn==0` self-rescheduling timer chain, which - like every other
-/// `IDR_*` driver anywhere in this port - has no code path that ever
-/// schedules its *first* call (C's `create_item` unconditionally arms
-/// every newly created item's driver via `call_item(driver, n, 0,
-/// ticker+1)`, `src/system/create.c:979-981`; nothing in this port's
-/// `ZoneLoader`/`World::add_item` does the same yet - a pre-existing,
-/// cross-cutting gap affecting any always-on ambient item driver, not
-/// specific to lab5). Both are purely decorative (no player-visible state,
-/// no `cn!=0` branch at all) and can be ported once that generic gap is
-/// closed. `drdata[0]==5`/`6`/`7`/`8`'s `cn==0` branches (map-setup writes
-/// to `namecoordx/y`/`daemondoorx/y`) are likewise not ported - they are
+/// `drdata[0]==2` (fireface) and `drdata[0]==13` (lightface), C's two
+/// "shoot a projectile down the corridor forever" perpetual ambient
+/// statues, are now also ported (`lab5_face_direction`, reusing the
+/// existing `FireballMachineProjectile`/`BallTrapProjectile` outcomes -
+/// same precedent as the `drdata[0]==9` gun branch below, which already
+/// reuses `FireballMachineProjectile`). Both are `cn==0`-only
+/// self-rescheduling timer chains with no player-visible state and no
+/// `cn!=0` branch at all; getting their very first `call_item` to fire at
+/// all needed closing the generic "nothing primes an always-on ambient
+/// item driver's first timer call" gap for this specific driver -
+/// `World::schedule_existing_light_timers` (`world/light.rs`) now also
+/// matches `IDR_LAB5_ITEM` items with `drdata[0]` `2`/`13`, since both
+/// flavors are always placed as static zone `.itm` data (never
+/// runtime-`create_item`'d), matching every other entry already in that
+/// allow-list. Like the pre-existing `drdata[0]==9` gun branch's own
+/// undocumented deviation, the shared `FireballMachineProjectile`
+/// resolver unconditionally emits an `NT_SPELL`/`V_FIREBALL`
+/// `notify_area` that C's `lab5_item` fireface branch itself does not
+/// call (only `area2.c`'s `fireball_machine` does) - left as-is for
+/// consistency with that existing precedent rather than special-cased.
+/// `drdata[0]==5`/`6`/`7`/`8`'s `cn==0` branches (map-setup writes to
+/// `namecoordx/y`/`daemondoorx/y`) are still not ported - they are
 /// superseded by `World::lab5_namecoords`' hardcoded
 /// `LAB5_NAMECOORD_DEFAULTS`/`lab5.rs`'s `LAB5_DAEMON_DOORS`, already
 /// used by the previously-ported ritual system.
@@ -454,8 +461,57 @@ pub(crate) fn lab5_item_driver(
     context: &ItemDriverContext,
 ) -> ItemDriverOutcome {
     if character.id.0 == 0 {
-        // Timer-tick branches: chestbox close, gun reload, pike reset.
+        // Timer-tick branches: fireface/lightface, chestbox close, gun
+        // reload, pike reset.
         return match drdata(item, 0) {
+            2 => {
+                // C `lab5.c:1048-1069`.
+                let (dx, dy) = lab5_face_direction(item.sprite);
+                let item_x = i32::from(item.x);
+                let item_y = i32::from(item.y);
+                let schedule_after_ticks = if drdata(item, 1) == 0 {
+                    set_drdata(item, 1, 1);
+                    (((item_x + item_y) % 17 + 1) as u64) * TICKS_PER_SECOND
+                } else {
+                    5 * TICKS_PER_SECOND
+                };
+                ItemDriverOutcome::FireballMachineProjectile {
+                    item_id: item.id,
+                    character_id: character.id,
+                    start_x: clamp_legacy_coordinate(item_x + dx),
+                    start_y: clamp_legacy_coordinate(item_y + dy),
+                    target_x: clamp_legacy_coordinate(item_x + 2 * dx),
+                    target_y: clamp_legacy_coordinate(item_y + 2 * dy),
+                    power: 50,
+                    schedule_after_ticks: Some(schedule_after_ticks),
+                }
+            }
+            13 => {
+                // C `lab5.c:1072-1099`.
+                let (dx, dy) = lab5_face_direction(item.sprite);
+                let item_x = i32::from(item.x);
+                let item_y = i32::from(item.y);
+                let schedule_after_ticks = if drdata(item, 1) == 0 {
+                    set_drdata(item, 1, 1);
+                    (((item_x + item_y) % 10 + 1) as u64) * TICKS_PER_SECOND
+                } else if drdata(item, 2) == 4 {
+                    set_drdata(item, 2, 0);
+                    9 * TICKS_PER_SECOND
+                } else {
+                    set_drdata(item, 2, drdata(item, 2) + 1);
+                    7 * TICKS_PER_SECOND / 4
+                };
+                ItemDriverOutcome::BallTrapProjectile {
+                    item_id: item.id,
+                    character_id: character.id,
+                    start_x: clamp_legacy_coordinate(item_x + dx),
+                    start_y: clamp_legacy_coordinate(item_y + dy),
+                    target_x: clamp_legacy_coordinate(item_x + 2 * dx),
+                    target_y: clamp_legacy_coordinate(item_y + 2 * dy),
+                    power: 40,
+                    schedule_after_ticks: Some(schedule_after_ticks),
+                }
+            }
             3 => {
                 if drdata(item, 3) == 0 {
                     ItemDriverOutcome::Noop
@@ -663,6 +719,20 @@ pub(crate) fn lab5_item_driver(
             }
         }
         _ => ItemDriverOutcome::Noop,
+    }
+}
+
+/// C `lab5_item`'s shared fireface/lightface sprite-to-direction table
+/// (`lab5.c:1049-1061`, `1074-1086`): the four wall-mounted statue
+/// sprites face right/up/left/down respectively. C's final `else`
+/// branch assumes `sprite==11138` (down) without an explicit check;
+/// reproduced identically here.
+fn lab5_face_direction(sprite: i32) -> (i32, i32) {
+    match sprite {
+        11135 => (1, 0),
+        11136 => (0, -1),
+        11137 => (-1, 0),
+        _ => (0, 1),
     }
 }
 
