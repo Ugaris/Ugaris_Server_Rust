@@ -905,6 +905,18 @@ pub const IID_STAFF_BEARHEAD: u32 = make_item_id(DEV_ID_WHITESTAR, 0x000010);
 /// `spirit_brannington_driver`'s (`world::npc::area29::spiritbran`) quest-44
 /// ("The Brannington Holy Relic") turn-in item.
 pub const IID_STAFF_HOLYRELIC: u32 = make_item_id(DEV_ID_WARR, 0x000025);
+/// C `IID_STAFF_BRENNETHDAGGER` (`src/common/item_id.h:337`):
+/// `brenneth_brannington_driver`'s (`world::npc::area29::brennethbran`)
+/// quest-41 ("The Assassin's Dagger") turn-in item.
+pub const IID_STAFF_BRENNETHDAGGER: u32 = make_item_id(DEV_ID_WARR, 0x000026);
+/// C `IID_STAFF_BRENNETHPOTION` (`src/common/item_id.h:338`):
+/// `brenneth_brannington_driver`'s quest-42 ("The Poisoner's Potion")
+/// turn-in item.
+pub const IID_STAFF_BRENNETHPOTION: u32 = make_item_id(DEV_ID_WARR, 0x000027);
+/// C `IID_STAFF_BRENNETHJOURNAL` (`src/common/item_id.h:339`):
+/// `brenneth_brannington_driver`'s quest-43 ("The Assassin's Journal")
+/// turn-in item.
+pub const IID_STAFF_BRENNETHJOURNAL: u32 = make_item_id(DEV_ID_WARR, 0x000028);
 /// C `IID_STAFF_FORESTMAP` (`src/common/item_id.h:340`):
 /// `forest_brannington_driver`'s (`world::npc::area29::forestbran`)
 /// thief-mage treasure map turn-in item (already created by the ported

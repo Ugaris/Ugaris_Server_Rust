@@ -1380,11 +1380,11 @@ Ordered by player progression; the C file is the oracle.
   `DRD_STAFFER_PPD` remaining fields. REMAINING: `spirit_brannington_driver`
   (quest 44), `count`/`countessa`/`daughter_brannington_driver` (quest
   40, shared `countbran_bits`), `CDR_CENTINEL` (fight-AI reuse +
-  `centinel_dead` kill-counter hook), and `forest_brannington_driver` (no
-  quest, thief-mage treasure-map hint NPC) are ported; `Brenneth
-  Brannington` (quests 41-43), `Guard Brannington` (quest 64), `Broklin`
-  (quests 45/46 + trade service), and `Grinnich`+`Shanra` remain. Details
-  in PORTING_LEDGER.md.
+  `centinel_dead` kill-counter hook), `forest_brannington_driver` (no
+  quest, thief-mage treasure-map hint NPC), and `brenneth_brannington_
+  driver` (quests 41-43) are ported; `Guard Brannington` (quest 64),
+  `Broklin` (quests 45/46 + trade service), and `Grinnich`+`Shanra`
+  remain. Details in PORTING_LEDGER.md.
 - [ ] **Area 30 - `src/area/30/clanmaster.c`** - clan master NPC (needs P3
   clan system).
 - [ ] **Area 31 - `src/area/31/warrmines.c`** - Warr mines NPCs.
@@ -1439,6 +1439,10 @@ Keep entries to at most three lines: date, task, one-line result.
 Anything longer belongs in `PORTING_LEDGER.md`; historical verbose
 notes live in `PROGRESS_ARCHIVE.md`.
 
+- 2026-07-11: Area 29 progress: ported `brenneth_brannington_driver`
+  (`CDR_BRENNETHBRAN`, quests 41-43, `world/npc/area29/brennethbran.rs`),
+  including the `case 5`/`9` questlog-fast-forward guards. 3821 core [+11]
+  + 1180 server tests pass, clean build/boot-smoke (area 29).
 - 2026-07-11: Area 29 progress: ported `forest_brannington_driver`
   (`CDR_FORESTBRAN`, no quest, `world/npc/area29/forestbran.rs`), reading
   the already-ported `forestbran_done` counter for dig-location hints.

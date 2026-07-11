@@ -17,6 +17,7 @@ mod balltrap;
 mod bank;
 mod barkeeper;
 mod bones;
+mod brennethbran;
 mod brithildie;
 mod camhermit;
 mod carlos;

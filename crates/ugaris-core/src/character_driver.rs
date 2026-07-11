@@ -502,6 +502,11 @@ pub const CDR_SPIRITBRAN: u16 = 94;
 /// decodes thief-mage treasure maps into dig locations. No quest of its own
 /// (`src/area/29/brannington.c::forest_brannington_driver`).
 pub const CDR_FORESTBRAN: u16 = 97;
+/// C `#define CDR_BRENNETHBRAN 96` (`src/system/drvlib.h:144`, "staffer2
+/// area: brenneth brannington"): the memory-loss assassin NPC who runs "A
+/// Grolm's Spoils"/"A Thief's Loot"/"A Necromancer's Notes" (quests
+/// 41-43) (`src/area/29/brannington.c::brenneth_brannington_driver`).
+pub const CDR_BRENNETHBRAN: u16 = 96;
 /// C `#define CDR_COUNTBRAN 91` (`src/system/drvlib.h:139`, "staffer2 area:
 /// count brannington"): Count Brannington, who runs "The Jewels of
 /// Brannington" (quest 40) and hands out mausoleum keys
@@ -699,6 +704,7 @@ pub enum CharacterDriverState {
     Aristocrat(crate::world::npc::area28::aristocrat::AristocratDriverData),
     Yoatin(crate::world::npc::area28::yoatin::YoatinDriverData),
     SpiritBran(crate::world::npc::area29::spiritbran::SpiritBranDriverData),
+    BrennethBran(crate::world::npc::area29::brennethbran::BrennethBranDriverData),
     CountBran(crate::world::npc::area29::countbran::CountBranDriverData),
     CountessaBran(crate::world::npc::area29::countessabran::CountessaBranDriverData),
     DaughterBran(crate::world::npc::area29::daughterbran::DaughterBranDriverData),
@@ -1509,6 +1515,7 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::Aristocrat(_)
             | CharacterDriverState::Yoatin(_)
             | CharacterDriverState::SpiritBran(_)
+            | CharacterDriverState::BrennethBran(_)
             | CharacterDriverState::CountBran(_)
             | CharacterDriverState::CountessaBran(_)
             | CharacterDriverState::DaughterBran(_)
@@ -4040,6 +4047,7 @@ pub use crate::world::npc::area26::AREA26_QA;
 pub use crate::world::npc::area28::aristocrat::AristocratDriverData;
 pub use crate::world::npc::area28::yoatin::YoatinDriverData;
 pub use crate::world::npc::area28::AREA28_QA;
+pub use crate::world::npc::area29::brennethbran::BrennethBranDriverData;
 pub use crate::world::npc::area29::countbran::CountBranDriverData;
 pub use crate::world::npc::area29::countessabran::CountessaBranDriverData;
 pub use crate::world::npc::area29::daughterbran::DaughterBranDriverData;

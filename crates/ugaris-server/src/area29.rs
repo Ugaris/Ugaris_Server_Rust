@@ -15,6 +15,9 @@
 use std::collections::HashMap;
 
 use super::*;
+use ugaris_core::world::npc::area29::brennethbran::{
+    BrennethBranOutcomeEvent, BrennethBranPlayerFacts,
+};
 use ugaris_core::world::npc::area29::countbran::{
     qlog_countbran, CountBranOutcomeEvent, CountBranPlayerFacts,
 };
@@ -128,6 +131,110 @@ pub(crate) fn apply_spiritbran_events(
                     continue;
                 };
                 player.set_staffer_spiritbran_state(0);
+                applied += 1;
+            }
+        }
+    }
+    applied
+}
+
+pub(crate) fn brennethbran_player_facts(
+    runtime: &ServerRuntime,
+) -> HashMap<CharacterId, BrennethBranPlayerFacts> {
+    runtime
+        .players
+        .values()
+        .filter_map(|player| {
+            let character_id = player.character_id?;
+            Some((
+                character_id,
+                BrennethBranPlayerFacts {
+                    brennethbran_state: player.staffer_brennethbran_state(),
+                    quest42_is_done: player.quest_log.is_done(42),
+                    quest43_is_done: player.quest_log.is_done(43),
+                },
+            ))
+        })
+        .collect()
+}
+
+/// Applies each [`BrennethBranOutcomeEvent`] queued by `World::
+/// process_brennethbran_actions`. Unlike `apply_spiritbran_events`'s
+/// `QuestDone` (which additionally grants a save on first completion),
+/// C's three `questlog_done(co, 41/42/43)` call sites here have no extra
+/// reward logic at all - just the standard `complete_legacy` exp/
+/// questlog-resend bookkeeping.
+pub(crate) fn apply_brennethbran_events(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    events: Vec<BrennethBranOutcomeEvent>,
+) -> usize {
+    let mut applied = 0;
+    for event in events {
+        match event {
+            BrennethBranOutcomeEvent::UpdateBrennethBranState {
+                player_id,
+                new_state,
+            } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.set_staffer_brennethbran_state(new_state);
+                applied += 1;
+            }
+            // C `questlog_open(co, 41/42/43)`.
+            BrennethBranOutcomeEvent::QuestOpen { player_id, quest } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.quest_log.open(quest as usize);
+                let payload = legacy_questlog_payload(player);
+                for (session_id, _) in runtime.sessions_for_character(player_id) {
+                    runtime.send_to_session(session_id, payload.clone());
+                }
+                applied += 1;
+            }
+            // C `questlog_done(co, 41/42/43)`.
+            BrennethBranOutcomeEvent::QuestDone { player_id, quest } => {
+                let Some(level) = world.characters.get(&player_id).map(|c| c.level) else {
+                    continue;
+                };
+                let level_val = level_value(level);
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                if let Some(completion) =
+                    player
+                        .quest_log
+                        .complete_legacy(quest as usize, level, level_val)
+                {
+                    let payload = legacy_questlog_payload(player);
+                    world.give_exp(player_id, completion.granted_exp, u32::from(world.area_id));
+                    for (session_id, _) in runtime.sessions_for_character(player_id) {
+                        runtime.send_to_session(session_id, payload.clone());
+                    }
+                    applied += 1;
+                }
+            }
+            // C `case 2:` (`brannington.c:1022-1039`): reset back to the
+            // start of whichever mini quest is in progress.
+            BrennethBranOutcomeEvent::ResetToMiniQuestStart {
+                player_id,
+                new_state,
+            } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.set_staffer_brennethbran_state(new_state);
+                applied += 1;
+            }
+            // C `case 3:` (`brannington.c:1040-1045`): the god-only "reset
+            // me" state wipe.
+            BrennethBranOutcomeEvent::ResetBrennethBran { player_id } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.set_staffer_brennethbran_state(0);
                 applied += 1;
             }
         }
