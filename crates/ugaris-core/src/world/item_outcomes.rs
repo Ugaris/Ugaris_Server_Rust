@@ -454,6 +454,10 @@ impl World {
                 self.queue_due_lq_npc_respawns();
                 outcome
             }
+            ItemDriverOutcome::StrTicker { .. } => {
+                self.str_ticker();
+                outcome
+            }
             ItemDriverOutcome::Teleport {
                 item_id,
                 character_id,

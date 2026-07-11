@@ -27,18 +27,50 @@
 //!   "raise a stat with strategy exp" dialogue command (not itself
 //!   ported yet - see `crate::player::StrategyPpd`'s module doc comment).
 //!
+//! This slice additionally ports the `struct str_area area[MAX_STR_AREA]`
+//! runtime registry + `init_areas` (`:154-155`/`:241-269`): a `World`-level
+//! scan of every `IDR_STR_*` item on load that discovers which
+//! `IDR_STR_SPAWNER`/`IDR_STR_STORAGE`/`IDR_STR_MINE`/`IDR_STR_DEPOT` items
+//! belong to which of the 16 battleground slots (`it[].drdata[8]`),
+//! mirroring `world::pents`'s slot bookkeeping - see
+//! [`StrategyAreaRegistry`] and [`World::ensure_strategy_areas_initialized`].
+//!
+//! Second slice ports the per-tick mission-lifecycle driver itself:
+//! [`World::str_ticker`] (`str_ticker`, `:456-506`), [`World::
+//! str_did_party_lose`] (`did_party_lose`, `:382-413`), [`World::
+//! str_remove_party`] (`remove_party`, `:271-333`), [`World::
+//! str_close_area`] (`close_area`, `:417-426`), [`World::str_init_mission`]
+//! (`init_mission`, `:337-379`), and the `reward_winner` (`:428-454`) split
+//! into a pure [`apply_strategy_mission_win`] (over `StrategyPpd`) plus
+//! [`World::str_reward_winner`]'s character-lookup/event-queue half - see
+//! [`StrategyRewardEvent`]/[`World::drain_pending_strategy_rewards`] for
+//! why (`World` can't reach session-owned `PlayerRuntime::strategy`, same
+//! split as `world::military`'s `MilitaryMasterEvent`). `IDR_STR_TICKER`
+//! now dispatches to a real `ItemDriverOutcome::StrTicker` (`item_driver::
+//! area23_24::str_ticker_driver`) instead of a no-op, applied by `World::
+//! apply_item_driver_outcome` the same way `ItemDriverOutcome::LqTicker`
+//! calls `discover_lq_doors_once`. Not reachable in live gameplay yet -
+//! nothing calls [`World::str_init_mission`] (C's own only caller,
+//! `special_driver`'s "go" mission-join command, isn't ported), so no
+//! spawner ever gets a real owner code and every slot's `used` scan is
+//! currently a no-op; ported ahead of that caller anyway since it's
+//! self-contained and testable in isolation, same precedent as several
+//! `area8`/`lq` slices before their own live call sites landed. Like
+//! `IDR_LQ_TICKER`, this port does not (yet) prime the very first
+//! `schedule_item_driver_timer` call for a real `IDR_STR_TICKER` zone
+//! item - the reschedule-on-fire machinery is in place and tested
+//! directly, but nothing currently seeds its first tick from zone load.
+//!
 //! REMAINING (tracked in `PORTING_TODO.md`, left `[~]` on purpose): the
-//! `struct str_area area[MAX_STR_AREA]` runtime registry + `init_areas`/
-//! `str_ticker` (needs a `World`-level scan of every `IDR_STR_*` item on
-//! load, mirroring `world::pents`'s slot bookkeeping), the worker
-//! character driver (`strategy_driver`, order assignment via NPC speech,
-//! `setname`/`restplace`), the `mine`/`storage`/`depot`/`spawner`/
+//! worker character driver (`strategy_driver`, order assignment via NPC
+//! speech, `setname`/`restplace`), the `mine`/`storage`/`depot`/`spawner`/
 //! `nosnow` item drivers (currently dispatched as C-parity no-ops, see
 //! `item_driver::dispatch`), the full AI-opponent driver (`ai_init`/
 //! `ai_main`, `:2277-2994`), the mission queue (`queue_*`, `:3200-3276`),
 //! and the boss NPC dialogue driver (`strategy_boss`, `:1414-1616`, plus
 //! `special_driver`'s player-facing `#`-style commands, `:3278-3632`).
 
+use super::*;
 use crate::player::StrategyPpd;
 
 /// C `#define OR_MINE 1` etc. (`strategy.c:91-98`). `0` (no `#define`,
@@ -69,6 +101,54 @@ pub const MAX_STR_AREA: usize = 16;
 /// C `#define MAXQUEUE 4` (`strategy.c:144`): per-area mission entry
 /// queue depth.
 pub const MAXQUEUE: usize = 4;
+/// C `#define MAX_STR_ITEM 256` (`strategy.c:141`): per-area capacity of
+/// `struct str_area::item[]`. Not enforced as a hard cap here (`Vec`
+/// grows as needed) - kept only for documentation/parity with the C
+/// `#define`.
+pub const MAX_STR_ITEM: usize = 256;
+/// C `#define MAX_STR_SPAWN 8` (`strategy.c:142`): per-area capacity of
+/// `struct str_area::spawn[]`. Same "not enforced" note as
+/// [`MAX_STR_ITEM`].
+pub const MAX_STR_SPAWN: usize = 8;
+
+/// C `struct str_area` (`strategy.c:146-152`): per-battleground-slot
+/// item/spawn/queue bookkeeping the rest of the strategy subsystem
+/// (worker driver, item drivers, `str_ticker`) indexes into via
+/// `it[].drdata[8]`.
+#[derive(Debug, Clone, Default)]
+pub struct StrArea {
+    pub used: bool,
+    pub busy: bool,
+    /// C `int spawn[MAX_STR_SPAWN]`/`int max_spawn`: every
+    /// `IDR_STR_SPAWNER` item registered to this slot, in
+    /// [`World::ensure_strategy_areas_initialized`]'s discovery order.
+    /// `spawn.len()` is C's `max_spawn`.
+    pub spawn: Vec<ItemId>,
+    /// C `int item[MAX_STR_ITEM]`/`int max_item`: every
+    /// `IDR_STR_SPAWNER`/`IDR_STR_STORAGE`/`IDR_STR_MINE`/`IDR_STR_DEPOT`
+    /// item registered to this slot - C's own fallthrough `switch`
+    /// (`init_areas`, no `break` after the `IDR_STR_SPAWNER` case) means
+    /// spawners land in *both* `spawn` and `item`. `item.len()` is C's
+    /// `max_item`.
+    pub item: Vec<ItemId>,
+    /// C `int q_playerID[MAXQUEUE], q_playercn[MAXQUEUE]` - the mission
+    /// entry queue. Not populated by this port yet (`queue_*`,
+    /// `strategy.c:3200-3276`, still unported - see this module's doc
+    /// comment); carried here only so the struct shape matches C's.
+    pub q_player_id: [u32; MAXQUEUE],
+    pub q_player_cn: [Option<CharacterId>; MAXQUEUE],
+}
+
+/// C's file-static `struct str_area area[MAX_STR_AREA]`/`int area_init`
+/// (`strategy.c:154-155`).
+#[derive(Debug, Clone, Default)]
+pub struct StrategyAreaRegistry {
+    /// Always exactly [`MAX_STR_AREA`] entries once
+    /// [`World::ensure_strategy_areas_initialized`] has run; empty before
+    /// that (mirrors C's `area_init` guard).
+    pub areas: Vec<StrArea>,
+    initialized: bool,
+}
 
 /// C `#define TRAINPRICE(cn) ((ch[cn].level - 45) * 10)` (`strategy.c:87`).
 pub fn train_price(level: i32) -> i32 {
@@ -712,4 +792,519 @@ pub fn str_raise(ppd: &mut StrategyPpd, nr: i32) -> StrategyRaiseOutcome {
     }
     ppd.exp -= cost;
     StrategyRaiseOutcome::Raised
+}
+
+/// C's `0` drdata sentinel: no owner (a free player slot, or a
+/// depot/storage/mine that's never been claimed).
+pub const STR_OWNER_NONE: u32 = 0;
+/// C's `0xfffff000` drdata sentinel: an AI-designated spawner slot with
+/// no `ai_init` done yet (`init_mission`'s `>= 0xfffff000` check, and
+/// `remove_party`'s reset target for a losing AI party).
+pub const STR_OWNER_AI_UNASSIGNED: u32 = 0xfffff000;
+/// C's `0xfffff001 + enemy[]` base for a fully-assigned AI owner code
+/// (`init_mission`, `strategy.c:361`).
+pub const STR_OWNER_AI_BASE: u32 = 0xfffff001;
+
+/// C `*(unsigned int *)(it[in].drdata + 0)`: the 4-byte little-endian
+/// "owner code" every `IDR_STR_SPAWNER`/`IDR_STR_STORAGE`/`IDR_STR_MINE`/
+/// `IDR_STR_DEPOT` item keys its ownership by - either `0` (free), a
+/// player's [`Character::serial`], or an
+/// [`STR_OWNER_AI_UNASSIGNED`]/[`STR_OWNER_AI_BASE`]-range AI code.
+pub fn str_item_owner(item: &Item) -> u32 {
+    item.driver_data
+        .get(0..4)
+        .map(|bytes| u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
+        .unwrap_or(0)
+}
+
+/// Writer half of [`str_item_owner`].
+pub fn set_str_item_owner(item: &mut Item, owner: u32) {
+    if item.driver_data.len() < 4 {
+        item.driver_data.resize(4, 0);
+    }
+    item.driver_data[0..4].copy_from_slice(&owner.to_le_bytes());
+}
+
+/// C `*(unsigned int *)(it[in].drdata + 4)`: the 4-byte little-endian
+/// gold amount held by a `IDR_STR_STORAGE`/`IDR_STR_MINE`/`IDR_STR_DEPOT`
+/// item.
+pub fn str_item_gold(item: &Item) -> u32 {
+    item.driver_data
+        .get(4..8)
+        .map(|bytes| u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
+        .unwrap_or(0)
+}
+
+/// Writer half of [`str_item_gold`].
+pub fn set_str_item_gold(item: &mut Item, gold: u32) {
+    if item.driver_data.len() < 8 {
+        item.driver_data.resize(8, 0);
+    }
+    item.driver_data[4..8].copy_from_slice(&gold.to_le_bytes());
+}
+
+/// Outcome of [`apply_strategy_mission_win`], for the caller to render
+/// C's exact `log_char` text (`reward_winner`, `strategy.c:436-448`)
+/// since `StrategyPpd` has no character-log sink of its own.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StrategyWinOutcome {
+    /// "Please report bug #443f" - `ppd.current_mission` was out of
+    /// [`MISSIONS`]' range.
+    BadMissionIndex,
+    /// `mission[n].exp` was `0` (the "J 2P" co-op mission never awards
+    /// anything) - no reward text beyond the caller's own unconditional
+    /// "Congratulations, you won!"; `ppd.current_mission` is still reset
+    /// to `0`.
+    NoReward,
+    /// Reward applied; `ppd` already updated.
+    Rewarded { exp: i32 },
+}
+
+/// C `reward_winner`'s per-player `ppd` mutation half (`strategy.c:428-
+/// 454`), minus the `getfirst_char`/`ch[m].ID == code` character lookup
+/// (`World::str_reward_winner` does that instead, since `World` can't
+/// reach session-owned `PlayerRuntime`) and minus the unconditional
+/// "Congratulations, you won!" `log_char`, which the caller renders
+/// alongside this outcome.
+pub fn apply_strategy_mission_win(ppd: &mut StrategyPpd, mission_index: i32) -> StrategyWinOutcome {
+    let Ok(idx) = usize::try_from(mission_index) else {
+        return StrategyWinOutcome::BadMissionIndex;
+    };
+    let Some(mission) = MISSIONS.get(idx) else {
+        return StrategyWinOutcome::BadMissionIndex;
+    };
+
+    let outcome = if mission.exp != 0 {
+        ppd.won_cnt += 1;
+        ppd.exp += mission.exp;
+        ppd.boss_exp += mission.exp;
+        ppd.eguards += 1;
+        ppd.increment_solve_count(mission.set_solve as usize);
+        StrategyWinOutcome::Rewarded { exp: mission.exp }
+    } else {
+        StrategyWinOutcome::NoReward
+    };
+    ppd.current_mission = 0;
+    outcome
+}
+
+/// `World::str_reward_winner`'s queued event: `ugaris-server` applies
+/// [`apply_strategy_mission_win`] against the real
+/// `PlayerRuntime::strategy` and renders the resulting text.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StrategyRewardEvent {
+    pub character_id: CharacterId,
+}
+
+impl World {
+    /// C `init_areas()` (`strategy.c:241-269`), lazily triggered the same
+    /// way `world::pents::ensure_pentagram_system_initialized` is - C's
+    /// own trigger site is `str_ticker`'s `if (!area_init) { init_areas();
+    /// area_init = 1; }` guard (`:465-468`, `str_ticker` itself not yet
+    /// ported, see this module's doc comment), so calling this lazily on
+    /// first use is equivalent to C's "first ticker tick" timing.
+    ///
+    /// Skips the trailing `xlog(...)` summary loop (`:264-268`) - pure
+    /// logging, no observable state change.
+    pub fn ensure_strategy_areas_initialized(&mut self) {
+        if self.strategy_areas.initialized {
+            return;
+        }
+        self.strategy_areas.initialized = true;
+        self.strategy_areas.areas = vec![StrArea::default(); MAX_STR_AREA];
+
+        // C iterates `for (n = 1; n < MAXITEM; n++)` in ascending
+        // item-index order, which affects the `drdata[10]` spawn-slot
+        // number each `IDR_STR_SPAWNER` item is assigned and the resulting
+        // `spawn`/`item` push order. `self.items` is a `HashMap` with no
+        // such ordering guarantee, so sort explicitly to match C's
+        // deterministic discovery order.
+        let mut item_ids: Vec<ItemId> = self
+            .items
+            .iter()
+            .filter(|(_, item)| !item.flags.is_empty())
+            .map(|(id, _)| *id)
+            .collect();
+        item_ids.sort_by_key(|id| id.0);
+
+        for item_id in item_ids {
+            let Some(item) = self.items.get(&item_id) else {
+                continue;
+            };
+            // C `slot = it[n].drdata[8];` (a single byte, so always
+            // 0..=255) indexes `area[MAX_STR_AREA]` with no bounds check
+            // in C; real zone data always keeps it inside 0..16, but skip
+            // rather than panic if it somehow doesn't.
+            let slot = *item.driver_data.get(8).unwrap_or(&0) as usize;
+            if slot >= MAX_STR_AREA {
+                continue;
+            }
+            let driver = item.driver;
+
+            match driver {
+                IDR_STR_SPAWNER => {
+                    // C's `switch` has no `break` after this case: it sets
+                    // `drdata[10]` and pushes to `spawn[]`, then falls
+                    // through into the `IDR_STR_STORAGE`/`IDR_STR_MINE`/
+                    // `IDR_STR_DEPOT` case body below, so the spawner item
+                    // also lands in `item[]` and sets `used`.
+                    let spawn_slot_number = self.strategy_areas.areas[slot].spawn.len() as u8;
+                    if let Some(item) = self.items.get_mut(&item_id) {
+                        if item.driver_data.len() <= 10 {
+                            item.driver_data.resize(11, 0);
+                        }
+                        item.driver_data[10] = spawn_slot_number;
+                    }
+                    let area = &mut self.strategy_areas.areas[slot];
+                    area.spawn.push(item_id);
+                    area.item.push(item_id);
+                    area.used = true;
+                }
+                IDR_STR_STORAGE | IDR_STR_MINE | IDR_STR_DEPOT => {
+                    let area = &mut self.strategy_areas.areas[slot];
+                    area.item.push(item_id);
+                    area.used = true;
+                }
+                _ => {}
+            }
+        }
+    }
+
+    /// C `spawner2storage(int in)` (`strategy.c:380`): the storage item
+    /// always sits on the map tile directly north (`y - 1`) of its
+    /// spawner - a fixed zone-layout convention, not runtime bookkeeping.
+    pub fn str_spawner_storage_item(&self, spawner_id: ItemId) -> Option<ItemId> {
+        let spawner = self.items.get(&spawner_id)?;
+        let y = usize::from(spawner.y).checked_sub(1)?;
+        let tile = self.map.tile(usize::from(spawner.x), y)?;
+        (tile.item != 0).then_some(ItemId(tile.item))
+    }
+
+    /// C `did_party_lose(int spawn)` (`strategy.c:382-413`).
+    ///
+    /// C's `dat->order == OR_ETERNALGUARD` skip needs `DRD_STRATEGYDRIVER`
+    /// (`struct strategy_data`, the still-unported worker character
+    /// driver's per-NPC order state) - no code path can create such a
+    /// character without the still-unported `strategy_driver`/
+    /// `assign_guards`/`add_etguard`, so every live character currently
+    /// satisfies C's "not an eternal guard" default and is scanned here,
+    /// matching C's actual observable behavior today; revisit once
+    /// eternal guards can exist.
+    pub fn str_did_party_lose(&self, spawn: ItemId) -> bool {
+        let Some(spawner) = self.items.get(&spawn) else {
+            return true;
+        };
+        let code = str_item_owner(spawner);
+        let mut lost = true;
+        let mut no_player = code < STR_OWNER_AI_UNASSIGNED;
+
+        if let Some(storage_id) = self.str_spawner_storage_item(spawn) {
+            if let Some(storage) = self.items.get(&storage_id) {
+                if str_item_gold(storage) >= NPCPRICE as u32 {
+                    lost = false;
+                }
+            }
+        }
+
+        // C: `ch[m].group`/`.ID` are plain `int`s that can theoretically
+        // hold any `code` value; the Rust `Character::group` field is
+        // narrowed to `u16` (see its own doc comment), so an
+        // AI-range `code` (>= 0x1000) can never match a real character's
+        // `group` here - harmless in practice, since real spawned workers
+        // are always given small `group` ids at spawn time by the
+        // still-unported `strategy_driver`.
+        for character in self.characters.values() {
+            if u32::from(character.group) == code {
+                lost = false;
+            }
+            if character.serial == code {
+                no_player = false;
+            }
+        }
+
+        if no_player {
+            lost = true;
+        }
+        lost
+    }
+
+    /// C `remove_party(int code, char *msg)` (`strategy.c:271-333`):
+    /// forcibly ends a strategy party - destroys every non-player
+    /// character grouped under `code` (except the hardcoded "Cinciac"
+    /// boss NPC safety check), teleports the actual player identified by
+    /// `code` (`ch[cn].ID`, i.e. [`Character::serial`]) to one of 4
+    /// hardcoded fallback tiles with an optional message, then frees
+    /// every spawner/depot/storage item in the one battleground slot that
+    /// had a spawner owned by `code`. Returns whether any such slot was
+    /// found (C's own return value, used by the still-unported
+    /// "surrender" command to report "You are not doing any mission." on
+    /// `false`).
+    pub fn str_remove_party(&mut self, code: u32, message: Option<&str>) -> bool {
+        let character_ids: Vec<CharacterId> = self.characters.keys().copied().collect();
+        for character_id in character_ids {
+            let Some(character) = self.characters.get(&character_id) else {
+                continue;
+            };
+            let group = u32::from(character.group);
+            let serial = character.serial;
+            let is_player = character.flags.contains(CharacterFlags::PLAYER);
+            let name_is_cinciac = character.name == "Cinciac";
+
+            let mut destroyed = false;
+            if group == code {
+                if is_player {
+                    // C `elog("panic: about to destroy player %s!", ...)`:
+                    // never expected to actually happen (real players are
+                    // never given a strategy party `group`) - no `elog`
+                    // sink exists in this port, so this stays a silent
+                    // no-op rather than ever destroying a real player.
+                } else if !name_is_cinciac {
+                    self.remove_character(character_id);
+                    destroyed = true;
+                }
+            }
+
+            if !destroyed && serial == code {
+                if !self.teleport_char_driver(character_id, 15, 15)
+                    && !self.teleport_char_driver(character_id, 20, 15)
+                    && !self.teleport_char_driver(character_id, 15, 20)
+                {
+                    self.teleport_char_driver(character_id, 20, 20);
+                }
+                if let Some(message) = message {
+                    self.queue_system_text(character_id, message.to_string());
+                }
+            }
+        }
+
+        self.ensure_strategy_areas_initialized();
+        let Some(area_index) = self.strategy_areas.areas.iter().position(|area| {
+            area.spawn.iter().any(|&item_id| {
+                self.items
+                    .get(&item_id)
+                    .is_some_and(|item| str_item_owner(item) == code)
+            })
+        }) else {
+            return false;
+        };
+
+        let item_ids = self.strategy_areas.areas[area_index].item.clone();
+        for item_id in item_ids {
+            let Some(item) = self.items.get_mut(&item_id) else {
+                continue;
+            };
+            if str_item_owner(item) != code {
+                continue;
+            }
+            let slot = *item.driver_data.get(8).unwrap_or(&0);
+            match item.driver {
+                IDR_STR_SPAWNER => {
+                    let reset_to = if code < STR_OWNER_AI_UNASSIGNED {
+                        STR_OWNER_NONE
+                    } else {
+                        STR_OWNER_AI_UNASSIGNED
+                    };
+                    set_str_item_owner(item, reset_to);
+                    item.name = format!("Spawner ({slot})");
+                }
+                IDR_STR_DEPOT => {
+                    set_str_item_owner(item, STR_OWNER_NONE);
+                    item.name = format!("Depot ({slot})");
+                }
+                IDR_STR_STORAGE => {
+                    set_str_item_owner(item, STR_OWNER_NONE);
+                    item.name = format!("Storage ({slot})");
+                }
+                _ => {}
+            }
+        }
+
+        true
+    }
+
+    /// C `close_area(int n)` (`strategy.c:417-426`): force-removes every
+    /// still-owned party from an area's spawners (cleanup once
+    /// [`Self::str_ticker`] decides the slot's contest is over).
+    pub fn str_close_area(&mut self, area_index: usize) {
+        let Some(area) = self.strategy_areas.areas.get(area_index) else {
+            return;
+        };
+        let spawn_ids = area.spawn.clone();
+        for item_id in spawn_ids {
+            let Some(item) = self.items.get(&item_id) else {
+                continue;
+            };
+            let owner = str_item_owner(item);
+            if owner != STR_OWNER_NONE && owner != STR_OWNER_AI_UNASSIGNED {
+                self.str_remove_party(owner, None);
+            }
+        }
+    }
+
+    /// C `reward_winner(int code)`'s character-lookup half (`strategy.c:
+    /// 428-433`): finds the live player whose [`Character::serial`]
+    /// (`ch[m].ID`) matches `code` and queues a [`StrategyRewardEvent`]
+    /// for `ugaris-server` to apply against the real
+    /// `PlayerRuntime::strategy` via [`apply_strategy_mission_win`] - see
+    /// [`Self::drain_pending_strategy_rewards`].
+    pub fn str_reward_winner(&mut self, code: u32) {
+        if let Some(character) = self.characters.values().find(|c| c.serial == code) {
+            self.pending_strategy_rewards.push(StrategyRewardEvent {
+                character_id: character.id,
+            });
+        }
+    }
+
+    /// Drains the queue [`Self::str_reward_winner`] fills.
+    pub fn drain_pending_strategy_rewards(&mut self) -> Vec<StrategyRewardEvent> {
+        self.pending_strategy_rewards.drain(..).collect()
+    }
+
+    /// C `init_mission(int n)` (`strategy.c:337-379`): resets a mission
+    /// area's depot/storage/mine ownership and starting gold, and assigns
+    /// each pre-designated-AI spawner slot an AI preset index from
+    /// `mission[n].enemy[]` (or frees a player-designated slot to `0`).
+    /// No live caller yet - C's own only caller is `special_driver`'s
+    /// still-unported "go" mission-join command (see this module's doc
+    /// comment).
+    pub fn str_init_mission(&mut self, mission_index: usize) -> bool {
+        let Some(mission) = MISSIONS.get(mission_index).copied() else {
+            return false;
+        };
+        self.ensure_strategy_areas_initialized();
+        let area_index = mission.area as usize;
+        let Some(item_ids) = self
+            .strategy_areas
+            .areas
+            .get(area_index)
+            .map(|area| area.item.clone())
+        else {
+            return false;
+        };
+
+        let mut enemy_slot = 0usize;
+        for item_id in item_ids {
+            let Some(item) = self.items.get_mut(&item_id) else {
+                continue;
+            };
+            let slot = *item.driver_data.get(8).unwrap_or(&0);
+            match item.driver {
+                IDR_STR_DEPOT => {
+                    set_str_item_owner(item, STR_OWNER_NONE);
+                    set_str_item_gold(item, 0);
+                    item.name = format!("Depot ({slot})");
+                }
+                IDR_STR_STORAGE => {
+                    set_str_item_owner(item, STR_OWNER_NONE);
+                    set_str_item_gold(item, mission.storage_size as u32);
+                    if item.driver_data.len() <= 9 {
+                        item.driver_data.resize(10, 0);
+                    }
+                    item.driver_data[9] = 0;
+                    item.name = format!("Storage ({slot})");
+                }
+                IDR_STR_MINE => {
+                    set_str_item_owner(item, STR_OWNER_NONE);
+                    set_str_item_gold(item, mission.mine_size as u32);
+                    item.name = format!("Mine ({slot})");
+                }
+                IDR_STR_SPAWNER => {
+                    if str_item_owner(item) >= STR_OWNER_AI_UNASSIGNED {
+                        let enemy = mission.enemy.get(enemy_slot).copied().unwrap_or(0);
+                        enemy_slot += 1;
+                        set_str_item_owner(item, STR_OWNER_AI_BASE + enemy as u32);
+                        if item.driver_data.len() <= 9 {
+                            item.driver_data.resize(10, 0);
+                        }
+                        item.driver_data[9] = 0;
+                    } else {
+                        set_str_item_owner(item, STR_OWNER_NONE);
+                    }
+                    item.name = format!("Spawner ({slot})");
+                }
+                _ => {}
+            }
+        }
+
+        if let Some(area) = self.strategy_areas.areas.get_mut(area_index) {
+            area.busy = true;
+        }
+        true
+    }
+
+    /// C `str_ticker(int in, int cn)` (`strategy.c:456-506`): the
+    /// per-tick mission-lifecycle body - scans every used battleground
+    /// slot for lost parties (removing them), detects a lone-player win
+    /// (rewarding and closing the slot) or an all-AI sweep (closing with
+    /// no reward), and tracks each slot's `busy` flag. The
+    /// `call_item(...)` self-reschedule (`:462`) and the `if (cn) return;`
+    /// early-out (`:459-461`) are handled by the caller
+    /// (`item_driver::str_ticker_driver` gates on `character.id.0 == 0`;
+    /// `ugaris-server`'s `StrTicker` outcome arm reschedules), so this
+    /// method is the unconditional per-slot body only.
+    pub fn str_ticker(&mut self) {
+        self.ensure_strategy_areas_initialized();
+
+        for area_index in 0..self.strategy_areas.areas.len() {
+            if !self.strategy_areas.areas[area_index].used {
+                continue;
+            }
+
+            let spawn_ids = self.strategy_areas.areas[area_index].spawn.clone();
+            let mut player_count = 0;
+            let mut ai_count = 0;
+            let mut winner = STR_OWNER_NONE;
+
+            for item_id in spawn_ids {
+                let Some(item) = self.items.get(&item_id) else {
+                    continue;
+                };
+                let owner = str_item_owner(item);
+                if owner == STR_OWNER_NONE || owner == STR_OWNER_AI_UNASSIGNED {
+                    continue;
+                }
+
+                if self.str_did_party_lose(item_id) {
+                    self.str_remove_party(owner, Some("You lose. Better luck next time!"));
+                }
+
+                // C re-reads `it[in].drdata` fresh here rather than
+                // reusing the `code` local it read before the
+                // `did_party_lose`/`remove_party` calls - if the party was
+                // just removed above, this sees the *post-reset* owner
+                // value (`0` for a player slot, `0xfffff000` for an AI
+                // slot), not the original owner. Preserved verbatim: a
+                // just-lost player slot still counts toward
+                // `player_count` (with `winner` becoming `0`, so the
+                // later `reward_winner` call below is skipped), and a
+                // just-lost AI slot still counts toward `ai_count`.
+                let Some(item) = self.items.get(&item_id) else {
+                    continue;
+                };
+                let current_owner = str_item_owner(item);
+                if current_owner < STR_OWNER_AI_UNASSIGNED {
+                    player_count += 1;
+                    winner = current_owner;
+                } else {
+                    ai_count += 1;
+                }
+            }
+
+            if player_count == 1 && ai_count == 0 {
+                if winner != STR_OWNER_NONE {
+                    self.str_reward_winner(winner);
+                }
+                self.str_close_area(area_index);
+            } else if ai_count > 0 && player_count == 0 {
+                self.str_close_area(area_index);
+            }
+
+            let area = &mut self.strategy_areas.areas[area_index];
+            if ai_count + player_count > 0 {
+                area.busy = true;
+            } else if area.busy {
+                area.busy = false;
+            }
+        }
+    }
 }

@@ -140,6 +140,14 @@ pub(crate) async fn dispatch_clan_lq_arena_outcome(
             world.schedule_item_driver_timer(item_id, CharacterId(0), schedule_after_ticks);
             *executed += 1;
         }
+        ugaris_core::item_driver::ItemDriverOutcome::StrTicker {
+            item_id,
+            schedule_after_ticks,
+        } => {
+            world.schedule_item_driver_timer(item_id, CharacterId(0), schedule_after_ticks);
+            apply_strategy_reward_events(world, runtime);
+            *executed += 1;
+        }
         ugaris_core::item_driver::ItemDriverOutcome::LqEntranceClosed { character_id, .. } => {
             feedback.push((
                 character_id,

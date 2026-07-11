@@ -1093,13 +1093,17 @@ Ordered by player progression; the C file is the oracle.
   `AI_PRESETS` table digit-for-digit from C, `str_exp_cost`/
   `str_increment`/`str_raise` upgrade economy) plus a new
   `PlayerRuntime::strategy: StrategyPpd` persistent field
-  (`crates/ugaris-core/src/player/strategy.rs`). See `world::strategy`'s
-  module doc comment for the full remaining-work breakdown: the
-  `str_area` registry + `init_areas`/`str_ticker`, the worker character
-  driver (`strategy_driver`), the `mine`/`storage`/`depot`/`spawner`
-  item drivers (currently no-op), the AI-opponent driver (`ai_main`,
-  538 lines), the mission queue, and the `strategy_boss` NPC dialogue
-  driver.
+  (`crates/ugaris-core/src/player/strategy.rs`). Second slice done: the
+  `str_area` registry's `init_areas` plus the per-tick mission-lifecycle
+  driver itself (`str_ticker`/`did_party_lose`/`remove_party`/
+  `close_area`/`reward_winner`/`init_mission`), `IDR_STR_TICKER` now
+  dispatches a real `ItemDriverOutcome::StrTicker`. See `world::strategy`'s
+  module doc comment for the full remaining-work breakdown: the worker
+  character driver (`strategy_driver`), the `mine`/`storage`/`depot`/
+  `spawner` item drivers (currently no-op), the AI-opponent driver
+  (`ai_main`, 538 lines), the mission queue, and the `strategy_boss` NPC
+  dialogue driver. Not reachable in live gameplay yet (no caller for
+  `str_init_mission`, so no spawner ever gets a real owner).
 - [ ] **Area 25 - `src/area/25/warped.c`** - warped NPC dialogue,
   `DRD_WARPFIGHTER` full fight driver.
 - [ ] **Area 26 - `src/area/26/staffer.c`** - vault skull PPD/quest, Rouven
@@ -1161,6 +1165,12 @@ Keep entries to at most three lines: date, task, one-line result.
 Anything longer belongs in `PORTING_LEDGER.md`; historical verbose
 notes live in `PROGRESS_ARCHIVE.md`.
 
+- 2026-07-11: Areas 23/24 strategy minigame: second slice - ported the
+  per-tick mission-lifecycle driver (`str_ticker`/`did_party_lose`/
+  `remove_party`/`close_area`/`reward_winner`/`init_mission`);
+  `IDR_STR_TICKER` now dispatches a real outcome instead of a no-op.
+  Not yet reachable live (no caller seeds a real mission). 3428 core
+  [+22] tests pass, clean build/boot-smoke.
 - 2026-07-11: Areas 23/24 strategy minigame: first slice - ported the
   pure `MISSIONS`/`AI_PRESETS` content tables, order constants, and
   `str_exp_cost`/`str_increment`/`str_raise` upgrade economy plus a new

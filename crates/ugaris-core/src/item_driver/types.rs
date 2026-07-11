@@ -1108,6 +1108,17 @@ pub enum ItemDriverOutcome {
         item_id: ItemId,
         schedule_after_ticks: u64,
     },
+    /// C `str_ticker`'s self-reschedule (`src/area/23_24/strategy.c:462`,
+    /// `call_item(it[in].driver, in, 0, ticker + TICKS)`), the `IDR_STR_
+    /// TICKER` analog of [`Self::LqTicker`]. The actual per-tick mission-
+    /// lifecycle body runs inside `World::apply_item_driver_outcome`
+    /// (`World::str_ticker`, see `crate::world::strategy`'s doc comment)
+    /// before this outcome reaches the caller; this variant only carries
+    /// the reschedule request onward.
+    StrTicker {
+        item_id: ItemId,
+        schedule_after_ticks: u64,
+    },
     LqEntranceClosed {
         item_id: ItemId,
         character_id: CharacterId,

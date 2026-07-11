@@ -519,6 +519,7 @@ pub(crate) async fn process_completed_action_outcomes(
                             | ugaris_core::item_driver::ItemDriverOutcome::ClanSpawnAward { .. }
                             | ugaris_core::item_driver::ItemDriverOutcome::ClanSpawnTimer { .. }
                             | ugaris_core::item_driver::ItemDriverOutcome::LqTicker { .. }
+                            | ugaris_core::item_driver::ItemDriverOutcome::StrTicker { .. }
                             | ugaris_core::item_driver::ItemDriverOutcome::LqEntranceClosed { .. }
                             | ugaris_core::item_driver::ItemDriverOutcome::LqEntranceLevelBlocked { .. }
                             | ugaris_core::item_driver::ItemDriverOutcome::LqEntranceUndefined { .. }

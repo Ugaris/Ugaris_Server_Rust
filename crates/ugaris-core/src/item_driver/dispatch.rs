@@ -307,8 +307,10 @@ pub fn execute_item_driver_with_context(
                 IDR_LAB5_ITEM => lab5_item_driver(character, item, context),
                 IDR_LQ_TICKER => lq_ticker_driver(character, item),
                 IDR_LQ_ENTRANCE => lq_entrance_driver(character, item, context),
-                IDR_STR_MINE | IDR_STR_STORAGE | IDR_STR_SPAWNER | IDR_STR_DEPOT
-                | IDR_STR_TICKER | IDR_NOSNOW => ItemDriverOutcome::Noop,
+                IDR_STR_TICKER => str_ticker_driver(character, item),
+                IDR_STR_MINE | IDR_STR_STORAGE | IDR_STR_SPAWNER | IDR_STR_DEPOT | IDR_NOSNOW => {
+                    ItemDriverOutcome::Noop
+                }
                 IDR_SALTMINE_ITEM => saltmine_item_driver(character, item),
                 IDR_BEYONDPOTION => beyond_potion_driver(character, item, area_id, in_arena),
                 IDR_XMASTREE => xmastree_driver(character, item),

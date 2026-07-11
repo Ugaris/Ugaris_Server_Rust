@@ -195,11 +195,11 @@ use crate::{
         IDR_FDEMONFARM, IDR_FDEMONGATE, IDR_FDEMONLIGHT, IDR_FDEMONLOADER, IDR_FLAMETHROW,
         IDR_FLASK, IDR_FORESTCHEST, IDR_LAB2_WATER, IDR_LAB3_PLANT, IDR_LAB5_ITEM, IDR_LABTORCH,
         IDR_MINEDOOR, IDR_MINEGATEWAY, IDR_NIGHTLIGHT, IDR_ONOFFLIGHT, IDR_PALACEDOOR, IDR_PENT,
-        IDR_POTION, IDR_RANDOMSHRINE, IDR_RECALL, IDR_STEPTRAP, IDR_SWAMPARM, IDR_SWAMPSPAWN,
-        IDR_SWAMPWHISP, IDR_TORCH, IDR_TOYLIGHT, IDR_WARPKEYDOOR, IDR_WARPTELEPORT,
-        IDR_WARPTRIALDOOR, IID_AREA11_PALACEKEY, IID_AREA14_SHRINEKEY, IID_AREA16_ROBBERKEY,
-        IID_AREA16_SKELLYKEY, IID_AREA25_DOORKEY, IID_AREA25_TELEKEY, IID_GENERIC_SPECIAL,
-        IID_MINEGATEWAY,
+        IDR_POTION, IDR_RANDOMSHRINE, IDR_RECALL, IDR_STEPTRAP, IDR_STR_DEPOT, IDR_STR_MINE,
+        IDR_STR_SPAWNER, IDR_STR_STORAGE, IDR_SWAMPARM, IDR_SWAMPSPAWN, IDR_SWAMPWHISP, IDR_TORCH,
+        IDR_TOYLIGHT, IDR_WARPKEYDOOR, IDR_WARPTELEPORT, IDR_WARPTRIALDOOR, IID_AREA11_PALACEKEY,
+        IID_AREA14_SHRINEKEY, IID_AREA16_ROBBERKEY, IID_AREA16_SKELLYKEY, IID_AREA25_DOORKEY,
+        IID_AREA25_TELEKEY, IID_GENERIC_SPECIAL, IID_MINEGATEWAY,
     },
     item_ops::{consume_item, give_item_to_character, GiveItemFlags, GiveItemResult},
     legacy::{
@@ -378,6 +378,17 @@ pub struct World {
     /// (matching C's `maxway==1` sentinel, ported as index `0` being an
     /// always-present unused sentinel once built).
     pub fdemon_waypoints: Vec<FdemonWaypoint>,
+    /// C's file-static `struct str_area area[MAX_STR_AREA]`/`int
+    /// area_init` (`src/area/23_24/strategy.c:154-155`) - see
+    /// [`StrategyAreaRegistry`]'s doc comment and
+    /// `World::ensure_strategy_areas_initialized` (the `init_areas` port).
+    pub strategy_areas: StrategyAreaRegistry,
+    /// `World::str_reward_winner`'s queue of pending `reward_winner`
+    /// (`strategy.c:428-454`) `ppd` mutations - `World` can't reach
+    /// session-owned `PlayerRuntime::strategy` directly, so `ugaris-
+    /// server`'s `strategy::apply_strategy_reward_events` drains this and
+    /// applies `crate::world::apply_strategy_mission_win` for real.
+    pending_strategy_rewards: Vec<StrategyRewardEvent>,
     pending_npc_respawns: Vec<NpcRespawnRequest>,
     pending_kill_exp: Vec<KillExpAward>,
     pending_kill_achievements: Vec<KillAchievementAward>,

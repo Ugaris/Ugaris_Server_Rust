@@ -1,4 +1,5 @@
 use super::*;
+use crate::item_driver::{IDR_NOSNOW, IDR_STR_TICKER};
 use crate::player::StrategyPpd;
 
 #[test]
@@ -245,6 +246,168 @@ fn str_raise_spends_exp_and_applies_increment() {
     assert_eq!(ppd.exp, 6);
 }
 
+fn strategy_item(id: u32, driver: u16, drdata: Vec<u8>) -> Item {
+    let mut it = item(id, ItemFlags::USED);
+    it.driver = driver;
+    it.driver_data = drdata;
+    it
+}
+
+#[test]
+fn init_areas_registers_mine_storage_depot_into_their_slot() {
+    let mut world = World::default();
+    // slot byte lives at drdata[8].
+    world.add_item(strategy_item(
+        1,
+        IDR_STR_MINE,
+        vec![0, 0, 0, 0, 0, 0, 0, 0, 2],
+    ));
+    world.add_item(strategy_item(
+        2,
+        IDR_STR_STORAGE,
+        vec![0, 0, 0, 0, 0, 0, 0, 0, 2],
+    ));
+    world.add_item(strategy_item(
+        3,
+        IDR_STR_DEPOT,
+        vec![0, 0, 0, 0, 0, 0, 0, 0, 2],
+    ));
+
+    world.ensure_strategy_areas_initialized();
+
+    assert_eq!(world.strategy_areas.areas.len(), MAX_STR_AREA);
+    let area = &world.strategy_areas.areas[2];
+    assert!(area.used);
+    assert!(!area.busy);
+    assert!(area.spawn.is_empty());
+    assert_eq!(
+        area.item,
+        vec![ItemId(1), ItemId(2), ItemId(3)],
+        "ascending item-id discovery order, matching C's `for (n = 1; n < MAXITEM; n++)`"
+    );
+
+    // Untouched slots stay unused/default.
+    assert!(!world.strategy_areas.areas[0].used);
+    assert!(!world.strategy_areas.areas[15].used);
+}
+
+#[test]
+fn init_areas_spawner_falls_through_into_both_spawn_and_item_arrays() {
+    // C `init_areas`'s `switch` has no `break` after `IDR_STR_SPAWNER`, so
+    // a spawner item lands in *both* `area[slot].spawn[]` and
+    // `area[slot].item[]` (strategy.c:251-260).
+    let mut world = World::default();
+    world.add_item(strategy_item(
+        10,
+        IDR_STR_SPAWNER,
+        vec![0, 0, 0, 0, 0, 0, 0, 0, 4],
+    ));
+
+    world.ensure_strategy_areas_initialized();
+
+    let area = &world.strategy_areas.areas[4];
+    assert!(area.used);
+    assert_eq!(area.spawn, vec![ItemId(10)]);
+    assert_eq!(area.item, vec![ItemId(10)], "spawner also lands in item[]");
+}
+
+#[test]
+fn init_areas_assigns_ascending_spawn_slot_numbers_into_drdata_ten() {
+    // C: `it[n].drdata[10] = area[slot].max_spawn;` before incrementing -
+    // the Nth spawner discovered in a slot gets slot number N-1.
+    let mut world = World::default();
+    world.add_item(strategy_item(
+        20,
+        IDR_STR_SPAWNER,
+        vec![0, 0, 0, 0, 0, 0, 0, 0, 1],
+    ));
+    world.add_item(strategy_item(
+        21,
+        IDR_STR_SPAWNER,
+        vec![0, 0, 0, 0, 0, 0, 0, 0, 1],
+    ));
+    world.add_item(strategy_item(
+        22,
+        IDR_STR_SPAWNER,
+        vec![0, 0, 0, 0, 0, 0, 0, 0, 1],
+    ));
+
+    world.ensure_strategy_areas_initialized();
+
+    assert_eq!(world.items[&ItemId(20)].driver_data[10], 0);
+    assert_eq!(world.items[&ItemId(21)].driver_data[10], 1);
+    assert_eq!(world.items[&ItemId(22)].driver_data[10], 2);
+    assert_eq!(
+        world.strategy_areas.areas[1].spawn,
+        vec![ItemId(20), ItemId(21), ItemId(22)]
+    );
+}
+
+#[test]
+fn init_areas_skips_items_with_no_flags_and_unrelated_drivers() {
+    // C `if (!it[n].flags) continue;` and the `switch`'s implicit no-op
+    // default for any driver other than the four `IDR_STR_*` cases.
+    let mut world = World::default();
+    let mut unused_mine = strategy_item(1, IDR_STR_MINE, vec![0, 0, 0, 0, 0, 0, 0, 0, 3]);
+    unused_mine.flags = ItemFlags::empty();
+    world.add_item(unused_mine);
+    world.add_item(strategy_item(
+        2,
+        IDR_STR_TICKER,
+        vec![0, 0, 0, 0, 0, 0, 0, 0, 3],
+    ));
+    world.add_item(strategy_item(
+        3,
+        IDR_NOSNOW,
+        vec![0, 0, 0, 0, 0, 0, 0, 0, 3],
+    ));
+
+    world.ensure_strategy_areas_initialized();
+
+    assert!(!world.strategy_areas.areas[3].used);
+    assert!(world.strategy_areas.areas[3].item.is_empty());
+}
+
+#[test]
+fn init_areas_is_idempotent_and_only_scans_once() {
+    let mut world = World::default();
+    world.add_item(strategy_item(
+        1,
+        IDR_STR_MINE,
+        vec![0, 0, 0, 0, 0, 0, 0, 0, 0],
+    ));
+
+    world.ensure_strategy_areas_initialized();
+    assert_eq!(world.strategy_areas.areas[0].item.len(), 1);
+
+    // A second call must not re-scan/duplicate entries (mirrors C's
+    // `area_init` guard).
+    world.add_item(strategy_item(
+        2,
+        IDR_STR_MINE,
+        vec![0, 0, 0, 0, 0, 0, 0, 0, 0],
+    ));
+    world.ensure_strategy_areas_initialized();
+    assert_eq!(world.strategy_areas.areas[0].item.len(), 1);
+}
+
+#[test]
+fn init_areas_ignores_out_of_range_slot_byte_without_panicking() {
+    let mut world = World::default();
+    world.add_item(strategy_item(
+        1,
+        IDR_STR_MINE,
+        vec![0, 0, 0, 0, 0, 0, 0, 0, 255],
+    ));
+
+    world.ensure_strategy_areas_initialized();
+
+    // No panic, and nothing registered anywhere in-range.
+    for area in &world.strategy_areas.areas {
+        assert!(area.item.is_empty());
+    }
+}
+
 #[test]
 fn str_raise_max_worker_slot_stops_eligibility_at_sixteen_but_clamp_caps_at_twenty_four() {
     // C: str_exp_cost case 3 gates eligibility on `max_worker < 16`
@@ -262,4 +425,436 @@ fn str_raise_max_worker_slot_stops_eligibility_at_sixteen_but_clamp_caps_at_twen
         StrategyRaiseOutcome::CannotRaiseHigher
     );
     assert_eq!(ppd.max_worker, 16);
+}
+
+fn strategy_player(id: u32, serial: u32) -> Character {
+    let mut c = character(id);
+    c.serial = serial;
+    c.flags = CharacterFlags::USED | CharacterFlags::PLAYER;
+    c
+}
+
+fn strategy_npc(id: u32, group: u16, name: &str) -> Character {
+    let mut c = character(id);
+    c.group = group;
+    c.name = name.into();
+    c
+}
+
+#[test]
+fn str_item_owner_and_gold_round_trip_through_driver_data() {
+    let mut it = strategy_item(1, IDR_STR_SPAWNER, vec![0; 11]);
+    assert_eq!(str_item_owner(&it), 0);
+    set_str_item_owner(&mut it, STR_OWNER_AI_BASE + 5);
+    assert_eq!(str_item_owner(&it), STR_OWNER_AI_BASE + 5);
+
+    let mut storage = strategy_item(2, IDR_STR_STORAGE, vec![0; 10]);
+    assert_eq!(str_item_gold(&storage), 0);
+    set_str_item_gold(&mut storage, 900);
+    assert_eq!(str_item_gold(&storage), 900);
+    // Owner bytes untouched by the gold write.
+    assert_eq!(str_item_owner(&storage), 0);
+}
+
+#[test]
+fn str_did_party_lose_false_when_storage_has_enough_gold() {
+    let mut world = World::default();
+    let mut spawner = strategy_item(1, IDR_STR_SPAWNER, vec![0; 11]);
+    spawner.x = 5;
+    spawner.y = 5;
+    set_str_item_owner(&mut spawner, 42);
+    world.add_item(spawner);
+
+    let mut storage = strategy_item(2, IDR_STR_STORAGE, vec![0; 10]);
+    storage.x = 5;
+    storage.y = 4;
+    set_str_item_gold(&mut storage, NPCPRICE as u32);
+    world.add_item(storage);
+    world.map.tile_mut(5, 4).expect("tile exists").item = 2;
+
+    // C's `noplr` fallback would force `lost = true` for a player-owned
+    // party (`code < 0xfffff000`) with no live player found at all,
+    // regardless of storage gold - so the owning player must actually be
+    // present for the storage-gold check below to matter.
+    world.add_character(strategy_player(3, 42));
+
+    assert!(!world.str_did_party_lose(ItemId(1)));
+}
+
+#[test]
+fn str_did_party_lose_true_when_storage_low_and_no_player() {
+    let mut world = World::default();
+    let mut spawner = strategy_item(1, IDR_STR_SPAWNER, vec![0; 11]);
+    spawner.x = 5;
+    spawner.y = 5;
+    set_str_item_owner(&mut spawner, 42);
+    world.add_item(spawner);
+
+    let mut storage = strategy_item(2, IDR_STR_STORAGE, vec![0; 10]);
+    storage.x = 5;
+    storage.y = 4;
+    set_str_item_gold(&mut storage, NPCPRICE as u32 - 1);
+    world.add_item(storage);
+    world.map.tile_mut(5, 4).expect("tile exists").item = 2;
+
+    assert!(world.str_did_party_lose(ItemId(1)));
+}
+
+#[test]
+fn str_did_party_lose_false_when_group_member_alive() {
+    let mut world = World::default();
+    let mut spawner = strategy_item(1, IDR_STR_SPAWNER, vec![0; 11]);
+    spawner.x = 5;
+    spawner.y = 5;
+    set_str_item_owner(&mut spawner, 42);
+    world.add_item(spawner);
+
+    let mut storage = strategy_item(2, IDR_STR_STORAGE, vec![0; 10]);
+    storage.x = 5;
+    storage.y = 4;
+    set_str_item_gold(&mut storage, 0);
+    world.add_item(storage);
+    world.map.tile_mut(5, 4).expect("tile exists").item = 2;
+
+    // The owning player is present (satisfying the `noplr` fallback), and
+    // a live worker with group == 42 keeps the party alive despite empty
+    // storage.
+    world.add_character(strategy_player(3, 42));
+    world.add_character(strategy_npc(4, 42, "Worker"));
+
+    assert!(!world.str_did_party_lose(ItemId(1)));
+}
+
+#[test]
+fn str_did_party_lose_ai_owned_skips_player_requirement() {
+    let mut world = World::default();
+    let mut spawner = strategy_item(1, IDR_STR_SPAWNER, vec![0; 11]);
+    spawner.x = 5;
+    spawner.y = 5;
+    set_str_item_owner(&mut spawner, STR_OWNER_AI_BASE + 3);
+    world.add_item(spawner);
+
+    let mut storage = strategy_item(2, IDR_STR_STORAGE, vec![0; 10]);
+    storage.x = 5;
+    storage.y = 4;
+    set_str_item_gold(&mut storage, 0);
+    world.add_item(storage);
+    world.map.tile_mut(5, 4).expect("tile exists").item = 2;
+
+    // AI-owned party: `noplr` starts false, so a low-gold storage with no
+    // live worker still isn't forced to "lost" via the no-player fallback
+    // - only the storage-gold check matters, which is 0 < NPCPRICE, so
+    // this *is* lost (the AI check is about the fallback, not this path).
+    assert!(world.str_did_party_lose(ItemId(1)));
+
+    // With enough gold, an AI-owned party with zero live members is not
+    // lost (the `noplr` force-lose branch never applies to AI parties).
+    let storage = world.items.get_mut(&ItemId(2)).unwrap();
+    set_str_item_gold(storage, NPCPRICE as u32);
+    assert!(!world.str_did_party_lose(ItemId(1)));
+}
+
+#[test]
+fn str_remove_party_destroys_grouped_npc_except_cinciac() {
+    let mut world = World::default();
+    world.add_character(strategy_npc(1, 7, "Worker"));
+    world.add_character(strategy_npc(2, 7, "Cinciac"));
+
+    world.str_remove_party(7, None);
+
+    assert!(!world.characters.contains_key(&CharacterId(1)));
+    assert!(
+        world.characters.contains_key(&CharacterId(2)),
+        "Cinciac is never destroyed, matching C's hardcoded safety check"
+    );
+}
+
+#[test]
+fn str_remove_party_never_destroys_a_player_even_if_group_matches() {
+    let mut world = World::default();
+    let mut player = strategy_player(1, 99);
+    player.group = 7;
+    world.add_character(player);
+
+    world.str_remove_party(7, None);
+
+    assert!(
+        world.characters.contains_key(&CharacterId(1)),
+        "C's elog(\"panic...\") branch never destroys a real player"
+    );
+}
+
+#[test]
+fn str_remove_party_teleports_and_messages_the_owning_player() {
+    let mut world = World::default();
+    world.add_character(strategy_player(1, 555));
+
+    world.str_remove_party(555, Some("You lose. Better luck next time!"));
+
+    let messages = world.drain_pending_system_texts();
+    assert_eq!(messages.len(), 1);
+    assert_eq!(messages[0].character_id, CharacterId(1));
+    assert_eq!(messages[0].message, "You lose. Better luck next time!");
+}
+
+#[test]
+fn str_remove_party_resets_player_owned_spawner_and_depot_storage() {
+    let mut world = World::default();
+    let mut spawner = strategy_item(1, IDR_STR_SPAWNER, vec![0; 11]);
+    spawner.driver_data[8] = 3;
+    set_str_item_owner(&mut spawner, 555);
+    world.add_item(spawner);
+
+    let mut depot = strategy_item(2, IDR_STR_DEPOT, vec![0; 9]);
+    depot.driver_data[8] = 3;
+    set_str_item_owner(&mut depot, 555);
+    world.add_item(depot);
+
+    let mut storage = strategy_item(3, IDR_STR_STORAGE, vec![0; 10]);
+    storage.driver_data[8] = 3;
+    set_str_item_owner(&mut storage, 555);
+    world.add_item(storage);
+
+    world.ensure_strategy_areas_initialized();
+    assert!(world.str_remove_party(555, None));
+
+    assert_eq!(str_item_owner(&world.items[&ItemId(1)]), STR_OWNER_NONE);
+    assert_eq!(world.items[&ItemId(1)].name, "Spawner (3)");
+    assert_eq!(str_item_owner(&world.items[&ItemId(2)]), STR_OWNER_NONE);
+    assert_eq!(world.items[&ItemId(2)].name, "Depot (3)");
+    assert_eq!(str_item_owner(&world.items[&ItemId(3)]), STR_OWNER_NONE);
+    assert_eq!(world.items[&ItemId(3)].name, "Storage (3)");
+}
+
+#[test]
+fn str_remove_party_resets_ai_owned_spawner_to_unassigned_not_free() {
+    let mut world = World::default();
+    let mut spawner = strategy_item(1, IDR_STR_SPAWNER, vec![0; 11]);
+    spawner.driver_data[8] = 3;
+    let code = STR_OWNER_AI_BASE + 2;
+    set_str_item_owner(&mut spawner, code);
+    world.add_item(spawner);
+
+    world.ensure_strategy_areas_initialized();
+    assert!(world.str_remove_party(code, None));
+
+    assert_eq!(
+        str_item_owner(&world.items[&ItemId(1)]),
+        STR_OWNER_AI_UNASSIGNED
+    );
+}
+
+#[test]
+fn str_remove_party_returns_false_when_code_owns_no_spawner() {
+    let mut world = World::default();
+    world.ensure_strategy_areas_initialized();
+    assert!(!world.str_remove_party(12345, None));
+}
+
+#[test]
+fn str_close_area_removes_every_owned_spawn() {
+    let mut world = World::default();
+    let mut spawner = strategy_item(1, IDR_STR_SPAWNER, vec![0; 11]);
+    spawner.driver_data[8] = 5;
+    set_str_item_owner(&mut spawner, 777);
+    world.add_item(spawner);
+    world.add_character(strategy_player(2, 777));
+
+    world.ensure_strategy_areas_initialized();
+    world.str_close_area(5);
+
+    assert_eq!(str_item_owner(&world.items[&ItemId(1)]), STR_OWNER_NONE);
+}
+
+#[test]
+fn apply_strategy_mission_win_rewards_and_resets_current_mission() {
+    let mut ppd = StrategyPpd::default();
+    ppd.current_mission = 2; // "B", exp: 25, set_solve: 2
+    let outcome = apply_strategy_mission_win(&mut ppd, 2);
+    assert_eq!(outcome, StrategyWinOutcome::Rewarded { exp: 25 });
+    assert_eq!(ppd.won_cnt, 1);
+    assert_eq!(ppd.exp, 25);
+    assert_eq!(ppd.boss_exp, 25);
+    assert_eq!(ppd.eguards, 1);
+    assert_eq!(ppd.solve_count(2), 1);
+    assert_eq!(ppd.current_mission, 0);
+}
+
+#[test]
+fn apply_strategy_mission_win_no_reward_for_zero_exp_mission() {
+    let mut ppd = StrategyPpd::default();
+    ppd.current_mission = 10; // "J 2P", exp: 0
+    let outcome = apply_strategy_mission_win(&mut ppd, 10);
+    assert_eq!(outcome, StrategyWinOutcome::NoReward);
+    assert_eq!(ppd.won_cnt, 0);
+    assert_eq!(ppd.exp, 0);
+    assert_eq!(ppd.current_mission, 0, "still reset, matching C");
+}
+
+#[test]
+fn apply_strategy_mission_win_bad_index_reports_bug() {
+    let mut ppd = StrategyPpd::default();
+    assert_eq!(
+        apply_strategy_mission_win(&mut ppd, 999),
+        StrategyWinOutcome::BadMissionIndex
+    );
+    assert_eq!(
+        apply_strategy_mission_win(&mut ppd, -1),
+        StrategyWinOutcome::BadMissionIndex
+    );
+}
+
+#[test]
+fn str_reward_winner_queues_event_for_matching_player_serial() {
+    let mut world = World::default();
+    world.add_character(strategy_player(1, 4242));
+
+    world.str_reward_winner(4242);
+
+    let events = world.drain_pending_strategy_rewards();
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].character_id, CharacterId(1));
+}
+
+#[test]
+fn str_reward_winner_no_match_queues_nothing() {
+    let mut world = World::default();
+    world.str_reward_winner(999);
+    assert!(world.drain_pending_strategy_rewards().is_empty());
+}
+
+#[test]
+fn str_init_mission_resets_depot_storage_mine_and_assigns_ai_spawner() {
+    let mut world = World::default();
+    let mission_area = MISSIONS[0].area as usize; // "A-1", area 1
+
+    let mut depot = strategy_item(1, IDR_STR_DEPOT, vec![0; 9]);
+    depot.driver_data[8] = mission_area as u8;
+    set_str_item_owner(&mut depot, 555);
+    set_str_item_gold(&mut depot, 100);
+    world.add_item(depot);
+
+    let mut storage = strategy_item(2, IDR_STR_STORAGE, vec![0; 10]);
+    storage.driver_data[8] = mission_area as u8;
+    world.add_item(storage);
+
+    let mut mine = strategy_item(3, IDR_STR_MINE, vec![0; 9]);
+    mine.driver_data[8] = mission_area as u8;
+    world.add_item(mine);
+
+    // Pre-marked AI slot (statically placed in zone data as AI-only).
+    let mut ai_spawner = strategy_item(4, IDR_STR_SPAWNER, vec![0; 11]);
+    ai_spawner.driver_data[8] = mission_area as u8;
+    set_str_item_owner(&mut ai_spawner, STR_OWNER_AI_UNASSIGNED);
+    world.add_item(ai_spawner);
+
+    // Pre-marked player slot.
+    let mut player_spawner = strategy_item(5, IDR_STR_SPAWNER, vec![0; 11]);
+    player_spawner.driver_data[8] = mission_area as u8;
+    world.add_item(player_spawner);
+
+    assert!(world.str_init_mission(0));
+
+    assert_eq!(str_item_owner(&world.items[&ItemId(1)]), STR_OWNER_NONE);
+    assert_eq!(str_item_gold(&world.items[&ItemId(1)]), 0);
+    assert_eq!(
+        world.items[&ItemId(1)].name,
+        format!("Depot ({mission_area})")
+    );
+
+    assert_eq!(str_item_owner(&world.items[&ItemId(2)]), STR_OWNER_NONE);
+    assert_eq!(
+        str_item_gold(&world.items[&ItemId(2)]),
+        MISSIONS[0].storage_size as u32
+    );
+
+    assert_eq!(str_item_owner(&world.items[&ItemId(3)]), STR_OWNER_NONE);
+    assert_eq!(
+        str_item_gold(&world.items[&ItemId(3)]),
+        MISSIONS[0].mine_size as u32
+    );
+
+    assert_eq!(
+        str_item_owner(&world.items[&ItemId(4)]),
+        STR_OWNER_AI_BASE + MISSIONS[0].enemy[0] as u32
+    );
+    assert_eq!(str_item_owner(&world.items[&ItemId(5)]), STR_OWNER_NONE);
+
+    assert!(world.strategy_areas.areas[mission_area].busy);
+}
+
+#[test]
+fn str_init_mission_rejects_out_of_range_index() {
+    let mut world = World::default();
+    assert!(!world.str_init_mission(999));
+}
+
+#[test]
+fn str_ticker_rewards_and_closes_area_on_lone_player_win() {
+    let mut world = World::default();
+    let mut spawner = strategy_item(1, IDR_STR_SPAWNER, vec![0; 11]);
+    spawner.driver_data[8] = 6;
+    spawner.x = 5;
+    spawner.y = 5;
+    set_str_item_owner(&mut spawner, 4242);
+    world.add_item(spawner);
+
+    let mut storage = strategy_item(2, IDR_STR_STORAGE, vec![0; 10]);
+    storage.driver_data[8] = 6;
+    storage.x = 5;
+    storage.y = 4;
+    set_str_item_gold(&mut storage, NPCPRICE as u32);
+    world.add_item(storage);
+    world.map.tile_mut(5, 4).expect("tile exists").item = 2;
+
+    world.add_character(strategy_player(3, 4242));
+    world.ensure_strategy_areas_initialized();
+
+    world.str_ticker();
+
+    let events = world.drain_pending_strategy_rewards();
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].character_id, CharacterId(3));
+    assert!(world.strategy_areas.areas[6].busy);
+}
+
+#[test]
+fn str_ticker_removes_lost_party_and_closes_when_only_ai_remains() {
+    let mut world = World::default();
+    // A lone AI-owned spawner in a slot with no player/worker: `pl==0,
+    // ai==1` after the scan -> C's `else if (ai && !pl)` branch closes
+    // the area without a reward.
+    let mut spawner = strategy_item(1, IDR_STR_SPAWNER, vec![0; 11]);
+    spawner.driver_data[8] = 7;
+    spawner.x = 5;
+    spawner.y = 5;
+    set_str_item_owner(&mut spawner, STR_OWNER_AI_BASE + 1);
+    world.add_item(spawner);
+
+    let mut storage = strategy_item(2, IDR_STR_STORAGE, vec![0; 10]);
+    storage.driver_data[8] = 7;
+    storage.x = 5;
+    storage.y = 4;
+    set_str_item_gold(&mut storage, NPCPRICE as u32);
+    world.add_item(storage);
+    world.map.tile_mut(5, 4).expect("tile exists").item = 2;
+
+    world.ensure_strategy_areas_initialized();
+    world.str_ticker();
+
+    // No reward event for a pure-AI close.
+    assert!(world.drain_pending_strategy_rewards().is_empty());
+    assert!(world.strategy_areas.areas[7].busy);
+}
+
+#[test]
+fn str_ticker_clears_busy_flag_once_a_slot_goes_fully_idle() {
+    let mut world = World::default();
+    world.ensure_strategy_areas_initialized();
+    world.strategy_areas.areas[8].used = true;
+    world.strategy_areas.areas[8].busy = true;
+
+    world.str_ticker();
+
+    assert!(!world.strategy_areas.areas[8].busy);
 }
