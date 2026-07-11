@@ -1222,6 +1222,88 @@ fn ai_refresh_places_projects_threat_between_parent_and_child() {
     assert_eq!(ad.places[1].threatnlevel, 30);
 }
 
+// --- World::ai_update_npc_list ---
+
+#[test]
+fn ai_update_npc_list_refreshes_position_level_and_platin_from_the_live_character() {
+    let mut world = World::default();
+    let mut worker = char_at(1, 15, 16, 25);
+    worker.driver_state = Some(CharacterDriverState::StrategyWorker(
+        StrategyWorkerDriverData {
+            platin: 77,
+            ..Default::default()
+        },
+    ));
+    world.add_character(worker);
+
+    let mut ad = AiData::new(StrategyPpd::default());
+    let mut npc = ai_npc(1, 0, 0, 1);
+    npc.used = 5; // stale from a previous tick's commit
+    ad.npcs.push(npc);
+
+    let cantrain = world.ai_update_npc_list(&mut ad);
+    assert_eq!(ad.npcs[0].x, 15);
+    assert_eq!(ad.npcs[0].y, 16);
+    assert_eq!(ad.npcs[0].level, 25);
+    assert_eq!(ad.npcs[0].platin, 77);
+    assert_eq!(ad.npcs[0].used, -1);
+    assert!(!cantrain);
+    assert_eq!(ad.npcs[0].cn, Some(CharacterId(1)));
+}
+
+#[test]
+fn ai_update_npc_list_empties_the_slot_when_the_character_no_longer_exists() {
+    let world = World::default();
+    let mut ad = AiData::new(StrategyPpd::default());
+    ad.npcs.push(ai_npc(1, 10, 10, 20));
+
+    world.ai_update_npc_list(&mut ad);
+    // The slot is emptied (C's `an[n].cn = 0`), but every other field is
+    // left stale rather than reset - matching C exactly (see
+    // `World::ai_update_npc_list`'s own doc comment).
+    assert_eq!(ad.npcs[0].cn, None);
+    assert_eq!(ad.npcs[0].x, 10);
+}
+
+#[test]
+fn ai_update_npc_list_reports_cantrain_for_an_under_max_level_eternal_guard() {
+    let mut world = World::default();
+    world.add_character(char_at(1, 10, 10, 20));
+
+    let mut ad = AiData::new(StrategyPpd::default());
+    ad.ppd.max_level = 50;
+    let mut npc = ai_npc(1, 10, 10, 20);
+    npc.task = AiTask::EGuard;
+    ad.npcs.push(npc);
+
+    assert!(world.ai_update_npc_list(&mut ad));
+}
+
+#[test]
+fn ai_update_npc_list_cantrain_stays_false_for_a_non_eguard_below_max_level() {
+    let mut world = World::default();
+    world.add_character(char_at(1, 10, 10, 20));
+
+    let mut ad = AiData::new(StrategyPpd::default());
+    ad.ppd.max_level = 50;
+    ad.npcs.push(ai_npc(1, 10, 10, 20)); // AiTask::Idle by default
+
+    assert!(!world.ai_update_npc_list(&mut ad));
+}
+
+#[test]
+fn ai_update_npc_list_leaves_an_already_empty_slot_alone() {
+    let world = World::default();
+    let mut ad = AiData::new(StrategyPpd::default());
+    let mut npc = ai_npc(1, 10, 10, 20);
+    npc.cn = None;
+    ad.npcs.push(npc);
+
+    let cantrain = world.ai_update_npc_list(&mut ad);
+    assert!(!cantrain);
+    assert_eq!(ad.npcs[0].cn, None);
+}
+
 // --- AiData::update_guard_list ---
 
 #[test]

@@ -142,26 +142,41 @@
 //! refreshes from `ai_main`'s outer body that need no live-character/
 //! item access (unlike [`World::ai_refresh_places`]'s own per-place
 //! threat scan, which already covers the rest of that same per-place
-//! `for` loop). `update_nag_guard`'s `!ad->an[i].cn` half (the NPC slot
-//! was emptied outright) can never fire yet - see below.
+//! `for` loop).
+//!
+//! Fifteenth slice done: [`World::ai_update_npc_list`] (`strategy.c:
+//! 2461-2482`) - the "update npc list" NPC refresh itself, the one piece
+//! of this per-tick refresh the previous slice's own doc comment had
+//! flagged as not mapping cleanly onto the `Vec`-backed roster. Resolved
+//! by widening [`AiNpc::cn`] to `Option<CharacterId>` (C's `an[n].cn = 0`
+//! "slot emptied" sentinel) rather than attempting index-preserving `Vec`
+//! removal - every other piece of `AiData`/`AiPlace` that stores plain
+//! NPC-array indices (`worker[]`/`eguard`/`guard[]`/`nagguard`) keeps
+//! working unchanged, since the slot itself never moves, only its `cn`
+//! goes `None`. This also finally makes [`AiData::update_nag_guard`]'s
+//! `!ad->an[i].cn` branch reachable (previously documented as dead code
+//! in this port). [`World::ai_threat`]/[`World::ai_guard_ready`] widened
+//! to accept `Option<CharacterId>` accordingly (a `None` contributes
+//! nothing, same as an id that fails to resolve - no behavior change for
+//! any existing caller, since every extant [`AiNpc::cn`] was always
+//! `Some` before this slice).
 //!
 //! REMAINING (tracked in `PORTING_TODO.md`, left `[~]` on purpose):
-//! `ai_main`'s own outer per-tick body still needs: the "update npc
-//! list" NPC-vec refresh (`:2461-2482`, re-deriving `x`/`y`/`level`/
-//! `platin`/`used` from each live NPC and dropping despawned ones - the
-//! one piece of this per-tick refresh not yet ported, since it doesn't
-//! map cleanly onto the current `Vec`-backed roster: C's `an[n].cn = 0`
-//! removal-in-place would require either a fixed-slot `Option`-backed
-//! roster or a stable-index-preserving removal scheme, since every other
-//! piece of `AiData`/`AiPlace` already ported here - `worker[]`/`eguard`/
-//! `guard[]` - stores plain NPC-array indices that would dangle across a
-//! naive `Vec::remove`), worker spawning (`:2644-2672`), the panic/
-//! non-panic task-assignment switch (`:2674-2924`, calls the
-//! already-ported `task_*` functions plus `wantguardcnt`/`assign_guards`/
-//! `remove_free_guards`/`nag_attack`, also all already ported), the final
-//! per-npc task-dispatch `switch` (`:2932-2972`) - plus `create_eguard`
-//! (`:2987-3040`, needs `ZoneLoader`) and the "place eternal guards" tail
-//! that calls it (`:2892-2903`).
+//! `ai_main`'s own outer per-tick body still needs: worker spawning
+//! (`:2644-2672`), the panic/non-panic task-assignment switch (`:2674-
+//! 2924`, calls the already-ported `task_*` functions plus
+//! `wantguardcnt`/`assign_guards`/`remove_free_guards`/`nag_attack`, also
+//! all already ported), the final per-npc task-dispatch `switch` (`:2932-
+//! 2972`) - plus `create_eguard` (`:2987-3040`, needs `ZoneLoader`) and
+//! the "place eternal guards" tail that calls it (`:2892-2903`). Also
+//! still open: actually assembling all of these ported pieces (plus
+//! [`World::ai_refresh_places`]/[`World::ai_nag_attack`]/[`World::
+//! ai_update_npc_list`]) into one real `ai_main` call in the exact C
+//! order, threading [`World::ai_update_npc_list`]'s real `cantrain`
+//! return value into `ai_refresh_places` instead of that function's own
+//! cached-level stand-in - deferred until a live spawn/tick call site for
+//! an AI-controlled party exists to actually call it (`ai_init`/
+//! `ai_main` are both still `pub fn` with no caller outside tests).
 
 use super::*;
 use crate::character_driver::CDR_STRATEGY;
@@ -225,7 +240,15 @@ pub enum AiWalkType {
 /// why `order`/`or1`/`or2` stay raw ints and `cserial` is dropped.
 #[derive(Debug, Clone)]
 pub struct AiNpc {
-    pub cn: CharacterId,
+    /// `None` is C's `an[n].cn = 0` "slot emptied" sentinel, written by
+    /// [`World::ai_update_npc_list`] once the underlying character no
+    /// longer exists. Every other field is left stale when this happens
+    /// (matching C exactly - `ai_main`'s "update npc list" pass only
+    /// ever touches `cn` itself in the removal branch, `strategy.c:
+    /// 2464`), which is why every reader of this field elsewhere in this
+    /// module (`ai_threat`/`ai_guard_ready`) treats a missing character
+    /// as contributing nothing rather than panicking.
+    pub cn: Option<CharacterId>,
     pub x: u16,
     pub y: u16,
     pub platin: i32,
@@ -262,7 +285,7 @@ impl AiNpc {
     /// still-unported worker-spawn loop, `:2665`).
     pub fn new(cn: CharacterId, x: u16, y: u16, level: i32) -> Self {
         Self {
-            cn,
+            cn: Some(cn),
             x,
             y,
             platin: 0,
@@ -640,11 +663,10 @@ impl AiData {
 
     /// C `ai_main`'s "update nag guard" pass (`strategy.c:2496-2500`):
     /// clear [`Self::nagguard`] once its NPC is no longer a qualifying
-    /// elite guard still assigned to [`Self::nagplace`], or the nag has
-    /// run for more than 90 seconds. C's `!ad->an[i].cn` half (the NPC
-    /// slot was emptied outright) can never fire in this port yet - NPC-
-    /// vec removal is unported, see this module's own doc comment - so
-    /// only the reachable three conditions are checked.
+    /// elite guard still assigned to [`Self::nagplace`], the nag has run
+    /// for more than 90 seconds, or the NPC's slot was emptied outright
+    /// (`!ad->an[i].cn` - reachable now that [`World::ai_update_npc_list`]
+    /// actually clears [`AiNpc::cn`] to `None`).
     pub fn update_nag_guard(&mut self, tick: i64) {
         let i = self.nagguard;
         if i == -1 {
@@ -652,7 +674,8 @@ impl AiData {
         }
         let iu = i as usize;
         let stale = tick - self.lastnag > (TICKS_PER_SECOND as i64) * 90;
-        if self.npcs[iu].task != AiTask::EGuard
+        if self.npcs[iu].cn.is_none()
+            || self.npcs[iu].task != AiTask::EGuard
             || self.npcs[iu].target as i32 != self.nagplace
             || stale
         {
@@ -854,7 +877,9 @@ impl World {
             return;
         }
 
-        let worker_id = ad.npcs[n].cn;
+        let Some(worker_id) = ad.npcs[n].cn else {
+            return;
+        };
         if !self.characters.contains_key(&worker_id) {
             return;
         }
@@ -1091,20 +1116,19 @@ impl World {
     /// C `#define THREAT(cn) ((double)ch[cn].level * ch[cn].level *
     /// ch[cn].level)` (`strategy.c:2109`) - deliberately reads the *live*
     /// character's level, not the cached [`AiNpc::level`] copy (see
-    /// module doc comment). A missing/despawned character contributes no
-    /// threat.
-    fn ai_threat(&self, cn: CharacterId) -> f64 {
-        self.characters
-            .get(&cn)
+    /// module doc comment). A missing/despawned character (`None`,
+    /// [`AiNpc::cn`]'s "slot emptied" sentinel, or a stale id that
+    /// somehow no longer resolves) contributes no threat.
+    fn ai_threat(&self, cn: Option<CharacterId>) -> f64 {
+        cn.and_then(|cn| self.characters.get(&cn))
             .map(|c| f64::from(c.level).powi(3))
             .unwrap_or(0.0)
     }
 
     /// C's free-guard eligibility HP check (`strategy.c:2152`): `ch[cn].hp
     /// >= ch[cn].value[0][V_HP] * POWERSCALE`.
-    fn ai_guard_ready(&self, cn: CharacterId) -> bool {
-        self.characters
-            .get(&cn)
+    fn ai_guard_ready(&self, cn: Option<CharacterId>) -> bool {
+        cn.and_then(|cn| self.characters.get(&cn))
             .is_some_and(|c| c.hp >= character_value(c, CharacterValue::Hp) * POWERSCALE)
     }
 
@@ -1148,6 +1172,55 @@ impl World {
             ad.npcs[guard].target = place;
             ad.npcs[guard].used = place as i32;
         }
+    }
+
+    /// C `ai_main`'s "update npc list" pass (`strategy.c:2461-2482`), the
+    /// very first thing the real per-tick body does after `ai_init`: for
+    /// every roster entry still pointing at a live character, refresh its
+    /// cached `x`/`y`/`level`/`platin` (the latter from the character's
+    /// own [`StrategyWorkerDriverData::platin`], C's `set_data(...,
+    /// DRD_STRATEGYDRIVER, ...)`) and reset `used` to "free" (`-1`) for
+    /// this tick's later passes ([`AiData::update_guard_list`]/
+    /// [`AiData::update_place_worker_and_eguard_counts`]/etc.) to
+    /// re-derive; otherwise (the character no longer exists) empty the
+    /// slot (`an[n].cn = 0`, ported as [`AiNpc::cn`] going `None` - see
+    /// its own doc comment for why every other field is deliberately
+    /// left stale, matching C exactly). C's extra `ch[cn].serial !=
+    /// cserial` staleness re-check has no equivalent here: a Rust
+    /// [`CharacterId`] is already a stable, never-reused identity (same
+    /// precedent as every other `cserial`-dropping doc comment in this
+    /// module), so existence in [`World::characters`] alone is the only
+    /// signal needed. Returns C's `cantrain` local (`:2438,2472-2474`):
+    /// true if any live eternal guard is still below `ppd.max_level` -
+    /// the real, non-stale replacement for [`World::ai_refresh_places`]'s
+    /// own documented cached-level stand-in (that function isn't wired to
+    /// call this one yet, since nothing assembles a real `ai_main` call
+    /// order across both methods; a future slice doing that assembly
+    /// should thread this return value through instead).
+    pub fn ai_update_npc_list(&self, ad: &mut AiData) -> bool {
+        let mut cantrain = false;
+        for n in 0..ad.npcs.len() {
+            let Some(cn) = ad.npcs[n].cn else {
+                continue;
+            };
+            let Some(character) = self.characters.get(&cn) else {
+                ad.npcs[n].cn = None;
+                continue;
+            };
+            ad.npcs[n].x = character.x;
+            ad.npcs[n].y = character.y;
+            ad.npcs[n].level = character.level as i32;
+            ad.npcs[n].used = -1;
+            if let Some(CharacterDriverState::StrategyWorker(data)) =
+                character.driver_state.as_ref()
+            {
+                ad.npcs[n].platin = data.platin;
+            }
+            if ad.npcs[n].task == AiTask::EGuard && ad.npcs[n].level < ad.ppd.max_level {
+                cantrain = true;
+            }
+        }
+        cantrain
     }
 
     /// C `ai_main`'s per-place worker/threat refresh loop (`strategy.c:
@@ -1217,7 +1290,7 @@ impl World {
                     continue;
                 }
 
-                ad.places[n].threatcount += self.ai_threat(character.id) * 1.25;
+                ad.places[n].threatcount += self.ai_threat(Some(character.id)) * 1.25;
                 ad.places[n].threatlevel = ad.places[n].threatlevel.max(character.level as i32);
                 ad.places[n].threat += 100 + ad.places[n].threatlevel;
                 if ad.places[n].dist <= ad.pdist {

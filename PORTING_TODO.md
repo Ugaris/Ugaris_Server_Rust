@@ -1229,11 +1229,17 @@ Ordered by player progression; the C file is the oracle.
   pure roster-bookkeeping refreshes from `ai_main`'s outer body that need
   no live-character/item access, closing every part of the per-place loop
   besides the already-ported threat scan. 15 new tests.
-  REMAINING: the "update npc list" NPC-vec refresh (doesn't map cleanly
-  onto the current `Vec`-backed roster - see `strategy_ai.rs`'s module
-  doc comment), worker spawning, the panic/non-panic task-assignment
-  switch, the final per-npc task-dispatch switch, `create_eguard` (needs
-  `ZoneLoader`), and the "place eternal guards" tail that calls it.
+  Fifteenth slice done: `World::ai_update_npc_list` (`strategy.c:2461-
+  2482`, the "update npc list" NPC refresh) - resolved by widening
+  `AiNpc::cn` to `Option<CharacterId>` (C's `an[n].cn = 0` sentinel)
+  instead of attempting index-preserving `Vec` removal, so every other
+  index-based reference (`worker[]`/`eguard`/`guard[]`/`nagguard`) keeps
+  working unchanged. 5 new tests.
+  REMAINING: worker spawning, the panic/non-panic task-assignment switch,
+  the final per-npc task-dispatch switch, `create_eguard` (needs
+  `ZoneLoader`), the "place eternal guards" tail that calls it, and
+  assembling all ported pieces into one real `ai_main` call (no live
+  spawn/tick call site exists yet for an AI-controlled party).
 - [ ] **Area 25 - `src/area/25/warped.c`** - warped NPC dialogue,
   `DRD_WARPFIGHTER` full fight driver.
 - [ ] **Area 26 - `src/area/26/staffer.c`** - vault skull PPD/quest, Rouven
@@ -1295,6 +1301,11 @@ Keep entries to at most three lines: date, task, one-line result.
 Anything longer belongs in `PORTING_LEDGER.md`; historical verbose
 notes live in `PROGRESS_ARCHIVE.md`.
 
+- 2026-07-11: Areas 23/24 strategy minigame: fifteenth slice - ported
+  `World::ai_update_npc_list` (the "update npc list" NPC refresh),
+  widening `AiNpc::cn` to `Option<CharacterId>` to resolve the previous
+  slice's own "doesn't map onto Vec roster" blocker. 3621 core [+5] +
+  1168 server tests pass, clean build.
 - 2026-07-11: Areas 23/24 strategy minigame: fourteenth slice - ported
   the remaining pure per-place/guard-list bookkeeping refreshes
   (`update_guard_list`/`update_nag_guard`/
