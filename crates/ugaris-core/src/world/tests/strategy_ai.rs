@@ -1522,3 +1522,278 @@ fn update_free_npc_count_resets_from_previous_values() {
     assert_eq!(ad.npc_cnt, 0);
     assert_eq!(ad.free_workers, 0);
 }
+
+// --- AiData::assign_tasks_to_workers ---
+
+#[test]
+fn assign_tasks_to_workers_panic_sends_a_free_npc_to_fight_at_pplace() {
+    let mut ad = AiData::new(StrategyPpd::default());
+    ad.places.push(ai_place(AiPlaceType::Mine, 1, 10, 10));
+    ad.places.push(ai_place(AiPlaceType::Storage, 2, 20, 20));
+    ad.npcs.push(ai_npc(1, 10, 10, 10)); // npc 0: free/idle already
+    ad.npcs.push(ai_npc(2, 20, 20, 10)); // npc 1: EGuard, untouched
+    ad.npcs.push(ai_npc(3, 20, 20, 10)); // npc 2: Ignore, untouched
+    ad.npcs[1].task = AiTask::EGuard;
+    ad.npcs[2].task = AiTask::Ignore;
+
+    ad.panic = true;
+    ad.pplace = 1;
+    ad.assign_tasks_to_workers(99);
+
+    // Already free (`used == -1`): task really becomes (and stays) Fight.
+    assert_eq!(ad.npcs[0].task, AiTask::Fight);
+    assert_eq!(ad.npcs[0].target, 1);
+    assert_eq!(ad.npcs[0].used, -1);
+    // Both EGuard and Ignore keep their own task, but `target` is still
+    // stamped to `pplace` unconditionally (C `:2684`).
+    assert_eq!(ad.npcs[1].task, AiTask::EGuard);
+    assert_eq!(ad.npcs[1].target, 1);
+    assert_eq!(ad.npcs[2].task, AiTask::Ignore);
+    assert_eq!(ad.npcs[2].target, 1);
+}
+
+#[test]
+fn assign_tasks_to_workers_panic_reverts_a_working_npc_to_idle_via_remove_worker() {
+    // C quirk (`strategy.c:2676-2681`, kept verbatim): setting `task =
+    // T_FIGHT` right before calling `remove_worker` is pointless for any
+    // NPC that was actually working a place, since `remove_worker` itself
+    // unconditionally stamps `task = T_IDLE` - so a previously-busy NPC
+    // ends up idle (with `target` still redirected to `pplace` right
+    // after, since that assignment sits outside the `if`), not fighting.
+    let mut ad = AiData::new(StrategyPpd::default());
+    ad.places.push(ai_place(AiPlaceType::Mine, 1, 10, 10));
+    ad.places.push(ai_place(AiPlaceType::Storage, 2, 20, 20));
+    ad.npcs.push(ai_npc(1, 10, 10, 10));
+    ad.free_workers = 1;
+    ad.add_worker(AiTask::Mine, 0, 0); // currently working place 0
+
+    ad.panic = true;
+    ad.pplace = 1;
+    ad.assign_tasks_to_workers(99);
+
+    assert_eq!(ad.npcs[0].task, AiTask::Idle);
+    assert_eq!(ad.npcs[0].target, 1);
+    assert_eq!(ad.npcs[0].used, 0);
+    assert_eq!(ad.places[0].wcnt, 0);
+}
+
+#[test]
+fn assign_tasks_to_workers_promotes_a_free_worker_to_eguard_when_understaffed() {
+    let mut ad = AiData::new(StrategyPpd::default());
+    ad.places.push(ai_place(AiPlaceType::Storage, 1, 10, 10));
+    ad.npcs.push(ai_npc(1, 10, 10, 10));
+    ad.free_workers = 1;
+    ad.npc_cnt = 4; // wantguardcnt(4) == 1
+    ad.gcnt = 0;
+
+    ad.assign_tasks_to_workers(99);
+
+    assert_eq!(ad.npcs[0].task, AiTask::EGuard);
+    assert_eq!(ad.npcs[0].target, 0);
+    assert_eq!(ad.npcs[0].used, 0);
+    assert_eq!(ad.gcnt, 1);
+}
+
+#[test]
+fn assign_tasks_to_workers_demotes_an_excess_eguard_when_economy_allows() {
+    let mut ad = AiData::new(StrategyPpd::default());
+    ad.places.push(ai_place(AiPlaceType::Storage, 1, 10, 10));
+    ad.npcs.push(ai_npc(1, 10, 10, 10));
+    ad.free_workers = 1;
+    assert!(ad.add_guard(0));
+    ad.npcs[0].task = AiTask::EGuard;
+    ad.npc_cnt = 3; // wantguardcnt(3) == 0
+    ad.gcnt = 1; // 0 < 1: too many guards
+    ad.nogoldleft = false;
+    ad.ragnarok = false;
+
+    ad.assign_tasks_to_workers(99);
+
+    assert_eq!(ad.gcnt, 0);
+    assert_eq!(ad.guard[0], -1);
+    assert_eq!(ad.npcs[0].used, -1);
+}
+
+#[test]
+fn assign_tasks_to_workers_never_demotes_an_eguard_while_ragnarok_or_nogoldleft() {
+    let mut ad = AiData::new(StrategyPpd::default());
+    ad.places.push(ai_place(AiPlaceType::Storage, 1, 10, 10));
+    ad.npcs.push(ai_npc(1, 10, 10, 10));
+    ad.free_workers = 1;
+    assert!(ad.add_guard(0));
+    ad.npcs[0].task = AiTask::EGuard;
+    ad.npc_cnt = 3; // wantguardcnt(3) == 0 < gcnt
+    ad.gcnt = 1;
+    ad.nogoldleft = false;
+    ad.ragnarok = true; // blocks the demotion
+
+    ad.assign_tasks_to_workers(99);
+
+    assert_eq!(ad.gcnt, 1);
+    assert_eq!(ad.guard[0], 0);
+    assert_eq!(ad.npcs[0].task, AiTask::EGuard);
+}
+
+#[test]
+fn assign_tasks_to_workers_keeps_a_productive_transfer_worker_in_place() {
+    let mut ad = AiData::new(StrategyPpd::default());
+    ad.places.push(ai_place(AiPlaceType::Storage, 1, 10, 10));
+    let mut depot = ai_place(AiPlaceType::Depot, 2, 12, 10);
+    depot.parent = 0;
+    depot.dist = 1;
+    depot.wcnt = 1;
+    ad.places.push(depot);
+    ad.npcs.push(ai_npc(1, 12, 10, 10));
+    ad.npcs[0].task = AiTask::Transfer;
+    ad.npcs[0].target = 1;
+    ad.npcs[0].used = 1;
+    ad.npcs[0].platin = 50; // this worker's own cached earnings
+    ad.npc_cnt = 3; // wantguardcnt(3) == 0, no eguard pressure
+    ad.gcnt = 0;
+
+    ad.assign_tasks_to_workers(5);
+
+    // Still productive (wcnt <= worklevel, no threat, in range): unchanged.
+    assert_eq!(ad.npcs[0].task, AiTask::Transfer);
+    assert_eq!(ad.npcs[0].target, 1);
+    assert_eq!(ad.npcs[0].used, 1);
+}
+
+#[test]
+fn assign_tasks_to_workers_keeps_a_take_worker_while_the_depot_is_still_unowned() {
+    let mut ad = AiData::new(StrategyPpd::default());
+    ad.places.push(ai_place(AiPlaceType::Storage, 1, 10, 10));
+    let mut depot = ai_place(AiPlaceType::Depot, 2, 12, 10);
+    depot.parent = 0;
+    depot.dist = 1;
+    depot.owned = false;
+    ad.places.push(depot);
+    ad.npcs.push(ai_npc(1, 12, 10, 10));
+    ad.npcs[0].task = AiTask::Take;
+    ad.npcs[0].target = 1;
+    ad.npcs[0].used = 1;
+    ad.npc_cnt = 3;
+    ad.gcnt = 0;
+
+    ad.assign_tasks_to_workers(5);
+
+    assert_eq!(ad.npcs[0].task, AiTask::Take);
+    assert_eq!(ad.npcs[0].target, 1);
+    assert_eq!(ad.npcs[0].used, 1);
+}
+
+#[test]
+fn assign_tasks_to_workers_removes_a_worker_from_a_now_threatened_place() {
+    let mut ad = AiData::new(StrategyPpd::default());
+    ad.places.push(ai_place(AiPlaceType::Storage, 1, 10, 10));
+    let mut depot = ai_place(AiPlaceType::Depot, 2, 12, 10);
+    depot.parent = 0;
+    depot.dist = 1;
+    depot.wcnt = 1;
+    depot.threat = 50; // now under attack
+    ad.places.push(depot);
+    ad.npcs.push(ai_npc(1, 12, 10, 10));
+    ad.npcs[0].task = AiTask::Transfer;
+    ad.npcs[0].target = 1;
+    ad.npcs[0].used = 1;
+    ad.npc_cnt = 3;
+    ad.gcnt = 0;
+
+    ad.assign_tasks_to_workers(5);
+
+    // No other place qualifies as a replacement, so it falls all the way
+    // through to the idle fallback - but it was genuinely evicted first
+    // (C never re-inspects `threat` again before that fallback).
+    // `remove_worker` stamps `used = 0` (not `-1`, see its own doc
+    // comment), so that's what stays.
+    assert_eq!(ad.npcs[0].task, AiTask::Idle);
+    assert_eq!(ad.npcs[0].target, 0);
+    assert_eq!(ad.npcs[0].used, 0);
+    assert_eq!(ad.places[1].wcnt, 0);
+}
+
+#[test]
+fn assign_tasks_to_workers_redirects_to_an_understaffed_parent() {
+    let mut ad = AiData::new(StrategyPpd::default());
+    ad.places.push(ai_place(AiPlaceType::Storage, 1, 10, 10)); // place 0
+    let mut mid = ai_place(AiPlaceType::Depot, 2, 12, 10); // place 1
+    mid.parent = 0;
+    mid.dist = 1;
+    mid.wcnt = 0;
+    mid.platin = 300; // > (0 + 1) * WORKERPLATIN(200)
+    ad.places.push(mid);
+    let mut leaf = ai_place(AiPlaceType::Mine, 3, 14, 10); // place 2
+    leaf.parent = 1;
+    leaf.dist = 2;
+    leaf.wcnt = 2; // > place 1's wcnt (0)
+    ad.places.push(leaf);
+    ad.npcs.push(ai_npc(1, 14, 10, 10));
+    ad.npcs[0].task = AiTask::Mine;
+    ad.npcs[0].target = 2;
+    ad.npcs[0].used = 2;
+    ad.npc_cnt = 3;
+    ad.gcnt = 0;
+
+    ad.assign_tasks_to_workers(5);
+
+    assert_eq!(ad.npcs[0].task, AiTask::Transfer);
+    assert_eq!(ad.npcs[0].target, 1);
+    assert_eq!(ad.npcs[0].used, 1);
+    assert_eq!(ad.places[1].wcnt, 1);
+}
+
+#[test]
+fn assign_tasks_to_workers_assigns_take_to_the_nearest_unowned_empty_depot() {
+    let mut ad = AiData::new(StrategyPpd::default());
+    ad.places.push(ai_place(AiPlaceType::Storage, 1, 10, 10)); // place 0
+    let mut depot = ai_place(AiPlaceType::Depot, 2, 12, 10); // place 1
+    depot.dist = 2;
+    depot.owned = false;
+    depot.wcnt = 0;
+    ad.places.push(depot);
+    ad.npcs.push(ai_npc(1, 12, 10, 10)); // idle, free
+    ad.npc_cnt = 3;
+    ad.gcnt = 0;
+
+    ad.assign_tasks_to_workers(5);
+
+    assert_eq!(ad.npcs[0].task, AiTask::Take);
+    assert_eq!(ad.npcs[0].target, 1);
+    assert_eq!(ad.npcs[0].used, 1);
+    assert_eq!(ad.places[1].wcnt, 1);
+}
+
+#[test]
+fn assign_tasks_to_workers_assigns_mine_task_to_the_nearest_understaffed_mine() {
+    let mut ad = AiData::new(StrategyPpd::default());
+    ad.places.push(ai_place(AiPlaceType::Storage, 1, 10, 10)); // place 0
+    let mut mine = ai_place(AiPlaceType::Mine, 2, 12, 10); // place 1
+    mine.dist = 2;
+    mine.platin = 500; // > wcnt(0) * WORKERPLATIN
+    mine.wcnt = 0;
+    ad.places.push(mine);
+    ad.npcs.push(ai_npc(1, 12, 10, 10)); // idle, free
+    ad.npc_cnt = 3;
+    ad.gcnt = 0;
+
+    ad.assign_tasks_to_workers(5);
+
+    assert_eq!(ad.npcs[0].task, AiTask::Mine);
+    assert_eq!(ad.npcs[0].target, 1);
+    assert_eq!(ad.npcs[0].used, 1);
+}
+
+#[test]
+fn assign_tasks_to_workers_falls_back_to_idle_when_nothing_qualifies() {
+    let mut ad = AiData::new(StrategyPpd::default());
+    ad.places.push(ai_place(AiPlaceType::Storage, 1, 10, 10));
+    ad.npcs.push(ai_npc(1, 10, 10, 10));
+    ad.npc_cnt = 3;
+    ad.gcnt = 0;
+
+    ad.assign_tasks_to_workers(5);
+
+    assert_eq!(ad.npcs[0].task, AiTask::Idle);
+    assert_eq!(ad.npcs[0].target, 0);
+    assert_eq!(ad.npcs[0].used, -1);
+}

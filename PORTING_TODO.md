@@ -1235,11 +1235,25 @@ Ordered by player progression; the C file is the oracle.
   instead of attempting index-preserving `Vec` removal, so every other
   index-based reference (`worker[]`/`eguard`/`guard[]`/`nagguard`) keeps
   working unchanged. 5 new tests.
-  REMAINING: worker spawning, the panic/non-panic task-assignment switch,
-  the final per-npc task-dispatch switch, `create_eguard` (needs
-  `ZoneLoader`), the "place eternal guards" tail that calls it, and
-  assembling all ported pieces into one real `ai_main` call (no live
-  spawn/tick call site exists yet for an AI-controlled party).
+  Sixteenth slice done: `AiData::assign_tasks_to_workers` (`strategy.c:
+  2674-2796`) - the panic/non-panic "assign tasks to workers" loop, the
+  core per-tick planning decision: panic sends every non-eternal-guard
+  NPC to fight at `pplace`; otherwise each NPC keeps its job if still
+  productive/safe, gets promoted to/recalled from elite-guard duty, gets
+  redirected to a busier parent place, or falls back to the nearest
+  depot/mine/storage with spare capacity, else goes idle. New
+  `AiData::ragnarok`/`nogoldleft` committed fields (read as the previous
+  tick's values) and a new `AiPlaceRefreshResult::mindist` field support
+  this; one documented deviation (C's `ap[-1]` OOB read on a storage-
+  parented NPC is treated as "no parent threat"). 11 new tests.
+  REMAINING: worker spawning (`:2644-2672`), the "find places with too
+  little workers"/threat-handling/worklevel-adjustment/"place eternal
+  guards" tail (`:2798-2924` - needs new `at[]`/`max_at`/`lastchange`
+  fields, `tcomp`, and `create_eguard`, which needs `ZoneLoader`), the
+  final per-npc task-dispatch switch (`:2932-2972`, needs a raw-ints-to-
+  `StrategyWorkerOrder` conversion for its write-back), and assembling
+  all ported pieces into one real `ai_main` call (no live spawn/tick call
+  site exists yet for an AI-controlled party).
 - [ ] **Area 25 - `src/area/25/warped.c`** - warped NPC dialogue,
   `DRD_WARPFIGHTER` full fight driver.
 - [ ] **Area 26 - `src/area/26/staffer.c`** - vault skull PPD/quest, Rouven
@@ -1301,6 +1315,10 @@ Keep entries to at most three lines: date, task, one-line result.
 Anything longer belongs in `PORTING_LEDGER.md`; historical verbose
 notes live in `PROGRESS_ARCHIVE.md`.
 
+- 2026-07-11: Areas 23/24 strategy minigame: sixteenth slice - ported
+  `AiData::assign_tasks_to_workers` (the panic/non-panic per-tick
+  task-assignment loop, `ai_main`'s core planning decision). 3633 core
+  [+12] + 1168 server tests pass, clean build/boot-smoke.
 - 2026-07-11: Areas 23/24 strategy minigame: fifteenth slice - ported
   `World::ai_update_npc_list` (the "update npc list" NPC refresh),
   widening `AiNpc::cn` to `Option<CharacterId>` to resolve the previous

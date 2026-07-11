@@ -161,22 +161,42 @@
 //! any existing caller, since every extant [`AiNpc::cn`] was always
 //! `Some` before this slice).
 //!
+//! Sixteenth slice done: [`AiData::assign_tasks_to_workers`]
+//! (`strategy.c:2674-2796`) - the panic/non-panic "assign tasks to
+//! workers" loop, the core of `ai_main`'s per-tick planning: panic sends
+//! every non-eternal-guard NPC to fight at `pplace`; otherwise each NPC
+//! keeps its current job if it's still productive/safe, gets promoted to
+//! (or recalled from) elite-guard duty via `wantguardcnt`, gets
+//! redirected to a busier parent place, or falls back to searching for
+//! the nearest depot to take/mine-or-transfer place with spare capacity,
+//! else goes idle. New [`AiData::ragnarok`]/[`AiData::nogoldleft`]
+//! committed fields (read here as the *previous* tick's values, per C's
+//! own commit-at-the-very-end ordering) and a new
+//! [`AiPlaceRefreshResult::mindist`] field (previously silently discarded
+//! by [`World::ai_refresh_places`]) support this. See this method's own
+//! doc comment for the one deviation (`ap[-1]` OOB read in C, treated as
+//! "no parent threat" here).
+//!
 //! REMAINING (tracked in `PORTING_TODO.md`, left `[~]` on purpose):
 //! `ai_main`'s own outer per-tick body still needs: worker spawning
-//! (`:2644-2672`), the panic/non-panic task-assignment switch (`:2674-
-//! 2924`, calls the already-ported `task_*` functions plus
-//! `wantguardcnt`/`assign_guards`/`remove_free_guards`/`nag_attack`, also
-//! all already ported), the final per-npc task-dispatch `switch` (`:2932-
-//! 2972`) - plus `create_eguard` (`:2987-3040`, needs `ZoneLoader`) and
-//! the "place eternal guards" tail that calls it (`:2892-2903`). Also
-//! still open: actually assembling all of these ported pieces (plus
-//! [`World::ai_refresh_places`]/[`World::ai_nag_attack`]/[`World::
-//! ai_update_npc_list`]) into one real `ai_main` call in the exact C
-//! order, threading [`World::ai_update_npc_list`]'s real `cantrain`
-//! return value into `ai_refresh_places` instead of that function's own
-//! cached-level stand-in - deferred until a live spawn/tick call site for
-//! an AI-controlled party exists to actually call it (`ai_init`/
-//! `ai_main` are both still `pub fn` with no caller outside tests).
+//! (`:2644-2672`), the "find places with too little workers"/
+//! threat-handling/worklevel-adjustment/"place eternal guards" tail
+//! (`:2798-2924` - needs new `at[]`/`max_at`/`lastchange` `AiData` fields,
+//! `tcomp`, and `create_eguard`, which needs `ZoneLoader`), and the final
+//! per-npc task-dispatch `switch` (`:2932-2972`, calls the already-ported
+//! `task_*` functions - the only new piece it needs is a raw-ints-to-
+//! [`StrategyWorkerOrder`] conversion for the `dat->order = ad->an[n]
+//! .order` write-back, the inverse of this file's existing
+//! `strategy_worker_order_to_raw`). Also still open: actually assembling
+//! all of these ported pieces (plus [`World::ai_refresh_places`]/
+//! [`World::ai_nag_attack`]/[`World::ai_update_npc_list`]/
+//! [`AiData::assign_tasks_to_workers`]) into one real `ai_main` call in
+//! the exact C order, threading [`World::ai_update_npc_list`]'s real
+//! `cantrain` return value into `ai_refresh_places` instead of that
+//! function's own cached-level stand-in - deferred until a live
+//! spawn/tick call site for an AI-controlled party exists to actually
+//! call it (`ai_init`/`ai_main` are both still `pub fn` with no caller
+//! outside tests).
 
 use super::*;
 use crate::character_driver::CDR_STRATEGY;
@@ -195,6 +215,11 @@ pub const AI_MAXGUARD: usize = 12;
 /// C `#define MAXDISTANCE 64` (`:1693`): place-graph BFS depth cap used
 /// by the still-unported `ai_init` connectivity scan.
 pub const AI_MAXDISTANCE: i32 = 64;
+/// C `#define WORKERPLATIN 200` (`:2107`): a place "has spare work" once
+/// its smoothed [`AiPlace::platin`] exceeds this many currency units per
+/// assigned worker - the threshold [`AiData::assign_tasks_to_workers`]
+/// uses to decide whether a place needs (or has too many) workers.
+pub const WORKERPLATIN: i32 = 200;
 
 /// C `#define PT_STORAGE 1`/`PT_DEPOT 2`/`PT_MINE 3` (`:1683-1685`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -409,6 +434,14 @@ pub struct AiPlaceRefreshResult {
     /// C's `nogoldleft` local, initialized `1` (`:2452`): true unless
     /// some non-storage place still has un-threatened gold left.
     pub nogoldleft: bool,
+    /// C's `mindist` local, initialized `99` (`:2459`): BFS distance of
+    /// the closest un-threatened place with gold - committed into
+    /// `ad->pdist` (already ported, `ad.pdist.min(mindist)`) but *also*
+    /// read directly by the still-unported rest of `ai_main` (the
+    /// task-assignment switch, the "find places with too little
+    /// workers"/threat-handling block); callers thread this straight into
+    /// [`AiData::assign_tasks_to_workers`] rather than recomputing it.
+    pub mindist: i32,
 }
 
 /// C's file-static `struct ai_data ai_data[MAX_AI], *ad` (`strategy.c:
@@ -453,6 +486,20 @@ pub struct AiData {
     /// this tick, `-1` if none. Refreshed every call by
     /// [`World::ai_refresh_places`].
     pub pplace: i32,
+    /// C `int ragnarok` (`:1774`, the struct field - not to be confused
+    /// with `ai_main`'s own same-named local): the *previous* tick's
+    /// committed "no economy left, all-out defense" flag. C only commits
+    /// [`World::ai_refresh_places`]'s freshly recomputed
+    /// [`AiPlaceRefreshResult::ragnarok`] into this field at the very end
+    /// of `ai_main` (`:2926`, still unported - see this module's doc
+    /// comment), so [`AiData::assign_tasks_to_workers`] deliberately reads
+    /// this stale, previous-tick value instead. Defaults `false`, matching
+    /// C's zero-initialized global `ai_data[]` before the first `ai_main`
+    /// call ever commits a real value.
+    pub ragnarok: bool,
+    /// C `int nogoldleft` (`:1774`): same previous-tick-committed
+    /// semantics as [`Self::ragnarok`].
+    pub nogoldleft: bool,
 }
 
 impl AiData {
@@ -480,6 +527,8 @@ impl AiData {
             pdist: 3,
             panic: false,
             pplace: -1,
+            ragnarok: false,
+            nogoldleft: false,
         }
     }
 
@@ -737,6 +786,189 @@ impl AiData {
                     self.free_workers += 1;
                 }
             }
+        }
+    }
+
+    /// C `ai_main`'s panic/non-panic "assign tasks to workers" loop
+    /// (`strategy.c:2674-2796`): decide every already-registered NPC's
+    /// next [`AiTask`]/target for this tick, called after
+    /// [`Self::update_free_npc_count`] (which supplies `panic`/`pplace`)
+    /// with `mindist` from [`World::ai_refresh_places`]'s
+    /// [`AiPlaceRefreshResult`]. Reads [`Self::ragnarok`]/
+    /// [`Self::nogoldleft`] as the *previous* tick's committed values -
+    /// see those fields' own doc comments. Stops right before C's "find
+    /// places with too little workers"/threat-handling/"place eternal
+    /// guards" tail (`:2798-2924`, still unported - needs new `at[]`/
+    /// `max_at`/`lastchange` fields this port doesn't carry yet).
+    ///
+    /// Deviation: C's `i = ad->ap[m].parent;` can be `-1` (`m` is
+    /// storage, whose own parent is `-1`) and the very next line
+    /// unconditionally reads `ad->ap[i].threat` - an out-of-bounds read
+    /// in C itself (harmless there only because `ai_place ap[]` sits
+    /// inside a larger struct, so `ap[-1]` reads some other field's
+    /// garbage rather than crashing). Rust can't reproduce an OOB read
+    /// safely, so this port treats a `-1` parent as contributing no
+    /// threat - the same "no parent means nothing to check" convention
+    /// every other already-ported parent-chain walk in this module
+    /// already uses (e.g. [`World::ai_refresh_places`]'s own `if
+    /// ad.places[n].parent != -1` guards).
+    pub fn assign_tasks_to_workers(&mut self, mindist: i32) {
+        if self.panic {
+            // C `:2674-2684`.
+            let pplace = self.pplace as usize;
+            for n in 0..self.npcs.len() {
+                if self.npcs[n].task != AiTask::EGuard && self.npcs[n].task != AiTask::Ignore {
+                    self.npcs[n].task = AiTask::Fight;
+                    if self.npcs[n].used != -1 {
+                        self.remove_worker(n);
+                    }
+                }
+                self.npcs[n].target = pplace;
+            }
+            return;
+        }
+
+        // C `:2686-2796`.
+        for n in 0..self.npcs.len() {
+            if self.npcs[n].task == AiTask::EGuard
+                && self.wantguardcnt(self.npc_cnt) < self.gcnt
+                && !self.nogoldleft
+                && !self.ragnarok
+            {
+                self.remove_guard(n);
+            }
+
+            // never touch elite guards
+            if self.npcs[n].task == AiTask::EGuard {
+                continue;
+            }
+            // we may not touch eternal guards
+            if self.npcs[n].task == AiTask::Ignore {
+                continue;
+            }
+
+            if (self.wantguardcnt(self.npc_cnt) > self.gcnt || self.nogoldleft)
+                && self.gcnt < AI_MAXGUARD as i32
+            {
+                if self.npcs[n].used != -1 {
+                    self.remove_worker(n);
+                }
+                self.npcs[n].task = AiTask::EGuard;
+                self.npcs[n].target = 0;
+                self.add_guard(n);
+                continue;
+            }
+
+            let m = self.npcs[n].target;
+            let i = self.places[m].parent;
+            // See this method's own doc comment: `i == -1` (m is storage)
+            // is treated as "no parent threat" rather than an OOB read.
+            let parent_threat = i >= 0 && self.places[i as usize].threat != 0;
+
+            if self.npcs[n].used != -1
+                && self.npcs[n].platin != 0
+                && (self.npcs[n].task == AiTask::Transfer || self.npcs[n].task == AiTask::Mine)
+                && self.places[m].wcnt <= self.worklevel
+                && self.places[m].threat == 0
+                && self.places[m].dist <= mindist
+            {
+                continue;
+            }
+
+            if self.npcs[n].used != -1
+                && self.npcs[n].task == AiTask::Take
+                && !self.places[m].owned
+                && self.places[m].threat == 0
+                && self.places[m].dist <= mindist
+            {
+                continue;
+            }
+
+            if self.places[m].threat != 0 || parent_threat || self.places[m].dist > mindist {
+                if self.npcs[n].used != -1 {
+                    self.remove_worker(n);
+                }
+            } else if i > 0
+                && self.places[m].wcnt > self.places[i as usize].wcnt
+                && self.places[i as usize].platin
+                    > (self.places[i as usize].wcnt + 1) * WORKERPLATIN
+                && self.places[i as usize].wcnt < self.worklevel
+            {
+                if self.npcs[n].used != -1 {
+                    self.remove_worker(n);
+                }
+                self.add_worker(AiTask::Transfer, n, i as usize);
+                continue;
+            } else if self.npcs[n].used != -1
+                && self.npcs[n].task == AiTask::Transfer
+                && self.places[m].platin != 0
+                && self.places[m].wcnt <= self.worklevel
+            {
+                continue;
+            } else if self.npcs[n].used != -1
+                && self.npcs[n].task == AiTask::Mine
+                && self.places[m].platin != 0
+                && self.places[m].wcnt <= self.worklevel
+            {
+                continue;
+            }
+
+            // find nearest unowned, unthreatened, empty depot
+            let mut bm = 0usize;
+            let mut bd = 99i32;
+            let mut bdiff = 0i32;
+            for mm in 1..self.places.len() {
+                let diff = (i32::from(self.npcs[n].x) - i32::from(self.places[mm].x)).abs()
+                    + (i32::from(self.npcs[n].y) - i32::from(self.places[mm].y)).abs();
+                if self.places[mm].place_type == AiPlaceType::Depot
+                    && !self.places[mm].owned
+                    && self.places[mm].threat == 0
+                    && self.places[mm].wcnt == 0
+                    && (bd > self.places[mm].dist || (bd == self.places[mm].dist && diff < bdiff))
+                {
+                    bm = mm;
+                    bd = self.places[mm].dist;
+                    bdiff = diff;
+                }
+            }
+            if bm != 0 && bd <= mindist {
+                self.remove_worker(n);
+                self.add_worker(AiTask::Take, n, bm);
+                continue;
+            }
+
+            // find nearest not-fully-worked place with spare platin
+            let mut bm = 0usize;
+            let mut bd = 99i32;
+            let mut bdiff = 0i32;
+            for mm in 1..self.places.len() {
+                let diff = (i32::from(self.npcs[n].x) - i32::from(self.places[mm].x)).abs()
+                    + (i32::from(self.npcs[n].y) - i32::from(self.places[mm].y)).abs();
+                if self.places[mm].threat == 0
+                    && self.places[mm].platin > self.places[mm].wcnt * WORKERPLATIN
+                    && self.places[mm].wcnt < self.worklevel
+                    && (bd > self.places[mm].dist || (bd == self.places[mm].dist && diff < bdiff))
+                {
+                    bm = mm;
+                    bd = self.places[mm].dist;
+                    bdiff = diff;
+                }
+            }
+            if bm != 0 && bd <= mindist {
+                self.remove_worker(n);
+                if self.places[bm].place_type == AiPlaceType::Mine {
+                    self.add_worker(AiTask::Mine, n, bm);
+                } else {
+                    self.add_worker(AiTask::Transfer, n, bm);
+                }
+                continue;
+            }
+
+            if self.npcs[n].used != -1 {
+                self.remove_worker(n);
+            }
+            self.npcs[n].task = AiTask::Idle;
+            self.npcs[n].target = 0;
         }
     }
 
@@ -1363,6 +1595,7 @@ impl World {
         AiPlaceRefreshResult {
             ragnarok,
             nogoldleft,
+            mindist,
         }
     }
 
