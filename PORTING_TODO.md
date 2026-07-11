@@ -1201,11 +1201,20 @@ Ordered by player progression; the C file is the oracle.
   guard-defense allocation logic (`wantguardcnt`/`assign_guards`/
   `remove_free_guards`/`nag_attack`) - are now ported, all fully testable
   without a live spawned AI army (37 new tests).
-  REMAINING: `ai_init`/`ai_main`'s own outer per-tick bodies (place-graph
-  construction from map items, live roster discovery, the per-tick
-  roster/threat refresh, worker spawning, and the per-npc task-dispatch
-  switch that calls the now-ported functions above), `create_eguard`, and
-  the threat-detection scan that populates `AiPlace`'s threat fields.
+  Twelfth slice done: `World::ai_init` itself (`strategy.c:2269-2427`) -
+  the place-graph construction from `IDR_STR_MINE`/`_DEPOT`/`_STORAGE`
+  items sharing a spawner's area slot, the `pathfinder` distance/parent
+  BFS, `enemy_possible` up-propagation, and live-roster discovery/
+  classification (factored into a separately-tested `AiData::
+  register_npc`, since `ai_init`'s own `code`-vs-`Character::group`
+  match can never succeed today - `Character::group` is `u16`-narrowed
+  and every valid `ai_init` `code` exceeds `u16::MAX`, the same
+  pre-existing, documented gap as `World::str_did_party_lose`). 12 new
+  tests, still not wired to any live tick call site.
+  REMAINING: `ai_main`'s own outer per-tick body (the roster/threat
+  refresh, worker spawning, and the per-npc task-dispatch switch calling
+  the now-ported `task_*` functions), `create_eguard`, and the
+  threat-detection scan that populates `AiPlace`'s threat fields.
 - [ ] **Area 25 - `src/area/25/warped.c`** - warped NPC dialogue,
   `DRD_WARPFIGHTER` full fight driver.
 - [ ] **Area 26 - `src/area/26/staffer.c`** - vault skull PPD/quest, Rouven
@@ -1267,6 +1276,10 @@ Keep entries to at most three lines: date, task, one-line result.
 Anything longer belongs in `PORTING_LEDGER.md`; historical verbose
 notes live in `PROGRESS_ARCHIVE.md`.
 
+- 2026-07-11: Areas 23/24 strategy minigame: twelfth slice - ported
+  `World::ai_init` (place graph + live-roster classification via new
+  `AiData::register_npc`). 3590 core [+12] + 1168 server tests pass,
+  clean build. `ai_main`'s outer per-tick body still remains.
 - 2026-07-11: Areas 23/24 strategy minigame: ninth slice - ported
   `strategy_driver`'s full per-tick body (`CDR_STRATEGY`, `world/npc/
   area23_24/worker.rs`) plus the `mine`/`storage`/`depot` NPC-worker item-

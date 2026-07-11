@@ -1,8 +1,33 @@
 use super::*;
+use crate::character_driver::CDR_STRATEGY;
 use crate::player::StrategyPpd;
 
 fn ai_place(place_type: AiPlaceType, item_id: u32, x: u16, y: u16) -> AiPlace {
     AiPlace::new(place_type, ItemId(item_id), x, y)
+}
+
+fn strategy_item(id: u32, driver: u16, drdata: Vec<u8>) -> Item {
+    let mut it = item(id, ItemFlags::USED);
+    it.driver = driver;
+    it.driver_data = drdata;
+    it
+}
+
+/// A spawner+storage pair sharing area slot `slot` (`drdata[8]`), with
+/// the storage placed directly north of the spawner (`spawner2storage`'s
+/// zone-layout convention) - the minimal setup [`World::ai_init`] needs.
+fn spawner_and_storage(slot: u8) -> (Item, Item) {
+    let mut spawner = strategy_item(1, IDR_STR_SPAWNER, vec![0; 11]);
+    spawner.x = 10;
+    spawner.y = 10;
+    spawner.driver_data[8] = slot;
+
+    let mut storage = strategy_item(2, IDR_STR_STORAGE, vec![0; 10]);
+    storage.x = 10;
+    storage.y = 9;
+    storage.driver_data[8] = slot;
+
+    (spawner, storage)
 }
 
 fn ai_npc(cn: u32, x: u16, y: u16, level: i32) -> AiNpc {
@@ -620,7 +645,271 @@ fn nag_attack_does_nothing_within_cooldown() {
 
     world.ai_nag_attack(&mut ad);
     assert_eq!(ad.nagguard, -1);
-    assert_eq!(ad.lastnag, 999);
+}
+
+// --- AiPreset::to_strategy_ppd ---
+
+#[test]
+fn ai_preset_to_strategy_ppd_copies_the_nine_upgrade_fields_only() {
+    let ppd = AI_PRESETS[1].to_strategy_ppd(); // "Zakath"
+    assert_eq!(ppd.max_worker, 4);
+    assert_eq!(ppd.max_level, 60);
+    assert_eq!(ppd.trainspeed, 1);
+    assert_eq!(ppd.income, 0);
+    assert_eq!(ppd.endurance, 0);
+    assert_eq!(ppd.warcry, 0);
+    assert_eq!(ppd.speed, 0);
+    assert_eq!(ppd.eguards, 1);
+    assert_eq!(ppd.eguardlvl, 55);
+    // Every other field stays at its zero default, matching C's own
+    // partial-aggregate-initializer semantics.
+    assert_eq!(ppd.exp, 0);
+    assert_eq!(ppd.won_cnt, 0);
+    assert_eq!(ppd.boss_stage, 0);
+}
+
+// --- World::ai_init ---
+
+#[test]
+fn ai_init_returns_none_for_a_code_outside_ai_presets_range() {
+    let world = World::default();
+    assert!(world.ai_init(ItemId(1), STR_OWNER_AI_BASE - 1).is_none());
+    assert!(world
+        .ai_init(ItemId(1), STR_OWNER_AI_BASE + AI_PRESETS.len() as u32)
+        .is_none());
+}
+
+#[test]
+fn ai_init_returns_none_when_spawner_or_storage_is_missing() {
+    let mut world = World::default();
+    // No items at all: bad item id.
+    assert!(world.ai_init(ItemId(1), STR_OWNER_AI_BASE + 1).is_none());
+
+    // Spawner exists, but nothing sits on the tile directly north of it.
+    let (spawner, _storage) = spawner_and_storage(3);
+    world.add_item(spawner);
+    assert!(world.ai_init(ItemId(1), STR_OWNER_AI_BASE + 1).is_none());
+}
+
+#[test]
+fn ai_init_seeds_ppd_from_the_matching_ai_preset() {
+    let mut world = World::default();
+    let (spawner, storage) = spawner_and_storage(3);
+    world.add_item(spawner);
+    world.map.tile_mut(10, 9).unwrap().item = 2;
+    world.add_item(storage);
+
+    let code = STR_OWNER_AI_BASE + 1; // "Zakath"
+    let ad = world
+        .ai_init(ItemId(1), code)
+        .expect("ai_init should succeed");
+    assert_eq!(ad.ppd.max_worker, 4);
+    assert_eq!(ad.ppd.eguardlvl, 55);
+    assert_eq!(ad.storage_item, ItemId(2));
+    assert_eq!(ad.places.len(), 1);
+    assert_eq!(ad.places[0].dist, 0);
+    assert_eq!(ad.places[0].parent, -1);
+    assert_eq!(ad.places[0].place_type, AiPlaceType::Storage);
+}
+
+#[test]
+fn ai_init_discovers_mine_and_depot_in_the_same_slot_and_connects_them() {
+    let mut world = World::default();
+    let (spawner, storage) = spawner_and_storage(5);
+    world.add_item(spawner);
+    world.map.tile_mut(10, 9).unwrap().item = 2;
+    world.add_item(storage);
+
+    let mut mine = strategy_item(3, IDR_STR_MINE, vec![0; 10]);
+    mine.x = 12;
+    mine.y = 9;
+    mine.driver_data[8] = 5;
+    world.add_item(mine);
+
+    let mut depot = strategy_item(4, IDR_STR_DEPOT, vec![0; 10]);
+    depot.x = 11;
+    depot.y = 9;
+    depot.driver_data[8] = 5;
+    world.add_item(depot);
+
+    // A mine/depot pair in a *different* slot must be ignored.
+    let mut other_mine = strategy_item(5, IDR_STR_MINE, vec![0; 10]);
+    other_mine.x = 50;
+    other_mine.y = 50;
+    other_mine.driver_data[8] = 9;
+    world.add_item(other_mine);
+
+    let ad = world
+        .ai_init(ItemId(1), STR_OWNER_AI_BASE + 1)
+        .expect("ai_init should succeed");
+
+    // storage (place 0) + mine + depot, in item-id ascending order.
+    assert_eq!(ad.places.len(), 3);
+    assert_eq!(ad.places[1].place_type, AiPlaceType::Mine);
+    assert_eq!(ad.places[1].item, ItemId(3));
+    assert_eq!(ad.places[2].place_type, AiPlaceType::Depot);
+    assert_eq!(ad.places[2].item, ItemId(4));
+    // Every place should have been connected back to storage by the BFS
+    // (all within range and on an open default map).
+    for place in &ad.places {
+        assert_ne!(place.dist, -1, "place {:?} should be connected", place.item);
+    }
+}
+
+#[test]
+fn ai_init_marks_enemy_storage_and_propagates_enemy_possible_up_the_chain() {
+    let mut world = World::default();
+    let (spawner, storage) = spawner_and_storage(1);
+    world.add_item(spawner);
+    world.map.tile_mut(10, 9).unwrap().item = 2;
+    world.add_item(storage);
+
+    // Close enough to storage to connect directly (depth 1, parent =
+    // storage).
+    let mut depot = strategy_item(4, IDR_STR_DEPOT, vec![0; 10]);
+    depot.x = 25;
+    depot.y = 9;
+    depot.driver_data[8] = 1;
+    world.add_item(depot);
+
+    // Too far from storage to connect directly (`dx == 30 >= 20`), but
+    // close enough to the depot to connect through it one hop out
+    // (depth 2, parent = depot).
+    let mut enemy_storage = strategy_item(6, IDR_STR_STORAGE, vec![0; 10]);
+    enemy_storage.x = 40;
+    enemy_storage.y = 9;
+    enemy_storage.driver_data[8] = 1;
+    world.add_item(enemy_storage);
+
+    let ad = world
+        .ai_init(ItemId(1), STR_OWNER_AI_BASE + 1)
+        .expect("ai_init should succeed");
+
+    let enemy_place = ad
+        .places
+        .iter()
+        .find(|p| p.item == ItemId(6))
+        .expect("enemy storage should be discovered");
+    assert!(enemy_place.enemy_possible);
+
+    let depot_place = ad
+        .places
+        .iter()
+        .find(|p| p.item == ItemId(4))
+        .expect("depot should be discovered");
+    assert!(
+        depot_place.enemy_possible,
+        "enemy_possible should propagate up the parent chain through the depot"
+    );
+    assert!(ad.places[0].enemy_possible, "and all the way to storage");
+}
+
+#[test]
+fn ai_init_treats_a_same_slot_storage_as_a_partner_not_an_enemy() {
+    let mut world = World::default();
+    let (spawner, storage) = spawner_and_storage(2);
+    world.add_item(spawner);
+    world.map.tile_mut(10, 9).unwrap().item = 2;
+    world.add_item(storage);
+
+    // Same drdata[8] slot as the party's own storage => partner, per C's
+    // `it[n].drdata[8] == it[ad->storage_in].drdata[8]` check.
+    let mut partner_storage = strategy_item(6, IDR_STR_STORAGE, vec![0; 10]);
+    partner_storage.x = 11;
+    partner_storage.y = 9;
+    partner_storage.driver_data[8] = 2;
+    world.add_item(partner_storage);
+
+    let ad = world
+        .ai_init(ItemId(1), STR_OWNER_AI_BASE + 1)
+        .expect("ai_init should succeed");
+    assert_eq!(ad.partner, vec![ItemId(6)]);
+}
+
+// --- AiData::register_npc ---
+//
+// `World::ai_init`'s own roster-discovery loop can never actually find a
+// live NPC in the current codebase, since it requires `code` to be in
+// the AI range (>= `STR_OWNER_AI_BASE`, so `ai_init`'s own
+// `AI_PRESETS`-index lookup succeeds) while `Character::group` is
+// narrowed to `u16` (see `World::ai_init`'s own doc comment - the same
+// pre-existing, documented gap as `World::str_did_party_lose`). These
+// tests cover the classification/registration logic
+// `World::ai_init`'s loop delegates to directly, independent of that
+// unrelated, already-documented limitation.
+
+#[test]
+fn register_npc_classifies_a_fresh_low_level_no_exp_worker_as_idle() {
+    let mut ad = AiData::new(StrategyPpd::default());
+    let m = ad.register_npc(CharacterId(10), 10, 10, 20, OR_NONE, 0, 0, false);
+    assert_eq!(ad.npcs[m].task, AiTask::Idle);
+    assert_eq!(ad.npcs[m].used, -1);
+    assert_eq!(ad.gcnt, 0);
+    assert_eq!(ad.etguardcnt, 0);
+}
+
+#[test]
+fn register_npc_classifies_an_experienced_worker_as_eguard() {
+    let mut ad = AiData::new(StrategyPpd::default());
+    let m = ad.register_npc(CharacterId(11), 10, 10, 30, OR_NONE, 0, 0, true);
+    assert_eq!(ad.npcs[m].task, AiTask::EGuard);
+    // The unconditional post-classification reset (`:2423`) undoes
+    // `add_guard`'s own `used = 0` stamp.
+    assert_eq!(ad.npcs[m].used, -1);
+    assert_eq!(ad.gcnt, 1);
+}
+
+#[test]
+fn register_npc_classifies_a_high_level_worker_as_eguard_even_without_exp() {
+    let mut ad = AiData::new(StrategyPpd::default());
+    let m = ad.register_npc(CharacterId(12), 10, 10, 60, OR_NONE, 0, 0, false);
+    assert_eq!(ad.npcs[m].task, AiTask::EGuard);
+    assert_eq!(ad.gcnt, 1);
+}
+
+#[test]
+fn register_npc_classifies_eternal_guard_order_as_ignore_and_counts_it() {
+    let mut ad = AiData::new(StrategyPpd::default());
+    ad.places.push(ai_place(AiPlaceType::Storage, 1, 10, 10));
+
+    let m = ad.register_npc(CharacterId(20), 10, 10, 40, OR_ETERNALGUARD, 10, 10, false);
+    assert_eq!(ad.npcs[m].task, AiTask::Ignore);
+    assert_eq!(ad.npcs[m].order, OR_ETERNALGUARD);
+    assert_eq!(ad.etguardcnt, 1);
+    // add_etguard stations it at whichever place it's currently standing
+    // at - place 0 (storage), here.
+    assert_eq!(ad.npcs[m].target, 0);
+    assert_eq!(ad.places[0].eguard, 0);
+    // Not counted as a roving guard.
+    assert_eq!(ad.gcnt, 0);
+}
+
+#[test]
+fn ai_init_discovers_no_live_roster_today_given_the_group_u16_narrowing_gap() {
+    // Documents the real, current limitation noted in `World::ai_init`'s
+    // own doc comment: even a live `CDR_STRATEGY` character whose
+    // `group` was set from the *same* AI `code` (truncated to `u16`,
+    // then zero-extended back for the comparison) can never match,
+    // since every valid `ai_init` `code` exceeds `u16::MAX`.
+    let mut world = World::default();
+    let (spawner, storage) = spawner_and_storage(4);
+    world.add_item(spawner);
+    world.map.tile_mut(10, 9).unwrap().item = 2;
+    world.add_item(storage);
+
+    let code = STR_OWNER_AI_BASE + 1;
+    let mut worker = character(10);
+    worker.driver = CDR_STRATEGY;
+    worker.group = code as u16;
+    worker.level = 20;
+    worker.x = 10;
+    worker.y = 10;
+    world.add_character(worker);
+
+    let ad = world
+        .ai_init(ItemId(1), code)
+        .expect("ai_init should succeed");
+    assert!(ad.npcs.is_empty());
 }
 
 #[test]

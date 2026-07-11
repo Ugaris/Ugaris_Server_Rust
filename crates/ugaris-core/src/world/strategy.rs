@@ -661,6 +661,30 @@ pub const AI_PRESETS: [AiPreset; 24] = [
     },
 ];
 
+impl AiPreset {
+    /// C `preset[...].ppd`'s aggregate-initializer literal
+    /// (`strategy.c:162-200`): the nine upgrade-level fields
+    /// [`World::ai_init`] stamps a fresh AI opponent's `struct
+    /// ai_data::ppd` with (`:2289`). Every other [`StrategyPpd`] field
+    /// (`exp`/`won_cnt`/etc.) stays at its zero [`Default`], matching
+    /// C's own partial-initializer semantics (fields not named in the
+    /// `{ ... }` literal are implicitly zeroed).
+    pub fn to_strategy_ppd(&self) -> StrategyPpd {
+        StrategyPpd {
+            max_worker: self.max_worker,
+            max_level: self.max_level,
+            trainspeed: self.trainspeed,
+            income: self.income,
+            endurance: self.endurance,
+            warcry: self.warcry,
+            speed: self.speed,
+            eguards: self.eguards,
+            eguardlvl: self.eguardlvl,
+            ..StrategyPpd::default()
+        }
+    }
+}
+
 /// C `str_exp_cost(struct strategy_ppd *ppd, int nr)` (`strategy.c:3041-
 /// 3095`): the strategy-exp price to raise upgrade slot `nr` (1..=8) by
 /// one increment, or `0` once that slot is already at its cap (`nr`

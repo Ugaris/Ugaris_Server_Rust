@@ -91,18 +91,31 @@
 //!   [`World::ai_assign_guards`] is a `World` method rather than a pure
 //!   `AiData` one.
 //!
-//! REMAINING (tracked in `PORTING_TODO.md`, left `[~]` on purpose): the
-//! `ai_init`/`ai_main` outer per-tick bodies themselves (place-graph
-//! construction from `IDR_STR_MINE`/`_DEPOT`/`_STORAGE` items plus
-//! `pathfinder`-based distance/parent BFS, `:2277-2395`; discovering an AI
-//! slot's own live `CDR_STRATEGY` roster, `:2397-2427`; the per-tick
-//! roster/threat refresh, worker spawning, and the actual per-npc
-//! task-dispatch `switch` that calls the functions this slice ports,
-//! `:2461-2973`), `create_eguard` (`:2987-3040`, needs `ZoneLoader`), and
-//! the panic-defense/threat-detection machinery `ai_main`'s middle third
-//! is built around.
+//! Second slice done: [`World::ai_init`] (`strategy.c:2269-2427`) itself -
+//! the place-graph construction from `IDR_STR_MINE`/`_DEPOT`/`_STORAGE`
+//! items sharing the spawner's area slot, the `pathfinder`-based
+//! distance/parent BFS connecting them all back to storage, the
+//! `enemy_possible` up-propagation, and discovering the party's own
+//! already-live `CDR_STRATEGY` roster (classifying each into
+//! [`AiTask::Ignore`]/[`AiTask::EGuard`]/[`AiTask::Idle`] exactly like C,
+//! including the subtle unconditional post-classification `used = -1`
+//! reset - see [`World::ai_init`]'s own doc comment). Still not wired to
+//! any live tick call site (no caller ever constructs a real
+//! [`AiData`] outside tests yet - same "ported but not yet spawnable"
+//! precedent as every other piece of this subsystem).
+//!
+//! REMAINING (tracked in `PORTING_TODO.md`, left `[~]` on purpose):
+//! `ai_main`'s own outer per-tick body (`:2449-2973`) - the per-tick
+//! roster/threat refresh (re-deriving `used`/`gcnt` from what `ai_init`
+//! just seeded, the enemy-presence map scan that populates
+//! `threat`/`threatlevel`/`threatcount`/`threatncount`/`owned`), worker
+//! spawning, and the actual per-npc task-dispatch `switch` that calls the
+//! `task_*` functions this file already ports - plus `create_eguard`
+//! (`:2987-3040`, needs `ZoneLoader`) and the "place eternal guards" tail
+//! that calls it (`:2892-2903`).
 
 use super::*;
+use crate::character_driver::CDR_STRATEGY;
 use crate::path::pathfinder;
 use crate::player::StrategyPpd;
 
@@ -247,6 +260,12 @@ pub struct AiPlace {
     /// [`World::ai_nag_attack`] can read it once a future slice's threat
     /// scan starts writing it.
     pub threatcount: f64,
+    /// C's `enemy_possible` field (`:1732`): could an enemy ever
+    /// approach through this place? Stamped `true` directly on every
+    /// non-owned enemy storage place [`World::ai_init`] discovers
+    /// (`:2346`), then propagated up the whole parent chain toward
+    /// storage (`:2388-2395`).
+    pub enemy_possible: bool,
 }
 
 impl AiPlace {
@@ -266,6 +285,7 @@ impl AiPlace {
             worker: [-1; AI_MAXWORKER],
             eguard: -1,
             threatcount: 0.0,
+            enemy_possible: false,
         }
     }
 }
@@ -283,6 +303,12 @@ pub struct AiData {
     /// `-1` for an empty slot.
     pub guard: [i32; AI_MAXGUARD],
     pub gcnt: i32,
+    /// C `ad->etguardcnt` (`:2413`): how many roster entries are
+    /// permanently-stationed eternal guards ([`AiTask::Ignore`]) -
+    /// checked against `ppd.eguards` by the still-unported "place
+    /// eternal guards" tail of `ai_main` (`:2892-2903`) to decide whether
+    /// more should be created via the still-unported `create_eguard`.
+    pub etguardcnt: i32,
     pub lastnag: i64,
     pub nagplace: i32,
     /// `-1` means "no guard currently nagging" (C's own `ad->nagguard =
@@ -307,6 +333,7 @@ impl AiData {
             free_workers: 0,
             guard: [-1; AI_MAXGUARD],
             gcnt: 0,
+            etguardcnt: 0,
             lastnag: 0,
             nagplace: 0,
             nagguard: -1,
@@ -467,6 +494,54 @@ impl AiData {
                 self.npcs[m as usize].target = 0;
             }
         }
+    }
+
+    /// C `ai_init`'s per-NPC roster-registration body (`strategy.c:2401-
+    /// 2424`), factored out of [`World::ai_init`]'s discovery loop so it
+    /// stays independently testable regardless of that loop's own
+    /// `code`-vs-`Character::group` matching limitation (see
+    /// [`World::ai_init`]'s own doc comment): push a freshly-discovered
+    /// live NPC, classify it into [`AiTask::Ignore`] (already an eternal
+    /// guard)/[`AiTask::EGuard`] (`has_exp` or `level > 50`)/
+    /// [`AiTask::Idle`] (everything else), and apply C's unconditional
+    /// post-classification `used = -1` reset.
+    pub fn register_npc(
+        &mut self,
+        cn: CharacterId,
+        x: u16,
+        y: u16,
+        level: i32,
+        order: i32,
+        or1: i32,
+        or2: i32,
+        has_exp: bool,
+    ) -> usize {
+        let mut npc = AiNpc::new(cn, x, y, level);
+        npc.order = order;
+        npc.or1 = or1;
+        npc.or2 = or2;
+        let m = self.npcs.len();
+        self.npcs.push(npc);
+
+        if order == OR_ETERNALGUARD {
+            self.add_etguard(m);
+            self.npcs[m].task = AiTask::Ignore;
+            self.etguardcnt += 1;
+        } else if has_exp || level > 50 {
+            self.add_guard(m);
+            self.npcs[m].task = AiTask::EGuard;
+        } else {
+            self.npcs[m].task = AiTask::Idle;
+        }
+        // C's unconditional post-classification `used = -1` reset
+        // (`:2423`): deliberately undoes whatever `add_etguard`/
+        // `add_guard` just set above - `ai_main`'s own "update guard
+        // list" refresh (still unported), which always runs immediately
+        // after `ai_init` in the same call, is what re-derives the real
+        // `used`/`gcnt` state from this on the very next pass
+        // (`:2484-2494`).
+        self.npcs[m].used = -1;
+        m
     }
 }
 
@@ -852,5 +927,207 @@ impl World {
             ad.npcs[guard].target = place;
             ad.npcs[guard].used = place as i32;
         }
+    }
+
+    /// C `ai_init(int in, unsigned int code)` (`strategy.c:2269-2427`):
+    /// build a fresh AI party's place graph and discover its currently-
+    /// live `CDR_STRATEGY` roster. `code` is the [`STR_OWNER_AI_BASE`]-
+    /// range owner code identifying which AI slot this is - `code -
+    /// STR_OWNER_AI_BASE` indexes both [`AI_PRESETS`] (`ad->ppd =
+    /// preset[...].ppd`, `:2289`) and, eventually, a `[AiData; MAX_AI]`
+    /// per-slot registry no caller allocates yet (still-unported
+    /// `ai_main` outer body, see this module's doc comment).
+    ///
+    /// Returns `None` if `code` doesn't resolve to a real [`AI_PRESETS`]
+    /// row, or if `spawner_item` isn't a real, placed `IDR_STR_SPAWNER`
+    /// item with a storage item directly north of it - C has no such
+    /// guards (a malformed `in`/`code` would simply read garbage), but
+    /// every real caller only ever reaches this with a spawner
+    /// `World::ensure_strategy_areas_initialized` already discovered and
+    /// a `code` an actual mission handed out.
+    pub fn ai_init(&self, spawner_item: ItemId, code: u32) -> Option<AiData> {
+        let preset_index = code.checked_sub(STR_OWNER_AI_BASE)? as usize;
+        let preset = AI_PRESETS.get(preset_index)?;
+        let mut ad = AiData::new(preset.to_strategy_ppd());
+
+        let spawner = self.items.get(&spawner_item)?;
+        let area_slot = *spawner.driver_data.get(8).unwrap_or(&0);
+        let storage_item = self.str_spawner_storage_item(spawner_item)?;
+        let storage = self.items.get(&storage_item)?;
+        ad.storage_item = storage_item;
+        let storage_area_slot = *storage.driver_data.get(8).unwrap_or(&0);
+
+        // Place 0 is always the party's own storage (`:2294-2303`).
+        let mut storage_place =
+            AiPlace::new(AiPlaceType::Storage, storage_item, storage.x, storage.y);
+        storage_place.dist = 0;
+        ad.places.push(storage_place);
+
+        // Discover every mine/depot/(possibly-enemy) storage sharing this
+        // spawner's area slot (`:2305-2355`), in ascending item-index
+        // order for determinism (`self.items` is an unordered `HashMap` -
+        // same precedent as `ensure_strategy_areas_initialized`'s own doc
+        // comment).
+        let mut item_ids: Vec<ItemId> = self
+            .items
+            .iter()
+            .filter(|(_, item)| !item.flags.is_empty())
+            .map(|(id, _)| *id)
+            .collect();
+        item_ids.sort_by_key(|id| id.0);
+
+        for item_id in item_ids {
+            let item = &self.items[&item_id];
+            if *item.driver_data.get(8).unwrap_or(&0) != area_slot {
+                continue;
+            }
+            match item.driver {
+                IDR_STR_DEPOT => {
+                    ad.places
+                        .push(AiPlace::new(AiPlaceType::Depot, item_id, item.x, item.y));
+                }
+                IDR_STR_MINE => {
+                    ad.places
+                        .push(AiPlace::new(AiPlaceType::Mine, item_id, item.x, item.y));
+                }
+                IDR_STR_STORAGE if item_id != storage_item => {
+                    let mut place = AiPlace::new(AiPlaceType::Storage, item_id, item.x, item.y);
+                    place.enemy_possible = true;
+                    if *item.driver_data.get(8).unwrap_or(&0) == storage_area_slot {
+                        ad.partner.push(item_id);
+                    }
+                    ad.places.push(place);
+                }
+                _ => {}
+            }
+        }
+
+        // Breadth-first depth/parent search over the place graph
+        // (`:2357-2377`): repeatedly extend from every place at the
+        // current depth to any not-yet-connected place within range and
+        // reachable by `pathfinder`.
+        for cdepth in 0..AI_MAXDISTANCE {
+            for n in 0..ad.places.len() {
+                if ad.places[n].dist != cdepth {
+                    continue;
+                }
+                for i in 0..ad.places.len() {
+                    if ad.places[i].dist != -1 {
+                        continue;
+                    }
+                    let (nx, ny) = (i32::from(ad.places[n].x), i32::from(ad.places[n].y));
+                    let (ix, iy) = (i32::from(ad.places[i].x), i32::from(ad.places[i].y));
+                    if (ix - nx).abs() < 20
+                        && (iy - ny).abs() < 20
+                        && (ix - nx).abs() + (iy - ny).abs() < 25
+                        && pathfinder(
+                            &self.map,
+                            ad.places[i].x as usize,
+                            ad.places[i].y as usize,
+                            ad.places[n].x as usize,
+                            ad.places[n].y as usize,
+                            0,
+                            Some(200),
+                        )
+                        .direction
+                        .is_some()
+                    {
+                        ad.places[i].dist = cdepth + 1;
+                        ad.places[i].parent = n as i32;
+                    }
+                }
+            }
+        }
+        // C's "check for map errors" `xlog` loop (`:2379-2385`) is pure
+        // logging - no persisted-log sink in this port, same precedent as
+        // every other bare `xlog` call already documented elsewhere.
+
+        // Propagate `enemy_possible` up the parent chain from every
+        // enemy-storage place (`:2387-2395`).
+        for n in 0..ad.places.len() {
+            if ad.places[n].enemy_possible {
+                let mut m = n as i32;
+                while m != -1 {
+                    ad.places[m as usize].enemy_possible = true;
+                    m = ad.places[m as usize].parent;
+                }
+            }
+        }
+
+        // Discover every live `CDR_STRATEGY` NPC already belonging to
+        // this party (`:2397-2426`), registering each via
+        // [`AiData::register_npc`]. C: `ch[n].group`/`code` are plain
+        // `int`s that can theoretically hold any AI code; the Rust
+        // `Character::group` field is narrowed to `u16` (see its own doc
+        // comment), so an AI-range `code` (>= `STR_OWNER_AI_BASE`) can
+        // never actually match a real character's `group` here - the
+        // exact same pre-existing, documented gap already noted by
+        // `World::str_did_party_lose`'s own doc comment, not a new one:
+        // harmless in practice since no code path can spawn an AI-owned
+        // worker yet (`ai_main`'s own worker-spawning tail, `:2644-2672`,
+        // is still unported) - see [`AiData::register_npc`]'s own tests
+        // for coverage of the classification logic itself, independent
+        // of this filter's real-world reachability.
+        let mut npc_ids: Vec<CharacterId> = self
+            .characters
+            .iter()
+            .filter(|(_, c)| c.driver == CDR_STRATEGY && u32::from(c.group) == code)
+            .map(|(id, _)| *id)
+            .collect();
+        npc_ids.sort_by_key(|id| id.0);
+
+        for cn in npc_ids {
+            let character = &self.characters[&cn];
+            let (order, or1, or2) = match character.driver_state.as_ref() {
+                Some(CharacterDriverState::StrategyWorker(data)) => {
+                    strategy_worker_order_to_raw(data.order)
+                }
+                _ => (OR_NONE, 0, 0),
+            };
+            let has_exp = matches!(
+                character.driver_state.as_ref(),
+                Some(CharacterDriverState::StrategyWorker(data)) if data.exp != 0
+            );
+
+            ad.register_npc(
+                cn,
+                character.x,
+                character.y,
+                character.level as i32,
+                order,
+                or1,
+                or2,
+                has_exp,
+            );
+        }
+
+        Some(ad)
+    }
+}
+
+/// C `struct strategy_data.order`/`or1`/`or2` (`strategy.c:100-113`)
+/// read back out of the typed [`StrategyWorkerOrder`] a live worker
+/// carries - the inverse of the (unwritten, since no code path needs it
+/// yet) conversion the other direction, needed only by
+/// [`World::ai_init`]'s roster-discovery scan copying `dat->order`/
+/// `or1`/`or2` into a fresh [`AiNpc`] entry (`:2403-2405`).
+fn strategy_worker_order_to_raw(order: StrategyWorkerOrder) -> (i32, i32, i32) {
+    match order {
+        StrategyWorkerOrder::None => (OR_NONE, 0, 0),
+        StrategyWorkerOrder::Mine {
+            mine_item,
+            depot_item,
+        } => (OR_MINE, mine_item.0 as i32, depot_item.0 as i32),
+        StrategyWorkerOrder::Follow { leader } => (OR_FOLLOW, leader.0 as i32, 0),
+        StrategyWorkerOrder::Guard { x, y } => (OR_GUARD, i32::from(x), i32::from(y)),
+        StrategyWorkerOrder::Fighter { leader } => (OR_FIGHTER, leader.0 as i32, 0),
+        StrategyWorkerOrder::Take { depot_item, leader } => {
+            (OR_TAKE, depot_item.0 as i32, leader.0 as i32)
+        }
+        StrategyWorkerOrder::Transfer { from_item, to_item } => {
+            (OR_TRANSFER, from_item.0 as i32, to_item.0 as i32)
+        }
+        StrategyWorkerOrder::Train { storage_item } => (OR_TRAIN, storage_item.0 as i32, 0),
+        StrategyWorkerOrder::EternalGuard { x, y } => (OR_ETERNALGUARD, i32::from(x), i32::from(y)),
     }
 }

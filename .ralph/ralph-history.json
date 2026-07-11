@@ -449,21 +449,51 @@
         "test result: ok. 45 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 1168 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 7.86s"
       ]
+    },
+    {
+      "iteration": 14,
+      "startedAt": "2026-07-11T07:14:02.426Z",
+      "endedAt": "2026-07-11T07:38:18.402Z",
+      "durationMs": 1454763,
+      "agent": "opencode",
+      "model": "anthropic/claude-sonnet-5",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "PORTING_TODO.md",
+        "crates/ugaris-core/src/world/strategy.rs",
+        "crates/ugaris-core/src/world/strategy_ai.rs",
+        "crates/ugaris-core/src/world/tests/strategy_ai.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "Good, workspace is healthy. Let me check full test output for failures, then read PORTING_TODO.md.",
+        "Now let's investigate the enemy_possible propagation test failure - let's check the BFS/parent logic more carefully.",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&1 | grep -E \"FAILED|error|test result\" | head -50",
+        "test error::tests::error_constants_match_legacy_header ... ok",
+        "test error::tests::out_of_range_errors_use_c_fallback_string ... ok",
+        "test error::tests::error_strings_match_legacy_table ... ok",
+        "test world::tests::dungeon_master::attack_command_failure_says_error_and_never_charges_or_queues ... ok",
+        "test result: ok. 3578 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.27s",
+        "test result: ok. 81 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+      ]
     }
   ],
-  "totalDurationMs": 33613999,
+  "totalDurationMs": 35068762,
   "struggleIndicators": {
     "repeatedErrors": {
       "3375 core (+17) and 1168 server (+6) tests all pass, zero failures. Now let's build ugaris-server fo": 1,
       "- `cargo fmt --all`, `cargo test --workspace` (3375 core + 1168 server, zero failures/warnings), `ca": 1,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 13,
-      "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&": 6,
-      "test error::tests::error_constants_match_legacy_header ... ok": 4,
-      "test error::tests::error_strings_match_legacy_table ... ok": 4,
-      "test error::tests::out_of_range_errors_use_c_fallback_string ... ok": 4,
-      "test world::tests::dungeon_master::attack_command_failure_says_error_and_never_charges_or_queues ...": 3,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 14,
+      "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&": 7,
+      "test error::tests::error_constants_match_legacy_header ... ok": 5,
+      "test error::tests::error_strings_match_legacy_table ... ok": 5,
+      "test error::tests::out_of_range_errors_use_c_fallback_string ... ok": 5,
+      "test world::tests::dungeon_master::attack_command_failure_says_error_and_never_charges_or_queues ...": 4,
       "test result: ok. 3358 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.30s": 1,
-      "test result: ok. 81 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 8,
+      "test result: ok. 81 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 9,
       "test result: ok. 1168 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 8.03s": 1,
       "122-| `src/module/weather/weather.c`, `src/module/weather/weather_client.c` | `crates/ugaris-server/": 1,
       "7548:- 2026-07-07: closed the P4 \"Area 1\" task's last gap: `tutorial_ppd`/`tutorial()` (`src/system/": 1,
@@ -533,7 +563,10 @@
       "- Verified: `cargo fmt --all`, `cargo test --workspace` (3578 core [+37] + 81 db + 45 protocol + 116": 1,
       "\u001b[0m$ \u001b[0mcargo test --workspace 2>&1 | grep -E \"FAILED|test result|error\\[\" | head -50": 1,
       "test result: ok. 3541 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.28s": 1,
-      "test result: ok. 1168 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 7.86s": 1
+      "test result: ok. 1168 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 7.86s": 1,
+      "Good, workspace is healthy. Let me check full test output for failures, then read PORTING_TODO.md.": 1,
+      "Now let's investigate the enemy_possible propagation test failure - let's check the BFS/parent logic": 1,
+      "test result: ok. 3578 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.27s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0
