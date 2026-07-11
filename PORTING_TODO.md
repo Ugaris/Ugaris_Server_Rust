@@ -1162,6 +1162,23 @@ Ordered by player progression; the C file is the oracle.
   entire already-ported `CDR_STRATEGY_PARSER` command table
   (`#jp`/`#list`/`#info`/`#raise`/`#mission`/`#enter`/`#surrender`)
   through real gameplay for the first time.
+  Ninth slice done: `strategy_driver`'s full per-tick body (`CDR_STRATEGY
+  = 78`, new `world/npc/area23_24/worker.rs`) - NT_CREATE, NT_TEXT/
+  NT_GIVE/NT_GOTHIT message handling (reusing the already-ported order-
+  text cascade), single-victim self-defense, and the complete `OR_MINE`/
+  `OR_TRANSFER`/`OR_TAKE`/`OR_FOLLOW`/`OR_FIGHTER`/`OR_GUARD`/
+  `OR_ETERNALGUARD`/`OR_TRAIN`/default order-execution switch. Also
+  closed the `mine`/`storage`/`depot` item drivers' NPC-worker branches
+  (new `ItemDriverOutcome::StrMineWorkerDig`/`StrBuildingWorkerTransfer`/
+  `StrDepotWorkerTakeover`, applied in `World::apply_item_driver_outcome`)
+  so a worker's orders actually move Platinum between buildings. No live
+  `CDR_STRATEGY` character can exist yet - `spawner_sub`/`take_spawner`
+  spawning remains unported - so this is tested via directly-constructed
+  test characters only (registered in `tick_npc::run_all` regardless, per
+  precedent).
+  REMAINING: `spawner_sub`/`take_spawner` spawning (needed for a live
+  worker through real gameplay), `IDR_STR_SPAWNER`, and the full
+  `ai_main`/`ai_init` AI-opponent driver.
 - [ ] **Area 25 - `src/area/25/warped.c`** - warped NPC dialogue,
   `DRD_WARPFIGHTER` full fight driver.
 - [ ] **Area 26 - `src/area/26/staffer.c`** - vault skull PPD/quest, Rouven
@@ -1223,6 +1240,11 @@ Keep entries to at most three lines: date, task, one-line result.
 Anything longer belongs in `PORTING_LEDGER.md`; historical verbose
 notes live in `PROGRESS_ARCHIVE.md`.
 
+- 2026-07-11: Areas 23/24 strategy minigame: ninth slice - ported
+  `strategy_driver`'s full per-tick body (`CDR_STRATEGY`, `world/npc/
+  area23_24/worker.rs`) plus the `mine`/`storage`/`depot` NPC-worker item-
+  driver branches. 3534 core [+21] tests pass, clean build/boot-smoke.
+  Still no live worker (spawning unported).
 - 2026-07-11: Areas 23/24 strategy minigame: fifth slice - ported
   `mine`/`storage`/`depot`'s player "look" branches (info messages +
   storage's silver/gold-to-Platinum conversion). 3467 core [+65] tests

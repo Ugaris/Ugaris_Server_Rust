@@ -1182,6 +1182,41 @@ pub enum ItemDriverOutcome {
         conversion: StrStorageConversion,
         platinum: u32,
     },
+    /// C `mine`'s `DRD_STRATEGYDRIVER` NPC-worker branch (`strategy.c:
+    /// 1135-1148`): a worker mines `min(str, mine_gold)` units off the
+    /// mine's Platinum total onto its own carried `dat->platin`. Only
+    /// produced when `mined > 0` (the pure driver returns `Noop`
+    /// otherwise, matching C's own `if (am == 0) return;`).
+    StrMineWorkerDig {
+        item_id: ItemId,
+        character_id: CharacterId,
+        mined: u32,
+    },
+    /// C `storage`/`depot`'s shared NPC-worker transfer branch
+    /// (`strategy.c:1196-1203`/`1231-1238`): a worker either deposits its
+    /// full carried `dat->platin` into the building (`deposited > 0`,
+    /// `withdrawn == 0`) or withdraws `min(str, building_gold)` units
+    /// into its own `dat->platin` (`withdrawn > 0`, `deposited == 0`) -
+    /// C's `if (dat->platin) { ...deposit... } else { ...withdraw... }`
+    /// means exactly one of the two is ever nonzero. Only produced when
+    /// at least one is nonzero (a no-Strength worker withdrawing from an
+    /// empty building folds to `Noop`, an equivalent no-op).
+    StrBuildingWorkerTransfer {
+        item_id: ItemId,
+        character_id: CharacterId,
+        deposited: u32,
+        withdrawn: u32,
+    },
+    /// C `depot`'s NPC-worker ownership-takeover branch (`strategy.c:
+    /// 1224-1229`): fires instead of [`Self::StrBuildingWorkerTransfer`]
+    /// whenever the depot's current owner code doesn't match the
+    /// worker's own `ch[cn].group` - claims it and renames it, with no
+    /// platin transfer this call (C `return`s right after, `:1228`).
+    StrDepotWorkerTakeover {
+        item_id: ItemId,
+        character_id: CharacterId,
+        owner: u32,
+    },
     LqEntranceClosed {
         item_id: ItemId,
         character_id: CharacterId,

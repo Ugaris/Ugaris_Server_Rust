@@ -207,14 +207,18 @@ pub const CDR_LAB5SEYAN: u16 = 191;
 /// C `#define CDR_STRATEGY_BOSS 80` (`src/system/drvlib.h:129`): Cinciac,
 /// the Ice Army Caves commander mission-giver (`src/area/23_24/
 /// strategy.c::strategy_boss`), see `world::npc::area23_24::boss`'s
-/// module doc comment. Its worker/fighter counterpart, `CDR_STRATEGY = 78`
-/// (`strategy_driver`), and the command-table `CDR_STRATEGY_PARSER = 79`
+/// module doc comment. The command-table `CDR_STRATEGY_PARSER = 79`
 /// (already ported as `World::apply_strategy_special_command`, dispatched
 /// directly from `tick_client_actions.rs` without needing a driver id
-/// constant of its own) are not defined as Rust constants yet - `CDR_
-/// STRATEGY` has no live character to run on until the still-unported
-/// worker-spawning half of this task exists.
+/// constant of its own) has no Rust constant either.
 pub const CDR_STRATEGY_BOSS: u16 = 80;
+/// C `#define CDR_STRATEGY 78` (`src/system/drvlib.h:126`): the
+/// recruitable worker/fighter/miner NPC (`src/area/23_24/
+/// strategy.c::strategy_driver`), see `world::npc::area23_24::worker`'s
+/// module doc comment. No live character can run on this driver yet -
+/// `spawner_sub`/`take_spawner` spawning is still unported - so it's only
+/// reachable via directly-constructed test characters for now.
+pub const CDR_STRATEGY: u16 = 78;
 /// C `#define CDR_CAMHERMIT 14` (`src/system/drvlib.h`): the forest
 /// hermit NPC in area 1 (`src/area/1/gwendylon.c::camhermit_driver`).
 pub const CDR_CAMHERMIT: u16 = 14;
@@ -588,6 +592,7 @@ pub enum CharacterDriverState {
     Lab5Seyan(crate::world::npc::area22::lab5_seyan::Lab5SeyanDriverData),
     Lab5Daemon(crate::world::npc::area22::lab5_daemon::Lab5DaemonDriverData),
     Lab5Mage(crate::world::npc::area22::lab5_mage::Lab5MageDriverData),
+    StrategyWorker(crate::world::npc::area23_24::worker::StrategyWorkerDriverData),
 }
 /// C `bank_driver_parse` from `src/module/bank.c`. The C driver defaults
 /// opening hours to 6..23 before parsing (`bank_driver` lines 304-309).
@@ -1385,7 +1390,8 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::Lab4Gnalb(_)
             | CharacterDriverState::Lab5Seyan(_)
             | CharacterDriverState::Lab5Daemon(_)
-            | CharacterDriverState::Lab5Mage(_),
+            | CharacterDriverState::Lab5Mage(_)
+            | CharacterDriverState::StrategyWorker(_),
         ) => SimpleBaddyDriverData::default(),
         None => SimpleBaddyDriverData::default(),
     };

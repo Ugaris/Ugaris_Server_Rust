@@ -5,6 +5,9 @@
 //! ported/remaining slice breakdown.
 
 pub mod boss;
+pub mod worker;
 
 #[allow(unused_imports)]
 pub use boss::*;
+#[allow(unused_imports)]
+pub use worker::*;

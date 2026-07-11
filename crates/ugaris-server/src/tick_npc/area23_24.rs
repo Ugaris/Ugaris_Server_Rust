@@ -34,4 +34,17 @@ pub(crate) async fn strategy_boss_driver_118(
             "applied strategy-boss dialogue events"
         );
     }
+
+    // C `ch_driver`'s `CDR_STRATEGY` case (`src/area/23_24/strategy.c:
+    // 1611-1613`) - every live worker/fighter/miner's per-tick body. See
+    // `world::npc::area23_24::worker`'s module doc comment for why no
+    // live worker can exist yet (still-unported spawning).
+    let strategy_worker_acted = crate::area23_24::apply_strategy_worker_tick(world, config);
+    if strategy_worker_acted != 0 {
+        info!(
+            strategy_worker_acted,
+            tick = world.tick.0,
+            "applied strategy-worker actions"
+        );
+    }
 }

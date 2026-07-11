@@ -67,6 +67,17 @@ pub(crate) fn dispatch_strategy_outcome(
             ));
             *executed += 1;
         }
+        // Worker-only outcomes (`StrMineWorkerDig`/`StrBuildingWorkerTransfer`/
+        // `StrDepotWorkerTakeover`): the state mutation already happened in
+        // `World::apply_item_driver_outcome`, and there is no player to send
+        // feedback text to (no `CDR_STRATEGY` worker can be spawned yet - see
+        // `world::npc::area23_24::worker`'s module doc comment) - just count
+        // the completion.
+        ugaris_core::item_driver::ItemDriverOutcome::StrMineWorkerDig { .. }
+        | ugaris_core::item_driver::ItemDriverOutcome::StrBuildingWorkerTransfer { .. }
+        | ugaris_core::item_driver::ItemDriverOutcome::StrDepotWorkerTakeover { .. } => {
+            *executed += 1;
+        }
         _ => {}
     }
 }

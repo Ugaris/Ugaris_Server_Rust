@@ -474,6 +474,83 @@ impl World {
                 self.destroy_item(cursor_item_id);
                 outcome
             }
+            ItemDriverOutcome::StrMineWorkerDig {
+                item_id,
+                character_id,
+                mined,
+            } => {
+                if let Some(item) = self.items.get_mut(&item_id) {
+                    let new_gold = str_item_gold(item).saturating_sub(mined);
+                    set_str_item_gold(item, new_gold);
+                }
+                if let Some(CharacterDriverState::StrategyWorker(data)) = self
+                    .characters
+                    .get_mut(&character_id)
+                    .and_then(|character| character.driver_state.as_mut())
+                {
+                    data.platin += mined as i32;
+                }
+                outcome
+            }
+            ItemDriverOutcome::StrBuildingWorkerTransfer {
+                item_id,
+                character_id,
+                deposited,
+                withdrawn,
+            } => {
+                if deposited > 0 {
+                    if let Some(item) = self.items.get_mut(&item_id) {
+                        let new_gold = str_item_gold(item) + deposited;
+                        set_str_item_gold(item, new_gold);
+                    }
+                    if let Some(CharacterDriverState::StrategyWorker(data)) = self
+                        .characters
+                        .get_mut(&character_id)
+                        .and_then(|character| character.driver_state.as_mut())
+                    {
+                        data.platin = 0;
+                    }
+                } else if withdrawn > 0 {
+                    if let Some(item) = self.items.get_mut(&item_id) {
+                        let new_gold = str_item_gold(item).saturating_sub(withdrawn);
+                        set_str_item_gold(item, new_gold);
+                    }
+                    if let Some(CharacterDriverState::StrategyWorker(data)) = self
+                        .characters
+                        .get_mut(&character_id)
+                        .and_then(|character| character.driver_state.as_mut())
+                    {
+                        data.platin += withdrawn as i32;
+                    }
+                }
+                outcome
+            }
+            ItemDriverOutcome::StrDepotWorkerTakeover {
+                item_id,
+                character_id,
+                owner,
+            } => {
+                // C `*(unsigned int *)(it[in].drdata + 0) = ch[cn].group;
+                // sprintf(it[in].name, "%.20s's Depot (%d)", dat->name,
+                // it[in].drdata[8]); say(cn, "Taking over depot.");`
+                // (`strategy.c:1225-1229`).
+                let owner_name = match self
+                    .characters
+                    .get(&character_id)
+                    .and_then(|character| character.driver_state.as_ref())
+                {
+                    Some(CharacterDriverState::StrategyWorker(data)) => data.owner_name.clone(),
+                    _ => String::new(),
+                };
+                if let Some(item) = self.items.get_mut(&item_id) {
+                    set_str_item_owner(item, owner);
+                    let slot = item.driver_data.get(8).copied().unwrap_or(0);
+                    let truncated: String = owner_name.chars().take(20).collect();
+                    item.name = format!("{truncated}'s Depot ({slot})");
+                }
+                self.npc_say(character_id, "Taking over depot.");
+                outcome
+            }
             ItemDriverOutcome::Teleport {
                 item_id,
                 character_id,

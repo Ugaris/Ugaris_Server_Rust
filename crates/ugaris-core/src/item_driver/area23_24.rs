@@ -11,33 +11,31 @@
 //! branches (`mine`/`storage`/`depot`, `strategy.c:1122-1241`) are also
 //! ported here: reading the current Platinum total (mine/depot) and,
 //! for storage, converting a carried `IDR_ENHANCE` mined gold/silver
-//! stack into Platinum before reporting the new total. Two halves of
-//! each of these three functions remain unported, both gated on the same
-//! missing piece - C's `strategy_driver` (`DRD_STRATEGYDRIVER`, the
-//! recruitable-worker NPC AI, `strategy.c:713-1120`) has no Rust
-//! character-driver counterpart yet (no `CDR_*` id reserved, no
-//! `CharacterDriverState` variant):
+//! stack into Platinum before reporting the new total. The NPC-worker
+//! branches (`!(ch[cn].flags & CF_PLAYER)`) of all three - a
+//! `CDR_STRATEGY` worker's `OR_MINE`/`OR_TRANSFER`/`OR_TAKE`/`OR_TRAIN`
+//! orders mining/depositing/withdrawing/claiming Platinum, see
+//! `world::npc::area23_24::worker`'s module doc comment - are now also
+//! ported, dispatched the same way (`ItemDriverOutcome::StrMineWorkerDig`/
+//! `StrBuildingWorkerTransfer`/`StrDepotWorkerTakeover`, applied by
+//! `World::apply_item_driver_outcome`).
 //!
-//! - the `cn == 0` ambient branches: `mine`/`depot` just re-format the
-//!   item's display name (cosmetic only), while `storage` grows its
-//!   Platinum total by a fixed income once per 10 ticks and reschedules
-//!   itself (`strategy.c:1154-1159`) - the same "needs a first-timer-call
-//!   bootstrap" gap `IDR_LAB5_ITEM`'s fireface/lightface branches hit
-//!   (see `World::schedule_existing_light_timers`'s own doc comment),
-//!   deliberately deferred alongside the worker driver since both need
-//!   the same kind of always-on scheduling wiring;
-//! - the NPC-worker branches (`!(ch[cn].flags & CF_PLAYER)`): a worker
-//!   ordered `OR_MINE`/`OR_TRANSFER`/`OR_TAKE`/`OR_TRAIN` carries Platinum
-//!   (`struct strategy_data.platin`) between these three building types -
-//!   entirely unreachable without `strategy_driver` spawning a worker in
-//!   the first place, so there is nothing to port here yet.
+//! Still a documented gap, both gated on a different missing piece (the
+//! per-area "always-on ambient timer" bootstrap, unrelated to the worker
+//! driver): the `cn == 0` ambient branches - `mine`/`depot` just
+//! re-format the item's display name (cosmetic only), while `storage`
+//! grows its Platinum total by a fixed income once per 10 ticks and
+//! reschedules itself (`strategy.c:1154-1159`) - same class of gap as
+//! `IDR_LAB5_ITEM`'s fireface/lightface branches (see `World::
+//! schedule_existing_light_timers`'s own doc comment).
 //!
 //! `IDR_STR_SPAWNER`'s `spawner`/`spawner_sub` (recruit-an-NPC-worker) and
-//! the `ai_main`/`ai_init` AI-opponent driver remain full no-ops for the
-//! same underlying reason.
+//! the `ai_main`/`ai_init` AI-opponent driver remain full no-ops (no
+//! spawning wiring exists yet - see `world::strategy_worker`'s module doc
+//! comment).
 
 use super::*;
-use crate::world::str_item_gold;
+use crate::world::{character_value_base, str_item_gold, str_item_owner};
 
 pub(crate) fn str_ticker_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
     if character.id.0 != 0 {
@@ -50,29 +48,89 @@ pub(crate) fn str_ticker_driver(character: &Character, item: &Item) -> ItemDrive
     }
 }
 
-/// C `mine` (`strategy.c:1122-1148`)'s `ch[cn].flags & CF_PLAYER` branch
-/// only - see this module's own doc comment for the two documented gaps.
+/// C `mine` (`strategy.c:1122-1148`): the `ch[cn].flags & CF_PLAYER`
+/// "look" branch, plus the `DRD_STRATEGYDRIVER` NPC-worker mining branch
+/// (`:1135-1148`) - see this module's own doc comment for the remaining
+/// `cn == 0` gap.
 pub(crate) fn str_mine_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
-    if character.id.0 == 0 || !character.flags.contains(CharacterFlags::PLAYER) {
+    if character.id.0 == 0 {
         return ItemDriverOutcome::Noop;
     }
-    ItemDriverOutcome::StrMineLook {
+    if character.flags.contains(CharacterFlags::PLAYER) {
+        return ItemDriverOutcome::StrMineLook {
+            item_id: item.id,
+            character_id: character.id,
+            platinum: str_item_gold(item),
+        };
+    }
+
+    let current = str_item_gold(item);
+    let strength = character_value_base(character, CharacterValue::Strength).max(0) as u32;
+    let mined = current.min(strength);
+    if mined == 0 {
+        return ItemDriverOutcome::Noop;
+    }
+    ItemDriverOutcome::StrMineWorkerDig {
         item_id: item.id,
         character_id: character.id,
-        platinum: str_item_gold(item),
+        mined,
     }
 }
 
-/// C `depot` (`strategy.c:1208-1241`)'s `ch[cn].flags & CF_PLAYER` branch
-/// only - see this module's own doc comment for the two documented gaps.
+/// C `depot` (`strategy.c:1206-1239`): the `ch[cn].flags & CF_PLAYER`
+/// "look" branch, plus the `DRD_STRATEGYDRIVER` NPC-worker ownership-
+/// takeover/transfer branches (`:1219-1238`) - see this module's own doc
+/// comment for the remaining `cn == 0` gap.
 pub(crate) fn str_depot_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
-    if character.id.0 == 0 || !character.flags.contains(CharacterFlags::PLAYER) {
+    if character.id.0 == 0 {
         return ItemDriverOutcome::Noop;
     }
-    ItemDriverOutcome::StrDepotLook {
+    if character.flags.contains(CharacterFlags::PLAYER) {
+        return ItemDriverOutcome::StrDepotLook {
+            item_id: item.id,
+            character_id: character.id,
+            platinum: str_item_gold(item),
+        };
+    }
+
+    let owner = str_item_owner(item);
+    if owner != u32::from(character.group) {
+        return ItemDriverOutcome::StrDepotWorkerTakeover {
+            item_id: item.id,
+            character_id: character.id,
+            owner: u32::from(character.group),
+        };
+    }
+    str_building_worker_transfer(character, item)
+}
+
+/// C `storage`'s (`:1196-1203`) and `depot`'s (`:1231-1238`) shared
+/// NPC-worker transfer body - byte-for-byte identical once `depot`'s own
+/// ownership check has already passed.
+fn str_building_worker_transfer(character: &Character, item: &Item) -> ItemDriverOutcome {
+    let platin = match character.driver_state.as_ref() {
+        Some(crate::character_driver::CharacterDriverState::StrategyWorker(data)) => data.platin,
+        _ => 0,
+    };
+    if platin > 0 {
+        return ItemDriverOutcome::StrBuildingWorkerTransfer {
+            item_id: item.id,
+            character_id: character.id,
+            deposited: platin as u32,
+            withdrawn: 0,
+        };
+    }
+    let current = str_item_gold(item);
+    let strength = character_value_base(character, CharacterValue::Strength).max(0) as u32;
+    let withdrawn = current.min(strength);
+    if withdrawn == 0 {
+        return ItemDriverOutcome::Noop;
+    }
+    ItemDriverOutcome::StrBuildingWorkerTransfer {
         item_id: item.id,
         character_id: character.id,
-        platinum: str_item_gold(item),
+        deposited: 0,
+        withdrawn,
     }
 }
 
@@ -89,8 +147,15 @@ pub(crate) fn str_storage_driver(
     item: &Item,
     context: &ItemDriverContext,
 ) -> ItemDriverOutcome {
-    if character.id.0 == 0 || !character.flags.contains(CharacterFlags::PLAYER) {
+    if character.id.0 == 0 {
         return ItemDriverOutcome::Noop;
+    }
+    if !character.flags.contains(CharacterFlags::PLAYER) {
+        // C `storage`'s `DRD_STRATEGYDRIVER` NPC-worker branch
+        // (`strategy.c:1191-1204`) - byte-for-byte identical to `depot`'s
+        // own transfer body once its ownership check has passed (storage
+        // has none).
+        return str_building_worker_transfer(character, item);
     }
 
     let current = str_item_gold(item);

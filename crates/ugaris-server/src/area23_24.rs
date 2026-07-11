@@ -53,3 +53,12 @@ pub(crate) fn apply_strategy_boss_tick(
     }
     applied
 }
+
+/// C `ch_driver`'s `CDR_STRATEGY` case (`strategy.c:1611-1613`): every
+/// live worker/fighter/miner's per-tick body
+/// (`ugaris_core::world::npc::area23_24::worker`). Pure `World` logic -
+/// no `PlayerRuntime`/`ZoneLoader` access needed (see that module's own
+/// doc comment for why no live worker can exist yet regardless).
+pub(crate) fn apply_strategy_worker_tick(world: &mut World, config: &ServerConfig) -> usize {
+    world.process_strategy_worker_actions(config.area_id)
+}

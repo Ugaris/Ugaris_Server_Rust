@@ -1,6 +1,8 @@
 use super::*;
+use crate::character_driver::{CharacterDriverState, CDR_STRATEGY};
 use crate::item_driver::{IDR_ENHANCE, IDR_NOSNOW, IDR_STR_TICKER};
 use crate::player::StrategyPpd;
+use crate::world::npc::area23_24::StrategyWorkerDriverData;
 
 #[test]
 fn order_constants_match_c_defines() {
@@ -438,6 +440,20 @@ fn strategy_npc(id: u32, group: u16, name: &str) -> Character {
     let mut c = character(id);
     c.group = group;
     c.name = name.into();
+    c
+}
+
+fn strategy_worker(id: u32, group: u16, order: StrategyWorkerOrder, platin: i32) -> Character {
+    let mut c = character(id);
+    c.group = group;
+    c.driver = CDR_STRATEGY;
+    c.driver_state = Some(CharacterDriverState::StrategyWorker(
+        StrategyWorkerDriverData {
+            order,
+            platin,
+            ..Default::default()
+        },
+    ));
     c
 }
 
@@ -992,9 +1008,10 @@ fn show_queue_sends_header_before_validating_then_one_line_per_entry() {
 }
 
 // C `mine`/`storage`/`depot`'s `ch[cn].flags & CF_PLAYER` branches
-// (`strategy.c:1122-1241`) - see `item_driver::area23_24`'s module doc
-// comment for the two documented gaps (`cn==0` ambient branches, NPC-worker
-// branches) every one of these three still has.
+// (`strategy.c:1122-1241`), plus their `DRD_STRATEGYDRIVER` NPC-worker
+// branches - see `item_driver::area23_24`'s module doc comment for the
+// remaining `cn == 0` ambient-branch gap every one of these three still
+// has.
 
 fn mine_request(item_id: u32, character_id: u32) -> ItemDriverRequest {
     ItemDriverRequest::Driver {
@@ -1044,24 +1061,65 @@ fn str_mine_look_reports_current_platinum_to_the_player() {
 }
 
 #[test]
-fn str_mine_ambient_and_npc_worker_calls_remain_documented_noops() {
+fn str_mine_ambient_call_remains_a_documented_noop() {
     let mut world = World::default();
     world.add_character(timer_callback_character());
-    world.add_character(strategy_npc(2, 5, "Worker"));
     let mine = strategy_item(7, IDR_STR_MINE, vec![0; 8]);
     world.add_item(mine);
 
-    // C's `cn==0` cosmetic-naming branch: no `strategy_driver` NPC exists
-    // to route through yet, so this is still a no-op.
+    // C's `cn==0` cosmetic-naming branch: still unported (see
+    // `item_driver::area23_24`'s module doc comment).
     assert_eq!(
         world.execute_item_driver_request(mine_request(7, 0), 23),
         ItemDriverOutcome::Noop
     );
-    // C's NPC-worker mining branch: needs the unported `strategy_driver`.
+}
+
+#[test]
+fn str_mine_npc_worker_with_an_empty_mine_or_no_strength_is_a_noop() {
+    let mut world = World::default();
+    world.add_character(strategy_npc(2, 5, "Worker"));
+    let mine = strategy_item(7, IDR_STR_MINE, vec![0; 8]);
+    world.add_item(mine);
+
     assert_eq!(
         world.execute_item_driver_request(mine_request(7, 2), 23),
         ItemDriverOutcome::Noop
     );
+}
+
+#[test]
+fn str_mine_npc_worker_digs_min_of_strength_and_available_gold() {
+    // C `mine`'s `DRD_STRATEGYDRIVER` branch (`strategy.c:1140-1146`):
+    // `am = min(ch[cn].value[0][V_STR], gold); gold -= am; dat->platin +=
+    // am;`.
+    let mut world = World::default();
+    let mut worker = strategy_worker(2, 5, StrategyWorkerOrder::None, 10);
+    worker.values[0][CharacterValue::Strength as usize] = 40;
+    world.add_character(worker);
+    let mut mine = strategy_item(7, IDR_STR_MINE, vec![0; 8]);
+    set_str_item_gold(&mut mine, 25);
+    world.add_item(mine);
+
+    let outcome = world.execute_item_driver_request(mine_request(7, 2), 23);
+
+    assert_eq!(
+        outcome,
+        ItemDriverOutcome::StrMineWorkerDig {
+            item_id: ItemId(7),
+            character_id: CharacterId(2),
+            mined: 25,
+        }
+    );
+    assert_eq!(str_item_gold(&world.items[&ItemId(7)]), 0);
+    let CharacterDriverState::StrategyWorker(data) = world.characters[&CharacterId(2)]
+        .driver_state
+        .clone()
+        .unwrap()
+    else {
+        panic!("expected StrategyWorker driver state");
+    };
+    assert_eq!(data.platin, 35);
 }
 
 #[test]
@@ -1263,22 +1321,130 @@ fn str_storage_ignores_a_cursor_item_that_is_not_an_enhance_stack() {
 }
 
 #[test]
-fn str_storage_ambient_and_npc_worker_calls_remain_documented_noops() {
+fn str_storage_ambient_call_remains_a_documented_noop() {
     let mut world = World::default();
     world.add_character(timer_callback_character());
-    world.add_character(strategy_npc(2, 5, "Worker"));
     world.add_item(strategy_item(7, IDR_STR_STORAGE, vec![0; 8]));
 
-    // C's `cn==0` periodic-income-tick branch: needs the same "first
-    // timer call" bootstrap gap documented in `item_driver::area23_24`.
+    // C's `cn==0` periodic-income-tick branch: still unported (see
+    // `item_driver::area23_24`'s module doc comment).
     assert_eq!(
         world.execute_item_driver_request(storage_request(7, 0), 23),
         ItemDriverOutcome::Noop
     );
-    // C's NPC-worker deposit/withdraw branch: needs the unported
-    // `strategy_driver`.
+}
+
+#[test]
+fn str_storage_npc_worker_deposits_its_full_carried_platin() {
+    // C `storage`'s `DRD_STRATEGYDRIVER` branch, `dat->platin` nonzero
+    // case (`strategy.c:1196-1198`).
+    let mut world = World::default();
+    world.add_character(strategy_worker(2, 5, StrategyWorkerOrder::None, 40));
+    let mut storage = strategy_item(7, IDR_STR_STORAGE, vec![0; 8]);
+    set_str_item_gold(&mut storage, 100);
+    world.add_item(storage);
+
+    let outcome = world.execute_item_driver_request(storage_request(7, 2), 23);
+
     assert_eq!(
-        world.execute_item_driver_request(storage_request(7, 2), 23),
-        ItemDriverOutcome::Noop
+        outcome,
+        ItemDriverOutcome::StrBuildingWorkerTransfer {
+            item_id: ItemId(7),
+            character_id: CharacterId(2),
+            deposited: 40,
+            withdrawn: 0,
+        }
     );
+    assert_eq!(str_item_gold(&world.items[&ItemId(7)]), 140);
+    let CharacterDriverState::StrategyWorker(data) = world.characters[&CharacterId(2)]
+        .driver_state
+        .clone()
+        .unwrap()
+    else {
+        panic!("expected StrategyWorker driver state");
+    };
+    assert_eq!(data.platin, 0);
+}
+
+#[test]
+fn str_storage_npc_worker_withdraws_min_of_strength_and_available_gold() {
+    // C `storage`'s `DRD_STRATEGYDRIVER` branch, `dat->platin == 0` case
+    // (`strategy.c:1200-1202`).
+    let mut world = World::default();
+    let mut worker = strategy_worker(2, 5, StrategyWorkerOrder::None, 0);
+    worker.values[0][CharacterValue::Strength as usize] = 15;
+    world.add_character(worker);
+    let mut storage = strategy_item(7, IDR_STR_STORAGE, vec![0; 8]);
+    set_str_item_gold(&mut storage, 100);
+    world.add_item(storage);
+
+    let outcome = world.execute_item_driver_request(storage_request(7, 2), 23);
+
+    assert_eq!(
+        outcome,
+        ItemDriverOutcome::StrBuildingWorkerTransfer {
+            item_id: ItemId(7),
+            character_id: CharacterId(2),
+            deposited: 0,
+            withdrawn: 15,
+        }
+    );
+    assert_eq!(str_item_gold(&world.items[&ItemId(7)]), 85);
+    let CharacterDriverState::StrategyWorker(data) = world.characters[&CharacterId(2)]
+        .driver_state
+        .clone()
+        .unwrap()
+    else {
+        panic!("expected StrategyWorker driver state");
+    };
+    assert_eq!(data.platin, 15);
+}
+
+#[test]
+fn str_depot_npc_worker_claims_ownership_instead_of_transferring() {
+    // C `depot`'s ownership-takeover branch (`strategy.c:1224-1229`).
+    let mut world = World::default();
+    world.add_character(strategy_worker(2, 5, StrategyWorkerOrder::None, 40));
+    let mut depot = strategy_item(7, IDR_STR_DEPOT, vec![0; 9]);
+    set_str_item_gold(&mut depot, 100);
+    world.add_item(depot);
+
+    let outcome = world.execute_item_driver_request(depot_request(7, 2), 23);
+
+    assert_eq!(
+        outcome,
+        ItemDriverOutcome::StrDepotWorkerTakeover {
+            item_id: ItemId(7),
+            character_id: CharacterId(2),
+            owner: 5,
+        }
+    );
+    let depot_item = &world.items[&ItemId(7)];
+    assert_eq!(str_item_owner(depot_item), 5);
+    // Unchanged: C returns right after claiming, no platin transfer this
+    // call.
+    assert_eq!(str_item_gold(depot_item), 100);
+}
+
+#[test]
+fn str_depot_npc_worker_transfers_platin_once_ownership_matches() {
+    let mut world = World::default();
+    world.add_character(strategy_worker(2, 5, StrategyWorkerOrder::None, 40));
+    let mut depot = strategy_item(7, IDR_STR_DEPOT, vec![0; 9]);
+    set_str_item_owner(&mut depot, 5);
+    set_str_item_gold(&mut depot, 100);
+    world.add_item(depot);
+
+    let outcome = world.execute_item_driver_request(depot_request(7, 2), 23);
+
+    assert_eq!(
+        outcome,
+        ItemDriverOutcome::StrBuildingWorkerTransfer {
+            item_id: ItemId(7),
+            character_id: CharacterId(2),
+            deposited: 40,
+            withdrawn: 0,
+        }
+    );
+    assert_eq!(str_item_gold(&world.items[&ItemId(7)]), 140);
 }

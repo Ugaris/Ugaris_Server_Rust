@@ -124,6 +124,7 @@ mod strategy;
 mod strategy_boss;
 mod strategy_special;
 mod strategy_worker;
+mod strategy_worker_driver;
 mod superior;
 mod supermax;
 mod teleport;

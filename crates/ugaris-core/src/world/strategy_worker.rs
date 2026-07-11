@@ -61,20 +61,28 @@
 //!   dy)>` tile-delta pair instead (`None` standing in for C's `0`
 //!   sentinel, since no entry in `restlist` is ever `(0, 0)`).
 //!
-//! REMAINING (tracked in `PORTING_TODO.md`): `strategy_driver`'s NT_CREATE
-//! handling, the full per-tick order-execution switch (movement/
-//! `use_driver` dispatch per order), the `CDR_STRATEGY`/
-//! `CharacterDriverState` wiring and `spawner_sub` spawning needed to
-//! ever construct a live worker in the first place, the
-//! `mine`/`storage`/`depot`/`spawner` item drivers' NPC-worker branches,
-//! and the full `ai_main`/`ai_init` AI-opponent driver.
+//! `strategy_driver`'s NT_CREATE handling and the full per-tick order-
+//! execution switch (movement/`use_driver` dispatch per order), plus the
+//! `CDR_STRATEGY`/`CharacterDriverState` wiring this slice's own message-
+//! loop/self-defense/order-dispatch logic needs, and the `mine`/
+//! `storage`/`depot` item drivers' NPC-worker platin-transfer branches,
+//! are now ported too - see `crate::world::npc::area23_24::worker`'s own
+//! module doc comment.
+//!
+//! REMAINING (tracked in `PORTING_TODO.md`): `spawner_sub`/`take_spawner`
+//! spawning (needed to ever construct a live worker through real
+//! gameplay - `worker.rs`'s driver is fully testable via directly
+//! constructed test characters in the meantime, same "ported but not yet
+//! spawnable" precedent as this file's own sixth slice), the
+//! `IDR_STR_SPAWNER` item driver, and the full `ai_main`/`ai_init`
+//! AI-opponent driver.
 
 use super::*;
 
 /// C `struct strategy_data.order`/`or1`/`or2` (`strategy.c:100-113`) -
 /// see this module's doc comment for why this is a typed enum instead of
 /// three raw `int`s.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum StrategyWorkerOrder {
     /// C `order == 0` (no `#define`; the zero-initialized default, and
     /// the "home" command's target state, `:827-833`).
