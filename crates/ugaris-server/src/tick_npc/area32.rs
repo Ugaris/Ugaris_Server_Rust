@@ -119,3 +119,42 @@ pub(crate) async fn world_58(
         }
     }
 }
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn mission_giver_driver_147(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    zone_loader: &mut ZoneLoader,
+    config: &ServerConfig,
+    _args: &Args,
+    _completed_actions: &[WorldActionCompletion],
+    _achievement_repository: &Option<ugaris_db::PgAchievementRepository>,
+    _character_repository: &Option<ugaris_db::PgCharacterRepository>,
+    _area_repository: &Option<ugaris_db::PgAreaRepository>,
+    _clan_repository: &Option<ugaris_db::PgClanRegistryRepository>,
+    _clan_log_repository: &Option<ugaris_db::PgClanLogRepository>,
+    _merchant_repository: &Option<ugaris_db::PgMerchantRepository>,
+    _military_master_storage_repository: &Option<ugaris_db::PgMilitaryMasterStorageRepository>,
+    _military_advisor_storage_repository: &Option<ugaris_db::PgMilitaryAdvisorStorageRepository>,
+    _notes_repository: &Option<ugaris_db::PgNotesRepository>,
+    _anticheat_repository: &Option<ugaris_db::PgAntiCheatRepository>,
+    _auction_repository: &Option<ugaris_db::PgAuctionRepository>,
+) {
+    // C `mission_giver_driver`: "Mister Jones", the governor's job-board
+    // NPC (`src/area/32/missions.c`).
+    let mission_giver_facts = mission_giver_player_facts(runtime);
+    let mission_giver_events = world.process_mission_giver_actions(
+        &mission_giver_facts,
+        config.area_id,
+        current_unix_time().max(0) as u64,
+    );
+    let mission_giver_events_applied =
+        apply_mission_giver_events(world, runtime, zone_loader, mission_giver_events);
+    if mission_giver_events_applied != 0 {
+        info!(
+            mission_giver_events_applied,
+            tick = world.tick.0,
+            "applied mission giver dialogue events"
+        );
+    }
+}

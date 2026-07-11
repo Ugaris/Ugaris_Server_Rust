@@ -1393,8 +1393,13 @@ Ordered by player progression; the C file is the oracle.
   `dwarfshaman_driver`/`dwarfsmith_driver` - ported in
   `world/npc/area31/{dwarfchief,lostdwarf,dwarfshaman,dwarfsmith}.rs`;
   item drivers were already done. Details in PORTING_LEDGER.md.)*
-- [ ] **Area 32 - `src/area/32/missions.c`** - governor mission NPCs
-  (needs P3 military).
+- [~] **Area 32 - `src/area/32/missions.c`** - governor mission NPCs
+  (needs P3 military). REMAINING: `CDR_MISSIONGIVE` ("Mister Jones")
+  dialogue/reward-shop is fully live (22/24 rewards fully functional);
+  `start_mission`/`build_fighter` (the 41x41 instance-dungeon spawn),
+  `missionchest_driver`, `mission_fighter_dead`, `CTPOT`'s stat-potion
+  flow, and the rotating "special offer" purchase are not ported yet -
+  see `world/npc/area32/governor.rs`'s module doc comment.
 - [ ] **Area 33 - `src/area/33/tunnel.c`** - long tunnel events. Also wire
   `achievement_add_tunnel_level` using the existing `award_*` helper
   pattern in `crates/ugaris-server/src/achievement.rs` (Achievements
@@ -1444,6 +1449,10 @@ Keep entries to at most three lines: date, task, one-line result.
 Anything longer belongs in `PORTING_LEDGER.md`; historical verbose
 notes live in `PROGRESS_ARCHIVE.md`.
 
+- 2026-07-11: Area 32 progress: ported `CDR_MISSIONGIVE` ("Mister Jones"
+  job-board/reward-shop NPC, `world/npc/area32/governor.rs`, new
+  `PlayerRuntime::governor` field) - dialogue, job rolling, and 22/24
+  rewards fully live. 3917 core [+11] + 1182 server tests pass, boot-smoke.
 - 2026-07-11: Area 31 CLOSED: ported all four `warrmines.c` character
   drivers (dwarfchief/lostdwarf/dwarfshaman/dwarfsmith quest chains,
   `world/npc/area31/*.rs`); item drivers were already done. 3906 core

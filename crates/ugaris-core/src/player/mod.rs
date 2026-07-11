@@ -13,6 +13,7 @@ mod area3;
 mod areas_misc;
 mod arena;
 mod chests;
+mod governor;
 mod keyring;
 mod labs;
 mod lq;
@@ -28,6 +29,7 @@ mod transport;
 mod tunnel;
 mod twocity;
 
+pub use governor::{MissionPpd, SingleMission};
 pub use labs::{lab4_seyan_state_from_got, lab5_seyan_state_from_got};
 pub use misc::*;
 pub use settings::*;
@@ -450,6 +452,11 @@ pub struct PlayerRuntime {
     /// See [`StrategyPpd`].
     #[serde(default)]
     pub strategy: StrategyPpd,
+    /// C `struct mission_ppd` (`DRD_MISSION_PPD`, `src/common/
+    /// mission_ppd.h:11-34`): the Area 32 governor job-board profile. See
+    /// [`MissionPpd`].
+    #[serde(default)]
+    pub governor: MissionPpd,
     #[serde(default)]
     pub keyring_auto_add: bool,
     #[serde(default)]
@@ -828,6 +835,7 @@ impl PlayerRuntime {
             achievement_stats: AchievementStats::default(),
             tutorial: TutorialPpd::default(),
             strategy: StrategyPpd::default(),
+            governor: MissionPpd::default(),
             keyring_auto_add: false,
             current_section_id: 0,
             special_shrine_hcsc_last_touch_seconds: 0,

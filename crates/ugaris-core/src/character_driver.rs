@@ -596,6 +596,12 @@ pub const CDR_DWARFSHAMAN: u16 = 109;
 /// Grimroot's blacksmith, who forges a `lizard_elite_keyN` from a mold
 /// plus 5,000 silver (`src/area/31/warrmines.c::dwarfsmith_driver`).
 pub const CDR_DWARFSMITH: u16 = 110;
+/// C `#define CDR_MISSIONGIVE 111` (`src/system/drvlib.h`, "area32:
+/// mission giver"): "Mister Jones", the governor's job-board NPC who
+/// offers randomly-rolled Alpha/Beta/Gamma kill jobs and runs the
+/// brownie-points reward shop (`src/area/32/missions.c::
+/// mission_giver_driver`).
+pub const CDR_MISSIONGIVE: u16 = 111;
 pub const DRD_SIMPLEBADDYDRIVER: u32 = 0x0100_0013;
 pub const DRD_CLARADRIVER: u32 = 0x0100_0059;
 pub const DRD_SKELLYDRIVER: u32 = 0x0100_006a;
@@ -759,6 +765,7 @@ pub enum CharacterDriverState {
     LostDwarf(crate::world::npc::area31::lostdwarf::LostDwarfDriverData),
     DwarfShaman(crate::world::npc::area31::dwarfshaman::DwarfShamanDriverData),
     DwarfSmith(crate::world::npc::area31::dwarfsmith::DwarfSmithDriverData),
+    MissionGiver(crate::world::npc::area32::governor::MissionGiverDriverData),
 }
 /// C `bank_driver_parse` from `src/module/bank.c`. The C driver defaults
 /// opening hours to 6..23 before parsing (`bank_driver` lines 304-309).
@@ -1577,7 +1584,8 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::DwarfChief(_)
             | CharacterDriverState::LostDwarf(_)
             | CharacterDriverState::DwarfShaman(_)
-            | CharacterDriverState::DwarfSmith(_),
+            | CharacterDriverState::DwarfSmith(_)
+            | CharacterDriverState::MissionGiver(_),
         ) => SimpleBaddyDriverData::default(),
         None => SimpleBaddyDriverData::default(),
     };
@@ -4139,6 +4147,7 @@ pub use crate::world::npc::area31::dwarfshaman::DwarfShamanDriverData;
 pub use crate::world::npc::area31::dwarfsmith::DwarfSmithDriverData;
 pub use crate::world::npc::area31::lostdwarf::LostDwarfDriverData;
 pub use crate::world::npc::area31::AREA31_QA;
+pub use crate::world::npc::area32::governor::MissionGiverDriverData;
 pub use crate::world::npc::area32::military::{
     parse_military_advisor_driver_args, parse_military_master_driver_args,
     MilitaryAdvisorDriverData, MilitaryMasterDriverData, MILITARY_QA,

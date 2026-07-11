@@ -584,7 +584,8 @@ impl World {
                 | CharacterDriverState::DwarfChief(_)
                 | CharacterDriverState::LostDwarf(_)
                 | CharacterDriverState::DwarfShaman(_)
-                | CharacterDriverState::DwarfSmith(_) => None,
+                | CharacterDriverState::DwarfSmith(_)
+                | CharacterDriverState::MissionGiver(_) => None,
             });
         let Some(target_id) = target_id else {
             return false;
