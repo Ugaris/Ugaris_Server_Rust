@@ -1192,8 +1192,20 @@ Ordered by player progression; the C file is the oracle.
   bonuses before `update_char`, restores hp/endurance/mana to max, and
   finishes via a new `World::finish_strategy_worker_spawn` driver-state
   stamp. 7 new tests in `world::tests::strategy`.
-  REMAINING: the full `ai_main`/`ai_init` AI-opponent driver (538 lines) -
-  the only remaining gap in this entire task.
+  Eleventh slice done: the `ai_main`/`ai_init` AI-opponent driver's
+  structural building blocks - `AiData`/`AiNpc`/`AiPlace` (new
+  `world/strategy_ai.rs`), the place-graph navigation primitives
+  (`update_npc_place`/`subtask_move`), all seven `task_*` order-assignment
+  functions, the roster bookkeeping (`assign_npc`/`add_worker`/
+  `add_etguard`/`add_guard`/`remove_guard`/`remove_worker`), and the
+  guard-defense allocation logic (`wantguardcnt`/`assign_guards`/
+  `remove_free_guards`/`nag_attack`) - are now ported, all fully testable
+  without a live spawned AI army (37 new tests).
+  REMAINING: `ai_init`/`ai_main`'s own outer per-tick bodies (place-graph
+  construction from map items, live roster discovery, the per-tick
+  roster/threat refresh, worker spawning, and the per-npc task-dispatch
+  switch that calls the now-ported functions above), `create_eguard`, and
+  the threat-detection scan that populates `AiPlace`'s threat fields.
 - [ ] **Area 25 - `src/area/25/warped.c`** - warped NPC dialogue,
   `DRD_WARPFIGHTER` full fight driver.
 - [ ] **Area 26 - `src/area/26/staffer.c`** - vault skull PPD/quest, Rouven
@@ -1799,4 +1811,10 @@ notes live in `PROGRESS_ARCHIVE.md`.
   (`world/npc/area17/guard.rs`+`guard_messages.rs`), the Exkordon city
   guard patrol, plus its `guard_dead` death hook. 2984 core + 1138 server
   tests pass, clean build/boot-smoke (area 17).
+- 2026-07-11: Areas 23/24 progress: ported the `ai_main`/`ai_init`
+  AI-opponent driver's structural building blocks (new
+  `world/strategy_ai.rs`: `AiData`/`AiNpc`/`AiPlace`, place-graph nav,
+  all 7 `task_*` functions, roster bookkeeping, guard-defense allocation).
+  3578 core (+37) + 1168 server tests pass, clean build; only the outer
+  per-tick bodies/`create_eguard`/threat-scan remain for this task.
 

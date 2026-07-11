@@ -66,6 +66,7 @@ mod speed;
 mod spells;
 mod steal;
 mod strategy;
+mod strategy_ai;
 mod strategy_special;
 mod strategy_worker;
 mod teleport;
@@ -131,6 +132,7 @@ pub use special_item::RandomShrineWeldingResult;
 pub(crate) use spells::*;
 pub use steal::*;
 pub use strategy::*;
+pub use strategy_ai::*;
 pub use strategy_special::*;
 pub use strategy_worker::*;
 #[allow(unused_imports)]

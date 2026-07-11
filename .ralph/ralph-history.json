@@ -418,21 +418,52 @@
         "test result: ok. 0 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
       ]
+    },
+    {
+      "iteration": 13,
+      "startedAt": "2026-07-11T06:18:04.870Z",
+      "endedAt": "2026-07-11T07:13:57.570Z",
+      "durationMs": 3351457,
+      "agent": "opencode",
+      "model": "anthropic/claude-sonnet-5",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "PORTING_TODO.md",
+        "crates/ugaris-core/src/world/mod.rs",
+        "crates/ugaris-core/src/world/tests/mod.rs",
+        "crates/ugaris-core/src/world/strategy_ai.rs",
+        "crates/ugaris-core/src/world/tests/strategy_ai.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "Build is healthy. Let's check the full test output for failures and read PORTING_TODO.md.",
+        "- Verified: `cargo fmt --all`, `cargo test --workspace` (3578 core [+37] + 81 db + 45 protocol + 1168 server, all green, zero failures), `cargo build --workspace` clean with zero warnings, and a boot-",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "\u001b[0m$ \u001b[0mcargo test --workspace 2>&1 | grep -E \"FAILED|test result|error\\[\" | head -50",
+        "test result: ok. 3541 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.28s",
+        "test result: ok. 81 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 45 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 1168 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 7.86s"
+      ]
     }
   ],
-  "totalDurationMs": 30262542,
+  "totalDurationMs": 33613999,
   "struggleIndicators": {
     "repeatedErrors": {
       "3375 core (+17) and 1168 server (+6) tests all pass, zero failures. Now let's build ugaris-server fo": 1,
       "- `cargo fmt --all`, `cargo test --workspace` (3375 core + 1168 server, zero failures/warnings), `ca": 1,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 12,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 13,
       "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&": 6,
       "test error::tests::error_constants_match_legacy_header ... ok": 4,
       "test error::tests::error_strings_match_legacy_table ... ok": 4,
       "test error::tests::out_of_range_errors_use_c_fallback_string ... ok": 4,
       "test world::tests::dungeon_master::attack_command_failure_says_error_and_never_charges_or_queues ...": 3,
       "test result: ok. 3358 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.30s": 1,
-      "test result: ok. 81 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 7,
+      "test result: ok. 81 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 8,
       "test result: ok. 1168 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 8.03s": 1,
       "122-| `src/module/weather/weather.c`, `src/module/weather/weather_client.c` | `crates/ugaris-server/": 1,
       "7548:- 2026-07-07: closed the P4 \"Area 1\" task's last gap: `tutorial_ppd`/`tutorial()` (`src/system/": 1,
@@ -449,9 +480,9 @@
       "119-| `src/system/clubmaster.c` | `crates/ugaris-core/src/character_driver.rs`, `crates/ugaris-core/": 1,
       "120-| `src/module/military.c` / `military.h`, `src/system/tool.c` (`get_army_rank_int`/`set_army_ran": 1,
       "test result: ok. 3406 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.29s": 1,
-      "test result: ok. 0 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 0.00s": 5,
-      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 3,
-      "test result: ok. 45 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 2,
+      "test result: ok. 0 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 0.00s": 6,
+      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 4,
+      "test result: ok. 45 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 3,
       "3436 core (+8, one test wasn't counted separately from before? Let's check) + 1168 server all pass, ": 1,
       "All green: 3436 core + 81 db + 3 net + 45 protocol + 1168 server tests, zero failures, no warnings (": 1,
       "- Verified: `cargo fmt --all` clean, `cargo test --workspace` green (3436 core [+8] + 81 db + 3 net ": 1,
@@ -497,7 +528,12 @@
       "test result: ok. 1168 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 7.88s": 1,
       "test result: ok. 3513 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.29s": 1,
       "3541 core tests (+7), all green, zero failures. Now let's verify build has zero warnings.": 1,
-      "test result: ok. 3534 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.29s": 1
+      "test result: ok. 3534 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.29s": 1,
+      "Build is healthy. Let's check the full test output for failures and read PORTING_TODO.md.": 1,
+      "- Verified: `cargo fmt --all`, `cargo test --workspace` (3578 core [+37] + 81 db + 45 protocol + 116": 1,
+      "\u001b[0m$ \u001b[0mcargo test --workspace 2>&1 | grep -E \"FAILED|test result|error\\[\" | head -50": 1,
+      "test result: ok. 3541 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.28s": 1,
+      "test result: ok. 1168 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 7.86s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0
