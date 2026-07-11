@@ -876,6 +876,39 @@ fn str_ticker_clears_busy_flag_once_a_slot_goes_fully_idle() {
 }
 
 #[test]
+fn str_ticker_reschedules_itself_via_apply_item_driver_outcome() {
+    // Same real bug/fix as `lq_ticker_reschedules_itself_via_apply_item_
+    // driver_outcome` (`world/tests/lq.rs`): `str_ticker`'s own C
+    // self-reschedule (`strategy.c:462`) used to only be applied by
+    // `ugaris-server`'s player-`item_use`-completion dispatcher, a call
+    // path a `character_id == 0` timer-fired `StrTicker` outcome never
+    // actually reaches. `World::apply_item_driver_outcome` now applies
+    // the reschedule directly, so the ticker keeps firing forever
+    // instead of going silent after its first call.
+    let mut world = World::default();
+    let mut ticker = strategy_item(7, IDR_STR_TICKER, vec![]);
+    ticker.flags = ItemFlags::USED | ItemFlags::USE;
+    world.add_item(ticker);
+
+    assert_eq!(world.timers.used_timers(), 0);
+    let outcome = world.execute_item_driver_timer_request(
+        ItemDriverRequest::Driver {
+            driver: IDR_STR_TICKER,
+            item_id: ItemId(7),
+            character_id: CharacterId(0),
+            spec: 0,
+        },
+        23,
+        &ItemDriverContext {
+            timer_call: true,
+            ..ItemDriverContext::default()
+        },
+    );
+    assert!(matches!(outcome, ItemDriverOutcome::StrTicker { .. }));
+    assert_eq!(world.timers.used_timers(), 1);
+}
+
+#[test]
 fn queue_mission_appends_to_first_free_slot() {
     let mut world = World::default();
     world.add_character(strategy_player(1, 111));

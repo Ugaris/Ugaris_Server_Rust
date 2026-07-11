@@ -67,6 +67,7 @@ mod spells;
 mod steal;
 mod strategy;
 mod strategy_ai;
+mod strategy_ai_main;
 mod strategy_ai_tasks;
 mod strategy_special;
 mod strategy_worker;
@@ -134,6 +135,7 @@ pub(crate) use spells::*;
 pub use steal::*;
 pub use strategy::*;
 pub use strategy_ai::*;
+pub use strategy_ai_main::AiMainOutcome;
 pub use strategy_ai_tasks::{AiEguardSpawnPlan, AiWorkerSpawnPlan};
 pub use strategy_special::*;
 pub use strategy_worker::*;
@@ -202,13 +204,13 @@ use crate::{
         IDR_EDEMONDOOR, IDR_EDEMONGATE, IDR_EDEMONLIGHT, IDR_EDEMONLOADER, IDR_EDEMONSWITCH,
         IDR_EDEMONTUBE, IDR_FDEMONCANNON, IDR_FDEMONFARM, IDR_FDEMONGATE, IDR_FDEMONLIGHT,
         IDR_FDEMONLOADER, IDR_FLAMETHROW, IDR_FLASK, IDR_FORESTCHEST, IDR_LAB2_WATER,
-        IDR_LAB3_PLANT, IDR_LAB5_ITEM, IDR_LABTORCH, IDR_MINEDOOR, IDR_MINEGATEWAY, IDR_NIGHTLIGHT,
-        IDR_ONOFFLIGHT, IDR_PALACEDOOR, IDR_PENT, IDR_POTION, IDR_RANDOMSHRINE, IDR_RECALL,
-        IDR_STEPTRAP, IDR_STR_DEPOT, IDR_STR_MINE, IDR_STR_SPAWNER, IDR_STR_STORAGE, IDR_SWAMPARM,
-        IDR_SWAMPSPAWN, IDR_SWAMPWHISP, IDR_TORCH, IDR_TOYLIGHT, IDR_WARPKEYDOOR, IDR_WARPTELEPORT,
-        IDR_WARPTRIALDOOR, IID_AREA11_PALACEKEY, IID_AREA14_SHRINEKEY, IID_AREA16_ROBBERKEY,
-        IID_AREA16_SKELLYKEY, IID_AREA25_DOORKEY, IID_AREA25_TELEKEY, IID_GENERIC_SPECIAL,
-        IID_MINEGATEWAY,
+        IDR_LAB3_PLANT, IDR_LAB5_ITEM, IDR_LABTORCH, IDR_LQ_TICKER, IDR_MINEDOOR, IDR_MINEGATEWAY,
+        IDR_NIGHTLIGHT, IDR_ONOFFLIGHT, IDR_PALACEDOOR, IDR_PENT, IDR_POTION, IDR_RANDOMSHRINE,
+        IDR_RECALL, IDR_STEPTRAP, IDR_STR_DEPOT, IDR_STR_MINE, IDR_STR_SPAWNER, IDR_STR_STORAGE,
+        IDR_STR_TICKER, IDR_SWAMPARM, IDR_SWAMPSPAWN, IDR_SWAMPWHISP, IDR_TORCH, IDR_TOYLIGHT,
+        IDR_WARPKEYDOOR, IDR_WARPTELEPORT, IDR_WARPTRIALDOOR, IID_AREA11_PALACEKEY,
+        IID_AREA14_SHRINEKEY, IID_AREA16_ROBBERKEY, IID_AREA16_SKELLYKEY, IID_AREA25_DOORKEY,
+        IID_AREA25_TELEKEY, IID_GENERIC_SPECIAL, IID_MINEGATEWAY,
     },
     item_ops::{consume_item, give_item_to_character, GiveItemFlags, GiveItemResult},
     legacy::{
@@ -397,6 +399,20 @@ pub struct World {
     /// [`StrategyJumpPointRegistry`]'s doc comment and `World::
     /// ensure_strategy_jump_points_initialized`.
     pub strategy_jump_points: StrategyJumpPointRegistry,
+    /// C's file-static `struct ai_data ai_data[MAX_AI]` (`src/area/23_24/
+    /// strategy.c:1787`), one entry per AI-controlled battleground party -
+    /// see [`crate::world::strategy_ai::AiData`]'s own doc comment. Keyed
+    /// directly by the party's `code` (C's own `ai_data[code -
+    /// STR_OWNER_AI_BASE]` index) rather than a fixed-size array; a
+    /// missing entry means "this AI party's `ai_init` hasn't run yet" (C's
+    /// own `!ad->ai_init` gate, `strategy.c:2450`), which [`World::
+    /// ai_main`] uses exactly that way. In-memory only, no DB persistence -
+    /// same "resets on restart" precedent as every other server-wide
+    /// registry above (e.g. [`Self::arena_toplist`]); C's own AI armies
+    /// are just as ephemeral (rebuilt from the still-live place graph and
+    /// `CDR_STRATEGY` roster the next time `ai_main` runs after a
+    /// restart).
+    pub ai_parties: HashMap<u32, AiData>,
     /// `World::str_reward_winner`'s queue of pending `reward_winner`
     /// (`strategy.c:428-454`) `ppd` mutations - `World` can't reach
     /// session-owned `PlayerRuntime::strategy` directly, so `ugaris-

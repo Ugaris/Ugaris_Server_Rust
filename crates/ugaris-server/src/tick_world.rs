@@ -281,6 +281,23 @@ pub(crate) async fn world_step(
     let mut chest_spawns = 0;
     let mut swamp_spawns = 0;
     for outcome in &timer_outcomes {
+        // C `str_ticker`'s `reward_winner` (`strategy.c:436-437`, applied
+        // synchronously inside `World::apply_item_driver_outcome`'s
+        // `StrTicker` arm via `World::str_ticker`) queues its "you won"/
+        // exp-reward text onto the winning player through `World::
+        // queue_system_text` rather than delivering it directly, since
+        // the pure `World` dispatch point that runs it has no
+        // `ServerRuntime` access - drain that queue here, the real
+        // `character_id == 0` timer-fire dispatch point (see
+        // `tick_item_use_clan_lq_arena.rs`'s `StrTicker`/`LqTicker` arms
+        // for why this can no longer live in the player-`item_use`-
+        // completion pipeline).
+        if matches!(
+            outcome,
+            ugaris_core::item_driver::ItemDriverOutcome::StrTicker { .. }
+        ) {
+            apply_strategy_reward_events(&mut world, &mut runtime);
+        }
         if let ugaris_core::item_driver::ItemDriverOutcome::EdemonGateSpawn {
             item_id,
             template,

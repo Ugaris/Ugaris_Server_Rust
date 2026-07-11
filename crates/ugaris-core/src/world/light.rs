@@ -175,6 +175,20 @@ impl World {
                 IDR_CALIGAR if matches!(item.driver_data.first().copied(), Some(2 | 4)) => {
                     Some(item_id)
                 }
+                // C `str_ticker`/`lq_ticker`'s own self-perpetuating
+                // `call_item(it[in].driver, in, 0, ticker + TICKS)`
+                // reschedule (`strategy.c:462`/`lq.c:462`, both already
+                // ported as `World::apply_item_driver_outcome`'s
+                // `StrTicker`/`LqTicker` arms) only keeps firing once
+                // *something* primes the very first timer - exactly the
+                // same "always-on ambient `cn == 0` driver" class as
+                // every other entry in this match, just ticking a
+                // per-area mission scan instead of a light. `IDR_STR_
+                // SPAWNER`'s own `cn == 0` ambient/AI-init branch
+                // (`spawner`, `strategy.c:1319-1356`) remains a
+                // documented gap - see `item_driver::area23_24`'s module
+                // doc comment.
+                IDR_LQ_TICKER | IDR_STR_TICKER => Some(item_id),
                 // C `create_item_nr` (`src/system/create.c:947-949`) arms
                 // *every* driver-bearing item's first `call_item` at
                 // creation time; this port only reproduces that for the

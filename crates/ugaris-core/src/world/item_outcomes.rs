@@ -449,13 +449,34 @@ impl World {
         current_area_id: u16,
     ) -> ItemDriverOutcome {
         match outcome {
-            ItemDriverOutcome::LqTicker { .. } => {
+            ItemDriverOutcome::LqTicker {
+                item_id,
+                schedule_after_ticks,
+            } => {
                 self.discover_lq_doors_once();
                 self.queue_due_lq_npc_respawns();
+                // C `lq_ticker`'s own self-reschedule (`lq.c:462`,
+                // `call_item(it[in].driver, in, 0, ticker + TICKS)`). This
+                // used to (incorrectly) live in `ugaris-server`'s player-
+                // `item_use` completion dispatcher
+                // (`tick_item_use_clan_lq_arena.rs`), a call path a
+                // `character_id == 0` timer-fired outcome never actually
+                // flows through - see that file's own doc comment for why
+                // that arm is dead code. This is the real dispatch point
+                // (`process_due_timers` -> `execute_item_driver_timer_
+                // request` -> here) both `LqTicker`/`StrTicker` outcomes
+                // actually reach, so the reschedule belongs here instead.
+                self.schedule_item_driver_timer(item_id, CharacterId(0), schedule_after_ticks);
                 outcome
             }
-            ItemDriverOutcome::StrTicker { .. } => {
+            ItemDriverOutcome::StrTicker {
+                item_id,
+                schedule_after_ticks,
+            } => {
                 self.str_ticker();
+                // See the `LqTicker` arm above for why the reschedule
+                // lives here now instead of `tick_item_use_clan_lq_arena.rs`.
+                self.schedule_item_driver_timer(item_id, CharacterId(0), schedule_after_ticks);
                 outcome
             }
             ItemDriverOutcome::StrStorageInteract {

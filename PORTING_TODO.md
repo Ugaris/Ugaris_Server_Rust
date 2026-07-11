@@ -1295,30 +1295,58 @@ Ordered by player progression; the C file is the oracle.
   sets. `#[allow(dead_code)]`'d (same precedent as `dungeon.rs`/
   `snapshots.rs`/`depot.rs`/`events.rs`) since neither has a live caller
   yet - exercised directly by 2 new `tests::strategy` tests.
-  REMAINING: assembling all ported pieces (`ai_init`/`ai_refresh_places`/
-  `ai_update_npc_list`/`assign_tasks_to_workers`/
-  `ai_threat_and_worklevel_tick`/`ai_dispatch_tasks`/`ai_nag_attack`/the
-  two spawn tails) into one real `ai_main` call. That assembly also needs
-  a real fix, not just wiring: research two iterations ago found the
-  existing `IDR_STR_TICKER`/`IDR_LQ_TICKER` cn==0 timer reschedule arm
-  (`tick_item_use_clan_lq_arena.rs`'s `StrTicker`/`LqTicker` handling) is
-  itself unreachable dead code today - it lives in the player-`item_use`
-  completion pipeline, not `tick_world.rs`'s `process_due_timers`
-  `timer_outcomes` loop where a real `character_id==0` timer fire's
-  outcome actually lands (see that loop's `EdemonGateSpawn`/`ChestSpawn`/
-  etc. arms for the correct precedent) - so neither ticker's very first
-  `schedule_item_driver_timer` call is ever primed, and `ai_main` has no
-  `cn==0` driver-timer path to hang off of yet either. Separately,
-  `create_item_nr`'s generic `if (it[n].driver) { call_item(it[n].driver,
-  n, 0, ticker + 1); }` priming call (`src/system/create.c:971-973`, run
-  for *every* zone-placed item with a driver, not just tickers) has no
-  Rust equivalent at all yet (only light-timer items are primed today via
-  `World::schedule_existing_light_timers`) - porting that generic
-  mechanism is the real prerequisite fix, is cross-cutting well beyond
-  this task's own scope (every ported item driver in the whole codebase
-  would start receiving a synthetic first tick it doesn't today), and
-  needs its own careful audit of every driver's very-first-call behavior
-  before landing.
+  Twenty-second slice done: the two prerequisite fixes flagged by the
+  previous note are both closed. First, the real reschedule bug: the
+  `IDR_STR_TICKER`/`IDR_LQ_TICKER` cn==0 timer reschedule used to only be
+  applied by `tick_item_use_clan_lq_arena.rs`'s `StrTicker`/`LqTicker`
+  arms - dead code, since a `character_id==0` timer-fired outcome never
+  flows through that player-`item_use`-completion pipeline. The
+  reschedule (`World::schedule_item_driver_timer`) now lives in `World::
+  apply_item_driver_outcome`'s own `LqTicker`/`StrTicker` arms - the real
+  dispatch point both the timer path and (theoretically) the item-use
+  path funnel through - with `str_ticker`'s reward-event drain
+  (`apply_strategy_reward_events`, needs `ServerRuntime`) moved to
+  `tick_world.rs`'s `timer_outcomes` loop instead (the correct precedent,
+  same as `EdemonGateSpawn`/`ChestSpawn`). Second, priming: `IDR_LQ_TICKER`/
+  `IDR_STR_TICKER` are now included in `World::
+  schedule_existing_light_timers`'s zone-load priming sweep (a narrower,
+  existing precedent that already substitutes for C's fully generic
+  `create_item_nr` priming call for every "always-on ambient `cn==0`
+  driver" - porting that fully generic mechanism remains out of scope, per
+  the previous note). Boot-smoke against areas 20/23 confirms both tickers
+  now self-perpetuate forever (`processed timer callbacks` firing every
+  ~24 ticks indefinitely) instead of going silent after one call.
+  With both prerequisites real, `World::ai_main` itself (`crates/
+  ugaris-core/src/world/strategy_ai_main.rs`) now assembles every
+  previously-ported piece (`ai_init`/`ai_update_npc_list`/
+  `update_guard_list`/`update_nag_guard`/`update_place_worker_and_eguard_
+  counts`/`ai_refresh_places`/`update_free_npc_count`/`ai_wants_more_
+  workers`+`ai_plan_worker_spawn`/`assign_tasks_to_workers`/`ai_threat_and_
+  worklevel_tick`/`ai_wants_more_eguards`+`ai_eguard_spawn_candidates`+
+  `ai_plan_eguard_spawn`/`ai_nag_attack`/`ai_dispatch_tasks`) into one real
+  per-tick call, in C's exact order, plus a new `World::ai_parties:
+  HashMap<u32, AiData>` registry (C's `ai_data[MAX_AI]`) and `World::
+  register_ai_worker`/`register_ai_eguard` for `ugaris-server` to call back
+  once it actually builds a planned character. Two documented
+  simplifications (both already flagged by `AiWorkerSpawnPlan`/
+  `AiEguardSpawnPlan`'s own doc comments): at most one worker/eguard is
+  planned per call instead of C's unbounded loop (converges over a few
+  more ticks instead of bursting in one), and no live `IDR_STR_SPAWNER`
+  `cn==0` timer tick calls `ai_main` yet - see REMAINING. 10 new focused
+  tests (`world/tests/strategy_ai_main.rs`) plus 2 reschedule-bug
+  regression tests.
+  REMAINING: wiring a live `IDR_STR_SPAWNER` `cn==0` ambient/AI-init timer
+  tick (`spawner`, `strategy.c:1319-1356`) to actually call `World::
+  ai_main` and dispatch its returned spawn plans via `ugaris-server`'s
+  existing (currently `#[allow(dead_code)]`'d) `spawn_ai_worker`/
+  `spawn_ai_eguard` - the one remaining gap between `ai_main` existing and
+  a real AI opponent ever appearing in live gameplay. Needs a new item-
+  driver outcome for the `cn==0` branch (waiting-for-mission sentinel vs.
+  active-AI reschedule+dispatch), zone-load priming for `IDR_STR_SPAWNER`
+  itself (same `schedule_existing_light_timers` mechanism just extended
+  for the two tickers), and the one-time `spawner2storage` name/income
+  setup C's own `spawner` does the first time a mission activates a slot
+  (cosmetic + storage-income-seeding only, no other AI-init dependency).
 - [ ] **Area 25 - `src/area/25/warped.c`** - warped NPC dialogue,
   `DRD_WARPFIGHTER` full fight driver.
 - [ ] **Area 26 - `src/area/26/staffer.c`** - vault skull PPD/quest, Rouven
@@ -1380,6 +1408,11 @@ Keep entries to at most three lines: date, task, one-line result.
 Anything longer belongs in `PORTING_LEDGER.md`; historical verbose
 notes live in `PROGRESS_ARCHIVE.md`.
 
+- 2026-07-11: Areas 23/24 strategy minigame: twenty-second slice - fixed
+  the LqTicker/StrTicker reschedule+priming prerequisite bugs (both now
+  self-perpetuate forever, boot-smoke confirmed) and assembled `World::
+  ai_main` from every previously-ported piece. 3677 core [+12] + 1170
+  server tests pass, clean build/boot-smoke. Live spawner wiring remains.
 - 2026-07-11: Areas 23/24 strategy minigame: twenty-first slice - ported
   the `ZoneLoader`-needing character-creation tails for both AI worker/
   eguard spawn plans (`tick_item_use_strategy::spawn_ai_worker`/

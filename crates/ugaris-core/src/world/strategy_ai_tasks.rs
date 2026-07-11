@@ -1013,6 +1013,7 @@ impl World {
 /// `StrategySpawnerSpawnPlan`/`World::try_dispatch_strategy_spawner_use`
 /// (the player-triggered spawner), just fed from an [`AiPreset`] instead
 /// of a player's own name/[`StrategyPpd`].
+#[derive(Debug)]
 pub struct AiWorkerSpawnPlan {
     pub spawner_id: ItemId,
     /// C `group` (`ai_main`'s own `code` parameter, forwarded to
@@ -1116,6 +1117,7 @@ impl World {
 /// [`AiWorkerSpawnPlan`]/[`World::ai_plan_worker_spawn`], just fed from a
 /// specific eligible [`AiPlace`] (C's `ad->ap[n].x + 2, ad->ap[n].y + 2`)
 /// instead of a spawner item to drop near.
+#[derive(Debug)]
 pub struct AiEguardSpawnPlan {
     pub x: u16,
     pub y: u16,

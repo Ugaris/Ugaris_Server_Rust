@@ -122,6 +122,7 @@ mod spells;
 mod steal;
 mod strategy;
 mod strategy_ai;
+mod strategy_ai_main;
 mod strategy_boss;
 mod strategy_special;
 mod strategy_worker;

@@ -63,6 +63,39 @@ fn lq_ticker_discovers_legacy_doors_once_and_writes_key_id() {
 }
 
 #[test]
+fn lq_ticker_reschedules_itself_via_apply_item_driver_outcome() {
+    // C `lq_ticker`'s own `call_item(it[in].driver, in, 0, ticker +
+    // TICKS)` self-reschedule (`lq.c:462`) used to only be applied by
+    // `ugaris-server`'s player-`item_use`-completion dispatcher, a call
+    // path a `character_id == 0` timer-fired `LqTicker` outcome never
+    // actually reaches - so the ticker fired exactly once and then went
+    // silent forever. `World::apply_item_driver_outcome` (the real
+    // dispatch point both the timer and item-use paths funnel through)
+    // now applies the reschedule directly.
+    let mut world = World::default();
+    let mut ticker = item(7, ItemFlags::USED | ItemFlags::USE);
+    ticker.driver = crate::item_driver::IDR_LQ_TICKER;
+    world.add_item(ticker);
+
+    assert_eq!(world.timers.used_timers(), 0);
+    let outcome = world.execute_item_driver_timer_request(
+        ItemDriverRequest::Driver {
+            driver: crate::item_driver::IDR_LQ_TICKER,
+            item_id: ItemId(7),
+            character_id: CharacterId(0),
+            spec: 0,
+        },
+        20,
+        &ItemDriverContext {
+            timer_call: true,
+            ..ItemDriverContext::default()
+        },
+    );
+    assert!(matches!(outcome, ItemDriverOutcome::LqTicker { .. }));
+    assert_eq!(world.timers.used_timers(), 1);
+}
+
+#[test]
 fn lq_ticker_queues_due_npc_respawns_and_clears_schedule() {
     let mut world = World {
         tick: Tick(200),

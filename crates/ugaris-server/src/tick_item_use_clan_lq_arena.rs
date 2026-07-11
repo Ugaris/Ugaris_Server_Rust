@@ -133,19 +133,26 @@ pub(crate) async fn dispatch_clan_lq_arena_outcome(
         ugaris_core::item_driver::ItemDriverOutcome::ClanSpawnTimer { .. } => {
             *executed += 1;
         }
-        ugaris_core::item_driver::ItemDriverOutcome::LqTicker {
-            item_id,
-            schedule_after_ticks,
-        } => {
-            world.schedule_item_driver_timer(item_id, CharacterId(0), schedule_after_ticks);
+        // `LqTicker`/`StrTicker` are only ever produced by their driver
+        // when `character_id == 0` (a timer callback), a case that never
+        // reaches this player-`item_use`-completion dispatcher in
+        // practice - the real dispatch point (`World::
+        // apply_item_driver_outcome`, called from `process_due_timers`)
+        // already applies `discover_lq_doors_once`/`queue_due_lq_npc_
+        // respawns`/`str_ticker` *and* the self-reschedule for both. This
+        // arm only exists so the shared `match` in
+        // `tick_item_use_completion.rs` compiles against the full
+        // `ItemDriverOutcome` union it dispatches through; `str_ticker`'s
+        // reward-event drain (`apply_strategy_reward_events`, needs
+        // `ServerRuntime`, unavailable to the pure `World` dispatch point
+        // above) is applied from the real call site instead -
+        // `tick_world.rs`'s `timer_outcomes` loop, the same "match the
+        // outcome after `process_due_timers`" precedent as
+        // `EdemonGateSpawn`/`ChestSpawn`/etc.
+        ugaris_core::item_driver::ItemDriverOutcome::LqTicker { .. } => {
             *executed += 1;
         }
-        ugaris_core::item_driver::ItemDriverOutcome::StrTicker {
-            item_id,
-            schedule_after_ticks,
-        } => {
-            world.schedule_item_driver_timer(item_id, CharacterId(0), schedule_after_ticks);
-            apply_strategy_reward_events(world, runtime);
+        ugaris_core::item_driver::ItemDriverOutcome::StrTicker { .. } => {
             *executed += 1;
         }
         ugaris_core::item_driver::ItemDriverOutcome::LqEntranceClosed { character_id, .. } => {
