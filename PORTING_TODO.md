@@ -1115,6 +1115,16 @@ Ordered by player progression; the C file is the oracle.
   `mine`/`storage`/`depot`/`spawner` item drivers (currently no-op), the
   AI-opponent driver (`ai_main`, 538 lines), and `#eguard` (needs
   `ZoneLoader` character-spawning for the still-unported worker driver).
+  Fifth slice done: the player-facing `CF_PLAYER` "look" branches of the
+  `mine`/`storage`/`depot` item drivers (`strategy.c:1122-1241`) are now
+  ported (`item_driver::area23_24::{str_mine_driver,str_storage_driver,
+  str_depot_driver}`, new `ItemDriverOutcome::StrMineLook`/`StrDepotLook`/
+  `StrStorageInteract` + `StrStorageConversion`, dispatched via new
+  `crates/ugaris-server/src/tick_item_use_strategy.rs`): reading a
+  building's current Platinum total, and storage's carried-`IDR_ENHANCE`
+  silver/gold-to-Platinum conversion. `IDR_STR_SPAWNER` and the `cn==0`/
+  NPC-worker halves of all three remain no-ops (still gated on the
+  unported `strategy_driver`).
 - [ ] **Area 25 - `src/area/25/warped.c`** - warped NPC dialogue,
   `DRD_WARPFIGHTER` full fight driver.
 - [ ] **Area 26 - `src/area/26/staffer.c`** - vault skull PPD/quest, Rouven
@@ -1176,6 +1186,10 @@ Keep entries to at most three lines: date, task, one-line result.
 Anything longer belongs in `PORTING_LEDGER.md`; historical verbose
 notes live in `PROGRESS_ARCHIVE.md`.
 
+- 2026-07-11: Areas 23/24 strategy minigame: fifth slice - ported
+  `mine`/`storage`/`depot`'s player "look" branches (info messages +
+  storage's silver/gold-to-Platinum conversion). 3467 core [+65] tests
+  pass, clean build/boot-smoke. Worker driver/spawner/AI still remain.
 - 2026-07-11: Areas 23/24 strategy minigame: fourth slice - ported
   `special_driver`'s `#`/`/` command table (jp/list/info/raise/reset/
   mission/enter/surrender/queue), now live. 3457 core [+21] tests pass,

@@ -15,6 +15,27 @@ pub enum DoorKeySource {
     Keyring,
 }
 
+/// Whether/why [`ItemDriverOutcome::StrStorageInteract`]'s carried-item
+/// conversion attempt succeeded (C `storage`, `strategy.c:1161-1187`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum StrStorageConversion {
+    /// No item was carried on the cursor, or it wasn't an `IDR_ENHANCE`
+    /// mined gold/silver stack (C's outer `if` was false): no conversion
+    /// attempted, no mutation, but the "This storage contains..." info
+    /// message still always prints.
+    None,
+    /// A carried `IDR_ENHANCE` stack converted to `added` units of
+    /// Platinum (C's `am` nonzero, silver at 50:1/`drdata[0]==1` or gold
+    /// at 5:1/`drdata[0]==2`): `World::apply_item_driver_outcome`
+    /// destroys `cursor_item_id` and credits `added` to the storage.
+    Converted { cursor_item_id: ItemId, added: u32 },
+    /// A carried `IDR_ENHANCE` stack existed but wasn't silver/gold, or
+    /// its converted amount rounded down to zero (C's `am == 0`): prints
+    /// "You can only add mined gold or silver. The exchange rate is 5 to
+    /// 1 for gold and 50 to 1 for silver.", no mutation.
+    WrongKind,
+}
+
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ItemDriverContext {
     pub door_key: Option<DoorKeyAccess>,
@@ -1118,6 +1139,48 @@ pub enum ItemDriverOutcome {
     StrTicker {
         item_id: ItemId,
         schedule_after_ticks: u64,
+    },
+    /// C `mine`'s `ch[cn].flags & CF_PLAYER` branch (`strategy.c:1130-
+    /// 1132`): "There are %d units of Platinum left." `platinum` is the
+    /// mine's current `str_item_gold` reading, already resolved by the
+    /// pure driver since it only needs read access to `item`. The `cn==0`
+    /// cosmetic-naming branch and the NPC-worker mining branch (needs the
+    /// unported `DRD_STRATEGYDRIVER`/`strategy_driver`) are both
+    /// documented gaps - see `item_driver::area23_24`'s module doc
+    /// comment.
+    StrMineLook {
+        item_id: ItemId,
+        character_id: CharacterId,
+        platinum: u32,
+    },
+    /// C `depot`'s `ch[cn].flags & CF_PLAYER` branch (`strategy.c:1217-
+    /// 1219`): "This depot contains %d units of Platinum." Same
+    /// documented-gap shape as [`Self::StrMineLook`] (the `cn==0`
+    /// cosmetic-naming branch and the NPC-worker
+    /// claim-ownership/deposit-platin branch both need the unported
+    /// `strategy_driver`).
+    StrDepotLook {
+        item_id: ItemId,
+        character_id: CharacterId,
+        platinum: u32,
+    },
+    /// C `storage`'s `ch[cn].flags & CF_PLAYER` branch (`strategy.c:1161-
+    /// 1191`): optionally converts a carried `IDR_ENHANCE` mined gold/
+    /// silver stack into Platinum (`conversion`), then always prints
+    /// "This storage contains %d units of Platinum." `platinum` already
+    /// reflects any [`StrStorageConversion::Converted`] addition - the
+    /// pure driver computes it ahead of time since it only needs read
+    /// access to `item`/`context`, saving `World::
+    /// apply_item_driver_outcome` a second lookup after applying the
+    /// `Converted` mutation. The `cn==0` periodic-income-tick branch and
+    /// the NPC-worker deposit/withdraw branch (needs the unported
+    /// `strategy_driver`) are both documented gaps - see
+    /// `item_driver::area23_24`'s module doc comment.
+    StrStorageInteract {
+        item_id: ItemId,
+        character_id: CharacterId,
+        conversion: StrStorageConversion,
+        platinum: u32,
     },
     LqEntranceClosed {
         item_id: ItemId,

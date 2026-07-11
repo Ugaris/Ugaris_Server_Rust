@@ -458,6 +458,22 @@ impl World {
                 self.str_ticker();
                 outcome
             }
+            ItemDriverOutcome::StrStorageInteract {
+                item_id,
+                conversion:
+                    StrStorageConversion::Converted {
+                        cursor_item_id,
+                        added,
+                    },
+                ..
+            } => {
+                if let Some(item) = self.items.get_mut(&item_id) {
+                    let new_total = str_item_gold(item) + added;
+                    set_str_item_gold(item, new_total);
+                }
+                self.destroy_item(cursor_item_id);
+                outcome
+            }
             ItemDriverOutcome::Teleport {
                 item_id,
                 character_id,

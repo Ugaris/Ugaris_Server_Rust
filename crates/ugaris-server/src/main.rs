@@ -74,6 +74,7 @@ mod tick_item_use_lab;
 mod tick_item_use_minewall;
 mod tick_item_use_shrines;
 mod tick_item_use_skelraise;
+mod tick_item_use_strategy;
 mod tick_item_use_teufel;
 mod tick_item_use_transport;
 mod tick_item_use_warp;

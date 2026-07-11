@@ -539,6 +539,15 @@ pub(crate) async fn process_completed_action_outcomes(
                                 )
                                 .await;
                             }
+                            outcome @ (ugaris_core::item_driver::ItemDriverOutcome::StrMineLook { .. }
+                            | ugaris_core::item_driver::ItemDriverOutcome::StrDepotLook { .. }
+                            | ugaris_core::item_driver::ItemDriverOutcome::StrStorageInteract { .. }) => {
+                                tick_item_use_strategy::dispatch_strategy_outcome(
+                                    outcome,
+                                    &mut feedback,
+                                    &mut executed,
+                                );
+                            }
                             outcome @ (ugaris_core::item_driver::ItemDriverOutcome::ZombieShrine { .. }
                             | ugaris_core::item_driver::ItemDriverOutcome::ZombieShrineNeedsOffering { .. }
                             | ugaris_core::item_driver::ItemDriverOutcome::RandomShrineNeedsKey { .. }

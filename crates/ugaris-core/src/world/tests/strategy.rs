@@ -1,5 +1,5 @@
 use super::*;
-use crate::item_driver::{IDR_NOSNOW, IDR_STR_TICKER};
+use crate::item_driver::{IDR_ENHANCE, IDR_NOSNOW, IDR_STR_TICKER};
 use crate::player::StrategyPpd;
 
 #[test]
@@ -989,4 +989,296 @@ fn show_queue_sends_header_before_validating_then_one_line_per_entry() {
     assert_eq!(texts[0].message, "Queue:");
     assert_eq!(texts[1].message, "1: Alice");
     assert_eq!(texts[2].message, "2: Bob");
+}
+
+// C `mine`/`storage`/`depot`'s `ch[cn].flags & CF_PLAYER` branches
+// (`strategy.c:1122-1241`) - see `item_driver::area23_24`'s module doc
+// comment for the two documented gaps (`cn==0` ambient branches, NPC-worker
+// branches) every one of these three still has.
+
+fn mine_request(item_id: u32, character_id: u32) -> ItemDriverRequest {
+    ItemDriverRequest::Driver {
+        driver: IDR_STR_MINE,
+        item_id: ItemId(item_id),
+        character_id: CharacterId(character_id),
+        spec: 0,
+    }
+}
+
+fn depot_request(item_id: u32, character_id: u32) -> ItemDriverRequest {
+    ItemDriverRequest::Driver {
+        driver: IDR_STR_DEPOT,
+        item_id: ItemId(item_id),
+        character_id: CharacterId(character_id),
+        spec: 0,
+    }
+}
+
+fn storage_request(item_id: u32, character_id: u32) -> ItemDriverRequest {
+    ItemDriverRequest::Driver {
+        driver: IDR_STR_STORAGE,
+        item_id: ItemId(item_id),
+        character_id: CharacterId(character_id),
+        spec: 0,
+    }
+}
+
+#[test]
+fn str_mine_look_reports_current_platinum_to_the_player() {
+    let mut world = World::default();
+    world.add_character(strategy_player(1, 111));
+    let mut mine = strategy_item(7, IDR_STR_MINE, vec![0; 8]);
+    set_str_item_gold(&mut mine, 5000);
+    world.add_item(mine);
+
+    let outcome = world.execute_item_driver_request(mine_request(7, 1), 23);
+
+    assert_eq!(
+        outcome,
+        ItemDriverOutcome::StrMineLook {
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            platinum: 5000,
+        }
+    );
+}
+
+#[test]
+fn str_mine_ambient_and_npc_worker_calls_remain_documented_noops() {
+    let mut world = World::default();
+    world.add_character(timer_callback_character());
+    world.add_character(strategy_npc(2, 5, "Worker"));
+    let mine = strategy_item(7, IDR_STR_MINE, vec![0; 8]);
+    world.add_item(mine);
+
+    // C's `cn==0` cosmetic-naming branch: no `strategy_driver` NPC exists
+    // to route through yet, so this is still a no-op.
+    assert_eq!(
+        world.execute_item_driver_request(mine_request(7, 0), 23),
+        ItemDriverOutcome::Noop
+    );
+    // C's NPC-worker mining branch: needs the unported `strategy_driver`.
+    assert_eq!(
+        world.execute_item_driver_request(mine_request(7, 2), 23),
+        ItemDriverOutcome::Noop
+    );
+}
+
+#[test]
+fn str_depot_look_reports_current_platinum_to_the_player() {
+    let mut world = World::default();
+    world.add_character(strategy_player(1, 111));
+    let mut depot = strategy_item(7, IDR_STR_DEPOT, vec![0; 8]);
+    set_str_item_gold(&mut depot, 1234);
+    world.add_item(depot);
+
+    let outcome = world.execute_item_driver_request(depot_request(7, 1), 23);
+
+    assert_eq!(
+        outcome,
+        ItemDriverOutcome::StrDepotLook {
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            platinum: 1234,
+        }
+    );
+}
+
+#[test]
+fn str_storage_look_with_no_cursor_item_reports_current_platinum_only() {
+    let mut world = World::default();
+    world.add_character(strategy_player(1, 111));
+    let mut storage = strategy_item(7, IDR_STR_STORAGE, vec![0; 8]);
+    set_str_item_gold(&mut storage, 600);
+    world.add_item(storage);
+
+    let outcome = world.execute_item_driver_request(storage_request(7, 1), 23);
+
+    assert_eq!(
+        outcome,
+        ItemDriverOutcome::StrStorageInteract {
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            conversion: StrStorageConversion::None,
+            platinum: 600,
+        }
+    );
+    assert_eq!(str_item_gold(&world.items[&ItemId(7)]), 600);
+}
+
+fn enhance_stack(item_id: u32, character_id: u32, kind: u8, amount: u32) -> Item {
+    let mut it = item(item_id, ItemFlags::USED);
+    it.driver = IDR_ENHANCE;
+    it.driver_data = vec![0; 5];
+    it.driver_data[0] = kind;
+    it.driver_data[1..5].copy_from_slice(&amount.to_le_bytes());
+    it.carried_by = Some(CharacterId(character_id));
+    it
+}
+
+#[test]
+fn str_storage_converts_a_carried_silver_stack_at_fifty_to_one() {
+    // C: `it[in2].drdata[0] == 1` -> `am = *(unsigned int*)(drdata+1) / 50`.
+    let mut world = World::default();
+    let mut player = strategy_player(1, 111);
+    player.cursor_item = Some(ItemId(9));
+    world.add_character(player);
+    let mut storage = strategy_item(7, IDR_STR_STORAGE, vec![0; 8]);
+    set_str_item_gold(&mut storage, 600);
+    world.add_item(storage);
+    world.add_item(enhance_stack(9, 1, 1, 5000));
+
+    let outcome = world.execute_item_driver_request(storage_request(7, 1), 23);
+
+    assert_eq!(
+        outcome,
+        ItemDriverOutcome::StrStorageInteract {
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            conversion: StrStorageConversion::Converted {
+                cursor_item_id: ItemId(9),
+                added: 100,
+            },
+            platinum: 700,
+        }
+    );
+    assert_eq!(str_item_gold(&world.items[&ItemId(7)]), 700);
+    assert!(!world.items.contains_key(&ItemId(9)));
+    assert_eq!(
+        world.characters.get(&CharacterId(1)).unwrap().cursor_item,
+        None
+    );
+}
+
+#[test]
+fn str_storage_converts_a_carried_gold_stack_at_five_to_one() {
+    // C: `it[in2].drdata[0] == 2` -> `am = *(unsigned int*)(drdata+1) / 5`.
+    let mut world = World::default();
+    let mut player = strategy_player(1, 111);
+    player.cursor_item = Some(ItemId(9));
+    world.add_character(player);
+    let storage = strategy_item(7, IDR_STR_STORAGE, vec![0; 8]);
+    world.add_item(storage);
+    world.add_item(enhance_stack(9, 1, 2, 1000));
+
+    let outcome = world.execute_item_driver_request(storage_request(7, 1), 23);
+
+    assert_eq!(
+        outcome,
+        ItemDriverOutcome::StrStorageInteract {
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            conversion: StrStorageConversion::Converted {
+                cursor_item_id: ItemId(9),
+                added: 200,
+            },
+            platinum: 200,
+        }
+    );
+    assert_eq!(str_item_gold(&world.items[&ItemId(7)]), 200);
+    assert!(!world.items.contains_key(&ItemId(9)));
+}
+
+#[test]
+fn str_storage_rejects_a_non_silver_gold_enhance_kind_without_mutation() {
+    // C: `am` stays `0` for any `drdata[0]` other than `1`/`2`, so the
+    // warning message prints and nothing is destroyed/credited.
+    let mut world = World::default();
+    let mut player = strategy_player(1, 111);
+    player.cursor_item = Some(ItemId(9));
+    world.add_character(player);
+    let mut storage = strategy_item(7, IDR_STR_STORAGE, vec![0; 8]);
+    set_str_item_gold(&mut storage, 600);
+    world.add_item(storage);
+    world.add_item(enhance_stack(9, 1, 3, 5000));
+
+    let outcome = world.execute_item_driver_request(storage_request(7, 1), 23);
+
+    assert_eq!(
+        outcome,
+        ItemDriverOutcome::StrStorageInteract {
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            conversion: StrStorageConversion::WrongKind,
+            platinum: 600,
+        }
+    );
+    assert_eq!(str_item_gold(&world.items[&ItemId(7)]), 600);
+    assert!(world.items.contains_key(&ItemId(9)));
+    assert_eq!(
+        world.characters.get(&CharacterId(1)).unwrap().cursor_item,
+        Some(ItemId(9))
+    );
+}
+
+#[test]
+fn str_storage_treats_a_conversion_that_rounds_down_to_zero_as_wrong_kind() {
+    // C: `10 / 50 == 0` in integer division - `am` is `0` even though
+    // `drdata[0]` was a valid silver code.
+    let mut world = World::default();
+    let mut player = strategy_player(1, 111);
+    player.cursor_item = Some(ItemId(9));
+    world.add_character(player);
+    let storage = strategy_item(7, IDR_STR_STORAGE, vec![0; 8]);
+    world.add_item(storage);
+    world.add_item(enhance_stack(9, 1, 1, 10));
+
+    let outcome = world.execute_item_driver_request(storage_request(7, 1), 23);
+
+    assert_eq!(
+        outcome,
+        ItemDriverOutcome::StrStorageInteract {
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            conversion: StrStorageConversion::WrongKind,
+            platinum: 0,
+        }
+    );
+    assert!(world.items.contains_key(&ItemId(9)));
+}
+
+#[test]
+fn str_storage_ignores_a_cursor_item_that_is_not_an_enhance_stack() {
+    let mut world = World::default();
+    let mut player = strategy_player(1, 111);
+    player.cursor_item = Some(ItemId(9));
+    world.add_character(player);
+    let mut storage = strategy_item(7, IDR_STR_STORAGE, vec![0; 8]);
+    set_str_item_gold(&mut storage, 600);
+    world.add_item(storage);
+    world.add_item(item(9, ItemFlags::USED));
+
+    let outcome = world.execute_item_driver_request(storage_request(7, 1), 23);
+
+    assert_eq!(
+        outcome,
+        ItemDriverOutcome::StrStorageInteract {
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            conversion: StrStorageConversion::None,
+            platinum: 600,
+        }
+    );
+    assert!(world.items.contains_key(&ItemId(9)));
+}
+
+#[test]
+fn str_storage_ambient_and_npc_worker_calls_remain_documented_noops() {
+    let mut world = World::default();
+    world.add_character(timer_callback_character());
+    world.add_character(strategy_npc(2, 5, "Worker"));
+    world.add_item(strategy_item(7, IDR_STR_STORAGE, vec![0; 8]));
+
+    // C's `cn==0` periodic-income-tick branch: needs the same "first
+    // timer call" bootstrap gap documented in `item_driver::area23_24`.
+    assert_eq!(
+        world.execute_item_driver_request(storage_request(7, 0), 23),
+        ItemDriverOutcome::Noop
+    );
+    // C's NPC-worker deposit/withdraw branch: needs the unported
+    // `strategy_driver`.
+    assert_eq!(
+        world.execute_item_driver_request(storage_request(7, 2), 23),
+        ItemDriverOutcome::Noop
+    );
 }
