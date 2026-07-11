@@ -850,3 +850,19 @@ pub const IID_MAX_RITUAL: u32 = make_item_id(DEV_ID_MAX, 0x000004);
 /// (`staffer.c:815`). Defined now for `vault.itm`'s item-name lookup
 /// completeness; not yet granted anywhere in this codebase.
 pub const IID_MAX_VAULTKEY: u32 = make_item_id(DEV_ID_MAX, 0x000001);
+/// C `IID_STAFF_SMUGGLEBOOK` (`src/common/item_id.h:303`): `smugglecom_
+/// driver`'s quest-35 (`the contraband book`) turn-in item.
+pub const IID_STAFF_SMUGGLEBOOK: u32 = make_item_id(DEV_ID_WARR, 0x000005);
+/// C `IID_STAFF_SMUGGLEPEARLS` (`src/common/item_id.h:304`): one of
+/// `smugglecom_driver`'s four quest-36 contraband pieces
+/// (`SMUGGLEBIT_PEARLS`).
+pub const IID_STAFF_SMUGGLEPEARLS: u32 = make_item_id(DEV_ID_WARR, 0x000006);
+/// C `IID_STAFF_SMUGGLERING` (`src/common/item_id.h:305`, `SMUGGLEBIT_
+/// RING`).
+pub const IID_STAFF_SMUGGLERING: u32 = make_item_id(DEV_ID_WARR, 0x000007);
+/// C `IID_STAFF_SMUGGLECAPE` (`src/common/item_id.h:306`, `SMUGGLEBIT_
+/// CAPE`).
+pub const IID_STAFF_SMUGGLECAPE: u32 = make_item_id(DEV_ID_WARR, 0x000008);
+/// C `IID_STAFF_SMUGGLENECKLACE` (`src/common/item_id.h:307`,
+/// `SMUGGLEBIT_NECKLACE`).
+pub const IID_STAFF_SMUGGLENECKLACE: u32 = make_item_id(DEV_ID_WARR, 0x000009);

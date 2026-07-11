@@ -442,6 +442,23 @@ pub const CDR_LAMPGHOST: u16 = 25;
 /// staff quest (quest 20) and the Imperial Vault ritual quest (quest 61)
 /// (`src/area/3/area3.c::carlos_driver`).
 pub const CDR_CARLOS: u16 = 90;
+/// C `#define CDR_SMUGGLECOM 88` (`src/system/drvlib.h:136`, "staffer
+/// area: smuggler commander"): the Imperial Commander who runs the
+/// Contraband quest chain (quests 35-37) below Aston 2
+/// (`src/area/26/staffer.c::smugglecom_driver`).
+pub const CDR_SMUGGLECOM: u16 = 88;
+/// C `#define CDR_SMUGGLELEAD 89` (`src/system/drvlib.h:137`, "staffer
+/// area: smuggler leader"): the final quest-37 kill target. C's own
+/// `ch_driver` dispatch (`staffer.c:932-934`) is an unconditional tail
+/// call to `char_driver(CDR_SIMPLEBADDY, ...)`, so `CDR_SMUGGLELEAD`
+/// characters reuse the SimpleBaddy AI end-to-end - same precedent as
+/// `CDR_PENTER`/`CDR_TWOROBBER` (see the `character.driver ==
+/// CDR_SIMPLEBADDY` gates widened alongside those in `world/npc_fight.rs`/
+/// `world/npc_idle.rs`). Its own `ch_died_driver`/`smugglelead_died` death
+/// hook (`staffer.c:658-674`) lives in `ugaris-server`'s
+/// `apply_smugglelead_death_from_hurt_event` (needs `PlayerRuntime`'s
+/// `staffer_smugglecom_state`).
+pub const CDR_SMUGGLELEAD: u16 = 89;
 /// C `#define CDR_KASSIM 156` (`src/system/drvlib.h:208`, "Aston: Kassim
 /// the engraver"): the jewelry engraver (`src/area/3/area3.c::
 /// kassim_driver`).
@@ -604,6 +621,7 @@ pub enum CharacterDriverState {
     StrategyWorker(crate::world::npc::area23_24::worker::StrategyWorkerDriverData),
     WarpFighter(crate::world::npc::area25::warpfighter::WarpFighterDriverData),
     Warpmaster(crate::world::npc::area25::warpmaster::WarpmasterDriverData),
+    SmuggleCom(crate::world::npc::area26::smugglecom::SmuggleComDriverData),
 }
 /// C `bank_driver_parse` from `src/module/bank.c`. The C driver defaults
 /// opening hours to 6..23 before parsing (`bank_driver` lines 304-309).
@@ -1404,7 +1422,8 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::Lab5Mage(_)
             | CharacterDriverState::StrategyWorker(_)
             | CharacterDriverState::WarpFighter(_)
-            | CharacterDriverState::Warpmaster(_),
+            | CharacterDriverState::Warpmaster(_)
+            | CharacterDriverState::SmuggleCom(_),
         ) => SimpleBaddyDriverData::default(),
         None => SimpleBaddyDriverData::default(),
     };
@@ -3926,6 +3945,8 @@ pub use crate::world::npc::area22::lab5_mage::{
 pub use crate::world::npc::area22::lab5_seyan::{
     apply_lab5_seyan_create_message, Lab5SeyanDriverData,
 };
+pub use crate::world::npc::area26::smugglecom::SmuggleComDriverData;
+pub use crate::world::npc::area26::AREA26_QA;
 pub use crate::world::npc::area3::astro1::Astro1DriverData;
 pub use crate::world::npc::area3::astro2::Astro2DriverData;
 pub use crate::world::npc::area3::carlos::CarlosDriverData;

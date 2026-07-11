@@ -115,6 +115,7 @@ mod servant;
 mod seymour;
 mod sir_jones;
 mod skills;
+mod smugglecom;
 mod spawn;
 mod special_item;
 mod speed;

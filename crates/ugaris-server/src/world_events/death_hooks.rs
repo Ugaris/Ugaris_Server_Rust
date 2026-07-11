@@ -1,6 +1,7 @@
 use super::*;
 use ugaris_core::character_driver::{
-    CDR_LABGNOMEDRIVER, CDR_TWOGUARD, CDR_TWOROBBER, CDR_TWOSERVANT, CDR_WARPFIGHTER,
+    CDR_LABGNOMEDRIVER, CDR_SMUGGLELEAD, CDR_TWOGUARD, CDR_TWOROBBER, CDR_TWOSERVANT,
+    CDR_WARPFIGHTER,
 };
 use ugaris_core::world::{CS_ENEMY, CS_GUEST, LS_DEAD, LS_FINE};
 
@@ -767,6 +768,48 @@ pub(crate) fn apply_two_robber_death_from_hurt_event(
     };
     if let Some(index) = index {
         player.set_twocity_thief_killed(index, player.twocity_thief_killed(index) + 1);
+    }
+    true
+}
+
+/// C `smugglelead_died(cn, co)` (`src/area/26/staffer.c:658-674`): quest-37
+/// completion tail for `CDR_SMUGGLELEAD`, the Contraband quest chain's
+/// final kill target. Only advances `smugglecom_state` from `8` (waiting
+/// for the kill) to `9` (ready for `smugglecom_driver`'s own `NT_CHAR`
+/// case `9` to speak the "thank you" line and mark quest 37 done) - unlike
+/// `world::npc::area26::smugglecom`'s own dialogue-driven `QuestDone`
+/// event, this hook never touches the quest log itself, matching C
+/// exactly (`questlog_done(co, 37)` only ever runs from `smugglecom_
+/// driver`'s `case 9`, not from this death hook).
+pub(crate) fn apply_smugglelead_death_from_hurt_event(
+    runtime: &mut ServerRuntime,
+    world: &mut World,
+    event: LegacyHurtEvent,
+) -> bool {
+    if !event.outcome.killed {
+        return false;
+    }
+    let is_smugglelead = world
+        .characters
+        .get(&event.target_id)
+        .is_some_and(|target| target.driver == CDR_SMUGGLELEAD);
+    if !is_smugglelead {
+        return false;
+    }
+    // C `if (!(ch[co].flags & CF_PLAYER)) return;` (`staffer.c:661-663`).
+    let is_player_kill = world
+        .characters
+        .get(&event.cause_id)
+        .is_some_and(|killer| killer.flags.contains(CharacterFlags::PLAYER));
+    if !is_player_kill {
+        return false;
+    }
+    let Some(player) = runtime.player_for_character_mut(event.cause_id) else {
+        return false;
+    };
+    // C `if (ppd->smugglecom_state != 8) return;` (`staffer.c:669-671`).
+    if player.staffer_smugglecom_state() == 8 {
+        player.set_staffer_smugglecom_state(9);
     }
     true
 }

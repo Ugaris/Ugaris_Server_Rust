@@ -17,19 +17,20 @@ use crate::{
         GateWelcomeDriverData, GolemKeyholdDriverData, GreeterDriverData, GwendylonDriverData,
         JanitorDriverData, JessicaDriverData, JiuDriverData, KassimDriverData, KellyDriverData,
         NookDriverData, ReskinDriverData, SeymourDriverData, SirJonesDriverData,
-        SuperiorDriverData, SupermaxDriverData, TerionDriverData, ThomasDriverData,
-        TraderDriverData, TwoAlchemistDriverData, TwoBarkeeperDriverData, TwoSanwynDriverData,
-        TwoSkellyDriverData, TwoThiefGuardDriverData, TwoThiefMasterDriverData, YoakinDriverData,
-        ARENA_FIGHTER_REST_POS, CDR_ARENAFIGHTER, CDR_ARENAMANAGER, CDR_ARENAMASTER, CDR_ASTRO2,
-        CDR_BRITHILDIE, CDR_CAMHERMIT, CDR_CARLOS, CDR_CLANCLERK, CDR_CLANMASTER, CDR_CLUBMASTER,
-        CDR_DUNGEONMASTER, CDR_FORESTHERMIT, CDR_FORESTIMP, CDR_FORESTMONSTER, CDR_FORESTWILLIAM,
-        CDR_FOREST_RANGER, CDR_GATE_FIGHT, CDR_GATE_WELCOME, CDR_GOLEMKEYHOLDER, CDR_GREETER,
-        CDR_GWENDYLON, CDR_JANITOR, CDR_JESSICA, CDR_JIU, CDR_KASSIM, CDR_KELLY, CDR_LAB2HERALD,
-        CDR_LAB2UNDEAD, CDR_LAB4GNALB, CDR_LAB4SEYAN, CDR_LAB5DAEMON, CDR_LAB5MAGE, CDR_LAB5SEYAN,
-        CDR_LABGNOMEDRIVER, CDR_NOOK, CDR_RESKIN, CDR_SEYMOUR, CDR_SIMPLEBADDY, CDR_SIRJONES,
-        CDR_SUPERIOR, CDR_SUPERMAX, CDR_SWAMPCLARA, CDR_TERION, CDR_THOMAS, CDR_TRADER,
-        CDR_TWOALCHEMIST, CDR_TWOBARKEEPER, CDR_TWOGUARD, CDR_TWOSANWYN, CDR_TWOSERVANT,
-        CDR_TWOSKELLY, CDR_TWOTHIEFGUARD, CDR_TWOTHIEFMASTER, CDR_YOAKIN, NT_CREATE,
+        SmuggleComDriverData, SuperiorDriverData, SupermaxDriverData, TerionDriverData,
+        ThomasDriverData, TraderDriverData, TwoAlchemistDriverData, TwoBarkeeperDriverData,
+        TwoSanwynDriverData, TwoSkellyDriverData, TwoThiefGuardDriverData,
+        TwoThiefMasterDriverData, YoakinDriverData, ARENA_FIGHTER_REST_POS, CDR_ARENAFIGHTER,
+        CDR_ARENAMANAGER, CDR_ARENAMASTER, CDR_ASTRO2, CDR_BRITHILDIE, CDR_CAMHERMIT, CDR_CARLOS,
+        CDR_CLANCLERK, CDR_CLANMASTER, CDR_CLUBMASTER, CDR_DUNGEONMASTER, CDR_FORESTHERMIT,
+        CDR_FORESTIMP, CDR_FORESTMONSTER, CDR_FORESTWILLIAM, CDR_FOREST_RANGER, CDR_GATE_FIGHT,
+        CDR_GATE_WELCOME, CDR_GOLEMKEYHOLDER, CDR_GREETER, CDR_GWENDYLON, CDR_JANITOR, CDR_JESSICA,
+        CDR_JIU, CDR_KASSIM, CDR_KELLY, CDR_LAB2HERALD, CDR_LAB2UNDEAD, CDR_LAB4GNALB,
+        CDR_LAB4SEYAN, CDR_LAB5DAEMON, CDR_LAB5MAGE, CDR_LAB5SEYAN, CDR_LABGNOMEDRIVER, CDR_NOOK,
+        CDR_RESKIN, CDR_SEYMOUR, CDR_SIMPLEBADDY, CDR_SIRJONES, CDR_SMUGGLECOM, CDR_SUPERIOR,
+        CDR_SUPERMAX, CDR_SWAMPCLARA, CDR_TERION, CDR_THOMAS, CDR_TRADER, CDR_TWOALCHEMIST,
+        CDR_TWOBARKEEPER, CDR_TWOGUARD, CDR_TWOSANWYN, CDR_TWOSERVANT, CDR_TWOSKELLY,
+        CDR_TWOTHIEFGUARD, CDR_TWOTHIEFMASTER, CDR_YOAKIN, NT_CREATE,
     },
     entity::{
         Character, CharacterFlags, Item, ItemFlags, CHARACTER_VALUE_COUNT, INVENTORY_SIZE,
@@ -996,6 +997,14 @@ impl ZoneLoader {
             // kelly_driver_data` (`set_data` zero-initializes it) - no
             // args to read here, same as `CDR_GATE_WELCOME` above.
             character.driver_state = Some(CharacterDriverState::Kelly(KellyDriverData::default()));
+        }
+        if template.driver == CDR_SMUGGLECOM {
+            // C never parses zone-file args into `struct
+            // smugglecom_data` (`set_data` zero-initializes it) - no args
+            // to read here, same as `CDR_GATE_WELCOME` above.
+            character.driver_state = Some(CharacterDriverState::SmuggleCom(
+                SmuggleComDriverData::default(),
+            ));
         }
         if template.driver == CDR_CARLOS {
             // C never parses zone-file args into `struct
