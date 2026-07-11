@@ -673,7 +673,10 @@ impl World {
             | CharacterDriverState::Rouven(_)
             | CharacterDriverState::Aristocrat(_)
             | CharacterDriverState::Yoatin(_)
-            | CharacterDriverState::SpiritBran(_) => None,
+            | CharacterDriverState::SpiritBran(_)
+            | CharacterDriverState::CountBran(_)
+            | CharacterDriverState::CountessaBran(_)
+            | CharacterDriverState::DaughterBran(_) => None,
         }
     }
 

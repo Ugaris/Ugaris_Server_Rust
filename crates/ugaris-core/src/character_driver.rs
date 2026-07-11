@@ -497,6 +497,21 @@ pub const CDR_YOATIN: u16 = 101;
 /// the necromancer plot and runs "The Brannington Holy Relic" (quest 44)
 /// (`src/area/29/brannington.c::spirit_brannington_driver`).
 pub const CDR_SPIRITBRAN: u16 = 94;
+/// C `#define CDR_COUNTBRAN 91` (`src/system/drvlib.h:139`, "staffer2 area:
+/// count brannington"): Count Brannington, who runs "The Jewels of
+/// Brannington" (quest 40) and hands out mausoleum keys
+/// (`src/area/29/brannington.c::count_brannington_driver`).
+pub const CDR_COUNTBRAN: u16 = 91;
+/// C `#define CDR_COUNTESSABRAN 92` (`src/system/drvlib.h:140`, "staffer2
+/// area: countessa brannington"): the Countessa's secondary quest-40 reward
+/// dialogue, gated on `staffer_ppd.countbran_bits`
+/// (`src/area/29/brannington.c::countessa_brannington_driver`).
+pub const CDR_COUNTESSABRAN: u16 = 92;
+/// C `#define CDR_DAUGHTERBRAN 93` (`src/system/drvlib.h:141`, "staffer2
+/// area: daughter brannington"): the Daughter's secondary quest-40 reward
+/// dialogue, gated on `staffer_ppd.countbran_bits`
+/// (`src/area/29/brannington.c::daughter_brannington_driver`).
+pub const CDR_DAUGHTERBRAN: u16 = 93;
 /// C `#define CDR_WHITEROBBERBOSS 102` (`src/system/drvlib.h:150`,
 /// "brannington forest: robber boss"): the final kill target of the
 /// Brannington robber camp, whose death (`robberboss_dead`) completes quest
@@ -662,6 +677,9 @@ pub enum CharacterDriverState {
     Aristocrat(crate::world::npc::area28::aristocrat::AristocratDriverData),
     Yoatin(crate::world::npc::area28::yoatin::YoatinDriverData),
     SpiritBran(crate::world::npc::area29::spiritbran::SpiritBranDriverData),
+    CountBran(crate::world::npc::area29::countbran::CountBranDriverData),
+    CountessaBran(crate::world::npc::area29::countessabran::CountessaBranDriverData),
+    DaughterBran(crate::world::npc::area29::daughterbran::DaughterBranDriverData),
 }
 /// C `bank_driver_parse` from `src/module/bank.c`. The C driver defaults
 /// opening hours to 6..23 before parsing (`bank_driver` lines 304-309).
@@ -1467,7 +1485,10 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::Rouven(_)
             | CharacterDriverState::Aristocrat(_)
             | CharacterDriverState::Yoatin(_)
-            | CharacterDriverState::SpiritBran(_),
+            | CharacterDriverState::SpiritBran(_)
+            | CharacterDriverState::CountBran(_)
+            | CharacterDriverState::CountessaBran(_)
+            | CharacterDriverState::DaughterBran(_),
         ) => SimpleBaddyDriverData::default(),
         None => SimpleBaddyDriverData::default(),
     };
@@ -3995,6 +4016,9 @@ pub use crate::world::npc::area26::AREA26_QA;
 pub use crate::world::npc::area28::aristocrat::AristocratDriverData;
 pub use crate::world::npc::area28::yoatin::YoatinDriverData;
 pub use crate::world::npc::area28::AREA28_QA;
+pub use crate::world::npc::area29::countbran::CountBranDriverData;
+pub use crate::world::npc::area29::countessabran::CountessaBranDriverData;
+pub use crate::world::npc::area29::daughterbran::DaughterBranDriverData;
 pub use crate::world::npc::area29::spiritbran::SpiritBranDriverData;
 pub use crate::world::npc::area3::astro1::Astro1DriverData;
 pub use crate::world::npc::area3::astro2::Astro2DriverData;

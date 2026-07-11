@@ -1378,8 +1378,8 @@ Ordered by player progression; the C file is the oracle.
   done. Details in PORTING_LEDGER.md.)*
 - [~] **Area 29 - `src/area/29/brannington.c`** - Brannington quest NPCs,
   `DRD_STAFFER_PPD` remaining fields. REMAINING: `spirit_brannington_driver`
-  (quest 44) is ported; `Count`/`Countessa`/`Daughter Brannington` (quest
-  40, share `countbran_bits` - port together), `Brenneth Brannington`
+  (quest 44) and `count`/`countessa`/`daughter_brannington_driver` (quest
+  40, shared `countbran_bits`) are ported; `Brenneth Brannington`
   (quests 41-43), `Forester Brannington`, `Guard Brannington` (quest 64),
   `Broklin` (quests 45/46 + trade service), `Grinnich`+`Shanra`, and
   `Centinel` (fight-AI reuse + death hook) remain. Details in
@@ -1438,6 +1438,10 @@ Keep entries to at most three lines: date, task, one-line result.
 Anything longer belongs in `PORTING_LEDGER.md`; historical verbose
 notes live in `PROGRESS_ARCHIVE.md`.
 
+- 2026-07-11: Area 29 progress: ported `count`/`countessa`/
+  `daughter_brannington_driver` (quest 40, shared `countbran_bits`,
+  `world/npc/area29/{countbran,countessabran,daughterbran}.rs`). 3798 core
+  [+24] + 1176 server tests pass, clean build/boot-smoke (area 29).
 - 2026-07-11: Area 29 STARTED: ported `spirit_brannington_driver`
   (`CDR_SPIRITBRAN`, quest 44, `world/npc/area29/spiritbran.rs`), saves
   reward instead of gold/item. 3774 core [+11] + 1176 server tests pass,

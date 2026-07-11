@@ -119,6 +119,26 @@ impl PlayerRuntime {
         self.write_staffer_i32(STAFFER_PPD_COUNTBRAN_BITS_OFFSET, bits);
     }
 
+    /// C `struct staffer_ppd::countessabran_state` (`src/common/
+    /// staffer_ppd.h:21`), consumed by `world::npc::area29::countessabran`.
+    pub fn staffer_countessabran_state(&self) -> i32 {
+        self.read_staffer_i32(STAFFER_PPD_COUNTESSABRAN_STATE_OFFSET)
+    }
+
+    pub fn set_staffer_countessabran_state(&mut self, state: i32) {
+        self.write_staffer_i32(STAFFER_PPD_COUNTESSABRAN_STATE_OFFSET, state);
+    }
+
+    /// C `struct staffer_ppd::daughterbran_state` (`src/common/
+    /// staffer_ppd.h:22`), consumed by `world::npc::area29::daughterbran`.
+    pub fn staffer_daughterbran_state(&self) -> i32 {
+        self.read_staffer_i32(STAFFER_PPD_DAUGHTERBRAN_STATE_OFFSET)
+    }
+
+    pub fn set_staffer_daughterbran_state(&mut self, state: i32) {
+        self.write_staffer_i32(STAFFER_PPD_DAUGHTERBRAN_STATE_OFFSET, state);
+    }
+
     pub fn staffer_spiritbran_state(&self) -> i32 {
         self.read_staffer_i32(STAFFER_PPD_SPIRITBRAN_STATE_OFFSET)
     }

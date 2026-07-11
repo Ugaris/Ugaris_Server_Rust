@@ -905,3 +905,44 @@ pub const IID_STAFF_BEARHEAD: u32 = make_item_id(DEV_ID_WHITESTAR, 0x000010);
 /// `spirit_brannington_driver`'s (`world::npc::area29::spiritbran`) quest-44
 /// ("The Brannington Holy Relic") turn-in item.
 pub const IID_STAFF_HOLYRELIC: u32 = make_item_id(DEV_ID_WARR, 0x000025);
+/// C `IID_STAFF_BLUEKEY123` (`src/common/item_id.h:315`): the assembled
+/// three-piece blue key, consumed alongside `IID_STAFF_COUNTESSAJEWEL` on
+/// turn-in to `count_brannington_driver` (`world::npc::area29::countbran`).
+pub(crate) const IID_STAFF_BLUEKEY123: u32 = make_item_id(DEV_ID_WARR, 0x000010);
+/// C `IID_STAFF_GREENKEY123` (`src/common/item_id.h:322`): the assembled
+/// three-piece green key, consumed alongside `IID_STAFF_DAUGHTERJEWEL` on
+/// turn-in to `count_brannington_driver`.
+pub(crate) const IID_STAFF_GREENKEY123: u32 = make_item_id(DEV_ID_WARR, 0x000017);
+/// C `IID_STAFF_REDKEY123` (`src/common/item_id.h:329`): the assembled
+/// three-piece red key, consumed alongside `IID_STAFF_COUNTJEWEL` on
+/// turn-in to `count_brannington_driver`.
+pub(crate) const IID_STAFF_REDKEY123: u32 = make_item_id(DEV_ID_WARR, 0x00001E);
+/// C `IID_STAFF_COUNTJEWEL` (`src/common/item_id.h:330`):
+/// `count_brannington_driver`'s (`world::npc::area29::countbran`) quest-40
+/// ("The Jewels of Brannington") turn-in item, part one.
+pub const IID_STAFF_COUNTJEWEL: u32 = make_item_id(DEV_ID_WARR, 0x00001F);
+/// C `IID_STAFF_COUNTESSAJEWEL` (`src/common/item_id.h:331`): quest-40
+/// turn-in item, part two.
+pub const IID_STAFF_COUNTESSAJEWEL: u32 = make_item_id(DEV_ID_WARR, 0x000020);
+/// C `IID_STAFF_DAUGHTERJEWEL` (`src/common/item_id.h:332`): quest-40
+/// turn-in item, part three.
+pub const IID_STAFF_DAUGHTERJEWEL: u32 = make_item_id(DEV_ID_WARR, 0x000021);
+/// C `IID_STAFF_MAUSOLEUMKEY1` (`src/common/item_id.h:333`): the mausoleum
+/// key `countbran_give_keys` (`world::npc::area29::countbran`) hands out
+/// once `countbran_bits & 1` is set.
+pub const IID_STAFF_MAUSOLEUMKEY1: u32 = make_item_id(DEV_ID_WARR, 0x000022);
+/// C `IID_STAFF_MAUSOLEUMKEY2` (`src/common/item_id.h:334`): hands out once
+/// `countbran_bits & 2` is set.
+pub const IID_STAFF_MAUSOLEUMKEY2: u32 = make_item_id(DEV_ID_WARR, 0x000023);
+/// C `IID_STAFF_MAUSOLEUMKEY3` (`src/common/item_id.h:335`): hands out once
+/// `countbran_bits & 4` is set.
+pub const IID_STAFF_MAUSOLEUMKEY3: u32 = make_item_id(DEV_ID_WARR, 0x000024);
+/// C `IID_STAFF_THIEFKEY1` (`src/common/item_id.h:341`): destroyed alongside
+/// `IID_STAFF_COUNTJEWEL` on turn-in.
+pub(crate) const IID_STAFF_THIEFKEY1: u32 = make_item_id(DEV_ID_WARR, 0x00002A);
+/// C `IID_STAFF_THIEFKEY2` (`src/common/item_id.h:342`): destroyed alongside
+/// `IID_STAFF_COUNTESSAJEWEL` on turn-in.
+pub(crate) const IID_STAFF_THIEFKEY2: u32 = make_item_id(DEV_ID_WARR, 0x00002B);
+/// C `IID_STAFF_THIEFKEY3` (`src/common/item_id.h:343`): destroyed alongside
+/// `IID_STAFF_DAUGHTERJEWEL` on turn-in.
+pub(crate) const IID_STAFF_THIEFKEY3: u32 = make_item_id(DEV_ID_WARR, 0x00002C);

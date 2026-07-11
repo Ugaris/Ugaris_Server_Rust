@@ -830,6 +830,16 @@ pub(crate) const STAFFER_PPD_COUNTBRAN_STATE_OFFSET: usize = 3 * 4;
 
 pub(crate) const STAFFER_PPD_COUNTBRAN_BITS_OFFSET: usize = 4 * 4;
 
+/// C `struct staffer_ppd::countessabran_state` (`src/common/staffer_ppd.h:
+/// 21`, field index 5): `countessa_brannington_driver`'s (`world::npc::
+/// area29::countessabran`) reward-dialogue state, gated on `countbran_bits`.
+pub(crate) const STAFFER_PPD_COUNTESSABRAN_STATE_OFFSET: usize = 5 * 4;
+
+/// C `struct staffer_ppd::daughterbran_state` (`src/common/staffer_ppd.h:
+/// 22`, field index 6): `daughter_brannington_driver`'s (`world::npc::
+/// area29::daughterbran`) reward-dialogue state, gated on `countbran_bits`.
+pub(crate) const STAFFER_PPD_DAUGHTERBRAN_STATE_OFFSET: usize = 6 * 4;
+
 pub(crate) const STAFFER_PPD_SPIRITBRAN_STATE_OFFSET: usize = 7 * 4;
 
 pub(crate) const STAFFER_PPD_BRENNETHBRAN_STATE_OFFSET: usize = 9 * 4;

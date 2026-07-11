@@ -1,7 +1,16 @@
 //! Area 29 NPCs, one file per NPC.
 
+pub mod countbran;
+pub mod countessabran;
+pub mod daughterbran;
 pub mod spiritbran;
 
+#[allow(unused_imports)]
+pub use countbran::*;
+#[allow(unused_imports)]
+pub use countessabran::*;
+#[allow(unused_imports)]
+pub use daughterbran::*;
 #[allow(unused_imports)]
 pub use spiritbran::*;
 

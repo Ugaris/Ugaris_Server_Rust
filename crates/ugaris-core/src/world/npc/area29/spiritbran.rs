@@ -505,8 +505,12 @@ impl World {
         }
 
         // C's fallback `else` branch (`brannington.c:1276-1281`): hand the
-        // item back to the giver.
-        self.npc_say(
+        // item back to the giver. C uses `quiet_say` here (not `say`) -
+        // found while porting the sibling `world::npc::area29::countbran`
+        // driver and cross-checking every `brannington.c` occurrence of
+        // this exact fallback line: all ten use `quiet_say`, unlike
+        // `brannington_forest.c`'s aristocrat/yoatin, which use `say`.
+        self.npc_quiet_say(
             spiritbran_id,
             "Thou hast better use for this than I do. Well, if there is use for it at all.",
         );
