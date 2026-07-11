@@ -13,8 +13,8 @@ use crate::{
         ArenaFighterDriverData, ArenaMasterDriverData, AristocratDriverData, Astro2DriverData,
         BrithildieDriverData, CamhermitDriverData, CarlosDriverData, CharacterDriverState,
         ClaraDriverData, CountBranDriverData, CountessaBranDriverData, DaughterBranDriverData,
-        DungeonmasterDriverData, FightDriverData, ForestHermitDriverData, ForestImpDriverData,
-        ForestRangerDriverData, ForestWilliamDriverData, GateFightDriverData,
+        DungeonmasterDriverData, FightDriverData, ForestBranDriverData, ForestHermitDriverData,
+        ForestImpDriverData, ForestRangerDriverData, ForestWilliamDriverData, GateFightDriverData,
         GateWelcomeDriverData, GolemKeyholdDriverData, GreeterDriverData, GwendylonDriverData,
         JanitorDriverData, JessicaDriverData, JiuDriverData, KassimDriverData, KellyDriverData,
         NookDriverData, ReskinDriverData, RouvenDriverData, SeymourDriverData, SirJonesDriverData,
@@ -25,10 +25,10 @@ use crate::{
         CDR_ARENAFIGHTER, CDR_ARENAMANAGER, CDR_ARENAMASTER, CDR_ARISTOCRAT, CDR_ASTRO2,
         CDR_BRITHILDIE, CDR_CAMHERMIT, CDR_CARLOS, CDR_CENTINEL, CDR_CLANCLERK, CDR_CLANMASTER,
         CDR_CLUBMASTER, CDR_COUNTBRAN, CDR_COUNTESSABRAN, CDR_DAUGHTERBRAN, CDR_DUNGEONMASTER,
-        CDR_FORESTHERMIT, CDR_FORESTIMP, CDR_FORESTMONSTER, CDR_FORESTWILLIAM, CDR_FOREST_RANGER,
-        CDR_GATE_FIGHT, CDR_GATE_WELCOME, CDR_GOLEMKEYHOLDER, CDR_GREETER, CDR_GWENDYLON,
-        CDR_JANITOR, CDR_JESSICA, CDR_JIU, CDR_KASSIM, CDR_KELLY, CDR_LAB2HERALD, CDR_LAB2UNDEAD,
-        CDR_LAB4GNALB, CDR_LAB4SEYAN, CDR_LAB5DAEMON, CDR_LAB5MAGE, CDR_LAB5SEYAN,
+        CDR_FORESTBRAN, CDR_FORESTHERMIT, CDR_FORESTIMP, CDR_FORESTMONSTER, CDR_FORESTWILLIAM,
+        CDR_FOREST_RANGER, CDR_GATE_FIGHT, CDR_GATE_WELCOME, CDR_GOLEMKEYHOLDER, CDR_GREETER,
+        CDR_GWENDYLON, CDR_JANITOR, CDR_JESSICA, CDR_JIU, CDR_KASSIM, CDR_KELLY, CDR_LAB2HERALD,
+        CDR_LAB2UNDEAD, CDR_LAB4GNALB, CDR_LAB4SEYAN, CDR_LAB5DAEMON, CDR_LAB5MAGE, CDR_LAB5SEYAN,
         CDR_LABGNOMEDRIVER, CDR_NOOK, CDR_RESKIN, CDR_ROUVEN, CDR_SEYMOUR, CDR_SIMPLEBADDY,
         CDR_SIRJONES, CDR_SMUGGLECOM, CDR_SPIRITBRAN, CDR_SUPERIOR, CDR_SUPERMAX, CDR_SWAMPCLARA,
         CDR_TERION, CDR_THOMAS, CDR_TRADER, CDR_TWOALCHEMIST, CDR_TWOBARKEEPER, CDR_TWOGUARD,
@@ -1061,6 +1061,14 @@ impl ZoneLoader {
             // no args to read here, same as `CDR_GATE_WELCOME` above.
             character.driver_state = Some(CharacterDriverState::DaughterBran(
                 DaughterBranDriverData::default(),
+            ));
+        }
+        if template.driver == CDR_FORESTBRAN {
+            // C never parses zone-file args into `struct
+            // forest_brannington_data` (`set_data` zero-initializes it) -
+            // no args to read here, same as `CDR_GATE_WELCOME` above.
+            character.driver_state = Some(CharacterDriverState::ForestBran(
+                ForestBranDriverData::default(),
             ));
         }
         if template.driver == CDR_WHITEROBBERBOSS {

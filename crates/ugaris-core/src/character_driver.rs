@@ -497,6 +497,11 @@ pub const CDR_YOATIN: u16 = 101;
 /// the necromancer plot and runs "The Brannington Holy Relic" (quest 44)
 /// (`src/area/29/brannington.c::spirit_brannington_driver`).
 pub const CDR_SPIRITBRAN: u16 = 94;
+/// C `#define CDR_FORESTBRAN 97` (`src/system/drvlib.h:145`, "staffer2
+/// area: forester brannington"): the Brannington Forest hint giver who
+/// decodes thief-mage treasure maps into dig locations. No quest of its own
+/// (`src/area/29/brannington.c::forest_brannington_driver`).
+pub const CDR_FORESTBRAN: u16 = 97;
 /// C `#define CDR_COUNTBRAN 91` (`src/system/drvlib.h:139`, "staffer2 area:
 /// count brannington"): Count Brannington, who runs "The Jewels of
 /// Brannington" (quest 40) and hands out mausoleum keys
@@ -697,6 +702,7 @@ pub enum CharacterDriverState {
     CountBran(crate::world::npc::area29::countbran::CountBranDriverData),
     CountessaBran(crate::world::npc::area29::countessabran::CountessaBranDriverData),
     DaughterBran(crate::world::npc::area29::daughterbran::DaughterBranDriverData),
+    ForestBran(crate::world::npc::area29::forestbran::ForestBranDriverData),
 }
 /// C `bank_driver_parse` from `src/module/bank.c`. The C driver defaults
 /// opening hours to 6..23 before parsing (`bank_driver` lines 304-309).
@@ -1505,7 +1511,8 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::SpiritBran(_)
             | CharacterDriverState::CountBran(_)
             | CharacterDriverState::CountessaBran(_)
-            | CharacterDriverState::DaughterBran(_),
+            | CharacterDriverState::DaughterBran(_)
+            | CharacterDriverState::ForestBran(_),
         ) => SimpleBaddyDriverData::default(),
         None => SimpleBaddyDriverData::default(),
     };
@@ -4036,6 +4043,7 @@ pub use crate::world::npc::area28::AREA28_QA;
 pub use crate::world::npc::area29::countbran::CountBranDriverData;
 pub use crate::world::npc::area29::countessabran::CountessaBranDriverData;
 pub use crate::world::npc::area29::daughterbran::DaughterBranDriverData;
+pub use crate::world::npc::area29::forestbran::ForestBranDriverData;
 pub use crate::world::npc::area29::spiritbran::SpiritBranDriverData;
 pub use crate::world::npc::area3::astro1::Astro1DriverData;
 pub use crate::world::npc::area3::astro2::Astro2DriverData;

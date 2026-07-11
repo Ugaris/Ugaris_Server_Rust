@@ -844,6 +844,13 @@ pub(crate) const STAFFER_PPD_SPIRITBRAN_STATE_OFFSET: usize = 7 * 4;
 
 pub(crate) const STAFFER_PPD_BRENNETHBRAN_STATE_OFFSET: usize = 9 * 4;
 
+/// C `struct staffer_ppd::forestbran_state` (`src/common/staffer_ppd.h:26`,
+/// field index 10): `forest_brannington_driver`'s (`world::npc::area29::
+/// forestbran`) five-state greeting/hint dialogue, separate from the
+/// neighboring `forestbran_done` field (index 11, already exposed via
+/// `PlayerRuntime::forestbran_done`/`set_forestbran_done`).
+pub(crate) const STAFFER_PPD_FORESTBRAN_STATE_OFFSET: usize = 10 * 4;
+
 pub(crate) const STAFFER_PPD_BROKLIN_STATE_OFFSET: usize = 12 * 4;
 
 pub(crate) const STAFFER_PPD_ARISTOCRAT_STATE_OFFSET: usize = 13 * 4;

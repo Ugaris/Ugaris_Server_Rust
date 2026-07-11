@@ -124,6 +124,31 @@ fn staffer_ppd_tracks_centinel_count_independently_of_dwarfchief_state() {
 }
 
 #[test]
+fn staffer_ppd_tracks_forestbran_state_independently_of_forestbran_done() {
+    let mut player = PlayerRuntime::connected(1, 0);
+    assert_eq!(player.staffer_forestbran_state(), 0);
+
+    player.set_staffer_forestbran_state(3);
+    assert_eq!(player.set_forestbran_done(1), Some(2));
+    assert_eq!(player.staffer_forestbran_state(), 3);
+    assert_eq!(player.forestbran_done(), 2);
+
+    let encoded = player.encode_legacy_staffer_ppd();
+    assert_eq!(encoded.len(), LEGACY_STAFFER_PPD_SIZE);
+    assert_eq!(read_i32(&encoded, STAFFER_PPD_FORESTBRAN_STATE_OFFSET), 3);
+    assert_eq!(read_i32(&encoded, STAFFER_PPD_FORESTBRAN_DONE_OFFSET), 2);
+
+    let mut decoded = PlayerRuntime::connected(2, 0);
+    assert!(decoded.decode_legacy_staffer_ppd(&encoded));
+    assert_eq!(decoded.staffer_forestbran_state(), 3);
+    assert_eq!(decoded.forestbran_done(), 2);
+
+    decoded.clear_forestbran_done();
+    assert_eq!(decoded.forestbran_done(), 0);
+    assert_eq!(decoded.staffer_forestbran_state(), 3);
+}
+
+#[test]
 fn staffer_ppd_exposes_quest_npc_states_for_questlog_init() {
     let mut player = PlayerRuntime::connected(1, 0);
     player.set_staffer_carlos_state(6);

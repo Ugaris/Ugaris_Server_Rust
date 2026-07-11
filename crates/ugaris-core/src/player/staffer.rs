@@ -39,6 +39,17 @@ impl PlayerRuntime {
         Some(done)
     }
 
+    /// C `ppd->forestbran_done = 0` (`brannington.c:1424`, the god-only
+    /// "reset me" branch of `forest_brannington_driver`) - unlike
+    /// [`Self::set_forestbran_done`], this writes a raw `0`, not `dig_index
+    /// + 1`.
+    pub fn clear_forestbran_done(&mut self) {
+        if self.staffer_ppd.len() < LEGACY_STAFFER_PPD_SIZE {
+            self.staffer_ppd.resize(LEGACY_STAFFER_PPD_SIZE, 0);
+        }
+        write_i32(&mut self.staffer_ppd, STAFFER_PPD_FORESTBRAN_DONE_OFFSET, 0);
+    }
+
     pub fn mark_staffer_animation_book_seen(&mut self) -> bool {
         if self.staffer_ppd.len() < LEGACY_STAFFER_PPD_SIZE {
             self.staffer_ppd.resize(LEGACY_STAFFER_PPD_SIZE, 0);
@@ -153,6 +164,17 @@ impl PlayerRuntime {
 
     pub fn set_staffer_brennethbran_state(&mut self, state: i32) {
         self.write_staffer_i32(STAFFER_PPD_BRENNETHBRAN_STATE_OFFSET, state);
+    }
+
+    /// C `struct staffer_ppd::forestbran_state` (`src/common/staffer_ppd.h:
+    /// 26`), consumed by `world::npc::area29::forestbran`. Separate from
+    /// the neighboring `forestbran_done` field above.
+    pub fn staffer_forestbran_state(&self) -> i32 {
+        self.read_staffer_i32(STAFFER_PPD_FORESTBRAN_STATE_OFFSET)
+    }
+
+    pub fn set_staffer_forestbran_state(&mut self, state: i32) {
+        self.write_staffer_i32(STAFFER_PPD_FORESTBRAN_STATE_OFFSET, state);
     }
 
     pub fn staffer_broklin_state(&self) -> i32 {

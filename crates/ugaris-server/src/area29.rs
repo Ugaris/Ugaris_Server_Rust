@@ -24,6 +24,7 @@ use ugaris_core::world::npc::area29::countessabran::{
 use ugaris_core::world::npc::area29::daughterbran::{
     DaughterBranOutcomeEvent, DaughterBranPlayerFacts,
 };
+use ugaris_core::world::npc::area29::forestbran::{ForestBranOutcomeEvent, ForestBranPlayerFacts};
 use ugaris_core::world::npc::area29::spiritbran::{
     spiritbran_save_cap, SpiritBranOutcomeEvent, SpiritBranPlayerFacts,
 };
@@ -364,6 +365,61 @@ pub(crate) fn apply_daughterbran_events(
                         world.destroy_item(item_id);
                     }
                 }
+                applied += 1;
+            }
+        }
+    }
+    applied
+}
+
+pub(crate) fn forestbran_player_facts(
+    runtime: &ServerRuntime,
+) -> HashMap<CharacterId, ForestBranPlayerFacts> {
+    runtime
+        .players
+        .values()
+        .filter_map(|player| {
+            let character_id = player.character_id?;
+            Some((
+                character_id,
+                ForestBranPlayerFacts {
+                    forestbran_state: player.staffer_forestbran_state(),
+                    forestbran_done: player.forestbran_done(),
+                },
+            ))
+        })
+        .collect()
+}
+
+/// Applies each [`ForestBranOutcomeEvent`] queued by `World::
+/// process_forestbran_actions`. This NPC has no exp/gold/item reward at
+/// all, so both variants only touch `PlayerRuntime`'s `staffer_ppd`.
+pub(crate) fn apply_forestbran_events(
+    runtime: &mut ServerRuntime,
+    events: Vec<ForestBranOutcomeEvent>,
+) -> usize {
+    let mut applied = 0;
+    for event in events {
+        match event {
+            ForestBranOutcomeEvent::UpdateForestBranState {
+                player_id,
+                new_state,
+            } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.set_staffer_forestbran_state(new_state);
+                applied += 1;
+            }
+            // C `case 3:` (`brannington.c:1421-1426`): the god-only "reset
+            // me" wipe, clearing *both* `forestbran_state` and
+            // `forestbran_done`.
+            ForestBranOutcomeEvent::ResetForestBran { player_id } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.set_staffer_forestbran_state(0);
+                player.clear_forestbran_done();
                 applied += 1;
             }
         }

@@ -905,6 +905,11 @@ pub const IID_STAFF_BEARHEAD: u32 = make_item_id(DEV_ID_WHITESTAR, 0x000010);
 /// `spirit_brannington_driver`'s (`world::npc::area29::spiritbran`) quest-44
 /// ("The Brannington Holy Relic") turn-in item.
 pub const IID_STAFF_HOLYRELIC: u32 = make_item_id(DEV_ID_WARR, 0x000025);
+/// C `IID_STAFF_FORESTMAP` (`src/common/item_id.h:340`):
+/// `forest_brannington_driver`'s (`world::npc::area29::forestbran`)
+/// thief-mage treasure map turn-in item (already created by the ported
+/// `IDR_FORESTSPADE` forest-note dig path).
+pub const IID_STAFF_FORESTMAP: u32 = make_item_id(DEV_ID_WARR, 0x000029);
 /// C `IID_STAFF_BLUEKEY123` (`src/common/item_id.h:315`): the assembled
 /// three-piece blue key, consumed alongside `IID_STAFF_COUNTESSAJEWEL` on
 /// turn-in to `count_brannington_driver` (`world::npc::area29::countbran`).

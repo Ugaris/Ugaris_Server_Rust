@@ -144,3 +144,38 @@ pub(crate) async fn daughterbran_driver_136(
         );
     }
 }
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn forestbran_driver_137(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    _zone_loader: &mut ZoneLoader,
+    config: &ServerConfig,
+    _args: &Args,
+    _completed_actions: &[WorldActionCompletion],
+    _achievement_repository: &Option<ugaris_db::PgAchievementRepository>,
+    _character_repository: &Option<ugaris_db::PgCharacterRepository>,
+    _area_repository: &Option<ugaris_db::PgAreaRepository>,
+    _clan_repository: &Option<ugaris_db::PgClanRegistryRepository>,
+    _clan_log_repository: &Option<ugaris_db::PgClanLogRepository>,
+    _merchant_repository: &Option<ugaris_db::PgMerchantRepository>,
+    _military_master_storage_repository: &Option<ugaris_db::PgMilitaryMasterStorageRepository>,
+    _military_advisor_storage_repository: &Option<ugaris_db::PgMilitaryAdvisorStorageRepository>,
+    _notes_repository: &Option<ugaris_db::PgNotesRepository>,
+    _anticheat_repository: &Option<ugaris_db::PgAntiCheatRepository>,
+    _auction_repository: &Option<ugaris_db::PgAuctionRepository>,
+) {
+    // C `forest_brannington_driver`: the Brannington Forest hint giver who
+    // decodes thief-mage treasure maps into dig locations, no quest of its
+    // own (`src/area/29/brannington.c`).
+    let forestbran_facts = forestbran_player_facts(runtime);
+    let forestbran_events = world.process_forestbran_actions(&forestbran_facts, config.area_id);
+    let forestbran_events_applied = apply_forestbran_events(runtime, forestbran_events);
+    if forestbran_events_applied != 0 {
+        info!(
+            forestbran_events_applied,
+            tick = world.tick.0,
+            "applied forestbran dialogue events"
+        );
+    }
+}

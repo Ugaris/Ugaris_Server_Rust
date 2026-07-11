@@ -47,6 +47,7 @@ mod forest_hermit;
 mod forest_imp;
 mod forest_ranger;
 mod forest_william;
+mod forestbran;
 mod gate_fight;
 mod gatekeeper;
 mod golemkeyholder;

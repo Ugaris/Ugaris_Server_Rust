@@ -574,7 +574,8 @@ impl World {
                 | CharacterDriverState::SpiritBran(_)
                 | CharacterDriverState::CountBran(_)
                 | CharacterDriverState::CountessaBran(_)
-                | CharacterDriverState::DaughterBran(_) => None,
+                | CharacterDriverState::DaughterBran(_)
+                | CharacterDriverState::ForestBran(_) => None,
             });
         let Some(target_id) = target_id else {
             return false;
