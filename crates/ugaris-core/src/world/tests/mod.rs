@@ -122,6 +122,7 @@ mod spawn;
 mod special_item;
 mod speed;
 mod spells;
+mod spiritbran;
 mod steal;
 mod strategy;
 mod strategy_ai;

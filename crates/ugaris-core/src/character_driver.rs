@@ -492,6 +492,11 @@ pub const CDR_ARISTOCRAT: u16 = 100;
 /// "Bear Hunt - Again" (quest 39)
 /// (`src/area/28/brannington_forest.c::yoatin_driver`).
 pub const CDR_YOATIN: u16 = 101;
+/// C `#define CDR_SPIRITBRAN 94` (`src/system/drvlib.h:142`, "staffer2
+/// area: spirit brannington"): the ghost NPC in Brannington who explains
+/// the necromancer plot and runs "The Brannington Holy Relic" (quest 44)
+/// (`src/area/29/brannington.c::spirit_brannington_driver`).
+pub const CDR_SPIRITBRAN: u16 = 94;
 /// C `#define CDR_WHITEROBBERBOSS 102` (`src/system/drvlib.h:150`,
 /// "brannington forest: robber boss"): the final kill target of the
 /// Brannington robber camp, whose death (`robberboss_dead`) completes quest
@@ -656,6 +661,7 @@ pub enum CharacterDriverState {
     Rouven(crate::world::npc::area26::rouven::RouvenDriverData),
     Aristocrat(crate::world::npc::area28::aristocrat::AristocratDriverData),
     Yoatin(crate::world::npc::area28::yoatin::YoatinDriverData),
+    SpiritBran(crate::world::npc::area29::spiritbran::SpiritBranDriverData),
 }
 /// C `bank_driver_parse` from `src/module/bank.c`. The C driver defaults
 /// opening hours to 6..23 before parsing (`bank_driver` lines 304-309).
@@ -1460,7 +1466,8 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::SmuggleCom(_)
             | CharacterDriverState::Rouven(_)
             | CharacterDriverState::Aristocrat(_)
-            | CharacterDriverState::Yoatin(_),
+            | CharacterDriverState::Yoatin(_)
+            | CharacterDriverState::SpiritBran(_),
         ) => SimpleBaddyDriverData::default(),
         None => SimpleBaddyDriverData::default(),
     };
@@ -3988,6 +3995,7 @@ pub use crate::world::npc::area26::AREA26_QA;
 pub use crate::world::npc::area28::aristocrat::AristocratDriverData;
 pub use crate::world::npc::area28::yoatin::YoatinDriverData;
 pub use crate::world::npc::area28::AREA28_QA;
+pub use crate::world::npc::area29::spiritbran::SpiritBranDriverData;
 pub use crate::world::npc::area3::astro1::Astro1DriverData;
 pub use crate::world::npc::area3::astro2::Astro2DriverData;
 pub use crate::world::npc::area3::carlos::CarlosDriverData;

@@ -567,7 +567,8 @@ impl World {
                 | CharacterDriverState::SmuggleCom(_)
                 | CharacterDriverState::Rouven(_)
                 | CharacterDriverState::Aristocrat(_)
-                | CharacterDriverState::Yoatin(_) => None,
+                | CharacterDriverState::Yoatin(_)
+                | CharacterDriverState::SpiritBran(_) => None,
             });
         let Some(target_id) = target_id else {
             return false;

@@ -672,7 +672,8 @@ impl World {
             | CharacterDriverState::SmuggleCom(_)
             | CharacterDriverState::Rouven(_)
             | CharacterDriverState::Aristocrat(_)
-            | CharacterDriverState::Yoatin(_) => None,
+            | CharacterDriverState::Yoatin(_)
+            | CharacterDriverState::SpiritBran(_) => None,
         }
     }
 

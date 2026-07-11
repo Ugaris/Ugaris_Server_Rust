@@ -901,3 +901,7 @@ pub const IID_STAFF_ARIAMULET: u32 = make_item_id(DEV_ID_WHITESTAR, 0x00000F);
 /// (`world::npc::area28::yoatin`) quest-39 ("Bear Hunt - Again") turn-in
 /// item.
 pub const IID_STAFF_BEARHEAD: u32 = make_item_id(DEV_ID_WHITESTAR, 0x000010);
+/// C `IID_STAFF_HOLYRELIC` (`src/common/item_id.h:336`):
+/// `spirit_brannington_driver`'s (`world::npc::area29::spiritbran`) quest-44
+/// ("The Brannington Holy Relic") turn-in item.
+pub const IID_STAFF_HOLYRELIC: u32 = make_item_id(DEV_ID_WARR, 0x000025);
