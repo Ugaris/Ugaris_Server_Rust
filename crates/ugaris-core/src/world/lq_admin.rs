@@ -93,8 +93,11 @@ pub(super) fn cmd_word_matches(word: &str, full: &str, minlen: usize) -> bool {
 
 /// C `atoi` (used throughout `lq.c` on already-tokenized single-word
 /// strings, e.g. `n = atoi(nick)`): leading-whitespace-then-optional-
-/// sign-then-digits, `0` if there are no leading digits at all.
-fn legacy_atoi(input: &str) -> i64 {
+/// sign-then-digits, `0` if there are no leading digits at all. `pub(super)`
+/// (not just `pub(self)`) since `world::strategy_special` reuses it
+/// verbatim for the same C `atoi`-on-tokenized-input idiom in
+/// `special_driver` (`src/area/23_24/strategy.c`).
+pub(super) fn legacy_atoi(input: &str) -> i64 {
     let trimmed = input.trim_start();
     let mut chars = trimmed.chars().peekable();
     let sign = match chars.peek() {

@@ -66,6 +66,7 @@ mod speed;
 mod spells;
 mod steal;
 mod strategy;
+mod strategy_special;
 mod teleport;
 mod text;
 mod traps_hazards;
@@ -129,6 +130,7 @@ pub use special_item::RandomShrineWeldingResult;
 pub(crate) use spells::*;
 pub use steal::*;
 pub use strategy::*;
+pub use strategy_special::*;
 #[allow(unused_imports)]
 pub(crate) use teleport::*;
 pub use text::*;
@@ -383,6 +385,11 @@ pub struct World {
     /// [`StrategyAreaRegistry`]'s doc comment and
     /// `World::ensure_strategy_areas_initialized` (the `init_areas` port).
     pub strategy_areas: StrategyAreaRegistry,
+    /// C's file-static `struct jumppoint jp[MAXJUMP]`/`int special_init`
+    /// (`src/area/23_24/strategy.c:2994-2995`) - see
+    /// [`StrategyJumpPointRegistry`]'s doc comment and `World::
+    /// ensure_strategy_jump_points_initialized`.
+    pub strategy_jump_points: StrategyJumpPointRegistry,
     /// `World::str_reward_winner`'s queue of pending `reward_winner`
     /// (`strategy.c:428-454`) `ppd` mutations - `World` can't reach
     /// session-owned `PlayerRuntime::strategy` directly, so `ugaris-

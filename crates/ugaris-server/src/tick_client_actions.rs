@@ -1009,6 +1009,22 @@ pub(crate) async fn process_queued_client_actions(
                         world.report_lq_nspawn_result(character_id, spawned);
                     }
                 }
+                // C `special_driver`'s `CDR_STRATEGY_PARSER` command table
+                // (Areas 23/24, `system/command.c:4591-4595` area-gates
+                // into `strategy.c:3278-3626`). All feedback is queued
+                // directly onto `World`'s pending system-text queues and
+                // flushed by `tick_sync::sync_phase` later this same tick.
+                // `#eguard` needs `ZoneLoader` (a brand new character) and
+                // is not ported yet - see `ugaris_core::world::
+                // apply_strategy_special_command`'s doc comment.
+                if let Some(player) = runtime.player_for_character_mut(character_id) {
+                    world.apply_strategy_special_command(
+                        character_id,
+                        config.area_id,
+                        &mut player.strategy,
+                        &command,
+                    );
+                }
             }
             ClientAction::Container { .. } | ClientAction::LookContainer { .. } => {
                 // C cl_container: validate and prefer the active

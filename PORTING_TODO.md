@@ -1100,15 +1100,21 @@ Ordered by player progression; the C file is the oracle.
   dispatches a real `ItemDriverOutcome::StrTicker`. Third slice done: the
   mission entry queue (`queue_validate`/`queue_remove`/`queue_mission`/
   `queue_check`/`show_queue`, `strategy.c:3200-3276`) is now ported
-  (`World::queue_validate`/`queue_remove`/`queue_mission`/`queue_check`/
+  (  `World::queue_validate`/`queue_remove`/`queue_mission`/`queue_check`/
   `show_queue`), using `CharacterId` identity directly instead of C's
-  `cn`+`ID` pair (same simplification as `ArenaContender`). See
-  `world::strategy`'s module doc comment for the full remaining-work
-  breakdown: the worker character driver (`strategy_driver`), the
-  `mine`/`storage`/`depot`/`spawner` item drivers (currently no-op), and the
-  AI-opponent driver (`ai_main`, 538 lines). Not reachable in live gameplay
-  yet (no caller for `str_init_mission`/the queue functions, since
-  `special_driver`'s "go" mission-join command isn't ported).
+  `cn`+`ID` pair (same simplification as `ArenaContender`). Fourth slice
+  done: `special_driver`'s player-facing `#`/`/` command table itself
+  (`CDR_STRATEGY_PARSER`, `strategy.c:3278-3626`) is now ported in
+  `crates/ugaris-core/src/world/strategy_special.rs` - `#jp`/`#list`/
+  `#info`/`#raise`/`#reset`/`#mission`/`#enter`/`#surrender`/`#queue`,
+  including a lazily-initialized jump-point registry and the real
+  `#enter` mission-join flow (`str_init_mission`/`take_spawner`), wired
+  into `ugaris-server`'s `tick_client_actions.rs`. This mission system is
+  now reachable through live gameplay for the first time.
+  REMAINING: the worker character driver (`strategy_driver`), the
+  `mine`/`storage`/`depot`/`spawner` item drivers (currently no-op), the
+  AI-opponent driver (`ai_main`, 538 lines), and `#eguard` (needs
+  `ZoneLoader` character-spawning for the still-unported worker driver).
 - [ ] **Area 25 - `src/area/25/warped.c`** - warped NPC dialogue,
   `DRD_WARPFIGHTER` full fight driver.
 - [ ] **Area 26 - `src/area/26/staffer.c`** - vault skull PPD/quest, Rouven
@@ -1170,6 +1176,10 @@ Keep entries to at most three lines: date, task, one-line result.
 Anything longer belongs in `PORTING_LEDGER.md`; historical verbose
 notes live in `PROGRESS_ARCHIVE.md`.
 
+- 2026-07-11: Areas 23/24 strategy minigame: fourth slice - ported
+  `special_driver`'s `#`/`/` command table (jp/list/info/raise/reset/
+  mission/enter/surrender/queue), now live. 3457 core [+21] tests pass,
+  clean build/boot-smoke. Only `#eguard` remains (needs `ZoneLoader`).
 - 2026-07-11: Areas 23/24 strategy minigame: third slice - ported the
   mission entry queue (`queue_validate`/`queue_remove`/`queue_mission`/
   `queue_check`/`show_queue`). 3436 core [+8] + 1168 server tests pass,
