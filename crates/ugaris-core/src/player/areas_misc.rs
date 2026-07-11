@@ -826,6 +826,15 @@ impl PlayerRuntime {
         read_i32(&self.arkhata_ppd, ARKHATA_PPD_CLERK_STATE_OFFSET)
     }
 
+    /// C `struct arkhata_ppd::rammy_state` (`src/area/37/arkhata.h:5`),
+    /// read-only - see [`ARKHATA_PPD_RAMMY_STATE_OFFSET`]'s doc comment.
+    pub fn arkhata_rammy_state(&self) -> i32 {
+        if self.arkhata_ppd.len() < LEGACY_ARKHATA_PPD_SIZE {
+            return 0;
+        }
+        read_i32(&self.arkhata_ppd, ARKHATA_PPD_RAMMY_STATE_OFFSET)
+    }
+
     pub fn arkhata_clerk_time_seconds(&self) -> i32 {
         if self.arkhata_ppd.len() < LEGACY_ARKHATA_PPD_SIZE {
             return 0;

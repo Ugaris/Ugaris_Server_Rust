@@ -676,6 +676,7 @@ impl World {
             | CharacterDriverState::Aristocrat(_)
             | CharacterDriverState::Yoatin(_)
             | CharacterDriverState::SpiritBran(_)
+            | CharacterDriverState::GuardBran(_)
             | CharacterDriverState::BrennethBran(_)
             | CharacterDriverState::Broklin(_)
             | CharacterDriverState::CountBran(_)

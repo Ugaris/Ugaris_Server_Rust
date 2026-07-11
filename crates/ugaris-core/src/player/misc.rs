@@ -816,6 +816,16 @@ pub const ARKHATA_PPD_CLERK_STATE_OFFSET: usize = 16 * 4;
 
 pub const ARKHATA_PPD_CLERK_TIME_OFFSET: usize = 17 * 4;
 
+/// C `struct arkhata_ppd::rammy_state` (`src/area/37/arkhata.h:5`, field
+/// index 0, the first field): `rammy_driver`'s (`src/area/37/arkhata.c`,
+/// still entirely unported) own dialogue state. Read-only here - only
+/// `guard_brannington_driver`'s (`world::npc::area29::guardbran`) "Finding
+/// Arkhata" (quest 64) completion check (`ppd->rammy_state > 0`,
+/// `brannington.c:1938`) needs it - same "read state owned by another
+/// area's unported driver" precedent as `PlayerRuntime::
+/// staffer_broklin_state`/`staffer_carlos2_state`.
+pub const ARKHATA_PPD_RAMMY_STATE_OFFSET: usize = 0 * 4;
+
 // `struct staffer_ppd` field offsets (`src/common/staffer_ppd.h:13-` /
 // `src/system/game/ppd_structs.h:566-`), in declaration order. Only the
 // fields consumed by `questlog_init_staff` (`src/system/questlog.c:1203-
@@ -841,6 +851,12 @@ pub(crate) const STAFFER_PPD_COUNTESSABRAN_STATE_OFFSET: usize = 5 * 4;
 pub(crate) const STAFFER_PPD_DAUGHTERBRAN_STATE_OFFSET: usize = 6 * 4;
 
 pub(crate) const STAFFER_PPD_SPIRITBRAN_STATE_OFFSET: usize = 7 * 4;
+
+/// C `struct staffer_ppd::guardbran_state` (`src/common/staffer_ppd.h:
+/// 23`, field index 8): `guard_brannington_driver`'s (`world::npc::
+/// area29::guardbran`) greeting/mission dialogue for "Finding Arkhata"
+/// (quest 64), gated on `countbran_bits` (all three jewels) plus level 45.
+pub(crate) const STAFFER_PPD_GUARDBRAN_STATE_OFFSET: usize = 8 * 4;
 
 pub(crate) const STAFFER_PPD_BRENNETHBRAN_STATE_OFFSET: usize = 9 * 4;
 

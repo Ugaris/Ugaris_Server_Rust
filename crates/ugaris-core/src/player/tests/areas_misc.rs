@@ -749,6 +749,28 @@ fn arkhata_ppd_round_trips_clerk_timer_fields() {
 }
 
 #[test]
+fn arkhata_ppd_exposes_rammy_state_read_only_independently_of_clerk_state() {
+    let mut player = PlayerRuntime::connected(1, 0);
+    assert_eq!(player.arkhata_rammy_state(), 0);
+
+    player.set_arkhata_clerk_timer(5, 12_345);
+    // `arkhata_ppd` is a raw blob with no `set_arkhata_rammy_state` writer
+    // (see `ARKHATA_PPD_RAMMY_STATE_OFFSET`'s doc comment) - write the
+    // field directly to simulate area 37's still-unported `rammy_driver`
+    // having advanced it.
+    write_i32(&mut player.arkhata_ppd, ARKHATA_PPD_RAMMY_STATE_OFFSET, 2);
+
+    assert_eq!(player.arkhata_rammy_state(), 2);
+    assert_eq!(player.arkhata_clerk_state(), 5);
+
+    let encoded = player.encode_legacy_arkhata_ppd();
+    let mut decoded = PlayerRuntime::connected(2, 0);
+    assert!(decoded.decode_legacy_arkhata_ppd(&encoded));
+    assert_eq!(decoded.arkhata_rammy_state(), 2);
+    assert_eq!(decoded.arkhata_clerk_state(), 5);
+}
+
+#[test]
 fn caligar_ppd_checks_skelly_door_unlock_flags() {
     let mut player = PlayerRuntime::connected(1, 0);
     assert!(!player.caligar_skelly_door_unlocked(0));

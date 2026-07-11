@@ -31,6 +31,9 @@ use ugaris_core::world::npc::area29::daughterbran::{
     DaughterBranOutcomeEvent, DaughterBranPlayerFacts,
 };
 use ugaris_core::world::npc::area29::forestbran::{ForestBranOutcomeEvent, ForestBranPlayerFacts};
+use ugaris_core::world::npc::area29::guardbran::{
+    qlog_guardbran, GuardBranOutcomeEvent, GuardBranPlayerFacts,
+};
 use ugaris_core::world::npc::area29::spiritbran::{
     spiritbran_save_cap, SpiritBranOutcomeEvent, SpiritBranPlayerFacts,
 };
@@ -135,6 +138,100 @@ pub(crate) fn apply_spiritbran_events(
                 };
                 player.set_staffer_spiritbran_state(0);
                 applied += 1;
+            }
+        }
+    }
+    applied
+}
+
+pub(crate) fn guardbran_player_facts(
+    runtime: &ServerRuntime,
+) -> HashMap<CharacterId, GuardBranPlayerFacts> {
+    runtime
+        .players
+        .values()
+        .filter_map(|player| {
+            let character_id = player.character_id?;
+            Some((
+                character_id,
+                GuardBranPlayerFacts {
+                    guardbran_state: player.staffer_guardbran_state(),
+                    countbran_state: player.staffer_countbran_state(),
+                    countbran_bits: player.staffer_countbran_bits(),
+                    rammy_state: player.arkhata_rammy_state(),
+                },
+            ))
+        })
+        .collect()
+}
+
+/// Applies each [`GuardBranOutcomeEvent`] queued by `World::
+/// process_guardbran_actions`. [`GuardBranOutcomeEvent::QuestDone`] needs
+/// quest 64's full `complete_legacy` exp path (its own nominal exp is
+/// `60000`, unlike `apply_spiritbran_events`'s `0`-exp save reward) plus
+/// `award_great_explorer_achievement`, same precedent as
+/// `apply_lydia_events`'s `QuestDone` achievement call.
+pub(crate) async fn apply_guardbran_events(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    achievement_repository: &Option<ugaris_db::PgAchievementRepository>,
+    events: Vec<GuardBranOutcomeEvent>,
+) -> usize {
+    let mut applied = 0;
+    for event in events {
+        match event {
+            GuardBranOutcomeEvent::UpdateGuardBranState {
+                player_id,
+                new_state,
+            } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.set_staffer_guardbran_state(new_state);
+                applied += 1;
+            }
+            // C `questlog_open(co, 64)` (`src/system/questlog.c:204-217`):
+            // sets the flag and unconditionally resends the questlog.
+            GuardBranOutcomeEvent::QuestOpen { player_id } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.quest_log.open(qlog_guardbran());
+                let payload = legacy_questlog_payload(player);
+                for (session_id, _) in runtime.sessions_for_character(player_id) {
+                    runtime.send_to_session(session_id, payload.clone());
+                }
+                applied += 1;
+            }
+            // C `questlog_done(co, 64)` plus `achievement_award(co,
+            // ACHIEVEMENT_GREAT_EXPLORER, 1)` (`brannington.c:1940-1942`).
+            GuardBranOutcomeEvent::QuestDone { player_id } => {
+                let Some(level) = world.characters.get(&player_id).map(|c| c.level) else {
+                    continue;
+                };
+                let level_val = level_value(level);
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                if let Some(completion) =
+                    player
+                        .quest_log
+                        .complete_legacy(qlog_guardbran(), level, level_val)
+                {
+                    let payload = legacy_questlog_payload(player);
+                    world.give_exp(player_id, completion.granted_exp, u32::from(world.area_id));
+                    for (session_id, _) in runtime.sessions_for_character(player_id) {
+                        runtime.send_to_session(session_id, payload.clone());
+                    }
+                    award_great_explorer_achievement(
+                        world,
+                        runtime,
+                        achievement_repository,
+                        player_id,
+                    )
+                    .await;
+                    applied += 1;
+                }
             }
         }
     }

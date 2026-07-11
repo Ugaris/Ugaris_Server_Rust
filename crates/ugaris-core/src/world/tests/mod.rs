@@ -55,6 +55,7 @@ mod gatekeeper;
 mod golemkeyholder;
 mod greeter;
 mod guard;
+mod guardbran;
 mod guiwynn;
 mod gwendylon;
 mod hurt;

@@ -1185,6 +1185,28 @@ pub(crate) async fn award_dragonsbane_achievement(
     .await;
 }
 
+/// C `guard_brannington_driver`'s `achievement_award(co,
+/// ACHIEVEMENT_GREAT_EXPLORER, 1)` (`src/area/29/brannington.c:1942`),
+/// fired unconditionally alongside `questlog_done(co, 64)` once "Finding
+/// Arkhata" completes. Consumes `world::npc::area29::guardbran::
+/// GuardBranOutcomeEvent::QuestDone`, applied by `ugaris-server`'s
+/// `apply_guardbran_events`.
+pub(crate) async fn award_great_explorer_achievement(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    repository: &Option<ugaris_db::PgAchievementRepository>,
+    player_id: CharacterId,
+) {
+    award_bare_achievement(
+        world,
+        runtime,
+        repository,
+        player_id,
+        AchievementType::GreatExplorer,
+    )
+    .await;
+}
+
 /// C `handle_lucky_pentagram`'s `achievement_award(player_id,
 /// ACHIEVEMENT_HAPPY_GO_LUCKY, 1)` (`src/area/4/pents.c:853`), fired every
 /// time a player hits a lucky pentagram roll. Consumes the `lucky_hit`

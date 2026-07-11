@@ -497,6 +497,12 @@ pub const CDR_YOATIN: u16 = 101;
 /// the necromancer plot and runs "The Brannington Holy Relic" (quest 44)
 /// (`src/area/29/brannington.c::spirit_brannington_driver`).
 pub const CDR_SPIRITBRAN: u16 = 94;
+/// C `#define CDR_GUARDBRAN 95` (`src/system/drvlib.h:143`, "staffer2 area:
+/// spirit brannington"): the town guard who greets new arrivals, then runs
+/// "Finding Arkhata" (quest 64) once Count Brannington's family-heirloom
+/// chain (`staffer_ppd.countbran_bits`) is complete
+/// (`src/area/29/brannington.c::guard_brannington_driver`).
+pub const CDR_GUARDBRAN: u16 = 95;
 /// C `#define CDR_FORESTBRAN 97` (`src/system/drvlib.h:145`, "staffer2
 /// area: forester brannington"): the Brannington Forest hint giver who
 /// decodes thief-mage treasure maps into dig locations. No quest of its own
@@ -709,6 +715,7 @@ pub enum CharacterDriverState {
     Aristocrat(crate::world::npc::area28::aristocrat::AristocratDriverData),
     Yoatin(crate::world::npc::area28::yoatin::YoatinDriverData),
     SpiritBran(crate::world::npc::area29::spiritbran::SpiritBranDriverData),
+    GuardBran(crate::world::npc::area29::guardbran::GuardBranDriverData),
     BrennethBran(crate::world::npc::area29::brennethbran::BrennethBranDriverData),
     Broklin(crate::world::npc::area29::broklin::BroklinDriverData),
     CountBran(crate::world::npc::area29::countbran::CountBranDriverData),
@@ -1521,6 +1528,7 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::Aristocrat(_)
             | CharacterDriverState::Yoatin(_)
             | CharacterDriverState::SpiritBran(_)
+            | CharacterDriverState::GuardBran(_)
             | CharacterDriverState::BrennethBran(_)
             | CharacterDriverState::Broklin(_)
             | CharacterDriverState::CountBran(_)
@@ -4060,6 +4068,7 @@ pub use crate::world::npc::area29::countbran::CountBranDriverData;
 pub use crate::world::npc::area29::countessabran::CountessaBranDriverData;
 pub use crate::world::npc::area29::daughterbran::DaughterBranDriverData;
 pub use crate::world::npc::area29::forestbran::ForestBranDriverData;
+pub use crate::world::npc::area29::guardbran::GuardBranDriverData;
 pub use crate::world::npc::area29::spiritbran::SpiritBranDriverData;
 pub use crate::world::npc::area3::astro1::Astro1DriverData;
 pub use crate::world::npc::area3::astro2::Astro2DriverData;

@@ -158,6 +158,14 @@ impl PlayerRuntime {
         self.write_staffer_i32(STAFFER_PPD_SPIRITBRAN_STATE_OFFSET, state);
     }
 
+    pub fn staffer_guardbran_state(&self) -> i32 {
+        self.read_staffer_i32(STAFFER_PPD_GUARDBRAN_STATE_OFFSET)
+    }
+
+    pub fn set_staffer_guardbran_state(&mut self, state: i32) {
+        self.write_staffer_i32(STAFFER_PPD_GUARDBRAN_STATE_OFFSET, state);
+    }
+
     pub fn staffer_brennethbran_state(&self) -> i32 {
         self.read_staffer_i32(STAFFER_PPD_BRENNETHBRAN_STATE_OFFSET)
     }

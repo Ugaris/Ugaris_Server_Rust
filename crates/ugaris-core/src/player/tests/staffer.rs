@@ -149,6 +149,27 @@ fn staffer_ppd_tracks_forestbran_state_independently_of_forestbran_done() {
 }
 
 #[test]
+fn staffer_ppd_tracks_guardbran_state_independently_of_brennethbran_state() {
+    let mut player = PlayerRuntime::connected(1, 0);
+    assert_eq!(player.staffer_guardbran_state(), 0);
+
+    player.set_staffer_guardbran_state(6);
+    player.set_staffer_brennethbran_state(9);
+    assert_eq!(player.staffer_guardbran_state(), 6);
+    assert_eq!(player.staffer_brennethbran_state(), 9);
+
+    let encoded = player.encode_legacy_staffer_ppd();
+    assert_eq!(encoded.len(), LEGACY_STAFFER_PPD_SIZE);
+    assert_eq!(read_i32(&encoded, STAFFER_PPD_GUARDBRAN_STATE_OFFSET), 6);
+    assert_eq!(read_i32(&encoded, STAFFER_PPD_BRENNETHBRAN_STATE_OFFSET), 9);
+
+    let mut decoded = PlayerRuntime::connected(2, 0);
+    assert!(decoded.decode_legacy_staffer_ppd(&encoded));
+    assert_eq!(decoded.staffer_guardbran_state(), 6);
+    assert_eq!(decoded.staffer_brennethbran_state(), 9);
+}
+
+#[test]
 fn staffer_ppd_exposes_quest_npc_states_for_questlog_init() {
     let mut player = PlayerRuntime::connected(1, 0);
     player.set_staffer_carlos_state(6);
