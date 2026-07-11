@@ -1275,13 +1275,32 @@ Ordered by player progression; the C file is the oracle.
   two real comparator bugs (empty-slot side always sorts "less"
   regardless of side, and the distance branch always returns "less"
   regardless of direction) are kept verbatim, not fixed. 10 new tests.
-  REMAINING: the "place eternal guards" block (`:2892-2911`, needs a
-  still-unported `create_eguard`, which needs `ZoneLoader`), the
-  `ZoneLoader`-needing tail of worker spawning itself, and assembling
-  all ported pieces (`ai_init`/`ai_refresh_places`/`ai_update_npc_list`/
-  `assign_tasks_to_workers`/`ai_threat_and_worklevel_tick`/
-  `ai_dispatch_tasks`/`ai_nag_attack`) into one real `ai_main` call (no
-  live spawn/tick call site exists yet for an AI-controlled party).
+  Twentieth slice done: `create_eguard`'s eligibility/plan/roster-
+  registration halves (`strategy.c:2892-2920,2987-3029`) are now ported -
+  `World::ai_wants_more_eguards`/`ai_eguard_spawn_candidates`/
+  `ai_plan_eguard_spawn` (new `AiEguardSpawnPlan`) plus
+  `AiData::register_new_eguard`, mirroring the `ai_plan_worker_spawn`/
+  `register_new_worker` split precedent exactly. 7 new tests.
+  REMAINING: the actual `ZoneLoader`-needing character-creation tail for
+  *both* `create_eguard` and the regular worker spawn (deliberately not
+  written yet - would be dead code in the `ugaris-server` binary crate
+  with no live caller, same precedent noted for the eighteenth slice),
+  and assembling all ported pieces (`ai_init`/`ai_refresh_places`/
+  `ai_update_npc_list`/`assign_tasks_to_workers`/
+  `ai_threat_and_worklevel_tick`/`ai_dispatch_tasks`/`ai_nag_attack`/the
+  two spawn tails) into one real `ai_main` call. That assembly also needs
+  a real fix, not just wiring: research this iteration found the existing
+  `IDR_STR_TICKER`/`IDR_LQ_TICKER` cn==0 timer reschedule arm
+  (`tick_item_use_clan_lq_arena.rs`'s `StrTicker`/`LqTicker` handling) is
+  itself unreachable dead code today - it lives in the player-`item_use`
+  completion pipeline, not `tick_world.rs`'s `process_due_timers`
+  `timer_outcomes` loop where a real `character_id==0` timer fire's
+  outcome actually lands (see that loop's `EdemonGateSpawn`/`ChestSpawn`/
+  etc. arms for the correct precedent) - so neither ticker's very first
+  `schedule_item_driver_timer` call is ever primed, and `ai_main` has no
+  `cn==0` driver-timer path to hang off of yet either. Fixing that
+  pre-existing gap is a prerequisite for wiring `ai_main` live, not part
+  of this task's own scope.
 - [ ] **Area 25 - `src/area/25/warped.c`** - warped NPC dialogue,
   `DRD_WARPFIGHTER` full fight driver.
 - [ ] **Area 26 - `src/area/26/staffer.c`** - vault skull PPD/quest, Rouven
@@ -1343,6 +1362,11 @@ Keep entries to at most three lines: date, task, one-line result.
 Anything longer belongs in `PORTING_LEDGER.md`; historical verbose
 notes live in `PROGRESS_ARCHIVE.md`.
 
+- 2026-07-11: Areas 23/24 strategy minigame: twentieth slice - ported
+  `create_eguard`'s eligibility/plan/roster-registration halves
+  (`ai_wants_more_eguards`/`ai_eguard_spawn_candidates`/
+  `ai_plan_eguard_spawn`/`AiData::register_new_eguard`). 3665 core [+7]
+  + 1168 server tests pass, clean build/boot-smoke.
 - 2026-07-11: Areas 23/24 strategy minigame: nineteenth slice - ported
   `World::ai_threat_and_worklevel_tick` (missing-worker detection,
   `at[]` threat-list expire/record/`tcomp`-sort/`assign_guards`-dispatch/

@@ -2293,3 +2293,158 @@ fn ai_plan_worker_spawn_deducts_npcprice_and_returns_the_preset_plan() {
 
     assert_eq!(str_item_gold(&world.items[&ItemId(2)]), NPCPRICE as u32 * 2);
 }
+
+// --- `ai_wants_more_eguards`/`ai_eguard_spawn_candidates`/
+// `ai_plan_eguard_spawn` ("place eternal guards" tail) ---
+
+#[test]
+fn ai_wants_more_eguards_false_once_eguard_cap_is_reached() {
+    let world = World::default();
+    let mut ppd = StrategyPpd::default();
+    ppd.eguards = 1;
+    let mut ad = AiData::new(ppd);
+    ad.etguardcnt = 1;
+
+    assert!(!world.ai_wants_more_eguards(&ad));
+
+    ad.etguardcnt = 0;
+    assert!(world.ai_wants_more_eguards(&ad));
+}
+
+#[test]
+fn ai_eguard_spawn_candidates_requires_pdist_enemy_possible_unguarded_and_owned() {
+    let world = World::default();
+    let mut ad = AiData::new(StrategyPpd::default());
+    ad.pdist = 2;
+    ad.places.push(ai_place(AiPlaceType::Storage, 1, 10, 10)); // place 0
+
+    // Eligible: dist == pdist, enemy_possible, unguarded, owned.
+    let mut eligible = ai_place(AiPlaceType::Depot, 2, 20, 20);
+    eligible.dist = 2;
+    eligible.enemy_possible = true;
+    eligible.eguard = -1;
+    eligible.owned = true;
+    ad.places.push(eligible); // place 1
+
+    // Wrong distance.
+    let mut wrong_dist = ai_place(AiPlaceType::Depot, 3, 30, 30);
+    wrong_dist.dist = 1;
+    wrong_dist.enemy_possible = true;
+    wrong_dist.owned = true;
+    ad.places.push(wrong_dist); // place 2
+
+    // Not enemy-reachable.
+    let mut not_reachable = ai_place(AiPlaceType::Depot, 4, 40, 40);
+    not_reachable.dist = 2;
+    not_reachable.enemy_possible = false;
+    not_reachable.owned = true;
+    ad.places.push(not_reachable); // place 3
+
+    // Already guarded.
+    let mut already_guarded = ai_place(AiPlaceType::Depot, 5, 50, 50);
+    already_guarded.dist = 2;
+    already_guarded.enemy_possible = true;
+    already_guarded.eguard = 0;
+    already_guarded.owned = true;
+    ad.places.push(already_guarded); // place 4
+
+    // Not owned by this party.
+    let mut not_owned = ai_place(AiPlaceType::Depot, 6, 60, 60);
+    not_owned.dist = 2;
+    not_owned.enemy_possible = true;
+    not_owned.owned = false;
+    ad.places.push(not_owned); // place 5
+
+    assert_eq!(world.ai_eguard_spawn_candidates(&ad), vec![1]);
+}
+
+#[test]
+fn ai_plan_eguard_spawn_returns_none_for_a_code_outside_ai_presets_range() {
+    let world = World::default();
+    let mut ad = AiData::new(StrategyPpd::default());
+    ad.places.push(ai_place(AiPlaceType::Depot, 2, 20, 20));
+
+    assert!(world
+        .ai_plan_eguard_spawn(&ad, 0, STR_OWNER_AI_BASE - 1)
+        .is_none());
+}
+
+#[test]
+fn ai_plan_eguard_spawn_returns_none_for_an_out_of_range_place() {
+    let world = World::default();
+    let ad = AiData::new(AI_PRESETS[1].to_strategy_ppd());
+
+    assert!(world
+        .ai_plan_eguard_spawn(&ad, 0, STR_OWNER_AI_BASE + 1)
+        .is_none());
+}
+
+#[test]
+fn ai_plan_eguard_spawn_offsets_the_place_by_two_and_returns_the_preset_plan() {
+    let world = World::default();
+    let preset = &AI_PRESETS[1]; // "Zakath"
+    let mut ad = AiData::new(preset.to_strategy_ppd());
+    ad.places.push(ai_place(AiPlaceType::Depot, 2, 20, 30));
+    let code = STR_OWNER_AI_BASE + 1;
+
+    let plan = world
+        .ai_plan_eguard_spawn(&ad, 0, code)
+        .expect("valid place and preset code");
+
+    assert_eq!((plan.x, plan.y), (22, 32));
+    assert_eq!(plan.group, code as u16);
+    assert_eq!(plan.owner_name, preset.name);
+    assert_eq!(plan.level, preset.to_strategy_ppd().eguardlvl);
+    assert_eq!(plan.warcry, preset.to_strategy_ppd().warcry);
+    assert_eq!(plan.endurance, preset.to_strategy_ppd().endurance);
+    assert_eq!(plan.speed, preset.to_strategy_ppd().speed);
+    assert_eq!(plan.npc_color, preset.to_strategy_ppd().npc_color);
+}
+
+// --- `register_new_eguard` (`ai_main`'s "place eternal guards" "add new
+// npc to list" tail) ---
+
+#[test]
+fn register_new_eguard_appends_when_no_empty_slot_exists() {
+    let mut ad = AiData::new(StrategyPpd::default());
+    ad.places.push(ai_place(AiPlaceType::Storage, 1, 10, 10)); // place 0
+    ad.places.push(ai_place(AiPlaceType::Depot, 2, 22, 32)); // place 1
+    ad.npcs.push(ai_npc(1, 5, 5, 10));
+
+    let idx = ad.register_new_eguard(CharacterId(2), 22, 32, 1);
+
+    assert_eq!(idx, 1);
+    assert_eq!(ad.npcs.len(), 2);
+    let fresh = &ad.npcs[1];
+    assert_eq!(fresh.cn, Some(CharacterId(2)));
+    assert_eq!((fresh.x, fresh.y), (22, 32));
+    assert_eq!(fresh.order, OR_ETERNALGUARD);
+    assert_eq!((fresh.or1, fresh.or2), (22, 32));
+    assert_eq!(fresh.task, AiTask::Ignore);
+    assert_eq!(fresh.target, 1);
+    assert_eq!(fresh.current, 1);
+    assert_eq!(fresh.used, 1);
+    // `add_etguard` stationed it at its own (already-matching) place.
+    assert_eq!(ad.places[1].eguard, 1);
+    assert_eq!(ad.etguardcnt, 1);
+}
+
+#[test]
+fn register_new_eguard_reuses_the_first_emptied_slot() {
+    let mut ad = AiData::new(StrategyPpd::default());
+    ad.places.push(ai_place(AiPlaceType::Storage, 1, 10, 10)); // place 0
+    ad.places.push(ai_place(AiPlaceType::Depot, 2, 22, 32)); // place 1
+    ad.npcs.push(ai_npc(1, 5, 5, 10));
+    ad.npcs.push(ai_npc(2, 6, 6, 10));
+    ad.npcs[0].cn = None; // emptied by `ai_update_npc_list`
+    ad.etguardcnt = 3; // pre-existing count from other places
+
+    let idx = ad.register_new_eguard(CharacterId(3), 22, 32, 1);
+
+    assert_eq!(idx, 0);
+    assert_eq!(ad.npcs.len(), 2); // reused, did not grow
+    assert_eq!(ad.npcs[0].cn, Some(CharacterId(3)));
+    assert_eq!(ad.npcs[1].cn, Some(CharacterId(2))); // untouched
+    assert_eq!(ad.places[1].eguard, 0);
+    assert_eq!(ad.etguardcnt, 4);
+}

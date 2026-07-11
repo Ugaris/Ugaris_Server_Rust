@@ -685,14 +685,44 @@
         "test result: ok. 0 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
       ]
+    },
+    {
+      "iteration": 22,
+      "startedAt": "2026-07-11T09:58:12.837Z",
+      "endedAt": "2026-07-11T10:20:19.383Z",
+      "durationMs": 1325279,
+      "agent": "opencode",
+      "model": "anthropic/claude-sonnet-5",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "PORTING_TODO.md",
+        "crates/ugaris-core/src/world/strategy_ai.rs",
+        "crates/ugaris-core/src/world/strategy_ai_tasks.rs",
+        "crates/ugaris-core/src/world/tests/strategy_ai.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "test result: ok. 1168 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 7.89s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 124 passed; 0 failed; 0 ignored; 0 measured; 3541 filtered out; finished in 0.01s",
+        "test result: ok. 1168 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 7.87s",
+        "test result: ok. 3665 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.30s",
+        "7628:- 2026-07-11: Areas 23/24 (`src/area/23_24/strategy.c`) progress: ported `setname`/`restplace`/`findstorage` (`strategy.c:564-712`) as pure/testable `World` methods, extending `crates/ugaris-core",
+        "7629:- 2026-07-11: Areas 23/24 (`src/area/23_24/strategy.c`) progress: ported the `strategy_boss` NPC dialogue driver end to end (Cinciac, `CDR_STRATEGY_BOSS = 80`, `strategy.c:1412-1621`) - a station",
+        "7630:- 2026-07-11: Areas 23/24 (`src/area/23_24/strategy.c`) progress: ported `strategy_driver`'s full per-tick body (`strategy.c:714-1121`) - the recruitable worker/fighter/miner NPC's own driver, `C",
+        "7631:- 2026-07-11: Areas 23/24 (`src/area/23_24/strategy.c`) progress: ported `IDR_STR_SPAWNER`'s player-facing `spawner`/`spawner_sub` (`strategy.c:1244-1381`) - the last missing piece needed to ever",
+        "7632:- 2026-07-11: Areas 23/24 (`src/area/23_24/strategy.c`) progress: ported the structural building blocks of the `ai_main`/`ai_init` AI-opponent driver (`strategy.c:1672-2267`,`2432-2447`) - everyt"
+      ]
     }
   ],
-  "totalDurationMs": 43422441,
+  "totalDurationMs": 44747720,
   "struggleIndicators": {
     "repeatedErrors": {
       "3375 core (+17) and 1168 server (+6) tests all pass, zero failures. Now let's build ugaris-server fo": 1,
       "- `cargo fmt --all`, `cargo test --workspace` (3375 core + 1168 server, zero failures/warnings), `ca": 1,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 21,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 22,
       "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&": 12,
       "test error::tests::error_constants_match_legacy_header ... ok": 10,
       "test error::tests::error_strings_match_legacy_table ... ok": 10,
@@ -759,7 +789,7 @@
       "3534 core tests pass (up from 3467+66=3533, roughly matching my ~66 new tests added), 0 failures. No": 1,
       "All checks pass cleanly: `cargo fmt --all --check` is silent (no formatting issues), and the full wo": 1,
       "Verification: `cargo fmt --all` clean, `cargo test --workspace` (3534 core + 81 db + 3 net + 45 prot": 1,
-      "test result: ok. 1168 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 7.89s": 1,
+      "test result: ok. 1168 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 7.89s": 2,
       "error: could not compile `ugaris-core` (lib) due to 4 previous errors": 1,
       "test result: ok. 1168 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 7.88s": 1,
       "test result: ok. 3513 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.29s": 1,
@@ -798,9 +828,16 @@
       "test result: ok. 3640 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.32s": 1,
       "All green: 3658 core + 81 db + 3 net + 45 protocol + 1168 server tests pass, zero failures. Let's co": 1,
       "Verification: `cargo fmt --all`, `cargo test --workspace` (3658 core [+9] + 81 db + 3 net + 45 proto": 1,
-      "test result: ok. 1168 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 7.87s": 1,
+      "test result: ok. 1168 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 7.87s": 2,
       "test result: ok. 117 passed; 0 failed; 0 ignored; 0 measured; 3541 filtered out; finished in 0.01s": 1,
-      "test result: ok. 3658 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.29s": 1
+      "test result: ok. 3658 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.29s": 1,
+      "test result: ok. 124 passed; 0 failed; 0 ignored; 0 measured; 3541 filtered out; finished in 0.01s": 1,
+      "test result: ok. 3665 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.30s": 1,
+      "7628:- 2026-07-11: Areas 23/24 (`src/area/23_24/strategy.c`) progress: ported `setname`/`restplace`/": 1,
+      "7629:- 2026-07-11: Areas 23/24 (`src/area/23_24/strategy.c`) progress: ported the `strategy_boss` NP": 1,
+      "7630:- 2026-07-11: Areas 23/24 (`src/area/23_24/strategy.c`) progress: ported `strategy_driver`'s fu": 1,
+      "7631:- 2026-07-11: Areas 23/24 (`src/area/23_24/strategy.c`) progress: ported `IDR_STR_SPAWNER`'s pl": 1,
+      "7632:- 2026-07-11: Areas 23/24 (`src/area/23_24/strategy.c`) progress: ported the structural buildin": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

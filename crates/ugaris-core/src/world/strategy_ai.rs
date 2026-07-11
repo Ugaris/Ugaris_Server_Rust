@@ -1136,4 +1136,40 @@ impl AiData {
             self.npcs.len() - 1
         }
     }
+
+    /// C's "add new npc to list" tail of `ai_main`'s "place eternal
+    /// guards" block (`strategy.c:2899-2916`), once a fresh eternal-guard
+    /// character already exists (`ugaris-server` builds it via
+    /// [`World::ai_plan_eguard_spawn`]'s plan - same split as
+    /// [`Self::register_new_worker`]). Reuses the first empty roster slot
+    /// exactly like [`Self::register_new_worker`]'s own linear scan, but
+    /// pre-seeds `order`/`or1`/`or2`/`task`/`target`/`current`/`used` to
+    /// `place` *before* calling [`Self::add_etguard`] (matching C's own
+    /// field-write order, `:2903-2911`, right before `add_etguard(i)` at
+    /// `:2915`) - since the guard was just dropped at that very place's
+    /// coordinates, `add_etguard`'s own `update_npc_place` call is a
+    /// same-place no-op, matching C exactly. Also bumps
+    /// [`AiData::etguardcnt`] (C's own `ad->etguardcnt++;`, `:2916`).
+    pub fn register_new_eguard(&mut self, cn: CharacterId, x: u16, y: u16, place: usize) -> usize {
+        let mut fresh = AiNpc::new(cn, x, y, 0);
+        fresh.order = OR_ETERNALGUARD;
+        fresh.or1 = i32::from(x);
+        fresh.or2 = i32::from(y);
+        fresh.task = AiTask::Ignore;
+        fresh.target = place;
+        fresh.current = place;
+        fresh.used = place as i32;
+
+        let slot = if let Some(slot) = self.npcs.iter().position(|npc| npc.cn.is_none()) {
+            self.npcs[slot] = fresh;
+            slot
+        } else {
+            self.npcs.push(fresh);
+            self.npcs.len() - 1
+        };
+
+        self.add_etguard(slot);
+        self.etguardcnt += 1;
+        slot
+    }
 }

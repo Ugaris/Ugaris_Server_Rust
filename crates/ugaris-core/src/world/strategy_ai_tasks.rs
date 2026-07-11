@@ -1109,6 +1109,111 @@ impl World {
     }
 }
 
+/// Everything [`World::ai_plan_eguard_spawn`] needs to hand off to
+/// `ugaris-server` for the actual `ZoneLoader`-needing character creation
+/// (C `create_eguard`'s own `create_char`/`drop_char` tail,
+/// `strategy.c:2987-3029`) - same split precedent as
+/// [`AiWorkerSpawnPlan`]/[`World::ai_plan_worker_spawn`], just fed from a
+/// specific eligible [`AiPlace`] (C's `ad->ap[n].x + 2, ad->ap[n].y + 2`)
+/// instead of a spawner item to drop near.
+pub struct AiEguardSpawnPlan {
+    pub x: u16,
+    pub y: u16,
+    /// C `group` (`ai_main`'s own `code` parameter, forwarded to
+    /// `create_eguard` unchanged) - narrowed to `u16` to match
+    /// [`Character::group`]'s own field type, same pre-existing,
+    /// documented gap as [`AiWorkerSpawnPlan::group`].
+    pub group: u16,
+    /// C `level` (`ad->ppd.eguardlvl`, `strategy.c:2897`): the fixed
+    /// level `create_eguard` stamps directly onto `ch[co].level` *and*
+    /// `value[1][V_WIS/V_INT/V_AGI/V_STR]` (`:2996-3000`) - unlike a
+    /// recruited worker, which spawns at whatever level its
+    /// `"strategy_npc"` template already has.
+    pub level: i32,
+    /// C `name` (`preset[code - STR_OWNER_AI_BASE].name`, truncated to
+    /// 20 chars by `create_eguard`'s own `strncpy(dat->name, name, 19)`,
+    /// same truncation as [`AiWorkerSpawnPlan::owner_name`]).
+    pub owner_name: String,
+    pub warcry: i32,
+    pub endurance: i32,
+    pub speed: i32,
+    pub npc_color: i32,
+}
+
+impl World {
+    /// C `ai_main`'s "place eternal guards" outer gate
+    /// (`strategy.c:2893`): should the AI attempt to create any more
+    /// eternal guards this tick? Checked once, before scanning every
+    /// place for an eligible one - C never re-checks it per iteration
+    /// (see [`World::ai_eguard_spawn_candidates`]'s own doc comment for
+    /// the resulting real quirk this preserves).
+    pub fn ai_wants_more_eguards(&self, ad: &AiData) -> bool {
+        ad.ppd.eguards > ad.etguardcnt
+    }
+
+    /// C `ai_main`'s "place eternal guards" `for` loop condition
+    /// (`strategy.c:2894-2896`): which place-graph indices are eligible
+    /// for a fresh eternal guard right now - at the party's own panic
+    /// distance ([`AiData::pdist`]), reachable by an enemy
+    /// ([`AiPlace::enemy_possible`]), not already guarded
+    /// ([`AiPlace::eguard`] `== -1`), and owned by this party's own
+    /// `code` ([`AiPlace::owned`], which already *is* C's own
+    /// `*(unsigned int *)(it[ad->ap[n].in].drdata) == code` check - see
+    /// that field's own doc comment). C's `for` loop has no `break` and
+    /// never re-checks [`World::ai_wants_more_eguards`]'s own gate per
+    /// iteration, so - a real, preserved quirk - a single call can spawn
+    /// more eternal guards than [`crate::player::StrategyPpd::eguards`]
+    /// actually allows if more than one place qualifies in the same
+    /// tick; every returned index should be spawned unconditionally by
+    /// the caller, matching that.
+    pub fn ai_eguard_spawn_candidates(&self, ad: &AiData) -> Vec<usize> {
+        ad.places
+            .iter()
+            .enumerate()
+            .filter(|(_, place)| {
+                place.dist == ad.pdist && place.enemy_possible && place.eguard == -1 && place.owned
+            })
+            .map(|(n, _)| n)
+            .collect()
+    }
+
+    /// C `create_eguard`'s parameter setup (`strategy.c:2897-2898`) for
+    /// one specific eligible place, up to (not including) the actual
+    /// `create_char`/`drop_char` character-creation call - `ugaris-server`
+    /// builds the actual character from the returned plan, same split as
+    /// [`World::ai_plan_worker_spawn`]. Returns `None` if `place` is out
+    /// of range or `code` doesn't resolve to a real [`AI_PRESETS`] row
+    /// (C has no such guards - every real caller only ever reaches this
+    /// with a `place` freshly returned by
+    /// [`World::ai_eguard_spawn_candidates`] and a `code` `ai_init`
+    /// already validated).
+    pub fn ai_plan_eguard_spawn(
+        &self,
+        ad: &AiData,
+        place: usize,
+        code: u32,
+    ) -> Option<AiEguardSpawnPlan> {
+        let preset_index = code.checked_sub(STR_OWNER_AI_BASE)? as usize;
+        let preset = AI_PRESETS.get(preset_index)?;
+        let place = ad.places.get(place)?;
+        // C `strncpy(dat->name, name, 19); dat->name[19] = 0;` - 19
+        // visible characters, same truncation as
+        // `World::ai_plan_worker_spawn`'s own `owner_name`.
+        let owner_name: String = preset.name.chars().take(19).collect();
+        Some(AiEguardSpawnPlan {
+            x: place.x.saturating_add(2),
+            y: place.y.saturating_add(2),
+            group: code as u16,
+            level: ad.ppd.eguardlvl,
+            owner_name,
+            warcry: ad.ppd.warcry,
+            endurance: ad.ppd.endurance,
+            speed: ad.ppd.speed,
+            npc_color: ad.ppd.npc_color,
+        })
+    }
+}
+
 /// C `struct strategy_data.order`/`or1`/`or2` (`strategy.c:100-113`)
 /// read back out of the typed [`StrategyWorkerOrder`] a live worker
 /// carries - the inverse of the (unwritten, since no code path needs it
