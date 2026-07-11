@@ -107,6 +107,7 @@ mod madhermit;
 mod merchant;
 mod military;
 mod mining;
+mod mission_start;
 mod moonie;
 mod nomad;
 mod nook;

@@ -1484,14 +1484,52 @@
         "test result: ok. 81 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 0 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 0.00s"
       ]
+    },
+    {
+      "iteration": 42,
+      "startedAt": "2026-07-11T21:09:02.374Z",
+      "endedAt": "2026-07-11T22:01:11.029Z",
+      "durationMs": 3127268,
+      "agent": "opencode",
+      "model": "anthropic/claude-sonnet-5",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "PORTING_TODO.md",
+        "crates/ugaris-core/src/item_driver/helpers.rs",
+        "crates/ugaris-core/src/item_driver/ids.rs",
+        "crates/ugaris-core/src/world/npc/area32/governor.rs",
+        "crates/ugaris-core/src/world/npc/area32/mod.rs",
+        "crates/ugaris-core/src/world/tests/governor.rs",
+        "crates/ugaris-core/src/world/tests/mod.rs",
+        "crates/ugaris-server/src/area32.rs",
+        "crates/ugaris-server/src/tests/mod.rs",
+        "crates/ugaris-core/src/world/npc/area32/mission_start.rs",
+        "crates/ugaris-core/src/world/tests/mission_start.rs",
+        "crates/ugaris-server/src/tests/area32_missions.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "**Verification:** `cargo fmt --all`, `cargo test --workspace` (3927 core + 81 db + 3 net + 45 protocol + 1184 server, all green, zero failures/warnings), `cargo build -p ugaris-server` clean, boot-smo",
+        "test result: ok. 1182 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 7.90s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "ZoneError::MapOutOfBounds {",
+        ".ok_or(ZoneError::MapOutOfBounds { x: tx, y: ty })?;",
+        "1517-                value_index_by_name(&value).ok_or_else(|| ZoneError::Syntax {",
+        "1523-                -(value_index_by_name(&value).ok_or_else(|| ZoneError::Syntax {",
+        "1529-                return Err(ZoneError::Syntax {",
+        "1537-            let flag = item_flag_by_name(&value).ok_or_else(|| ZoneError::Syntax {",
+        "1543-            return Err(ZoneError::Syntax {"
+      ]
     }
   ],
-  "totalDurationMs": 83540547,
+  "totalDurationMs": 86667815,
   "struggleIndicators": {
     "repeatedErrors": {
       "3375 core (+17) and 1168 server (+6) tests all pass, zero failures. Now let's build ugaris-server fo": 1,
       "- `cargo fmt --all`, `cargo test --workspace` (3375 core + 1168 server, zero failures/warnings), `ca": 1,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 41,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 42,
       "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&": 23,
       "test error::tests::error_constants_match_legacy_header ... ok": 20,
       "test error::tests::error_strings_match_legacy_table ... ok": 20,
@@ -1678,7 +1716,16 @@
       "\u001b[0m$ \u001b[0mcargo test --workspace 2>&1 | grep -E \"FAILED|test result|error\" | head -50": 1,
       "test result: ok. 3876 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.31s": 1,
       "- `cargo test --workspace` - 3917 core + 81 db + 3 net + 45 protocol + 1182 server tests, all green,": 1,
-      "test result: ok. 3906 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.30s": 1
+      "test result: ok. 3906 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.30s": 1,
+      "**Verification:** `cargo fmt --all`, `cargo test --workspace` (3927 core + 81 db + 3 net + 45 protoc": 1,
+      "test result: ok. 1182 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 7.90s": 1,
+      "ZoneError::MapOutOfBounds {": 1,
+      ".ok_or(ZoneError::MapOutOfBounds { x: tx, y: ty })?;": 1,
+      "1517-                value_index_by_name(&value).ok_or_else(|| ZoneError::Syntax {": 1,
+      "1523-                -(value_index_by_name(&value).ok_or_else(|| ZoneError::Syntax {": 1,
+      "1529-                return Err(ZoneError::Syntax {": 1,
+      "1537-            let flag = item_flag_by_name(&value).ok_or_else(|| ZoneError::Syntax {": 1,
+      "1543-            return Err(ZoneError::Syntax {": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

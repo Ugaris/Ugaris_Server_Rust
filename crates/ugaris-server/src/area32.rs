@@ -12,8 +12,13 @@
 use std::collections::HashMap;
 
 use super::*;
+use ugaris_core::character_driver::apply_simple_baddy_create_message;
+use ugaris_core::world::calc_exp;
 use ugaris_core::world::npc::area32::governor::{
     MissionGiveOutcomeEvent, MissionGivePlayerFacts, MIS_REWARDS,
+};
+use ugaris_core::world::npc::area32::mission_start::{
+    build_fighter_stat_values, special_item_tier_for_level, FighterSpawnSpec,
 };
 
 pub(crate) fn mission_giver_player_facts(
@@ -146,7 +151,122 @@ pub(crate) fn apply_mission_giver_events(
                 );
                 applied += 1;
             }
+            // C `start_mission`'s `build_fighter` calls (`missions.c:
+            // 1030-1115`).
+            MissionGiveOutcomeEvent::SpawnMissionFighters { fighters } => {
+                for spec in &fighters {
+                    spawn_mission_fighter(world, loader, runtime, spec);
+                }
+                applied += 1;
+            }
         }
     }
     applied
+}
+
+/// C `build_fighter` (`missions.c:678-865`): instantiate the fighter's
+/// base template, rescale its raisable skills for `spec.diff`
+/// ([`build_fighter_stat_values`]), overwrite name/description/sprite/
+/// flags, attach the `mis_key`/big-boss special item/`armor_spell`/
+/// `weapon_spell` items, finalize exp/level, and drop it on the map.
+///
+/// C's `mission_fighter_driver`'s own dispatch is an unconditional tail
+/// call to `char_driver(CDR_SIMPLEBADDY, ...)` (`missions.c:1849-1851`) -
+/// same "reuse SimpleBaddy AI wholesale" precedent as `CDR_PENTER`/
+/// `CDR_DUNGEONFIGHTER`/etc (`zone.rs`'s template-instantiation special
+/// cases), simplified here to directly assign `CDR_SIMPLEBADDY` as the
+/// spawned fighter's own `driver` (rather than introducing an unused
+/// `CDR_MISSIONFIGHT` id) since this slice does not yet port
+/// `mission_fighter_dead`/`missionchest_driver` - the only C consumers
+/// that would ever need to distinguish a mission fighter from any other
+/// SimpleBaddy by driver id. Revisit (mirroring `CDR_PENTER`'s pattern)
+/// when that death hook is ported.
+pub(crate) fn spawn_mission_fighter(
+    world: &mut World,
+    loader: &mut ZoneLoader,
+    runtime: &mut ServerRuntime,
+    spec: &FighterSpawnSpec,
+) -> bool {
+    let character_id = runtime.allocate_character_id();
+    let Ok((mut fighter, mut inventory_items)) =
+        loader.instantiate_character_template(spec.temp, character_id)
+    else {
+        return false;
+    };
+
+    let simple_baddy_args = loader
+        .character_templates
+        .get(spec.temp)
+        .map(|template| template.args.clone());
+    fighter.driver = CDR_SIMPLEBADDY;
+    fighter.push_driver_message(ugaris_core::character_driver::NT_CREATE, 0, 0, 0);
+    apply_simple_baddy_create_message(&mut fighter, simple_baddy_args.as_deref(), 0);
+
+    let markers = fighter.values[1].clone();
+    fighter.values[1] = build_fighter_stat_values(&markers, spec.diff);
+
+    fighter.x = spec.x;
+    fighter.y = spec.y;
+    fighter.rest_x = spec.x;
+    fighter.rest_y = spec.y;
+    fighter.dir = Direction::RightDown as u8;
+    fighter.deaths = u32::from(spec.fighter_kind);
+    fighter.sprite = spec.sprite;
+    fighter.flags.insert(spec.extra_flags);
+    fighter.name = spec.name.clone();
+    fighter.description = spec.desc.to_string();
+
+    fighter.exp = calc_exp(&fighter);
+    fighter.exp_used = fighter.exp;
+    fighter.level = ugaris_core::world::exp2level(fighter.exp);
+    if (spec.diff > 100 && fighter.level < 10) || fighter.level > 200 {
+        fighter.level = 200;
+    }
+
+    if spec.key_id != 0 {
+        if let Ok(mut key_item) = loader.instantiate_item_template("mis_key", Some(character_id)) {
+            key_item.template_id = spec.key_id;
+            key_item.name = spec.key_name.to_string();
+            fighter.inventory[30] = Some(key_item.id);
+            inventory_items.push(key_item);
+        }
+    }
+
+    if spec.has_special_item {
+        let (strength, base) = special_item_tier_for_level(fighter.level as i32);
+        if let Some(mut special_item) = world.create_special_item(loader, strength, base, 1, 10000)
+        {
+            special_item.carried_by = Some(character_id);
+            fighter.inventory[31] = Some(special_item.id);
+            inventory_items.push(special_item);
+        }
+    }
+
+    if let Ok(mut armor) = loader.instantiate_item_template("armor_spell", Some(character_id)) {
+        let armor_skill = i32::from(fighter.values[1][CharacterValue::ArmorSkill as usize]);
+        armor.modifier_value[0] = (armor_skill.clamp(13, 113) * 20) as i16;
+        fighter.inventory[14] = Some(armor.id);
+        inventory_items.push(armor);
+    }
+    if let Ok(mut weapon) = loader.instantiate_item_template("weapon_spell", Some(character_id)) {
+        let hand_skill = i32::from(fighter.values[1][CharacterValue::Hand as usize]);
+        weapon.modifier_value[0] = hand_skill.clamp(13, 113) as i16;
+        fighter.inventory[15] = Some(weapon.id);
+        inventory_items.push(weapon);
+    }
+
+    if !world.spawn_character(fighter, usize::from(spec.x), usize::from(spec.y)) {
+        return false;
+    }
+    for item in inventory_items {
+        world.items.insert(item.id, item);
+    }
+    world.update_character(character_id);
+    if let Some(character) = world.characters.get_mut(&character_id) {
+        character.hp = i32::from(character.values[0][CharacterValue::Hp as usize]) * POWERSCALE;
+        character.endurance =
+            i32::from(character.values[0][CharacterValue::Endurance as usize]) * POWERSCALE;
+        character.mana = i32::from(character.values[0][CharacterValue::Mana as usize]) * POWERSCALE;
+    }
+    true
 }

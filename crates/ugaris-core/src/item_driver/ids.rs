@@ -1012,3 +1012,21 @@ pub(crate) const IID_STAFF_THIEFKEY2: u32 = make_item_id(DEV_ID_WARR, 0x00002B);
 /// C `IID_STAFF_THIEFKEY3` (`src/common/item_id.h:343`): destroyed alongside
 /// `IID_STAFF_DAUGHTERJEWEL` on turn-in.
 pub(crate) const IID_STAFF_THIEFKEY3: u32 = make_item_id(DEV_ID_WARR, 0x00002C);
+
+/// C `IID_MISSIONFIGHTER` (`src/common/item_id.h:216`): the placeholder
+/// marker item `start_mission`'s map scan reads (`world::npc::area32::
+/// mission_start`) - `driver_data[0]` (C `drdata[0]`) tags which fighter
+/// role (`1..=7`) to spawn in its place.
+pub const IID_MISSIONFIGHTER: u32 = make_item_id(DEV_ID_DB, 0x00009D);
+/// C `IID_MISSIONCHEST` (`src/common/item_id.h:217`): the mission-reward
+/// chest `start_mission` wires the instance's item key into.
+pub const IID_MISSIONCHEST: u32 = make_item_id(DEV_ID_DB, 0x00009E);
+/// C `IID_MISSIONDOOR1` (`src/common/item_id.h:218`): the first key-locked
+/// door `start_mission` wires.
+pub const IID_MISSIONDOOR1: u32 = make_item_id(DEV_ID_DB, 0x00009F);
+/// C `IID_MISSIONDOOR2` (`src/common/item_id.h:219`): the second key-locked
+/// door `start_mission` wires.
+pub const IID_MISSIONDOOR2: u32 = make_item_id(DEV_ID_DB, 0x0000A0);
+/// C `IID_MISSIONENTRY` (`src/common/item_id.h:220`): the instance's
+/// teleport-in tile, sprite hidden (`sprite = 0`) once the mission starts.
+pub const IID_MISSIONENTRY: u32 = make_item_id(DEV_ID_DB, 0x0000A1);

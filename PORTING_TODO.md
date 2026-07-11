@@ -1396,10 +1396,16 @@ Ordered by player progression; the C file is the oracle.
 - [~] **Area 32 - `src/area/32/missions.c`** - governor mission NPCs
   (needs P3 military). REMAINING: `CDR_MISSIONGIVE` ("Mister Jones")
   dialogue/reward-shop is fully live (22/24 rewards fully functional);
-  `start_mission`/`build_fighter` (the 41x41 instance-dungeon spawn),
-  `missionchest_driver`, `mission_fighter_dead`, `CTPOT`'s stat-potion
-  flow, and the rotating "special offer" purchase are not ported yet -
-  see `world/npc/area32/governor.rs`'s module doc comment.
+  `start_mission`/`build_fighter` (the 41x41 instance-dungeon spawn) is
+  now also ported (`world/npc/area32/mission_start.rs` + `ugaris-server/
+  src/area32.rs::spawn_mission_fighter`) - "accept job Alpha/Beta/Gamma"
+  now actually builds the instance, spawns fighters (reusing
+  `CDR_SIMPLEBADDY` AI), wires door/chest keys, and teleports the player
+  in. Still not ported: `missionchest_driver` (`IDR_MISSIONCHEST`) so the
+  reward chest can't be opened yet, `mission_fighter_dead`'s kill-counter
+  hook so `mission_done` never auto-fires, `CTPOT`'s stat-potion flow, and
+  the rotating "special offer" purchase - see `world/npc/area32/
+  governor.rs`'s module doc comment.
 - [ ] **Area 33 - `src/area/33/tunnel.c`** - long tunnel events. Also wire
   `achievement_add_tunnel_level` using the existing `award_*` helper
   pattern in `crates/ugaris-server/src/achievement.rs` (Achievements
@@ -1449,6 +1455,12 @@ Keep entries to at most three lines: date, task, one-line result.
 Anything longer belongs in `PORTING_LEDGER.md`; historical verbose
 notes live in `PROGRESS_ARCHIVE.md`.
 
+- 2026-07-11: Area 32 progress: ported `start_mission`/`build_fighter`
+  (the 41x41 instance-dungeon spawn, `world/npc/area32/mission_start.rs`
+  + `ugaris-server/src/area32.rs::spawn_mission_fighter`) - accepting a
+  job now builds the dungeon, spawns fighters, wires door/chest keys, and
+  teleports the player in. 3927 core [+10] + 1184 server [+2] tests pass,
+  boot-smoke (area 32, real zone data).
 - 2026-07-11: Area 32 progress: ported `CDR_MISSIONGIVE` ("Mister Jones"
   job-board/reward-shop NPC, `world/npc/area32/governor.rs`, new
   `PlayerRuntime::governor` field) - dialogue, job rolling, and 22/24

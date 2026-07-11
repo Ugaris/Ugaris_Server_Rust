@@ -8,6 +8,7 @@ use super::*;
 
 mod achievement;
 mod area25;
+mod area32_missions;
 mod area8_army;
 mod area_apply;
 mod auction;

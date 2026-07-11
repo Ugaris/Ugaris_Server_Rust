@@ -9,24 +9,24 @@
 //! `mission_show_reward`/`mission_give_reward` (`:1132-1287`), and
 //! `remove_mission_items` (`:1161-1175`).
 //!
-//! Deviations/gaps (documented, not silent) - this is a first, self-
-//! contained slice of the "Area 32 - `missions.c`" porting task; the
-//! following are intentionally **not yet ported**, tracked in
-//! `PORTING_TODO.md`:
-//! - `start_mission`/`build_fighter` (`:678-1130`): the 41x41-tile
-//!   instance-dungeon spawn (busy-slice search, procedural
-//!   `CDR_SIMPLEBADDY` fighter stat generation, key-door wiring) that
-//!   "accept job Alpha/Beta/Gamma" (qa codes 7/8/9) triggers. This port
-//!   recognizes those three phrases (matches the qa table, `didsay`
-//!   becomes true) but takes no action - a player can view job details
-//!   and roll new job offers, but can never actually start one yet.
-//!   `mission_status`/`mission_done`/`missionchest_driver`
-//!   (`IDR_MISSIONCHEST`)/`mission_fighter_dead`'s kill-counter hook
-//!   (`CDR_MISSIONFIGHT`, a thin `CDR_SIMPLEBADDY` wrapper) are all
-//!   unreachable without `start_mission` and are deferred alongside it;
-//!   [`crate::player::MissionPpd`]'s `mcnt`/`md_idx`/`kill_*`/`find_item`
-//!   fields exist already (zero-initialized) so this can be added later
-//!   as a pure additive change.
+//! Deviations/gaps (documented, not silent) - this slice also now ports
+//! `start_mission`/`build_fighter` (`:678-1130`, `world::npc::area32::
+//! mission_start`): "accept job Alpha/Beta/Gamma" (qa codes 7/8/9) plans
+//! the 41x41-tile instance-dungeon spawn (busy-slice search, existing-
+//! occupant cleanup, procedural fighter stat generation, key-door/chest
+//! wiring, `mission_status` HUD lines, `teleport_char_driver`) and defers
+//! the actual `ZoneLoader`-needing character creation to `ugaris-server`'s
+//! `area32.rs::spawn_mission_fighters` via a new `SpawnMissionFighters`
+//! event - see that module's own doc comment for the exact split. The
+//! following remain **not yet ported**, tracked in `PORTING_TODO.md`:
+//! - `missionchest_driver` (`IDR_MISSIONCHEST`)/`mission_done`/
+//!   `mission_fighter_dead`'s kill-counter hook (`CDR_MISSIONFIGHT`, a
+//!   thin `CDR_SIMPLEBADDY` wrapper): a mission can now be started and
+//!   its dungeon populated, but nothing yet decrements `ppd->kill_*`/
+//!   `find_item` on a fighter kill or chest loot, so `mission_done`'s
+//!   auto-solve never fires and the reward chest cannot be opened
+//!   (`IDR_MISSIONCHEST`'s driver id has no dispatch case yet, a safe
+//!   non-crashing no-op).
 //! - The rotating procedural "special offer" gear purchase (qa codes
 //!   18/19, `dat->next_spec`/`dat->spec_cost`/`ch[cn].item[30]`): needs
 //!   `World::create_special_item` wired through a `ZoneLoader`-backed
@@ -82,6 +82,9 @@ use crate::player::{MissionPpd, SingleMission};
 use crate::text::{COL_STR_LIGHT_BLUE, COL_STR_LIGHT_GREEN, COL_STR_RESET};
 use crate::world::items::give_money_message;
 use crate::world::npc::area32::military::army_rank_for_points;
+use crate::world::npc::area32::mission_start::{
+    mission_status_lines, MissionStartError, MISSION_FIGHTER_DATA,
+};
 use crate::world::*;
 
 /// C `char_dist(cn, co) > 10` (`missions.c:1424`): the `NT_CHAR`
@@ -505,9 +508,10 @@ pub struct MissionGivePlayerFacts {
 
 /// A side effect [`World::process_mission_giver_actions`] could not apply
 /// directly because it touches `PlayerRuntime` (`UpdatePpd`) or needs a
-/// `ZoneLoader` (`GiveItemReward`/`ShowItemReward`, both `ugaris-server`-
-/// only capabilities `World` cannot reach). See the module doc comment.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// `ZoneLoader` (`GiveItemReward`/`ShowItemReward`/`SpawnMissionFighters`,
+/// all `ugaris-server`-only capabilities `World` cannot reach). See the
+/// module doc comment.
+#[derive(Debug, Clone, PartialEq)]
 pub enum MissionGiveOutcomeEvent {
     /// Write a full new `governor` ppd snapshot back.
     UpdatePpd {
@@ -531,6 +535,13 @@ pub enum MissionGiveOutcomeEvent {
         player_id: CharacterId,
         npc_id: CharacterId,
         reward_index: usize,
+    },
+    /// C `start_mission`'s `build_fighter` calls (`missions.c:1030-1115`):
+    /// spawn each planned fighter. Applied server-side since it needs a
+    /// `ZoneLoader`/`ServerRuntime::allocate_character_id` - see
+    /// `mission_start`'s module doc comment.
+    SpawnMissionFighters {
+        fighters: Vec<crate::world::npc::area32::mission_start::FighterSpawnSpec>,
     },
 }
 
@@ -918,9 +929,38 @@ impl World {
                 }
                 didsay = true;
             }
-            // C `case 7/8/9:` ("accept job ..."), deferred - see the
-            // module doc comment.
-            TextAnalysisOutcome::Matched(7..=9) => {
+            // C `case 7/8/9:` ("accept job ...").
+            TextAnalysisOutcome::Matched(code @ 7..=9) => {
+                let idx = (code - 7) as usize;
+                if ppd.sm[idx].mission_type != 0 && ppd.active == 0 && ppd.solved == 0 {
+                    match self.plan_start_mission(idx, &mut ppd) {
+                        Ok(plan) => {
+                            let md_idx =
+                                ppd.md_idx.clamp(0, MISSION_FIGHTER_DATA.len() as i32 - 1) as usize;
+                            let title = MISSION_TEMPLATES[md_idx].title;
+                            for line in
+                                mission_status_lines(&ppd, title, &MISSION_FIGHTER_DATA[md_idx])
+                            {
+                                self.queue_system_text(speaker_id, line);
+                            }
+                            self.teleport_char_driver(speaker_id, plan.entry.0, plan.entry.1);
+                            events.push(MissionGiveOutcomeEvent::SpawnMissionFighters {
+                                fighters: plan.fighters,
+                            });
+                        }
+                        Err(MissionStartError::AllSlicesBusy) => {
+                            self.npc_quiet_say(
+                                giver_id,
+                                &format!(
+                                    "I'm sorry, {}, but it appears that this job is unavailable right now. Please choose a different one.",
+                                    speaker.name
+                                ),
+                            );
+                        }
+                    }
+                } else {
+                    self.npc_quiet_say(giver_id, "I haven't offered you that job yet.");
+                }
                 didsay = true;
             }
             // C `case 10:` ("fail").

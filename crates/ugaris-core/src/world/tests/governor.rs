@@ -359,3 +359,76 @@ fn give_item_is_always_handed_back() {
     let godmode = world.characters.get(&CharacterId(2)).unwrap();
     assert_eq!(godmode.cursor_item, Some(ItemId(50)));
 }
+
+#[test]
+fn text_accept_job_alpha_refuses_when_job_was_never_offered() {
+    let mut world = World::default();
+    world.map.tile_mut(12, 10).unwrap().light = 255;
+    assert!(world.spawn_character(mission_giver_npc(1), 10, 10));
+    assert!(world.spawn_character(player(2, "Godmode"), 12, 10));
+
+    if let Some(giver) = world.characters.get_mut(&CharacterId(1)) {
+        giver.push_driver_text_message(CharacterId(2), "accept job alpha");
+    }
+    let events = world.process_mission_giver_actions(
+        &facts(CharacterId(2), MissionPpd::default()),
+        32,
+        1000,
+    );
+    assert!(!events
+        .iter()
+        .any(|event| matches!(event, MissionGiveOutcomeEvent::SpawnMissionFighters { .. })));
+    let texts = world.drain_pending_area_texts();
+    assert!(texts
+        .iter()
+        .any(|text| text.message.contains("I haven't offered you that job yet.")));
+}
+
+#[test]
+fn text_accept_job_alpha_starts_the_mission_and_teleports_the_player() {
+    let mut world = World::default();
+    // The governor NPC/player stand well outside every area/slice
+    // combination the busy scan can pick (`x/y in 1..=246`, `MAX_MAP` is
+    // 256) so the talking player isn't seen as an occupant of their own
+    // new instance.
+    world.map.tile_mut(252, 250).unwrap().light = 255;
+    assert!(world.spawn_character(mission_giver_npc(1), 250, 250));
+    assert!(world.spawn_character(player(2, "Godmode"), 252, 250));
+
+    // Thief mission (mdidx=0, area=0): slice n=0 spans x=1..=41, y=1..=41.
+    let mut entrance = item(90, ItemFlags::USED);
+    entrance.template_id = crate::item_driver::IID_MISSIONENTRY;
+    assert!(world.map.set_item_map(&mut entrance, 30, 30));
+    world.add_item(entrance);
+
+    let ppd = MissionPpd {
+        sm: [
+            SingleMission {
+                mission_type: 1,
+                mdidx: 0,
+                difficulty: 42,
+            },
+            SingleMission::default(),
+            SingleMission::default(),
+        ],
+        ..MissionPpd::default()
+    };
+    if let Some(giver) = world.characters.get_mut(&CharacterId(1)) {
+        giver.push_driver_text_message(CharacterId(2), "accept job alpha");
+    }
+    let events = world.process_mission_giver_actions(&facts(CharacterId(2), ppd), 32, 1000);
+    let new_ppd = find_update(&events, CharacterId(2)).expect("ppd update expected");
+    assert_eq!(new_ppd.active, 1);
+    assert_eq!(new_ppd.mcnt, 1);
+    assert!(events
+        .iter()
+        .any(|event| matches!(event, MissionGiveOutcomeEvent::SpawnMissionFighters { .. })));
+
+    let player = world.characters.get(&CharacterId(2)).unwrap();
+    assert_eq!((player.x, player.y), (30, 30));
+
+    let texts = world.drain_pending_system_texts();
+    assert!(texts
+        .iter()
+        .any(|text| text.message == "#30Stolen Documents"));
+}

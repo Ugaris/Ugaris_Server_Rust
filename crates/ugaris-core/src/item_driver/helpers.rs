@@ -46,6 +46,11 @@ pub(crate) const DEV_ID_MR: u32 = 0x02;
 
 pub(crate) const DEV_ID_WARR: u32 = 0x06;
 
+/// C `DEV_ID_MISSION` (`src/common/item_id.h:43`, "keys from mission
+/// area"): seeds `start_mission`'s per-instance `mis_key` item IDs
+/// (`world::npc::area32::mission_start::plan_start_mission`).
+pub(crate) const DEV_ID_MISSION: u32 = 0x09;
+
 /// C `DEV_ID_RHORUN` (`src/common/item_id.h:40`): the dragon-staff items
 /// `carlos_driver`'s first quest (`world::carlos`) hands out/collects.
 pub(crate) const DEV_ID_RHORUN: u32 = 0x07;

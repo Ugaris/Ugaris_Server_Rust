@@ -2,6 +2,7 @@
 
 pub mod governor;
 pub mod military;
+pub mod mission_start;
 
 #[allow(unused_imports)]
 pub use military::*;
