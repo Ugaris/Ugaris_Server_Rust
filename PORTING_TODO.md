@@ -1211,10 +1211,25 @@ Ordered by player progression; the C file is the oracle.
   and every valid `ai_init` `code` exceeds `u16::MAX`, the same
   pre-existing, documented gap as `World::str_did_party_lose`). 12 new
   tests, still not wired to any live tick call site.
-  REMAINING: `ai_main`'s own outer per-tick body (the roster/threat
-  refresh, worker spawning, and the per-npc task-dispatch switch calling
-  the now-ported `task_*` functions), `create_eguard`, and the
-  threat-detection scan that populates `AiPlace`'s threat fields.
+  Thirteenth slice done: `World::ai_refresh_places` (`strategy.c:2505-
+  2630`) - `ai_main`'s per-place owned/platin/threat refresh loop (the
+  enemy-presence scan populating `threat`/`threatlevel`/`threatcount`/
+  `threatncount`/`threatnlevel`, threat propagation up/down the parent
+  chain, `panic`/`pplace`/`pdist`) plus the "project threats to
+  neighboring places" pass. C's sector-grid scan is replaced with a
+  plain linear `self.characters` scan (same final distance check, same
+  precedent as other "no sector index" ports); `ragnarok`/`nogoldleft`
+  are returned via a new `AiPlaceRefreshResult` rather than committed to
+  `AiData` (C only commits them at the very end of `ai_main`, after
+  still-unported blocks that read the *previous* tick's values). 11 new
+  tests.
+  REMAINING: the "update npc list" NPC-vec refresh (doesn't map cleanly
+  onto the current `Vec`-backed roster - see `strategy_ai.rs`'s module
+  doc comment), the worker-count/eternal-guard-count half of the
+  per-place loop (indexes the NPC roster), worker spawning, the panic/
+  non-panic task-assignment switch, the final per-npc task-dispatch
+  switch, `create_eguard` (needs `ZoneLoader`), and the "place eternal
+  guards" tail that calls it.
 - [ ] **Area 25 - `src/area/25/warped.c`** - warped NPC dialogue,
   `DRD_WARPFIGHTER` full fight driver.
 - [ ] **Area 26 - `src/area/26/staffer.c`** - vault skull PPD/quest, Rouven
@@ -1276,6 +1291,10 @@ Keep entries to at most three lines: date, task, one-line result.
 Anything longer belongs in `PORTING_LEDGER.md`; historical verbose
 notes live in `PROGRESS_ARCHIVE.md`.
 
+- 2026-07-11: Areas 23/24 strategy minigame: thirteenth slice - ported
+  `World::ai_refresh_places` (`ai_main`'s per-place owned/platin/threat
+  refresh + neighbor threat projection). 3601 core [+11] + 1168 server
+  tests pass, clean build. Roster refresh/task-assignment still remain.
 - 2026-07-11: Areas 23/24 strategy minigame: twelfth slice - ported
   `World::ai_init` (place graph + live-roster classification via new
   `AiData::register_npc`). 3590 core [+12] + 1168 server tests pass,

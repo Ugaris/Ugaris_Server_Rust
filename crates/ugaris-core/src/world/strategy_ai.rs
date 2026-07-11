@@ -104,15 +104,52 @@
 //! [`AiData`] outside tests yet - same "ported but not yet spawnable"
 //! precedent as every other piece of this subsystem).
 //!
+//! Third slice done: [`World::ai_refresh_places`] (`strategy.c:2505-
+//! 2630`) - `ai_main`'s per-place worker/threat refresh loop (owned/
+//! platin bookkeeping, the enemy-presence scan that populates each
+//! [`AiPlace`]'s `threat`/`threatlevel`/`threatcount`/`threatncount`/
+//! `threatnlevel`, threat propagation up/down the parent chain, `ad->
+//! panic`/`pplace`/`pdist`), plus the following "project threats to
+//! neighboring places" loop (`:2620-2630`). C's sector-grid scan
+//! (`getfirst_char_sector`/`sec_next`, stepping by 8 within a
+//! computed +-12 box) is replaced with a plain linear scan over
+//! `self.characters` filtered by the same final `abs(...) < 10`
+//! distance check - same observable result, matching the "no sector
+//! index in this codebase" precedent already used elsewhere (e.g.
+//! `world/npc/bank.rs`). C's `seen[MAXCHARS]` de-dupe array (shared
+//! across every place in one `ai_main` call, not reset per place - a
+//! character only ever contributes threat to the first place, in `n`
+//! order, whose scan region contains it) is a `HashSet<CharacterId>`
+//! local to the function with the same single-shared-scope lifetime.
+//! `cantrain` (`:2452,2475-2477`, normally derived by the still-unported
+//! "update npc list" loop from each live NPC's *current* level) is
+//! instead derived here from each [`AiNpc`]'s cached `level`/`task`
+//! fields - a best-effort stand-in that goes stale between roster
+//! refreshes until that loop is ported (see REMAINING below).
+//! `ragnarok`/`nogoldleft` are returned via [`AiPlaceRefreshResult`]
+//! rather than written straight to `ad` fields: C only commits them to
+//! `ad->ragnarok`/`ad->nogoldleft` at the very end of `ai_main`
+//! (`:2926-2927`), *after* the still-unported worker-task-assignment/
+//! threat-handling/nag-attack blocks that read the *previous* tick's
+//! committed values mid-function - writing them early here would corrupt
+//! that read-before-write ordering for whatever future slice ports the
+//! rest of `ai_main` and wires the real commit.
+//!
 //! REMAINING (tracked in `PORTING_TODO.md`, left `[~]` on purpose):
-//! `ai_main`'s own outer per-tick body (`:2449-2973`) - the per-tick
-//! roster/threat refresh (re-deriving `used`/`gcnt` from what `ai_init`
-//! just seeded, the enemy-presence map scan that populates
-//! `threat`/`threatlevel`/`threatcount`/`threatncount`/`owned`), worker
-//! spawning, and the actual per-npc task-dispatch `switch` that calls the
-//! `task_*` functions this file already ports - plus `create_eguard`
-//! (`:2987-3040`, needs `ZoneLoader`) and the "place eternal guards" tail
-//! that calls it (`:2892-2903`).
+//! `ai_main`'s own outer per-tick body still needs: the "update npc
+//! list" NPC-vec refresh (`:2461-2482`, re-deriving `x`/`y`/`level`/
+//! `platin`/`used` from each live NPC and dropping despawned ones - see
+//! this module's doc comment on why removal doesn't map cleanly onto the
+//! current `Vec`-backed roster), the "update worker/etguard counts on
+//! places" half of the per-place loop this slice does not cover
+//! (`:2511-2520`,`:2531-2539`, both index into the NPC roster), worker
+//! spawning (`:2644-2672`), the panic/non-panic task-assignment switch
+//! (`:2674-2924`, calls the already-ported `task_*` functions plus
+//! `wantguardcnt`/`assign_guards`/`remove_free_guards`/`nag_attack`,
+//! also all already ported), the final per-npc task-dispatch `switch`
+//! (`:2932-2972`) - plus `create_eguard` (`:2987-3040`, needs
+//! `ZoneLoader`) and the "place eternal guards" tail that calls it
+//! (`:2892-2903`).
 
 use super::*;
 use crate::character_driver::CDR_STRATEGY;
@@ -255,11 +292,35 @@ pub struct AiPlace {
     pub worker: [i32; AI_MAXWORKER],
     /// NPC-array index of this place's eternal guard, `-1` if none.
     pub eguard: i32,
-    /// C `double threatcount` (`:1733`) - not yet populated by any
-    /// ported code (see module doc comment); carried so
-    /// [`World::ai_nag_attack`] can read it once a future slice's threat
-    /// scan starts writing it.
+    /// C `int platin` (`:1720`): the AI's own smoothed running estimate
+    /// of this place's currency (half of last tick's value plus the
+    /// building item's current real balance) - a separate tracking
+    /// variable from the item's own actual [`str_item_gold`] balance,
+    /// refreshed by [`World::ai_refresh_places`].
+    pub platin: i32,
+    /// C `int threat` (`:1730`): this place's own smoothed threat score
+    /// (halved each tick, then built back up from nearby enemy presence
+    /// plus a share of its parent's threat), refreshed by
+    /// [`World::ai_refresh_places`].
+    pub threat: i32,
+    /// C `int threatlevel` (`:1731`): highest enemy level seen at this
+    /// place this tick (or last tick's, while `threat` is still nonzero).
+    pub threatlevel: i32,
+    /// C `int threatnlevel` (`:1732`): highest threat level seen at a
+    /// *neighboring* place, projected by [`World::ai_refresh_places`]'s
+    /// "project threats to neighboring places" pass.
+    pub threatnlevel: i32,
+    /// C `double threatcount` (`:1733`) - populated by
+    /// [`World::ai_refresh_places`]'s enemy-presence scan.
     pub threatcount: f64,
+    /// C `double threatncount` (`:1734`): this place's own threatcount
+    /// contribution to/from its neighbors, projected by
+    /// [`World::ai_refresh_places`]'s "project threats to neighboring
+    /// places" pass.
+    pub threatncount: f64,
+    /// C `int owned` (`:1736`): does this party's own `code` currently
+    /// own this place's building item (`it[in].drdata[0] == code`)?
+    pub owned: bool,
     /// C's `enemy_possible` field (`:1732`): could an enemy ever
     /// approach through this place? Stamped `true` directly on every
     /// non-owned enemy storage place [`World::ai_init`] discovers
@@ -284,10 +345,35 @@ impl AiPlace {
             wcnt: 0,
             worker: [-1; AI_MAXWORKER],
             eguard: -1,
+            platin: 0,
+            threat: 0,
+            threatlevel: 0,
+            threatnlevel: 0,
             threatcount: 0.0,
+            threatncount: 0.0,
+            owned: false,
             enemy_possible: false,
         }
     }
+}
+
+/// The `ragnarok`/`nogoldleft` locals `ai_main` computes across its whole
+/// per-place refresh loop (`strategy.c:2452-2617`) but only ever commits
+/// to `ad->ragnarok`/`ad->nogoldleft` at the very end of the function
+/// (`:2926-2927`) - see [`World::ai_refresh_places`]'s own doc comment
+/// for why this port returns them instead of writing them straight to
+/// [`AiData`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AiPlaceRefreshResult {
+    /// C's `ragnarok` local, initialized `1` (`:2452`): true unless some
+    /// non-storage place still has un-threatened gold left (or storage
+    /// itself has enough spare gold and an under-max-level eternal guard
+    /// to train) - "no economy left to grow, throw everyone at the
+    /// enemy" all-out-defense trigger for [`World::ai_assign_guards`].
+    pub ragnarok: bool,
+    /// C's `nogoldleft` local, initialized `1` (`:2452`): true unless
+    /// some non-storage place still has un-threatened gold left.
+    pub nogoldleft: bool,
 }
 
 /// C's file-static `struct ai_data ai_data[MAX_AI], *ad` (`strategy.c:
@@ -316,6 +402,19 @@ pub struct AiData {
     pub nagguard: i32,
     pub partner: Vec<ItemId>,
     pub ppd: StrategyPpd,
+    /// C `int pdist` (`:1764`): the panic-defense distance threshold -
+    /// any threatened place within this BFS depth of storage triggers
+    /// `panic`. C `ai_init` seeds this to `3` (`:2290`); it can only
+    /// shrink afterward (`ai_main`'s `ad->pdist = min(ad->pdist,
+    /// mindist)`, ported as [`World::ai_refresh_places`]).
+    pub pdist: i32,
+    /// C `int panic` (`:1764`): is an enemy currently within `pdist` of
+    /// storage? Refreshed every call by [`World::ai_refresh_places`].
+    pub panic: bool,
+    /// C `int pplace` (`:1764`): which place index triggered `panic`
+    /// this tick, `-1` if none. Refreshed every call by
+    /// [`World::ai_refresh_places`].
+    pub pplace: i32,
 }
 
 impl AiData {
@@ -339,6 +438,9 @@ impl AiData {
             nagguard: -1,
             partner: Vec::new(),
             ppd,
+            pdist: 3,
+            panic: false,
+            pplace: -1,
         }
     }
 
@@ -926,6 +1028,149 @@ impl World {
             ad.nagguard = guard as i32;
             ad.npcs[guard].target = place;
             ad.npcs[guard].used = place as i32;
+        }
+    }
+
+    /// C `ai_main`'s per-place worker/threat refresh loop (`strategy.c:
+    /// 2505-2630`): reset `panic`/`pplace`, then for every place update
+    /// `owned`/`platin` from the building item's live state, decay/
+    /// rebuild `threat`/`threatlevel`/`threatcount` from nearby enemy
+    /// `CDR_STRATEGY` presence (propagating threat up to the parent and
+    /// back down), track the closest un-threatened place with gold
+    /// (`mindist`, committed into `ad.pdist`), and compute whether the
+    /// party still has any economy left (`ragnarok`/`nogoldleft`,
+    /// returned rather than committed - see this module's doc comment).
+    /// Finally projects each place's `threatcount`/`threatlevel` onto its
+    /// immediate neighbors' `threatncount`/`threatnlevel` (`:2620-2630`).
+    /// See this module's doc comment for the sector-scan-to-linear-scan
+    /// and `cantrain`-staleness deviations.
+    pub fn ai_refresh_places(&self, ad: &mut AiData, code: u32) -> AiPlaceRefreshResult {
+        // C `:2475-2477`: normally re-derived from each live NPC's
+        // *current* level by the still-unported "update npc list" loop;
+        // here derived from each `AiNpc`'s cached level (see module doc
+        // comment).
+        let cantrain = ad
+            .npcs
+            .iter()
+            .any(|npc| npc.task == AiTask::EGuard && npc.level < ad.ppd.max_level);
+
+        ad.panic = false;
+        ad.pplace = -1;
+        let mut seen: std::collections::HashSet<CharacterId> = std::collections::HashSet::new();
+
+        let mut mindist = 99;
+        let mut ragnarok = true;
+        let mut nogoldleft = true;
+
+        for n in 0..ad.places.len() {
+            let item_id = ad.places[n].item;
+            let (drdata4, drdata0) = match self.items.get(&item_id) {
+                Some(item) => (str_item_gold(item), str_item_owner(item)),
+                None => (0, 0),
+            };
+            ad.places[n].platin = ad.places[n].platin / 2 + drdata4 as i32;
+            ad.places[n].owned = drdata0 == code;
+
+            ad.places[n].threat /= 2;
+            ad.places[n].threatcount = 0.0;
+            ad.places[n].threatncount = 0.0;
+            ad.places[n].threatnlevel = 0;
+            if ad.places[n].threat == 0 {
+                ad.places[n].threatlevel = 0;
+            }
+
+            // C's sector-grid scan (`getfirst_char_sector`/`sec_next`
+            // over a +-12 box stepped by 8) is replaced with a plain
+            // linear scan filtered by the same final `abs(...) < 10`
+            // check - see module doc comment.
+            let (px, py) = (i32::from(ad.places[n].x), i32::from(ad.places[n].y));
+            for character in self.characters.values() {
+                if character.driver != CDR_STRATEGY || u32::from(character.group) == code {
+                    continue;
+                }
+                let (cx, cy) = (i32::from(character.x), i32::from(character.y));
+                if (px - cx).abs() >= 10 || (py - cy).abs() >= 10 {
+                    continue;
+                }
+                // C's `seen[MAXCHARS]`: shared across every place in this
+                // call, not reset per place.
+                if !seen.insert(character.id) {
+                    continue;
+                }
+
+                ad.places[n].threatcount += self.ai_threat(character.id) * 1.25;
+                ad.places[n].threatlevel = ad.places[n].threatlevel.max(character.level as i32);
+                ad.places[n].threat += 100 + ad.places[n].threatlevel;
+                if ad.places[n].dist <= ad.pdist {
+                    ad.panic = true;
+                    ad.pplace = n as i32;
+                }
+            }
+
+            // move threat up the parent list
+            if ad.places[n].parent != -1 {
+                let parent = ad.places[n].parent as usize;
+                ad.places[n].threat += ad.places[parent].threat / 2;
+            }
+            // move threat one down the parent list
+            if ad.places[n].threatcount != 0.0 && ad.places[n].parent != -1 {
+                let parent = ad.places[n].parent as usize;
+                ad.places[parent].threat = ad.places[n].threat / 2;
+            }
+
+            if drdata4 > 0 && ad.places[n].wcnt > 0 {
+                let mut m = ad.places[n].parent;
+                while m != -1 && ad.places[m as usize].wcnt > 0 {
+                    let mu = m as usize;
+                    ad.places[mu].platin = ad.places[mu].platin.max(50);
+                    m = ad.places[mu].parent;
+                }
+            }
+
+            // find distance to closest mine
+            if ad.places[n].place_type == AiPlaceType::Mine
+                && ad.places[n].platin != 0
+                && ad.places[n].threat == 0
+                && ad.places[n].dist < mindist
+            {
+                mindist = ad.places[n].dist;
+            }
+            if ad.places[n].platin != 0 && ad.places[n].threat == 0 {
+                if n > 0 {
+                    nogoldleft = false;
+                }
+                if n == 0 {
+                    if ad.places[n].platin / 2 > ad.ppd.max_level && cantrain {
+                        ragnarok = false;
+                    }
+                } else {
+                    ragnarok = false;
+                }
+            }
+        }
+        ad.pdist = ad.pdist.min(mindist);
+
+        // project threats to neighboring places
+        for n in 0..ad.places.len() {
+            let parent = ad.places[n].parent;
+            if ad.places[n].threatcount != 0.0 && parent != -1 {
+                let p = parent as usize;
+                ad.places[p].threatncount += ad.places[n].threatcount;
+                ad.places[p].threatnlevel = ad.places[p].threatnlevel.max(ad.places[n].threatlevel);
+            }
+            if parent != -1 {
+                let p = parent as usize;
+                if ad.places[p].threatcount != 0.0 {
+                    let (pcount, plevel) = (ad.places[p].threatcount, ad.places[p].threatlevel);
+                    ad.places[n].threatncount += pcount;
+                    ad.places[n].threatnlevel = ad.places[n].threatnlevel.max(plevel);
+                }
+            }
+        }
+
+        AiPlaceRefreshResult {
+            ragnarok,
+            nogoldleft,
         }
     }
 
