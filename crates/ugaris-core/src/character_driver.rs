@@ -204,6 +204,17 @@ pub const CDR_LAB5MAGE: u16 = 190;
 /// (`src/area/22/lab5.c::lab5_seyan_driver`), see `world::npc::area22::
 /// lab5_seyan`'s module doc comment.
 pub const CDR_LAB5SEYAN: u16 = 191;
+/// C `#define CDR_STRATEGY_BOSS 80` (`src/system/drvlib.h:129`): Cinciac,
+/// the Ice Army Caves commander mission-giver (`src/area/23_24/
+/// strategy.c::strategy_boss`), see `world::npc::area23_24::boss`'s
+/// module doc comment. Its worker/fighter counterpart, `CDR_STRATEGY = 78`
+/// (`strategy_driver`), and the command-table `CDR_STRATEGY_PARSER = 79`
+/// (already ported as `World::apply_strategy_special_command`, dispatched
+/// directly from `tick_client_actions.rs` without needing a driver id
+/// constant of its own) are not defined as Rust constants yet - `CDR_
+/// STRATEGY` has no live character to run on until the still-unported
+/// worker-spawning half of this task exists.
+pub const CDR_STRATEGY_BOSS: u16 = 80;
 /// C `#define CDR_CAMHERMIT 14` (`src/system/drvlib.h`): the forest
 /// hermit NPC in area 1 (`src/area/1/gwendylon.c::camhermit_driver`).
 pub const CDR_CAMHERMIT: u16 = 14;

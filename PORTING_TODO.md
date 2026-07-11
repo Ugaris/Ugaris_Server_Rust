@@ -1151,6 +1151,17 @@ Ordered by player progression; the C file is the oracle.
   needed to ever construct a live worker, the `mine`/`storage`/`depot`/
   `spawner` item drivers' NPC-worker branches, and the full `ai_main`/
   `ai_init` AI-opponent driver.
+  Eighth slice done: the `strategy_boss` NPC dialogue driver (Cinciac,
+  `CDR_STRATEGY_BOSS = 80`, a static zone-placed NPC needing no
+  `ZoneLoader` spawning) is now ported end to end
+  (`world/npc/area23_24/boss.rs` + `ugaris-server/src/area23_24.rs`,
+  `tick_npc::area23_24::strategy_boss_driver_118`) - the full 12-stage
+  greeting/mission-briefing dialogue plus the "repeat"/"military rank"/
+  "levels and experience" `NT_TEXT` commands. This is the first live path
+  that can ever advance `StrategyPpd::boss_stage` past 0, unlocking the
+  entire already-ported `CDR_STRATEGY_PARSER` command table
+  (`#jp`/`#list`/`#info`/`#raise`/`#mission`/`#enter`/`#surrender`)
+  through real gameplay for the first time.
 - [ ] **Area 25 - `src/area/25/warped.c`** - warped NPC dialogue,
   `DRD_WARPFIGHTER` full fight driver.
 - [ ] **Area 26 - `src/area/26/staffer.c`** - vault skull PPD/quest, Rouven
