@@ -858,3 +858,135 @@ fn str_ticker_clears_busy_flag_once_a_slot_goes_fully_idle() {
 
     assert!(!world.strategy_areas.areas[8].busy);
 }
+
+#[test]
+fn queue_mission_appends_to_first_free_slot() {
+    let mut world = World::default();
+    world.add_character(strategy_player(1, 111));
+    world.add_character(strategy_player(2, 222));
+
+    world.queue_mission(CharacterId(1), 3);
+    world.queue_mission(CharacterId(2), 3);
+
+    let area = &world.strategy_areas.areas[3];
+    assert_eq!(area.q_player_cn[0], Some(CharacterId(1)));
+    assert_eq!(area.q_player_id[0], 111);
+    assert_eq!(area.q_player_cn[1], Some(CharacterId(2)));
+    assert_eq!(area.q_player_id[1], 222);
+    assert_eq!(area.q_player_cn[2], None);
+}
+
+#[test]
+fn queue_mission_is_a_no_op_when_already_queued() {
+    let mut world = World::default();
+    world.add_character(strategy_player(1, 111));
+
+    world.queue_mission(CharacterId(1), 3);
+    world.queue_mission(CharacterId(1), 3);
+
+    let area = &world.strategy_areas.areas[3];
+    assert_eq!(area.q_player_cn[0], Some(CharacterId(1)));
+    assert_eq!(area.q_player_cn[1], None);
+}
+
+#[test]
+fn queue_mission_moves_a_stale_entry_from_another_area() {
+    let mut world = World::default();
+    world.add_character(strategy_player(1, 111));
+
+    world.queue_mission(CharacterId(1), 2);
+    world.queue_mission(CharacterId(1), 3);
+
+    assert_eq!(world.strategy_areas.areas[2].q_player_cn[0], None);
+    assert_eq!(
+        world.strategy_areas.areas[3].q_player_cn[0],
+        Some(CharacterId(1))
+    );
+}
+
+#[test]
+fn queue_mission_drops_request_when_queue_is_full() {
+    let mut world = World::default();
+    for id in 1..=5u32 {
+        world.add_character(strategy_player(id, id * 10));
+    }
+    for id in 1..=4u32 {
+        world.queue_mission(CharacterId(id), 3);
+    }
+
+    world.queue_mission(CharacterId(5), 3);
+
+    let area = &world.strategy_areas.areas[3];
+    assert!(area.q_player_cn.iter().all(|c| *c != Some(CharacterId(5))));
+}
+
+#[test]
+fn queue_validate_drops_and_compacts_entries_for_logged_off_characters() {
+    let mut world = World::default();
+    world.add_character(strategy_player(1, 111));
+    world.add_character(strategy_player(2, 222));
+    world.add_character(strategy_player(3, 333));
+
+    world.queue_mission(CharacterId(1), 3);
+    world.queue_mission(CharacterId(2), 3);
+    world.queue_mission(CharacterId(3), 3);
+
+    // Character 2 logs off.
+    world.characters.remove(&CharacterId(2));
+
+    world.queue_validate(3);
+
+    let area = &world.strategy_areas.areas[3];
+    assert_eq!(area.q_player_cn[0], Some(CharacterId(1)));
+    assert_eq!(area.q_player_cn[1], Some(CharacterId(3)));
+    assert_eq!(area.q_player_cn[2], None);
+    assert_eq!(area.q_player_id[2], 0);
+}
+
+#[test]
+fn queue_remove_clears_a_character_from_every_area() {
+    let mut world = World::default();
+    world.add_character(strategy_player(1, 111));
+
+    world.queue_mission(CharacterId(1), 2);
+
+    world.queue_remove(CharacterId(1));
+
+    assert_eq!(world.strategy_areas.areas[2].q_player_cn[0], None);
+}
+
+#[test]
+fn queue_check_true_when_queue_empty_or_character_is_at_the_head() {
+    let mut world = World::default();
+    world.add_character(strategy_player(1, 111));
+    world.add_character(strategy_player(2, 222));
+
+    assert!(world.queue_check(CharacterId(1), 3));
+
+    world.queue_mission(CharacterId(1), 3);
+    assert!(world.queue_check(CharacterId(1), 3));
+
+    world.queue_mission(CharacterId(2), 3);
+    assert!(!world.queue_check(CharacterId(2), 3));
+}
+
+#[test]
+fn show_queue_sends_header_before_validating_then_one_line_per_entry() {
+    let mut world = World::default();
+    world.add_character(strategy_player(1, 111));
+    world.add_character(strategy_player(2, 222));
+    world.characters.get_mut(&CharacterId(1)).unwrap().name = "Alice".into();
+    world.characters.get_mut(&CharacterId(2)).unwrap().name = "Bob".into();
+
+    world.queue_mission(CharacterId(1), 3);
+    world.queue_mission(CharacterId(2), 3);
+
+    world.show_queue(CharacterId(1), 3);
+
+    let texts = world.drain_pending_system_texts();
+    assert_eq!(texts.len(), 3);
+    assert_eq!(texts[0].character_id, CharacterId(1));
+    assert_eq!(texts[0].message, "Queue:");
+    assert_eq!(texts[1].message, "1: Alice");
+    assert_eq!(texts[2].message, "2: Bob");
+}

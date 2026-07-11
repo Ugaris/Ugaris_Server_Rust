@@ -1097,13 +1097,18 @@ Ordered by player progression; the C file is the oracle.
   `str_area` registry's `init_areas` plus the per-tick mission-lifecycle
   driver itself (`str_ticker`/`did_party_lose`/`remove_party`/
   `close_area`/`reward_winner`/`init_mission`), `IDR_STR_TICKER` now
-  dispatches a real `ItemDriverOutcome::StrTicker`. See `world::strategy`'s
-  module doc comment for the full remaining-work breakdown: the worker
-  character driver (`strategy_driver`), the `mine`/`storage`/`depot`/
-  `spawner` item drivers (currently no-op), the AI-opponent driver
-  (`ai_main`, 538 lines), the mission queue, and the `strategy_boss` NPC
-  dialogue driver. Not reachable in live gameplay yet (no caller for
-  `str_init_mission`, so no spawner ever gets a real owner).
+  dispatches a real `ItemDriverOutcome::StrTicker`. Third slice done: the
+  mission entry queue (`queue_validate`/`queue_remove`/`queue_mission`/
+  `queue_check`/`show_queue`, `strategy.c:3200-3276`) is now ported
+  (`World::queue_validate`/`queue_remove`/`queue_mission`/`queue_check`/
+  `show_queue`), using `CharacterId` identity directly instead of C's
+  `cn`+`ID` pair (same simplification as `ArenaContender`). See
+  `world::strategy`'s module doc comment for the full remaining-work
+  breakdown: the worker character driver (`strategy_driver`), the
+  `mine`/`storage`/`depot`/`spawner` item drivers (currently no-op), and the
+  AI-opponent driver (`ai_main`, 538 lines). Not reachable in live gameplay
+  yet (no caller for `str_init_mission`/the queue functions, since
+  `special_driver`'s "go" mission-join command isn't ported).
 - [ ] **Area 25 - `src/area/25/warped.c`** - warped NPC dialogue,
   `DRD_WARPFIGHTER` full fight driver.
 - [ ] **Area 26 - `src/area/26/staffer.c`** - vault skull PPD/quest, Rouven
@@ -1165,6 +1170,10 @@ Keep entries to at most three lines: date, task, one-line result.
 Anything longer belongs in `PORTING_LEDGER.md`; historical verbose
 notes live in `PROGRESS_ARCHIVE.md`.
 
+- 2026-07-11: Areas 23/24 strategy minigame: third slice - ported the
+  mission entry queue (`queue_validate`/`queue_remove`/`queue_mission`/
+  `queue_check`/`show_queue`). 3436 core [+8] + 1168 server tests pass,
+  clean build/boot-smoke. Not yet reachable live (no "go" command caller).
 - 2026-07-11: Areas 23/24 strategy minigame: second slice - ported the
   per-tick mission-lifecycle driver (`str_ticker`/`did_party_lose`/
   `remove_party`/`close_area`/`reward_winner`/`init_mission`);

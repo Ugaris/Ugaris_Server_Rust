@@ -1307,4 +1307,131 @@ impl World {
             }
         }
     }
+
+    /// C `queue_validate(int ar)` (`strategy.c:3200-3216`): drops any
+    /// mission-entry queue slot whose character has since logged off
+    /// (C's `!ch[cn].flags`) or whose `cn` array slot got reused by a
+    /// different character (`ch[cn].ID != area[ar].q_playerID[n]`) - both
+    /// collapse into one existence check here, since `CharacterId` is
+    /// never reused across a character's lifetime (same simplification
+    /// as `ArenaContender`'s own doc comment), then compacts the
+    /// remaining entries to the front of the queue, matching C's own
+    /// shuffle-down loop exactly.
+    pub fn queue_validate(&mut self, area_index: usize) {
+        self.ensure_strategy_areas_initialized();
+        let Some(area) = self.strategy_areas.areas.get_mut(area_index) else {
+            return;
+        };
+        for n in 0..MAXQUEUE {
+            if let Some(character_id) = area.q_player_cn[n] {
+                if !self.characters.contains_key(&character_id) {
+                    area.q_player_cn[n] = None;
+                    area.q_player_id[n] = 0;
+                }
+            }
+        }
+
+        let mut m = 0;
+        for n in 0..MAXQUEUE {
+            area.q_player_cn[m] = area.q_player_cn[n];
+            area.q_player_id[m] = area.q_player_id[n];
+            if area.q_player_cn[m].is_some() {
+                m += 1;
+            }
+        }
+        for slot in area.q_player_cn.iter_mut().skip(m) {
+            *slot = None;
+        }
+        for slot in area.q_player_id.iter_mut().skip(m) {
+            *slot = 0;
+        }
+    }
+
+    /// C `queue_remove(int cn)` (`strategy.c:3220-3230`): removes a
+    /// character from every battleground slot's mission-entry queue
+    /// (C scans by `ch[cn].ID`; `CharacterId` identity is equivalent and
+    /// simpler, per [`Self::queue_validate`]'s doc comment).
+    pub fn queue_remove(&mut self, character_id: CharacterId) {
+        self.ensure_strategy_areas_initialized();
+        for area in &mut self.strategy_areas.areas {
+            for n in 0..MAXQUEUE {
+                if area.q_player_cn[n] == Some(character_id) {
+                    area.q_player_cn[n] = None;
+                    area.q_player_id[n] = 0;
+                }
+            }
+        }
+    }
+
+    /// C `queue_mission(int cn, int ar)` (`strategy.c:3232-3253`): enters
+    /// a character into an area's mission queue, unless already present;
+    /// otherwise removes any stale entry it may hold elsewhere first
+    /// (C's own `queue_remove(cn)` call), then appends to the first free
+    /// slot. A full queue (all 4 slots occupied) silently drops the
+    /// request, matching C's own no-op fallthrough.
+    pub fn queue_mission(&mut self, character_id: CharacterId, area_index: usize) {
+        self.queue_validate(area_index);
+
+        let Some(area) = self.strategy_areas.areas.get(area_index) else {
+            return;
+        };
+        if area.q_player_cn.contains(&Some(character_id)) {
+            return;
+        }
+
+        self.queue_remove(character_id);
+
+        let serial = self
+            .characters
+            .get(&character_id)
+            .map(|c| c.serial)
+            .unwrap_or(0);
+        let Some(area) = self.strategy_areas.areas.get_mut(area_index) else {
+            return;
+        };
+        for n in 0..MAXQUEUE {
+            if area.q_player_cn[n].is_none() {
+                area.q_player_cn[n] = Some(character_id);
+                area.q_player_id[n] = serial;
+                return;
+            }
+        }
+    }
+
+    /// C `queue_check(int cn, int ar)` (`strategy.c:3255-3263`): whether
+    /// `character_id` is free to enter the mission (queue empty, or it
+    /// already occupies the head slot).
+    pub fn queue_check(&mut self, character_id: CharacterId, area_index: usize) -> bool {
+        self.queue_validate(area_index);
+        let Some(area) = self.strategy_areas.areas.get(area_index) else {
+            return true;
+        };
+        !matches!(area.q_player_cn[0], Some(head) if head != character_id)
+    }
+
+    /// C `show_queue(int cn, int ar)` (`strategy.c:3265-3276`): sends the
+    /// "Queue:" header (C logs this line *before* validating - order
+    /// preserved verbatim) followed by one "`n: name`" line per occupied
+    /// slot, to `character_id` via [`Self::queue_system_text`].
+    pub fn show_queue(&mut self, character_id: CharacterId, area_index: usize) {
+        self.queue_system_text(character_id, "Queue:".to_string());
+        self.queue_validate(area_index);
+        let Some(area) = self.strategy_areas.areas.get(area_index) else {
+            return;
+        };
+        let entries: Vec<(usize, CharacterId)> = area
+            .q_player_cn
+            .iter()
+            .enumerate()
+            .filter_map(|(n, c)| c.map(|cid| (n, cid)))
+            .collect();
+        for (n, cid) in entries {
+            let name = self
+                .characters
+                .get(&cid)
+                .map(|c| c.name.clone())
+                .unwrap_or_default();
+            self.queue_system_text(character_id, format!("{}: {name}", n + 1));
+        }
+    }
 }
