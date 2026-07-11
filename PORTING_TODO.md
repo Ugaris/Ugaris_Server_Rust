@@ -1125,6 +1125,25 @@ Ordered by player progression; the C file is the oracle.
   silver/gold-to-Platinum conversion. `IDR_STR_SPAWNER` and the `cn==0`/
   NPC-worker halves of all three remain no-ops (still gated on the
   unported `strategy_driver`).
+  Sixth slice done: the worker character driver's (`strategy_driver`,
+  `strategy.c:713-1120`) NT_TEXT order-assignment cascade is now ported as
+  pure/testable `World` methods (`crates/ugaris-core/src/world/
+  strategy_worker.rs`, new `StrategyWorkerOrder` enum replacing C's
+  `order`/`or1`/`or2` triple, `World::strategy_worker_apply_order_text`
+  plus the `finditem`/`finddepot` ring-spiral map searches
+  (`strategy_find_item_near`/`strategy_find_depot_or_storage_near`) it
+  needs) - the "mine"/"follow"/"guard"/"fight"/"home"/"take"/"transfer"/
+  "train" spoken-command keywords, their item-lookup validation and
+  "sorry, ..." failure text, digit-for-digit. Not wired to a live
+  character yet (no `CDR_*`/`CharacterDriverState` exists for a worker -
+  same gap the item-driver doc comment above already calls out).
+  REMAINING: `strategy_driver`'s NT_CREATE handling, `setname`/
+  `restplace`/`findstorage`, the per-tick order-execution switch
+  (movement/`use_driver` dispatch per order), the `CDR_STRATEGY`/
+  `CharacterDriverState`/`spawner_sub` spawning wiring needed to ever
+  construct a live worker, the `mine`/`storage`/`depot`/`spawner` item
+  drivers' NPC-worker branches, and the full `ai_main`/`ai_init`
+  AI-opponent driver.
 - [ ] **Area 25 - `src/area/25/warped.c`** - warped NPC dialogue,
   `DRD_WARPFIGHTER` full fight driver.
 - [ ] **Area 26 - `src/area/26/staffer.c`** - vault skull PPD/quest, Rouven

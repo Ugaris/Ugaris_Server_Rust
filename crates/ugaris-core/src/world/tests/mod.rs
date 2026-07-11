@@ -122,6 +122,7 @@ mod spells;
 mod steal;
 mod strategy;
 mod strategy_special;
+mod strategy_worker;
 mod superior;
 mod supermax;
 mod teleport;

@@ -67,6 +67,7 @@ mod spells;
 mod steal;
 mod strategy;
 mod strategy_special;
+mod strategy_worker;
 mod teleport;
 mod text;
 mod traps_hazards;
@@ -131,6 +132,7 @@ pub(crate) use spells::*;
 pub use steal::*;
 pub use strategy::*;
 pub use strategy_special::*;
+pub use strategy_worker::*;
 #[allow(unused_imports)]
 pub(crate) use teleport::*;
 pub use text::*;
