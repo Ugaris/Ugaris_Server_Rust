@@ -1388,7 +1388,11 @@ Ordered by player progression; the C file is the oracle.
   application) from earlier work whose checkbox was never ticked; closed
   the one real gap, the `clanmaster_dead` charlog-only death hook for both
   drivers. Details in PORTING_LEDGER.md.)*
-- [ ] **Area 31 - `src/area/31/warrmines.c`** - Warr mines NPCs.
+- [x] **Area 31 - `src/area/31/warrmines.c`** - Warr mines NPCs. *(done -
+  all four character drivers - `dwarfchief_driver`/`lostdwarf_driver`/
+  `dwarfshaman_driver`/`dwarfsmith_driver` - ported in
+  `world/npc/area31/{dwarfchief,lostdwarf,dwarfshaman,dwarfsmith}.rs`;
+  item drivers were already done. Details in PORTING_LEDGER.md.)*
 - [ ] **Area 32 - `src/area/32/missions.c`** - governor mission NPCs
   (needs P3 military).
 - [ ] **Area 33 - `src/area/33/tunnel.c`** - long tunnel events. Also wire
@@ -1440,6 +1444,10 @@ Keep entries to at most three lines: date, task, one-line result.
 Anything longer belongs in `PORTING_LEDGER.md`; historical verbose
 notes live in `PROGRESS_ARCHIVE.md`.
 
+- 2026-07-11: Area 31 CLOSED: ported all four `warrmines.c` character
+  drivers (dwarfchief/lostdwarf/dwarfshaman/dwarfsmith quest chains,
+  `world/npc/area31/*.rs`); item drivers were already done. 3906 core
+  [+32] + 1182 server tests pass, clean build/boot-smoke.
 - 2026-07-11: Area 30 CLOSED: found the NPCs/item-drivers already fully
   ported from earlier work (stale checkbox); closed the last gap, the
   `clanmaster_dead` charlog-only death hook for `CDR_CLANMASTER`/

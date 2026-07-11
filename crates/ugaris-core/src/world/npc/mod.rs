@@ -21,6 +21,7 @@ pub mod area28;
 pub mod area29;
 pub mod area3;
 pub mod area30;
+pub mod area31;
 pub mod area32;
 pub mod area4;
 pub mod area8;

@@ -458,6 +458,43 @@ pub const IID_AREA19_KIR: u32 = (0x01 << 24) | 0x00008D;
 /// (`src/common/item_id.h:202`).
 pub const IID_AREA19_KIRLETTER: u32 = (0x01 << 24) | 0x00008F;
 
+/// C `#define IID_DWARFRECALL1 MAKE_ITEMID(DEV_ID_DB, 0x000094)`
+/// (`src/common/item_id.h:207`): `dwarfchief_driver`'s first miner-recall
+/// scroll (`src/area/31/warrmines.c`).
+pub const IID_DWARFRECALL1: u32 = (0x01 << 24) | 0x000094;
+
+/// C `#define IID_DWARFRECALL2 MAKE_ITEMID(DEV_ID_DB, 0x000095)`
+/// (`src/common/item_id.h:208`).
+pub const IID_DWARFRECALL2: u32 = (0x01 << 24) | 0x000095;
+
+/// C `#define IID_DWARFRECALL3 MAKE_ITEMID(DEV_ID_DB, 0x000096)`
+/// (`src/common/item_id.h:209`).
+pub const IID_DWARFRECALL3: u32 = (0x01 << 24) | 0x000096;
+
+/// C `#define IID_DWARFRECALL4 MAKE_ITEMID(DEV_ID_DB, 0x000097)`
+/// (`src/common/item_id.h:210`).
+pub const IID_DWARFRECALL4: u32 = (0x01 << 24) | 0x000097;
+
+/// C `#define IID_LIZARDTOOTH MAKE_ITEMID(DEV_ID_DB, 0x000099)`
+/// (`src/common/item_id.h:212`): `dwarfshaman_driver`'s quest-51 turn-in
+/// item (`src/area/31/warrmines.c`).
+pub const IID_LIZARDTOOTH: u32 = (0x01 << 24) | 0x000099;
+
+/// C `#define IID_BROWNBERRY MAKE_ITEMID(DEV_ID_DB, 0x00009A)`
+/// (`src/common/item_id.h:213`): `dwarfshaman_driver`'s quest-52 turn-in
+/// item, also created by `pick_berry` (`item_driver::area31_warrmines`).
+pub const IID_BROWNBERRY: u32 = (0x01 << 24) | 0x00009A;
+
+/// C `#define IID_LIZARDHEAD MAKE_ITEMID(DEV_ID_DB, 0x00009B)`
+/// (`src/common/item_id.h:214`): `dwarfshaman_driver`'s quest-53 turn-in
+/// item (`src/area/31/warrmines.c`).
+pub const IID_LIZARDHEAD: u32 = (0x01 << 24) | 0x00009B;
+
+/// C `#define IID_LIZARDMOLD MAKE_ITEMID(DEV_ID_DB, 0x00009C)`
+/// (`src/common/item_id.h:215`): `dwarfsmith_driver`'s mold-for-key
+/// exchange item (`src/area/31/warrmines.c`).
+pub const IID_LIZARDMOLD: u32 = (0x01 << 24) | 0x00009C;
+
 pub const IID_SKELETON_KEY: u32 = (59 << 24) | 0x000003;
 
 pub const IID_AREA2_ZOMBIESKULL1: u32 = (0x01 << 24) | 0x000025;

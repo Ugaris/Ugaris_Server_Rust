@@ -580,7 +580,11 @@ impl World {
                 | CharacterDriverState::DaughterBran(_)
                 | CharacterDriverState::ForestBran(_)
                 | CharacterDriverState::Grinnich(_)
-                | CharacterDriverState::Shanra(_) => None,
+                | CharacterDriverState::Shanra(_)
+                | CharacterDriverState::DwarfChief(_)
+                | CharacterDriverState::LostDwarf(_)
+                | CharacterDriverState::DwarfShaman(_)
+                | CharacterDriverState::DwarfSmith(_) => None,
             });
         let Some(target_id) = target_id else {
             return false;

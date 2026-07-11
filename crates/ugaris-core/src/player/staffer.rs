@@ -262,6 +262,39 @@ impl PlayerRuntime {
         self.write_staffer_i32(STAFFER_PPD_DWARFSHAMAN_STATE_OFFSET, state);
     }
 
+    /// C `struct staffer_ppd::dwarfshaman_count` (`src/common/
+    /// staffer_ppd.h`) - `dwarfshaman_driver`'s lizard-teeth/brown-berry
+    /// turn-in counter (`src/area/31/warrmines.c`).
+    pub fn staffer_dwarfshaman_count(&self) -> i32 {
+        self.read_staffer_i32(STAFFER_PPD_DWARFSHAMAN_COUNT_OFFSET)
+    }
+
+    pub fn set_staffer_dwarfshaman_count(&mut self, count: i32) {
+        self.write_staffer_i32(STAFFER_PPD_DWARFSHAMAN_COUNT_OFFSET, count);
+    }
+
+    /// C `struct staffer_ppd::dwarfsmith_state` (`src/common/
+    /// staffer_ppd.h`) - `dwarfsmith_driver`'s mold-for-key exchange state
+    /// (`src/area/31/warrmines.c`).
+    pub fn staffer_dwarfsmith_state(&self) -> i32 {
+        self.read_staffer_i32(STAFFER_PPD_DWARFSMITH_STATE_OFFSET)
+    }
+
+    pub fn set_staffer_dwarfsmith_state(&mut self, state: i32) {
+        self.write_staffer_i32(STAFFER_PPD_DWARFSMITH_STATE_OFFSET, state);
+    }
+
+    /// C `struct staffer_ppd::dwarfsmith_type` (`src/common/
+    /// staffer_ppd.h`) - the lizard-elite-key variant `dwarfsmith_driver`
+    /// remembers between mold and payment (`src/area/31/warrmines.c`).
+    pub fn staffer_dwarfsmith_type(&self) -> i32 {
+        self.read_staffer_i32(STAFFER_PPD_DWARFSMITH_TYPE_OFFSET)
+    }
+
+    pub fn set_staffer_dwarfsmith_type(&mut self, kind: i32) {
+        self.write_staffer_i32(STAFFER_PPD_DWARFSMITH_TYPE_OFFSET, kind);
+    }
+
     /// C `struct staffer_ppd::rouven_state` (`src/common/staffer_ppd.h:44`)
     /// - `rouven_driver`'s Imperial Vault guard quest state, also read by
     /// `vault_skull` (`IDR_STAFFER` `drdata[0]==4`) via

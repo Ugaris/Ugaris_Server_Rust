@@ -891,6 +891,23 @@ pub(crate) const STAFFER_PPD_DWARFCHIEF_STATE_OFFSET: usize = 18 * 4;
 
 pub(crate) const STAFFER_PPD_DWARFSHAMAN_STATE_OFFSET: usize = 19 * 4;
 
+/// C `struct staffer_ppd::dwarfshaman_count` (`src/common/staffer_ppd.h`,
+/// field index 20): `dwarfshaman_driver`'s (`world::npc::area31::
+/// dwarfshaman`) lizard-teeth/brown-berry turn-in counter, reset to `0`
+/// each time it reaches 9 (`src/area/31/warrmines.c`).
+pub(crate) const STAFFER_PPD_DWARFSHAMAN_COUNT_OFFSET: usize = 20 * 4;
+
+/// C `struct staffer_ppd::dwarfsmith_state` (`src/common/staffer_ppd.h`,
+/// field index 21): `dwarfsmith_driver`'s (`world::npc::area31::
+/// dwarfsmith`) mold-for-key exchange state (`src/area/31/warrmines.c`).
+pub(crate) const STAFFER_PPD_DWARFSMITH_STATE_OFFSET: usize = 21 * 4;
+
+/// C `struct staffer_ppd::dwarfsmith_type` (`src/common/staffer_ppd.h`,
+/// field index 22): the lizard-elite-key variant (`1`/`2`/`3`)
+/// `dwarfsmith_driver` remembers between receiving the mold and receiving
+/// the silver payment (`src/area/31/warrmines.c`).
+pub(crate) const STAFFER_PPD_DWARFSMITH_TYPE_OFFSET: usize = 22 * 4;
+
 /// C `struct staffer_ppd::carlos2_state` (`src/common/staffer_ppd.h:43`,
 /// field index 23 - the last field before `rouven_state`), consumed by
 /// `carlos_driver`'s Imperial Vault ritual quest (`src/area/3/area3.c`).

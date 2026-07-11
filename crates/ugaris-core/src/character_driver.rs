@@ -576,6 +576,26 @@ pub const CDR_GRINNICH: u16 = 104;
 /// Animation and teleports adventurers there and back
 /// (`src/area/29/brannington.c::shanra_driver`).
 pub const CDR_SHANRA: u16 = 105;
+/// C `#define CDR_DWARFCHIEF 103` (`src/system/drvlib.h`, "warrmine area:
+/// dwarfchief"): Grimroot's leader, who runs "A Miner's Misery"/"A Miner's
+/// Bane"/"A Miner's Anguish"/"A Miner Lost" (quests 47-50)
+/// (`src/area/31/warrmines.c::dwarfchief_driver`).
+pub const CDR_DWARFCHIEF: u16 = 103;
+/// C `#define CDR_LOSTDWARF 108` (`src/system/drvlib.h`, "warrmine area:
+/// lost miner"): the four (`nr` 1-4) missing miners
+/// `dwarfchief_driver`'s quest chain sends the player to rescue
+/// (`src/area/31/warrmines.c::lostdwarf_driver`).
+pub const CDR_LOSTDWARF: u16 = 108;
+/// C `#define CDR_DWARFSHAMAN 109` (`src/system/drvlib.h`, "warrmine area:
+/// shaman"): Grimroot's shaman, who runs "Lizard's Teeth"/"Collecting
+/// Berries"/"Elitist Head" (quests 51-53)
+/// (`src/area/31/warrmines.c::dwarfshaman_driver`).
+pub const CDR_DWARFSHAMAN: u16 = 109;
+/// C `#define CDR_DWARFSMITH 110` (`src/system/drvlib.h`, "warrmine area:
+/// shaman" - comment typo in C, this is actually the blacksmith):
+/// Grimroot's blacksmith, who forges a `lizard_elite_keyN` from a mold
+/// plus 5,000 silver (`src/area/31/warrmines.c::dwarfsmith_driver`).
+pub const CDR_DWARFSMITH: u16 = 110;
 pub const DRD_SIMPLEBADDYDRIVER: u32 = 0x0100_0013;
 pub const DRD_CLARADRIVER: u32 = 0x0100_0059;
 pub const DRD_SKELLYDRIVER: u32 = 0x0100_006a;
@@ -735,6 +755,10 @@ pub enum CharacterDriverState {
     ForestBran(crate::world::npc::area29::forestbran::ForestBranDriverData),
     Grinnich(crate::world::npc::area29::grinnich::GrinnichDriverData),
     Shanra(crate::world::npc::area29::shanra::ShanraDriverData),
+    DwarfChief(crate::world::npc::area31::dwarfchief::DwarfChiefDriverData),
+    LostDwarf(crate::world::npc::area31::lostdwarf::LostDwarfDriverData),
+    DwarfShaman(crate::world::npc::area31::dwarfshaman::DwarfShamanDriverData),
+    DwarfSmith(crate::world::npc::area31::dwarfsmith::DwarfSmithDriverData),
 }
 /// C `bank_driver_parse` from `src/module/bank.c`. The C driver defaults
 /// opening hours to 6..23 before parsing (`bank_driver` lines 304-309).
@@ -1549,7 +1573,11 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::DaughterBran(_)
             | CharacterDriverState::ForestBran(_)
             | CharacterDriverState::Grinnich(_)
-            | CharacterDriverState::Shanra(_),
+            | CharacterDriverState::Shanra(_)
+            | CharacterDriverState::DwarfChief(_)
+            | CharacterDriverState::LostDwarf(_)
+            | CharacterDriverState::DwarfShaman(_)
+            | CharacterDriverState::DwarfSmith(_),
         ) => SimpleBaddyDriverData::default(),
         None => SimpleBaddyDriverData::default(),
     };
@@ -4106,6 +4134,11 @@ pub use crate::world::npc::area30::clanclerk::{parse_clanclerk_driver_args, Clan
 pub use crate::world::npc::area30::clanmaster::{
     parse_clanmaster_driver_args, ClanmasterDriverData, CLANMASTER_QA,
 };
+pub use crate::world::npc::area31::dwarfchief::DwarfChiefDriverData;
+pub use crate::world::npc::area31::dwarfshaman::DwarfShamanDriverData;
+pub use crate::world::npc::area31::dwarfsmith::DwarfSmithDriverData;
+pub use crate::world::npc::area31::lostdwarf::LostDwarfDriverData;
+pub use crate::world::npc::area31::AREA31_QA;
 pub use crate::world::npc::area32::military::{
     parse_military_advisor_driver_args, parse_military_master_driver_args,
     MilitaryAdvisorDriverData, MilitaryMasterDriverData, MILITARY_QA,
