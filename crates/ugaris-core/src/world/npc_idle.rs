@@ -564,7 +564,8 @@ impl World {
                 | CharacterDriverState::StrategyWorker(_)
                 | CharacterDriverState::WarpFighter(_)
                 | CharacterDriverState::Warpmaster(_)
-                | CharacterDriverState::SmuggleCom(_) => None,
+                | CharacterDriverState::SmuggleCom(_)
+                | CharacterDriverState::Rouven(_) => None,
             });
         let Some(target_id) = target_id else {
             return false;

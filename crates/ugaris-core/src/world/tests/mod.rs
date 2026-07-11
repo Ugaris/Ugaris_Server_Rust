@@ -109,6 +109,7 @@ mod rename;
 mod reskin;
 mod rmdeath;
 mod robber;
+mod rouven;
 mod sanoa;
 mod sanwyn;
 mod servant;

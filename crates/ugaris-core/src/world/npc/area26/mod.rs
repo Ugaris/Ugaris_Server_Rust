@@ -1,7 +1,10 @@
 //! Area 26 NPCs, one file per NPC.
 
+pub mod rouven;
 pub mod smugglecom;
 
+#[allow(unused_imports)]
+pub use rouven::*;
 #[allow(unused_imports)]
 pub use smugglecom::*;
 
@@ -9,9 +12,9 @@ use crate::character_driver::TextQaEntry;
 
 /// C `struct qa qa[]` from `src/area/26/staffer.c:90-101` - the small-talk
 /// table `analyse_text_driver`'s own local copy in this file feeds every
-/// `staffer.c` NPC driver that calls it (`world::npc::area26::smugglecom`,
-/// and eventually `rouven_driver` once ported), not just one - same "one
-/// shared file-local table, many drivers" shape as `world::npc::area3::
+/// `staffer.c` NPC driver that calls it (`world::npc::area26::smugglecom`
+/// and `world::npc::area26::rouven`), not just one - same "one shared
+/// file-local table, many drivers" shape as `world::npc::area3::
 /// AREA3_QA`.
 ///
 /// Unlike `AREA3_QA`, this file's own `answer_code`s diverge from area 3's:

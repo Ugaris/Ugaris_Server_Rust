@@ -1366,16 +1366,11 @@ Ordered by player progression; the C file is the oracle.
   `warpfighter`'s rare "spoiled potion of freeze" self-curse sub-branch,
   which needs a `create_spell_timer` mechanism this codebase has not
   ported anywhere yet. Details in PORTING_LEDGER.md.)*
-- [~] **Area 26 - `src/area/26/staffer.c`** - vault skull PPD/quest, Rouven
-  smuggler dialogue.
-  REMAINING: `IDR_STAFFER` subtypes 4 (`vault_skull`, quest-62 completion)
-  and 5 (`vault_shelf`, `vault_ritual`/`vault_journal` template rewards)
-  are ported, plus `smugglecom_driver`/`smugglelead_died`
-  (`CDR_SMUGGLECOM`/`CDR_SMUGGLELEAD`, quests 35-37, the Contraband
-  chain) are now also fully ported (`world/npc/area26/smugglecom.rs`).
-  Still unported: `rouven_driver` (`CDR_ROUVEN 130`, the Imperial Vault
-  guard, quests 62/63) - see `PORTING_LEDGER.md` for the full
-  function-by-function breakdown.
+- [x] **Area 26 - `src/area/26/staffer.c`** - vault skull PPD/quest, Rouven
+  smuggler dialogue. *(done - `IDR_STAFFER` subtypes 1-5, `smugglecom_
+  driver`/`smugglelead_died`, and `rouven_driver` (`CDR_ROUVEN = 130`, the
+  Imperial Vault guard, quests 62/63, `world/npc/area26/rouven.rs`) are
+  all ported. Details in PORTING_LEDGER.md.)*
 - [ ] **Area 28 - `src/area/28/brannington_forest.c`** - forest NPCs.
 - [ ] **Area 29 - `src/area/29/brannington.c`** - Brannington quest NPCs,
   `DRD_STAFFER_PPD` remaining fields.
@@ -1433,6 +1428,10 @@ Keep entries to at most three lines: date, task, one-line result.
 Anything longer belongs in `PORTING_LEDGER.md`; historical verbose
 notes live in `PROGRESS_ARCHIVE.md`.
 
+- 2026-07-11: Area 26 CLOSED: ported `rouven_driver` (`CDR_ROUVEN`, the
+  Imperial Vault guard, quests 62/63, `world/npc/area26/rouven.rs`),
+  including the `vault_key1`/`IID_MAX_VAULTKEY` grant. 3741 core [+17] +
+  1176 server tests pass, clean build/boot-smoke (area 26).
 - 2026-07-11: Area 26 progress: ported `smugglecom_driver`/
   `smugglelead_died` (Contraband quest chain, quests 35-37,
   `CDR_SMUGGLECOM`/`CDR_SMUGGLELEAD`). 3724 core [+21] + 1176 server tests

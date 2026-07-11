@@ -459,6 +459,12 @@ pub const CDR_SMUGGLECOM: u16 = 88;
 /// `apply_smugglelead_death_from_hurt_event` (needs `PlayerRuntime`'s
 /// `staffer_smugglecom_state`).
 pub const CDR_SMUGGLELEAD: u16 = 89;
+/// C `#define CDR_ROUVEN 130` (`src/system/drvlib.h:180`, "imperial
+/// vault"): the Imperial Vault guard who runs quests 62 ("Tunnel Magics")
+/// and 63 ("Chronicles of Seyan"), only reachable once Carlos's own
+/// ritual quest (quest 61, `carlos2_state`) has been opened
+/// (`src/area/26/staffer.c::rouven_driver`).
+pub const CDR_ROUVEN: u16 = 130;
 /// C `#define CDR_KASSIM 156` (`src/system/drvlib.h:208`, "Aston: Kassim
 /// the engraver"): the jewelry engraver (`src/area/3/area3.c::
 /// kassim_driver`).
@@ -622,6 +628,7 @@ pub enum CharacterDriverState {
     WarpFighter(crate::world::npc::area25::warpfighter::WarpFighterDriverData),
     Warpmaster(crate::world::npc::area25::warpmaster::WarpmasterDriverData),
     SmuggleCom(crate::world::npc::area26::smugglecom::SmuggleComDriverData),
+    Rouven(crate::world::npc::area26::rouven::RouvenDriverData),
 }
 /// C `bank_driver_parse` from `src/module/bank.c`. The C driver defaults
 /// opening hours to 6..23 before parsing (`bank_driver` lines 304-309).
@@ -1423,7 +1430,8 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::StrategyWorker(_)
             | CharacterDriverState::WarpFighter(_)
             | CharacterDriverState::Warpmaster(_)
-            | CharacterDriverState::SmuggleCom(_),
+            | CharacterDriverState::SmuggleCom(_)
+            | CharacterDriverState::Rouven(_),
         ) => SimpleBaddyDriverData::default(),
         None => SimpleBaddyDriverData::default(),
     };
@@ -3945,6 +3953,7 @@ pub use crate::world::npc::area22::lab5_mage::{
 pub use crate::world::npc::area22::lab5_seyan::{
     apply_lab5_seyan_create_message, Lab5SeyanDriverData,
 };
+pub use crate::world::npc::area26::rouven::RouvenDriverData;
 pub use crate::world::npc::area26::smugglecom::SmuggleComDriverData;
 pub use crate::world::npc::area26::AREA26_QA;
 pub use crate::world::npc::area3::astro1::Astro1DriverData;

@@ -16,7 +16,7 @@ use crate::{
         ForestRangerDriverData, ForestWilliamDriverData, GateFightDriverData,
         GateWelcomeDriverData, GolemKeyholdDriverData, GreeterDriverData, GwendylonDriverData,
         JanitorDriverData, JessicaDriverData, JiuDriverData, KassimDriverData, KellyDriverData,
-        NookDriverData, ReskinDriverData, SeymourDriverData, SirJonesDriverData,
+        NookDriverData, ReskinDriverData, RouvenDriverData, SeymourDriverData, SirJonesDriverData,
         SmuggleComDriverData, SuperiorDriverData, SupermaxDriverData, TerionDriverData,
         ThomasDriverData, TraderDriverData, TwoAlchemistDriverData, TwoBarkeeperDriverData,
         TwoSanwynDriverData, TwoSkellyDriverData, TwoThiefGuardDriverData,
@@ -27,10 +27,10 @@ use crate::{
         CDR_GATE_WELCOME, CDR_GOLEMKEYHOLDER, CDR_GREETER, CDR_GWENDYLON, CDR_JANITOR, CDR_JESSICA,
         CDR_JIU, CDR_KASSIM, CDR_KELLY, CDR_LAB2HERALD, CDR_LAB2UNDEAD, CDR_LAB4GNALB,
         CDR_LAB4SEYAN, CDR_LAB5DAEMON, CDR_LAB5MAGE, CDR_LAB5SEYAN, CDR_LABGNOMEDRIVER, CDR_NOOK,
-        CDR_RESKIN, CDR_SEYMOUR, CDR_SIMPLEBADDY, CDR_SIRJONES, CDR_SMUGGLECOM, CDR_SUPERIOR,
-        CDR_SUPERMAX, CDR_SWAMPCLARA, CDR_TERION, CDR_THOMAS, CDR_TRADER, CDR_TWOALCHEMIST,
-        CDR_TWOBARKEEPER, CDR_TWOGUARD, CDR_TWOSANWYN, CDR_TWOSERVANT, CDR_TWOSKELLY,
-        CDR_TWOTHIEFGUARD, CDR_TWOTHIEFMASTER, CDR_YOAKIN, NT_CREATE,
+        CDR_RESKIN, CDR_ROUVEN, CDR_SEYMOUR, CDR_SIMPLEBADDY, CDR_SIRJONES, CDR_SMUGGLECOM,
+        CDR_SUPERIOR, CDR_SUPERMAX, CDR_SWAMPCLARA, CDR_TERION, CDR_THOMAS, CDR_TRADER,
+        CDR_TWOALCHEMIST, CDR_TWOBARKEEPER, CDR_TWOGUARD, CDR_TWOSANWYN, CDR_TWOSERVANT,
+        CDR_TWOSKELLY, CDR_TWOTHIEFGUARD, CDR_TWOTHIEFMASTER, CDR_YOAKIN, NT_CREATE,
     },
     entity::{
         Character, CharacterFlags, Item, ItemFlags, CHARACTER_VALUE_COUNT, INVENTORY_SIZE,
@@ -1005,6 +1005,13 @@ impl ZoneLoader {
             character.driver_state = Some(CharacterDriverState::SmuggleCom(
                 SmuggleComDriverData::default(),
             ));
+        }
+        if template.driver == CDR_ROUVEN {
+            // C never parses zone-file args into `struct rouven_data`
+            // (`set_data` zero-initializes it) - no args to read here,
+            // same as `CDR_GATE_WELCOME` above.
+            character.driver_state =
+                Some(CharacterDriverState::Rouven(RouvenDriverData::default()));
         }
         if template.driver == CDR_CARLOS {
             // C never parses zone-file args into `struct

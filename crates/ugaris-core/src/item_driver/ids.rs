@@ -846,9 +846,8 @@ pub const IID_MAX_CHRONICLES: u32 = make_item_id(DEV_ID_MAX, 0x000003);
 /// second-quest (`staffer_carlos2_state`) turn-in item.
 pub const IID_MAX_RITUAL: u32 = make_item_id(DEV_ID_MAX, 0x000004);
 /// C `IID_MAX_VAULTKEY` (`src/common/item_id.h:370`): `vault_key1`,
-/// granted by the still-unported `rouven_driver` state 12
-/// (`staffer.c:815`). Defined now for `vault.itm`'s item-name lookup
-/// completeness; not yet granted anywhere in this codebase.
+/// granted by `rouven_driver` state 12 (`staffer.c:815`,
+/// `world::npc::area26::rouven`'s `RouvenOutcomeEvent::GrantVaultKey`).
 pub const IID_MAX_VAULTKEY: u32 = make_item_id(DEV_ID_MAX, 0x000001);
 /// C `IID_STAFF_SMUGGLEBOOK` (`src/common/item_id.h:303`): `smugglecom_
 /// driver`'s quest-35 (`the contraband book`) turn-in item.
