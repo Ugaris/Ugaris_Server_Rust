@@ -865,6 +865,14 @@ pub const IID_STAFF_SMUGGLECAPE: u32 = make_item_id(DEV_ID_WARR, 0x000008);
 /// C `IID_STAFF_SMUGGLENECKLACE` (`src/common/item_id.h:307`,
 /// `SMUGGLEBIT_NECKLACE`).
 pub const IID_STAFF_SMUGGLENECKLACE: u32 = make_item_id(DEV_ID_WARR, 0x000009);
+/// C `IID_STAFF_ROBBERKEYAREA1` (`src/common/item_id.h:353`): `broklin_
+/// driver`'s (`world::npc::area29::broklin`) quest-45 sewer-entry key,
+/// given to the player alongside the real `IID_STAFF_SEWERKEY` check.
+pub const IID_STAFF_ROBBERKEYAREA1: u32 = make_item_id(DEV_ID_WHITESTAR, 0x000001);
+/// C `IID_STAFF_SEWERKEY` (`src/common/item_id.h:354`): `broklin_driver`'s
+/// (`world::npc::area29::broklin`) `has_item` guard before handing out
+/// `WS_Robber_Key_Area2` a second time.
+pub const IID_STAFF_SEWERKEY: u32 = make_item_id(DEV_ID_WHITESTAR, 0x000002);
 /// C `IID_STAFF_ROBBERKEY1` (`src/common/item_id.h:355`): one of the eight
 /// robber-camp keys `robberboss_dead`
 /// (`world_events::death_hooks::apply_robberboss_death_from_hurt_event`)
@@ -889,6 +897,10 @@ pub const IID_STAFF_ROBBERKEY8: u32 = make_item_id(DEV_ID_WHITESTAR, 0x00000A);
 pub const IID_STAFF_BOSSLAIR: u32 = make_item_id(DEV_ID_WHITESTAR, 0x00000B);
 /// C `IID_STAFF_BOSSMASTER` (`src/common/item_id.h:364`).
 pub const IID_STAFF_BOSSMASTER: u32 = make_item_id(DEV_ID_WHITESTAR, 0x00000C);
+/// C `IID_STAFF_PICKAXE` (`src/common/item_id.h:365`): `broklin_driver`'s
+/// (`world::npc::area29::broklin`) quest-45 ("Broklin's Pickaxe") turn-in
+/// item.
+pub const IID_STAFF_PICKAXE: u32 = make_item_id(DEV_ID_WHITESTAR, 0x00000D);
 /// C `IID_STAFF_ARIKEY` (`src/common/item_id.h:366`): `aristocrat_driver`'s
 /// (`world::npc::area28::aristocrat`) quest-38 turn-in companion item,
 /// destroyed alongside `IID_STAFF_ARIAMULET`.

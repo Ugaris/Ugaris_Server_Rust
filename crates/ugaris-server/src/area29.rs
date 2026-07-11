@@ -18,6 +18,9 @@ use super::*;
 use ugaris_core::world::npc::area29::brennethbran::{
     BrennethBranOutcomeEvent, BrennethBranPlayerFacts,
 };
+use ugaris_core::world::npc::area29::broklin::{
+    BroklinOutcomeEvent, BroklinPlayerFacts, BroklinTradeReward,
+};
 use ugaris_core::world::npc::area29::countbran::{
     qlog_countbran, CountBranOutcomeEvent, CountBranPlayerFacts,
 };
@@ -527,6 +530,175 @@ pub(crate) fn apply_forestbran_events(
                 };
                 player.set_staffer_forestbran_state(0);
                 player.clear_forestbran_done();
+                applied += 1;
+            }
+        }
+    }
+    applied
+}
+
+pub(crate) fn broklin_player_facts(
+    runtime: &ServerRuntime,
+) -> HashMap<CharacterId, BroklinPlayerFacts> {
+    runtime
+        .players
+        .values()
+        .filter_map(|player| {
+            let character_id = player.character_id?;
+            Some((
+                character_id,
+                BroklinPlayerFacts {
+                    broklin_state: player.staffer_broklin_state(),
+                    quest46_is_done: player.quest_log.is_done(46),
+                },
+            ))
+        })
+        .collect()
+}
+
+/// Applies each [`BroklinOutcomeEvent`] queued by `World::
+/// process_broklin_actions`. [`BroklinOutcomeEvent::QuestDonePickaxe`] needs
+/// both `loader` (C `create_item("gold_2000")`) and `world` (to speak the
+/// times_done-dependent reply through `broklin_id`), same precedent as
+/// `apply_aristocrat_events`'s money reward plus `world::npc::area29::
+/// broklin`'s own module doc comment for why the reply text can't be
+/// decided inside `World`. [`BroklinOutcomeEvent::GrantSewerKey`]/
+/// [`BroklinOutcomeEvent::GrantTradeReward`] need `loader` only (`World`
+/// already confirmed the precondition and, for trades, already
+/// decremented/destroyed the paid-in stack).
+pub(crate) fn apply_broklin_events(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    loader: &mut ZoneLoader,
+    events: Vec<BroklinOutcomeEvent>,
+) -> usize {
+    let mut applied = 0;
+    for event in events {
+        match event {
+            BroklinOutcomeEvent::UpdateBroklinState {
+                player_id,
+                new_state,
+            } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.set_staffer_broklin_state(new_state);
+                applied += 1;
+            }
+            // C `questlog_open(co, 45)` (`brannington.c:2180`).
+            BroklinOutcomeEvent::QuestOpen45 { player_id } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.quest_log.open(45);
+                let payload = legacy_questlog_payload(player);
+                for (session_id, _) in runtime.sessions_for_character(player_id) {
+                    runtime.send_to_session(session_id, payload.clone());
+                }
+                applied += 1;
+            }
+            // C `questlog_open(co, 46)` (`brannington.c:2210`).
+            BroklinOutcomeEvent::QuestOpen46 { player_id } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.quest_log.open(46);
+                let payload = legacy_questlog_payload(player);
+                for (session_id, _) in runtime.sessions_for_character(player_id) {
+                    runtime.send_to_session(session_id, payload.clone());
+                }
+                applied += 1;
+            }
+            // C `tmp = questlog_done(co, 45); ... if (tmp == 1 && (in =
+            // create_item("gold_2000"))) { give_char_item(co, in); }`
+            // (`brannington.c:2346-2361`).
+            BroklinOutcomeEvent::QuestDonePickaxe {
+                player_id,
+                broklin_id,
+            } => {
+                let Some(level) = world.characters.get(&player_id).map(|c| c.level) else {
+                    continue;
+                };
+                let level_val = level_value(level);
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                if let Some(completion) = player.quest_log.complete_legacy(45, level, level_val) {
+                    let payload = legacy_questlog_payload(player);
+                    world.give_exp(player_id, completion.granted_exp, u32::from(world.area_id));
+                    for (session_id, _) in runtime.sessions_for_character(player_id) {
+                        runtime.send_to_session(session_id, payload.clone());
+                    }
+                    applied += 1;
+
+                    if completion.times_done == 1 {
+                        world.npc_quiet_say(
+                            broklin_id,
+                            "Thank you! Take these 2,000 gu - I am sure it will be useful to you.",
+                        );
+                        if let Ok(item) =
+                            loader.instantiate_item_template("gold_2000", Some(player_id))
+                        {
+                            let item_id = item.id;
+                            world.add_item(item);
+                            if !world.give_char_item(player_id, item_id) {
+                                world.destroy_item(item_id);
+                            }
+                        }
+                    } else {
+                        world.npc_quiet_say(broklin_id, "Thank you!");
+                    }
+                }
+            }
+            // C `case 2:` (`brannington.c:2302-2315`): reset back to the
+            // start of whichever dialogue span is in progress.
+            BroklinOutcomeEvent::ResetToMiniQuestStart {
+                player_id,
+                new_state,
+            } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.set_staffer_broklin_state(new_state);
+                applied += 1;
+            }
+            // C `case 3:` (`brannington.c:2316-2321`): the god-only "reset
+            // me" state wipe.
+            BroklinOutcomeEvent::ResetBroklin { player_id } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.set_staffer_broklin_state(0);
+                applied += 1;
+            }
+            // C `case 8:`'s key-giveaway branch (`brannington.c:2225-
+            // 2232`).
+            BroklinOutcomeEvent::GrantSewerKey { player_id } => {
+                if let Ok(item) =
+                    loader.instantiate_item_template("WS_Robber_Key_Area2", Some(player_id))
+                {
+                    let item_id = item.id;
+                    world.add_item(item);
+                    if !world.give_char_item(player_id, item_id) {
+                        world.destroy_item(item_id);
+                    }
+                }
+                applied += 1;
+            }
+            // C `broklin_trade_gold`/`broklin_trade_silver`'s
+            // `create_item(...)` call (`brannington.c:2061`/`2105`).
+            BroklinOutcomeEvent::GrantTradeReward { player_id, reward } => {
+                let template = match reward {
+                    BroklinTradeReward::Silver4000 => "silver_4000",
+                    BroklinTradeReward::Gold1000 => "gold_1000",
+                };
+                if let Ok(item) = loader.instantiate_item_template(template, Some(player_id)) {
+                    let item_id = item.id;
+                    world.add_item(item);
+                    if !world.give_char_item(player_id, item_id) {
+                        world.destroy_item(item_id);
+                    }
+                }
                 applied += 1;
             }
         }

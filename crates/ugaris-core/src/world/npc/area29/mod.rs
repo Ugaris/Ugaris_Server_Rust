@@ -1,6 +1,7 @@
 //! Area 29 NPCs, one file per NPC.
 
 pub mod brennethbran;
+pub mod broklin;
 pub mod countbran;
 pub mod countessabran;
 pub mod daughterbran;
@@ -9,6 +10,8 @@ pub mod spiritbran;
 
 #[allow(unused_imports)]
 pub use brennethbran::*;
+#[allow(unused_imports)]
+pub use broklin::*;
 #[allow(unused_imports)]
 pub use countbran::*;
 #[allow(unused_imports)]
@@ -31,8 +34,8 @@ use crate::character_driver::TextQaEntry;
 ///
 /// Unlike `AREA28_QA`, this table carries two extra area-29-only entries
 /// (`4` "thousand gold", `5` "five thousand silver") consumed by
-/// `broklin_driver`'s permanent gold<->silver trade service, not yet
-/// ported.
+/// `broklin_driver`'s (`world::npc::area29::broklin`) permanent
+/// gold<->silver trade service.
 pub const AREA29_QA: &[TextQaEntry] = &[
     TextQaEntry {
         words: &["how", "are", "you"],

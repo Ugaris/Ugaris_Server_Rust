@@ -216,3 +216,38 @@ pub(crate) async fn forestbran_driver_137(
         );
     }
 }
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn broklin_driver_139(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    zone_loader: &mut ZoneLoader,
+    config: &ServerConfig,
+    _args: &Args,
+    _completed_actions: &[WorldActionCompletion],
+    _achievement_repository: &Option<ugaris_db::PgAchievementRepository>,
+    _character_repository: &Option<ugaris_db::PgCharacterRepository>,
+    _area_repository: &Option<ugaris_db::PgAreaRepository>,
+    _clan_repository: &Option<ugaris_db::PgClanRegistryRepository>,
+    _clan_log_repository: &Option<ugaris_db::PgClanLogRepository>,
+    _merchant_repository: &Option<ugaris_db::PgMerchantRepository>,
+    _military_master_storage_repository: &Option<ugaris_db::PgMilitaryMasterStorageRepository>,
+    _military_advisor_storage_repository: &Option<ugaris_db::PgMilitaryAdvisorStorageRepository>,
+    _notes_repository: &Option<ugaris_db::PgNotesRepository>,
+    _anticheat_repository: &Option<ugaris_db::PgAntiCheatRepository>,
+    _auction_repository: &Option<ugaris_db::PgAuctionRepository>,
+) {
+    // C `broklin_driver`: Brannington's Chief Miner, who runs "The Missing
+    // Pickaxe"/"The Head Robber" (quests 45/46) and a permanent
+    // gold<->silver trade service (`src/area/29/brannington.c`).
+    let broklin_facts = broklin_player_facts(runtime);
+    let broklin_events = world.process_broklin_actions(&broklin_facts, config.area_id);
+    let broklin_events_applied = apply_broklin_events(world, runtime, zone_loader, broklin_events);
+    if broklin_events_applied != 0 {
+        info!(
+            broklin_events_applied,
+            tick = world.tick.0,
+            "applied broklin dialogue events"
+        );
+    }
+}

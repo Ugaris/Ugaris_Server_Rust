@@ -573,6 +573,7 @@ impl World {
                 | CharacterDriverState::Yoatin(_)
                 | CharacterDriverState::SpiritBran(_)
                 | CharacterDriverState::BrennethBran(_)
+                | CharacterDriverState::Broklin(_)
                 | CharacterDriverState::CountBran(_)
                 | CharacterDriverState::CountessaBran(_)
                 | CharacterDriverState::DaughterBran(_)

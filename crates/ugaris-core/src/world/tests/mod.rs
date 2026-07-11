@@ -19,6 +19,7 @@ mod barkeeper;
 mod bones;
 mod brennethbran;
 mod brithildie;
+mod broklin;
 mod camhermit;
 mod carlos;
 mod character_values;

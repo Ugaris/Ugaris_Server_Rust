@@ -11,10 +11,10 @@ use crate::{
         apply_simple_baddy_create_message, parse_arena_manager_driver_args,
         parse_clanclerk_driver_args, parse_clanmaster_driver_args, parse_clubmaster_driver_args,
         ArenaFighterDriverData, ArenaMasterDriverData, AristocratDriverData, Astro2DriverData,
-        BrennethBranDriverData, BrithildieDriverData, CamhermitDriverData, CarlosDriverData,
-        CharacterDriverState, ClaraDriverData, CountBranDriverData, CountessaBranDriverData,
-        DaughterBranDriverData, DungeonmasterDriverData, FightDriverData, ForestBranDriverData,
-        ForestHermitDriverData, ForestImpDriverData, ForestRangerDriverData,
+        BrennethBranDriverData, BrithildieDriverData, BroklinDriverData, CamhermitDriverData,
+        CarlosDriverData, CharacterDriverState, ClaraDriverData, CountBranDriverData,
+        CountessaBranDriverData, DaughterBranDriverData, DungeonmasterDriverData, FightDriverData,
+        ForestBranDriverData, ForestHermitDriverData, ForestImpDriverData, ForestRangerDriverData,
         ForestWilliamDriverData, GateFightDriverData, GateWelcomeDriverData,
         GolemKeyholdDriverData, GreeterDriverData, GwendylonDriverData, JanitorDriverData,
         JessicaDriverData, JiuDriverData, KassimDriverData, KellyDriverData, NookDriverData,
@@ -24,17 +24,18 @@ use crate::{
         TwoBarkeeperDriverData, TwoSanwynDriverData, TwoSkellyDriverData, TwoThiefGuardDriverData,
         TwoThiefMasterDriverData, YoakinDriverData, YoatinDriverData, ARENA_FIGHTER_REST_POS,
         CDR_ARENAFIGHTER, CDR_ARENAMANAGER, CDR_ARENAMASTER, CDR_ARISTOCRAT, CDR_ASTRO2,
-        CDR_BRENNETHBRAN, CDR_BRITHILDIE, CDR_CAMHERMIT, CDR_CARLOS, CDR_CENTINEL, CDR_CLANCLERK,
-        CDR_CLANMASTER, CDR_CLUBMASTER, CDR_COUNTBRAN, CDR_COUNTESSABRAN, CDR_DAUGHTERBRAN,
-        CDR_DUNGEONMASTER, CDR_FORESTBRAN, CDR_FORESTHERMIT, CDR_FORESTIMP, CDR_FORESTMONSTER,
-        CDR_FORESTWILLIAM, CDR_FOREST_RANGER, CDR_GATE_FIGHT, CDR_GATE_WELCOME, CDR_GOLEMKEYHOLDER,
-        CDR_GREETER, CDR_GWENDYLON, CDR_JANITOR, CDR_JESSICA, CDR_JIU, CDR_KASSIM, CDR_KELLY,
-        CDR_LAB2HERALD, CDR_LAB2UNDEAD, CDR_LAB4GNALB, CDR_LAB4SEYAN, CDR_LAB5DAEMON, CDR_LAB5MAGE,
-        CDR_LAB5SEYAN, CDR_LABGNOMEDRIVER, CDR_NOOK, CDR_RESKIN, CDR_ROUVEN, CDR_SEYMOUR,
-        CDR_SIMPLEBADDY, CDR_SIRJONES, CDR_SMUGGLECOM, CDR_SPIRITBRAN, CDR_SUPERIOR, CDR_SUPERMAX,
-        CDR_SWAMPCLARA, CDR_TERION, CDR_THOMAS, CDR_TRADER, CDR_TWOALCHEMIST, CDR_TWOBARKEEPER,
-        CDR_TWOGUARD, CDR_TWOSANWYN, CDR_TWOSERVANT, CDR_TWOSKELLY, CDR_TWOTHIEFGUARD,
-        CDR_TWOTHIEFMASTER, CDR_WHITEROBBERBOSS, CDR_YOAKIN, CDR_YOATIN, NT_CREATE,
+        CDR_BRENNETHBRAN, CDR_BRITHILDIE, CDR_BROKLIN, CDR_CAMHERMIT, CDR_CARLOS, CDR_CENTINEL,
+        CDR_CLANCLERK, CDR_CLANMASTER, CDR_CLUBMASTER, CDR_COUNTBRAN, CDR_COUNTESSABRAN,
+        CDR_DAUGHTERBRAN, CDR_DUNGEONMASTER, CDR_FORESTBRAN, CDR_FORESTHERMIT, CDR_FORESTIMP,
+        CDR_FORESTMONSTER, CDR_FORESTWILLIAM, CDR_FOREST_RANGER, CDR_GATE_FIGHT, CDR_GATE_WELCOME,
+        CDR_GOLEMKEYHOLDER, CDR_GREETER, CDR_GWENDYLON, CDR_JANITOR, CDR_JESSICA, CDR_JIU,
+        CDR_KASSIM, CDR_KELLY, CDR_LAB2HERALD, CDR_LAB2UNDEAD, CDR_LAB4GNALB, CDR_LAB4SEYAN,
+        CDR_LAB5DAEMON, CDR_LAB5MAGE, CDR_LAB5SEYAN, CDR_LABGNOMEDRIVER, CDR_NOOK, CDR_RESKIN,
+        CDR_ROUVEN, CDR_SEYMOUR, CDR_SIMPLEBADDY, CDR_SIRJONES, CDR_SMUGGLECOM, CDR_SPIRITBRAN,
+        CDR_SUPERIOR, CDR_SUPERMAX, CDR_SWAMPCLARA, CDR_TERION, CDR_THOMAS, CDR_TRADER,
+        CDR_TWOALCHEMIST, CDR_TWOBARKEEPER, CDR_TWOGUARD, CDR_TWOSANWYN, CDR_TWOSERVANT,
+        CDR_TWOSKELLY, CDR_TWOTHIEFGUARD, CDR_TWOTHIEFMASTER, CDR_WHITEROBBERBOSS, CDR_YOAKIN,
+        CDR_YOATIN, NT_CREATE,
     },
     entity::{
         Character, CharacterFlags, Item, ItemFlags, CHARACTER_VALUE_COUNT, INVENTORY_SIZE,
@@ -1047,6 +1048,13 @@ impl ZoneLoader {
             character.driver_state = Some(CharacterDriverState::BrennethBran(
                 BrennethBranDriverData::default(),
             ));
+        }
+        if template.driver == CDR_BROKLIN {
+            // C never parses zone-file args into `struct broklin_data`
+            // (`set_data` zero-initializes it) - no args to read here, same
+            // as `CDR_GATE_WELCOME` above.
+            character.driver_state =
+                Some(CharacterDriverState::Broklin(BroklinDriverData::default()));
         }
         if template.driver == CDR_COUNTBRAN {
             // C never parses zone-file args into `struct
