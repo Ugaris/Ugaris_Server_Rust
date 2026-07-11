@@ -135,21 +135,33 @@
 //! that read-before-write ordering for whatever future slice ports the
 //! rest of `ai_main` and wires the real commit.
 //!
+//! Fourteenth slice done: [`AiData::update_guard_list`]/[`AiData::
+//! update_nag_guard`]/[`AiData::update_place_worker_and_eguard_counts`]/
+//! [`AiData::update_free_npc_count`] (`strategy.c:2484-2500,2509-2520,
+//! 2531-2539,2632-2642`) - the remaining pure roster-bookkeeping
+//! refreshes from `ai_main`'s outer body that need no live-character/
+//! item access (unlike [`World::ai_refresh_places`]'s own per-place
+//! threat scan, which already covers the rest of that same per-place
+//! `for` loop). `update_nag_guard`'s `!ad->an[i].cn` half (the NPC slot
+//! was emptied outright) can never fire yet - see below.
+//!
 //! REMAINING (tracked in `PORTING_TODO.md`, left `[~]` on purpose):
 //! `ai_main`'s own outer per-tick body still needs: the "update npc
 //! list" NPC-vec refresh (`:2461-2482`, re-deriving `x`/`y`/`level`/
-//! `platin`/`used` from each live NPC and dropping despawned ones - see
-//! this module's doc comment on why removal doesn't map cleanly onto the
-//! current `Vec`-backed roster), the "update worker/etguard counts on
-//! places" half of the per-place loop this slice does not cover
-//! (`:2511-2520`,`:2531-2539`, both index into the NPC roster), worker
-//! spawning (`:2644-2672`), the panic/non-panic task-assignment switch
-//! (`:2674-2924`, calls the already-ported `task_*` functions plus
-//! `wantguardcnt`/`assign_guards`/`remove_free_guards`/`nag_attack`,
-//! also all already ported), the final per-npc task-dispatch `switch`
-//! (`:2932-2972`) - plus `create_eguard` (`:2987-3040`, needs
-//! `ZoneLoader`) and the "place eternal guards" tail that calls it
-//! (`:2892-2903`).
+//! `platin`/`used` from each live NPC and dropping despawned ones - the
+//! one piece of this per-tick refresh not yet ported, since it doesn't
+//! map cleanly onto the current `Vec`-backed roster: C's `an[n].cn = 0`
+//! removal-in-place would require either a fixed-slot `Option`-backed
+//! roster or a stable-index-preserving removal scheme, since every other
+//! piece of `AiData`/`AiPlace` already ported here - `worker[]`/`eguard`/
+//! `guard[]` - stores plain NPC-array indices that would dangle across a
+//! naive `Vec::remove`), worker spawning (`:2644-2672`), the panic/
+//! non-panic task-assignment switch (`:2674-2924`, calls the
+//! already-ported `task_*` functions plus `wantguardcnt`/`assign_guards`/
+//! `remove_free_guards`/`nag_attack`, also all already ported), the final
+//! per-npc task-dispatch `switch` (`:2932-2972`) - plus `create_eguard`
+//! (`:2987-3040`, needs `ZoneLoader`) and the "place eternal guards" tail
+//! that calls it (`:2892-2903`).
 
 use super::*;
 use crate::character_driver::CDR_STRATEGY;
@@ -385,6 +397,9 @@ pub struct AiData {
     pub places: Vec<AiPlace>,
     pub npcs: Vec<AiNpc>,
     pub free_workers: i32,
+    /// C `int npc_cnt` (`:1762`): live, non-eternal-guard NPC count,
+    /// refreshed by [`AiData::update_free_npc_count`].
+    pub npc_cnt: i32,
     /// C `int guard[MAXGUARD]`: NPC-array indices on eternal-guard duty,
     /// `-1` for an empty slot.
     pub guard: [i32; AI_MAXGUARD],
@@ -430,6 +445,7 @@ impl AiData {
             places: Vec::new(),
             npcs: Vec::new(),
             free_workers: 0,
+            npc_cnt: 0,
             guard: [-1; AI_MAXGUARD],
             gcnt: 0,
             etguardcnt: 0,
@@ -594,6 +610,109 @@ impl AiData {
             let m = self.guard[n];
             if m != -1 && m != self.nagguard && self.npcs[m as usize].used == 0 {
                 self.npcs[m as usize].target = 0;
+            }
+        }
+    }
+
+    /// C `ai_main`'s "update guard list" pass (`strategy.c:2484-2494`):
+    /// recount `gcnt` from the `guard[]` slots that are still real elite
+    /// guards on standby (`task == T_EGUARD && used == -1`, stamping them
+    /// `used = 0` in the process), evicting any slot whose NPC no longer
+    /// qualifies (was reassigned away from [`AiTask::EGuard`] by the
+    /// still-unported task-assignment switch, or already claimed by a
+    /// place this tick via [`Self::update_place_worker_and_eguard_counts`]).
+    pub fn update_guard_list(&mut self) {
+        self.gcnt = 0;
+        for m in 0..AI_MAXGUARD {
+            let i = self.guard[m];
+            if i == -1 {
+                continue;
+            }
+            let iu = i as usize;
+            if self.npcs[iu].task == AiTask::EGuard && self.npcs[iu].used == -1 {
+                self.gcnt += 1;
+                self.npcs[iu].used = 0;
+            } else {
+                self.guard[m] = -1;
+            }
+        }
+    }
+
+    /// C `ai_main`'s "update nag guard" pass (`strategy.c:2496-2500`):
+    /// clear [`Self::nagguard`] once its NPC is no longer a qualifying
+    /// elite guard still assigned to [`Self::nagplace`], or the nag has
+    /// run for more than 90 seconds. C's `!ad->an[i].cn` half (the NPC
+    /// slot was emptied outright) can never fire in this port yet - NPC-
+    /// vec removal is unported, see this module's own doc comment - so
+    /// only the reachable three conditions are checked.
+    pub fn update_nag_guard(&mut self, tick: i64) {
+        let i = self.nagguard;
+        if i == -1 {
+            return;
+        }
+        let iu = i as usize;
+        let stale = tick - self.lastnag > (TICKS_PER_SECOND as i64) * 90;
+        if self.npcs[iu].task != AiTask::EGuard
+            || self.npcs[iu].target as i32 != self.nagplace
+            || stale
+        {
+            self.nagguard = -1;
+        }
+    }
+
+    /// C `ai_main`'s "update worker/etguard counts on places" per-place
+    /// half (`strategy.c:2509-2520,2531-2539`): recount each place's
+    /// `wcnt` from its `worker[]` slots (keeping only workers still
+    /// actually targeting this place and not yet claimed by another
+    /// place this tick, stamping `used = n` in the process, dropping
+    /// stale slots back to `-1`), and refresh its `eguard` slot the same
+    /// way. Companion to [`World::ai_refresh_places`]'s own per-place
+    /// loop (called immediately before it in C, `:2509` is the first line
+    /// of the very same `for` loop `ai_refresh_places` ports the rest
+    /// of) - kept as a separate, independently testable pass here since
+    /// it needs no live-character/item access at all, unlike the rest of
+    /// that loop.
+    pub fn update_place_worker_and_eguard_counts(&mut self) {
+        for n in 0..self.places.len() {
+            self.places[n].wcnt = 0;
+            for m in 0..AI_MAXWORKER {
+                let i = self.places[n].worker[m];
+                if i == -1 {
+                    continue;
+                }
+                let iu = i as usize;
+                if self.npcs[iu].target == n && self.npcs[iu].used == -1 {
+                    self.places[n].wcnt += 1;
+                    self.npcs[iu].used = n as i32;
+                } else {
+                    self.places[n].worker[m] = -1;
+                }
+            }
+
+            let eguard = self.places[n].eguard;
+            if eguard != -1 {
+                let iu = eguard as usize;
+                if self.npcs[iu].target == n && self.npcs[iu].used == -1 {
+                    self.npcs[iu].used = n as i32;
+                } else {
+                    self.places[n].eguard = -1;
+                }
+            }
+        }
+    }
+
+    /// C `ai_main`'s "update free NPC count" pass (`strategy.c:2632-
+    /// 2642`): recompute `npc_cnt`/`free_workers` from every live,
+    /// non-eternal-guard NPC's current `used` state.
+    pub fn update_free_npc_count(&mut self) {
+        self.npc_cnt = 0;
+        self.free_workers = 0;
+        for npc in &self.npcs {
+            if npc.task != AiTask::Ignore {
+                self.npc_cnt += 1;
+                if npc.used == -1 {
+                    self.free_workers += 1;
+                }
             }
         }
     }

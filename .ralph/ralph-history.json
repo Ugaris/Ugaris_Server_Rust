@@ -508,21 +508,50 @@
         "test macro_daemon::tests::first_failure_is_a_gentle_warning_with_ten_to_twenty_minute_reschedule ... ok",
         "test macro_daemon::tests::second_failure_is_a_sterner_warning ... ok"
       ]
+    },
+    {
+      "iteration": 16,
+      "startedAt": "2026-07-11T08:01:43.299Z",
+      "endedAt": "2026-07-11T08:17:09.255Z",
+      "durationMs": 924626,
+      "agent": "opencode",
+      "model": "anthropic/claude-sonnet-5",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "PORTING_TODO.md",
+        "crates/ugaris-core/src/world/strategy_ai.rs",
+        "crates/ugaris-core/src/world/tests/strategy_ai.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "**Health check**: Workspace was green (3601 core + 1168 server tests, zero failures) at the start.",
+        "**Verification**: `cargo fmt --all` (clean), `cargo test --workspace` (3616 core [+15], 1168 server, all green, zero failures), `cargo build -p ugaris-server` (clean, zero warnings). No runtime-loop/p",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "\u001b[0m$ \u001b[0mcargo test --workspace 2>&1 | grep -E \"FAILED|error\\[|error:|test result\"",
+        "test error::tests::error_constants_match_legacy_header ... ok",
+        "test error::tests::error_strings_match_legacy_table ... ok",
+        "test error::tests::out_of_range_errors_use_c_fallback_string ... ok",
+        "test result: ok. 3601 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.29s",
+        "test result: ok. 81 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+      ]
     }
   ],
-  "totalDurationMs": 36464370,
+  "totalDurationMs": 37388996,
   "struggleIndicators": {
     "repeatedErrors": {
       "3375 core (+17) and 1168 server (+6) tests all pass, zero failures. Now let's build ugaris-server fo": 1,
       "- `cargo fmt --all`, `cargo test --workspace` (3375 core + 1168 server, zero failures/warnings), `ca": 1,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 15,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 16,
       "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&": 8,
-      "test error::tests::error_constants_match_legacy_header ... ok": 6,
-      "test error::tests::error_strings_match_legacy_table ... ok": 6,
-      "test error::tests::out_of_range_errors_use_c_fallback_string ... ok": 6,
+      "test error::tests::error_constants_match_legacy_header ... ok": 7,
+      "test error::tests::error_strings_match_legacy_table ... ok": 7,
+      "test error::tests::out_of_range_errors_use_c_fallback_string ... ok": 7,
       "test world::tests::dungeon_master::attack_command_failure_says_error_and_never_charges_or_queues ...": 4,
       "test result: ok. 3358 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.30s": 1,
-      "test result: ok. 81 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 9,
+      "test result: ok. 81 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 10,
       "test result: ok. 1168 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 8.03s": 1,
       "122-| `src/module/weather/weather.c`, `src/module/weather/weather_client.c` | `crates/ugaris-server/": 1,
       "7548:- 2026-07-07: closed the P4 \"Area 1\" task's last gap: `tutorial_ppd`/`tutorial()` (`src/system/": 1,
@@ -539,7 +568,7 @@
       "119-| `src/system/clubmaster.c` | `crates/ugaris-core/src/character_driver.rs`, `crates/ugaris-core/": 1,
       "120-| `src/module/military.c` / `military.h`, `src/system/tool.c` (`get_army_rank_int`/`set_army_ran": 1,
       "test result: ok. 3406 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.29s": 1,
-      "test result: ok. 0 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 0.00s": 6,
+      "test result: ok. 0 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 0.00s": 7,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 4,
       "test result: ok. 45 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 3,
       "3436 core (+8, one test wasn't counted separately from before? Let's check) + 1168 server all pass, ": 1,
@@ -600,7 +629,11 @@
       "Clean rebuild with zero warnings. Everything is green: `cargo fmt --all` (no diff), `cargo test --wo": 1,
       "**Verification:** `cargo fmt --all` clean, `cargo test --workspace` all green (3601 core [+11] / 81 ": 1,
       "test macro_daemon::tests::first_failure_is_a_gentle_warning_with_ten_to_twenty_minute_reschedule ...": 1,
-      "test macro_daemon::tests::second_failure_is_a_sterner_warning ... ok": 1
+      "test macro_daemon::tests::second_failure_is_a_sterner_warning ... ok": 1,
+      "**Health check**: Workspace was green (3601 core + 1168 server tests, zero failures) at the start.": 1,
+      "**Verification**: `cargo fmt --all` (clean), `cargo test --workspace` (3616 core [+15], 1168 server,": 1,
+      "\u001b[0m$ \u001b[0mcargo test --workspace 2>&1 | grep -E \"FAILED|error\\[|error:|test result\"": 1,
+      "test result: ok. 3601 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.29s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

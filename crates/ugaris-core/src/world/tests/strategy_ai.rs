@@ -1221,3 +1221,222 @@ fn ai_refresh_places_projects_threat_between_parent_and_child() {
     assert_eq!(ad.places[1].threatncount, storage_threatcount);
     assert_eq!(ad.places[1].threatnlevel, 30);
 }
+
+// --- AiData::update_guard_list ---
+
+#[test]
+fn update_guard_list_counts_qualifying_standby_guards_and_stamps_used() {
+    let mut ad = AiData::new(StrategyPpd::default());
+    let mut guard = ai_npc(1, 10, 10, 20);
+    guard.task = AiTask::EGuard;
+    guard.used = -1;
+    ad.npcs.push(guard);
+    ad.guard[0] = 0;
+
+    ad.update_guard_list();
+    assert_eq!(ad.gcnt, 1);
+    assert_eq!(ad.npcs[0].used, 0);
+}
+
+#[test]
+fn update_guard_list_evicts_a_slot_whose_npc_is_no_longer_an_eguard() {
+    let mut ad = AiData::new(StrategyPpd::default());
+    let mut reassigned = ai_npc(1, 10, 10, 20);
+    reassigned.task = AiTask::Mine; // task-assignment switch moved it away
+    ad.npcs.push(reassigned);
+    ad.guard[0] = 0;
+
+    ad.update_guard_list();
+    assert_eq!(ad.gcnt, 0);
+    assert_eq!(ad.guard[0], -1);
+}
+
+#[test]
+fn update_guard_list_evicts_a_slot_already_claimed_by_a_place_this_tick() {
+    let mut ad = AiData::new(StrategyPpd::default());
+    let mut claimed = ai_npc(1, 10, 10, 20);
+    claimed.task = AiTask::EGuard;
+    claimed.used = 3; // already claimed by place 3 this tick
+    ad.npcs.push(claimed);
+    ad.guard[0] = 0;
+
+    ad.update_guard_list();
+    assert_eq!(ad.gcnt, 0);
+    assert_eq!(ad.guard[0], -1);
+}
+
+// --- AiData::update_nag_guard ---
+
+#[test]
+fn update_nag_guard_clears_when_the_npc_left_eguard_duty() {
+    let mut ad = AiData::new(StrategyPpd::default());
+    let mut npc = ai_npc(1, 10, 10, 20);
+    npc.task = AiTask::Mine; // reassigned away
+    ad.npcs.push(npc);
+    ad.nagguard = 0;
+    ad.nagplace = 0;
+    ad.lastnag = 0;
+
+    ad.update_nag_guard(100);
+    assert_eq!(ad.nagguard, -1);
+}
+
+#[test]
+fn update_nag_guard_clears_when_target_no_longer_matches_nagplace() {
+    let mut ad = AiData::new(StrategyPpd::default());
+    let mut npc = ai_npc(1, 10, 10, 20);
+    npc.task = AiTask::EGuard;
+    npc.target = 5;
+    ad.npcs.push(npc);
+    ad.nagguard = 0;
+    ad.nagplace = 1; // different place
+    ad.lastnag = 0;
+
+    ad.update_nag_guard(100);
+    assert_eq!(ad.nagguard, -1);
+}
+
+#[test]
+fn update_nag_guard_clears_after_ninety_seconds() {
+    let mut ad = AiData::new(StrategyPpd::default());
+    let mut npc = ai_npc(1, 10, 10, 20);
+    npc.task = AiTask::EGuard;
+    npc.target = 1;
+    ad.npcs.push(npc);
+    ad.nagguard = 0;
+    ad.nagplace = 1;
+    ad.lastnag = 0;
+
+    let stale_tick = TICKS_PER_SECOND as i64 * 90 + 1;
+    ad.update_nag_guard(stale_tick);
+    assert_eq!(ad.nagguard, -1);
+}
+
+#[test]
+fn update_nag_guard_stays_while_still_valid_and_within_cooldown() {
+    let mut ad = AiData::new(StrategyPpd::default());
+    let mut npc = ai_npc(1, 10, 10, 20);
+    npc.task = AiTask::EGuard;
+    npc.target = 1;
+    ad.npcs.push(npc);
+    ad.nagguard = 0;
+    ad.nagplace = 1;
+    ad.lastnag = 0;
+
+    ad.update_nag_guard(10);
+    assert_eq!(ad.nagguard, 0);
+}
+
+#[test]
+fn update_nag_guard_is_a_no_op_when_no_guard_is_nagging() {
+    let mut ad = AiData::new(StrategyPpd::default());
+    ad.nagguard = -1;
+    ad.update_nag_guard(100);
+    assert_eq!(ad.nagguard, -1);
+}
+
+// --- AiData::update_place_worker_and_eguard_counts ---
+
+#[test]
+fn update_place_worker_and_eguard_counts_keeps_a_qualifying_worker() {
+    let mut ad = AiData::new(StrategyPpd::default());
+    ad.places.push(ai_place(AiPlaceType::Mine, 1, 10, 10));
+    ad.places[0].worker[0] = 0;
+    let mut worker = ai_npc(1, 10, 10, 10);
+    worker.target = 0;
+    worker.used = -1;
+    ad.npcs.push(worker);
+
+    ad.update_place_worker_and_eguard_counts();
+    assert_eq!(ad.places[0].wcnt, 1);
+    assert_eq!(ad.places[0].worker[0], 0);
+    assert_eq!(ad.npcs[0].used, 0);
+}
+
+#[test]
+fn update_place_worker_and_eguard_counts_drops_a_stale_worker_slot() {
+    let mut ad = AiData::new(StrategyPpd::default());
+    ad.places.push(ai_place(AiPlaceType::Mine, 1, 10, 10));
+    ad.places[0].worker[0] = 0;
+    let mut worker = ai_npc(1, 10, 10, 10);
+    worker.target = 1; // reassigned to a different place
+    ad.npcs.push(worker);
+
+    ad.update_place_worker_and_eguard_counts();
+    assert_eq!(ad.places[0].wcnt, 0);
+    assert_eq!(ad.places[0].worker[0], -1);
+}
+
+#[test]
+fn update_place_worker_and_eguard_counts_drops_a_worker_already_claimed_this_tick() {
+    let mut ad = AiData::new(StrategyPpd::default());
+    ad.places.push(ai_place(AiPlaceType::Mine, 1, 10, 10));
+    ad.places[0].worker[0] = 0;
+    let mut worker = ai_npc(1, 10, 10, 10);
+    worker.target = 0;
+    worker.used = 7; // already claimed by another place this tick
+    ad.npcs.push(worker);
+
+    ad.update_place_worker_and_eguard_counts();
+    assert_eq!(ad.places[0].wcnt, 0);
+    assert_eq!(ad.places[0].worker[0], -1);
+}
+
+#[test]
+fn update_place_worker_and_eguard_counts_keeps_a_qualifying_eternal_guard() {
+    let mut ad = AiData::new(StrategyPpd::default());
+    ad.places.push(ai_place(AiPlaceType::Storage, 1, 10, 10));
+    ad.places[0].eguard = 0;
+    let mut guard = ai_npc(1, 10, 10, 20);
+    guard.target = 0;
+    guard.used = -1;
+    ad.npcs.push(guard);
+
+    ad.update_place_worker_and_eguard_counts();
+    assert_eq!(ad.places[0].eguard, 0);
+    assert_eq!(ad.npcs[0].used, 0);
+}
+
+#[test]
+fn update_place_worker_and_eguard_counts_drops_a_stale_eguard_slot() {
+    let mut ad = AiData::new(StrategyPpd::default());
+    ad.places.push(ai_place(AiPlaceType::Storage, 1, 10, 10));
+    ad.places[0].eguard = 0;
+    let mut guard = ai_npc(1, 10, 10, 20);
+    guard.target = 1; // no longer targeting this place
+    ad.npcs.push(guard);
+
+    ad.update_place_worker_and_eguard_counts();
+    assert_eq!(ad.places[0].eguard, -1);
+}
+
+// --- AiData::update_free_npc_count ---
+
+#[test]
+fn update_free_npc_count_counts_non_eternal_guards_and_free_workers() {
+    let mut ad = AiData::new(StrategyPpd::default());
+    let mut free = ai_npc(1, 10, 10, 10);
+    free.used = -1;
+    ad.npcs.push(free);
+    let mut busy = ai_npc(2, 10, 10, 10);
+    busy.used = 3;
+    ad.npcs.push(busy);
+    let mut eternal = ai_npc(3, 10, 10, 10);
+    eternal.task = AiTask::Ignore;
+    eternal.used = -1; // excluded regardless of `used`
+    ad.npcs.push(eternal);
+
+    ad.update_free_npc_count();
+    assert_eq!(ad.npc_cnt, 2);
+    assert_eq!(ad.free_workers, 1);
+}
+
+#[test]
+fn update_free_npc_count_resets_from_previous_values() {
+    let mut ad = AiData::new(StrategyPpd::default());
+    ad.npc_cnt = 999;
+    ad.free_workers = 999;
+    ad.update_free_npc_count();
+    assert_eq!(ad.npc_cnt, 0);
+    assert_eq!(ad.free_workers, 0);
+}

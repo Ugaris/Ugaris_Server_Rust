@@ -1223,13 +1223,17 @@ Ordered by player progression; the C file is the oracle.
   `AiData` (C only commits them at the very end of `ai_main`, after
   still-unported blocks that read the *previous* tick's values). 11 new
   tests.
+  Fourteenth slice done: `AiData::update_guard_list`/`update_nag_guard`/
+  `update_place_worker_and_eguard_counts`/`update_free_npc_count`
+  (`strategy.c:2484-2500,2509-2520,2531-2539,2632-2642`) - the remaining
+  pure roster-bookkeeping refreshes from `ai_main`'s outer body that need
+  no live-character/item access, closing every part of the per-place loop
+  besides the already-ported threat scan. 15 new tests.
   REMAINING: the "update npc list" NPC-vec refresh (doesn't map cleanly
   onto the current `Vec`-backed roster - see `strategy_ai.rs`'s module
-  doc comment), the worker-count/eternal-guard-count half of the
-  per-place loop (indexes the NPC roster), worker spawning, the panic/
-  non-panic task-assignment switch, the final per-npc task-dispatch
-  switch, `create_eguard` (needs `ZoneLoader`), and the "place eternal
-  guards" tail that calls it.
+  doc comment), worker spawning, the panic/non-panic task-assignment
+  switch, the final per-npc task-dispatch switch, `create_eguard` (needs
+  `ZoneLoader`), and the "place eternal guards" tail that calls it.
 - [ ] **Area 25 - `src/area/25/warped.c`** - warped NPC dialogue,
   `DRD_WARPFIGHTER` full fight driver.
 - [ ] **Area 26 - `src/area/26/staffer.c`** - vault skull PPD/quest, Rouven
@@ -1291,6 +1295,11 @@ Keep entries to at most three lines: date, task, one-line result.
 Anything longer belongs in `PORTING_LEDGER.md`; historical verbose
 notes live in `PROGRESS_ARCHIVE.md`.
 
+- 2026-07-11: Areas 23/24 strategy minigame: fourteenth slice - ported
+  the remaining pure per-place/guard-list bookkeeping refreshes
+  (`update_guard_list`/`update_nag_guard`/
+  `update_place_worker_and_eguard_counts`/`update_free_npc_count`).
+  3616 core [+15] + 1168 server tests pass, clean build.
 - 2026-07-11: Areas 23/24 strategy minigame: thirteenth slice - ported
   `World::ai_refresh_places` (`ai_main`'s per-place owned/platin/threat
   refresh + neighbor threat projection). 3601 core [+11] + 1168 server
