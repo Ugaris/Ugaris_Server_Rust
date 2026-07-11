@@ -527,6 +527,23 @@ pub const CDR_DAUGHTERBRAN: u16 = 93;
 /// `apply_robberboss_death_from_hurt_event` (needs `PlayerRuntime`'s
 /// `staffer_broklin_state`).
 pub const CDR_WHITEROBBERBOSS: u16 = 102;
+/// C `#define CDR_CENTINEL 106` (`src/system/drvlib.h:154`, "staffer2 area:
+/// centinel"): the wooden marionette sentinels guarding the Brannington
+/// tower (`zones/29/wrtower.chr`'s `centinel_count` template). C's own
+/// `ch_driver` dispatch (`brannington.c:2802-2804`) is an unconditional
+/// tail call to `char_driver(CDR_SIMPLEBADDY, ...)`, so `CDR_CENTINEL`
+/// characters reuse the SimpleBaddy AI end-to-end - same precedent as
+/// `CDR_WHITEROBBERBOSS` (see the `character.driver == CDR_SIMPLEBADDY`
+/// gates widened alongside it in `world/npc_fight.rs`/`world/npc_idle.rs`,
+/// and its `NT_CREATE` zone-spawn wiring in `zone.rs`). Its own
+/// `ch_died_driver`/`centinel_dead` death hook (`brannington.c:2725-2758`)
+/// lives in `ugaris-server`'s `apply_centinel_death_from_hurt_event`
+/// (needs `PlayerRuntime`'s `staffer_centinel_count`). Note the *other*
+/// `wrtower.chr` template, `centinel` (no `_count` suffix), is plain
+/// `driver=7` (`CDR_SIMPLEBADDY`) directly and never reaches this driver
+/// id or the kill-counter hook at all - a real, data-driven distinction
+/// between the two near-identical templates, not a porting gap.
+pub const CDR_CENTINEL: u16 = 106;
 pub const DRD_SIMPLEBADDYDRIVER: u32 = 0x0100_0013;
 pub const DRD_CLARADRIVER: u32 = 0x0100_0059;
 pub const DRD_SKELLYDRIVER: u32 = 0x0100_006a;

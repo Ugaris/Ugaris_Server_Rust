@@ -852,6 +852,12 @@ pub(crate) const STAFFER_PPD_YOATIN_STATE_OFFSET: usize = 14 * 4;
 
 pub(crate) const STAFFER_PPD_SHANRA_STATE_OFFSET: usize = 16 * 4;
 
+/// C `struct staffer_ppd::centinel_count` (`src/common/staffer_ppd.h:35`,
+/// field index 17): `centinel_dead`'s (`src/area/29/brannington.c:2725-
+/// 2758`) per-player sentinel kill counter, capped at 30, reset to `0`
+/// once the level-30 teleport succeeds.
+pub(crate) const STAFFER_PPD_CENTINEL_COUNT_OFFSET: usize = 17 * 4;
+
 pub(crate) const STAFFER_PPD_DWARFCHIEF_STATE_OFFSET: usize = 18 * 4;
 
 pub(crate) const STAFFER_PPD_DWARFSHAMAN_STATE_OFFSET: usize = 19 * 4;

@@ -1378,12 +1378,12 @@ Ordered by player progression; the C file is the oracle.
   done. Details in PORTING_LEDGER.md.)*
 - [~] **Area 29 - `src/area/29/brannington.c`** - Brannington quest NPCs,
   `DRD_STAFFER_PPD` remaining fields. REMAINING: `spirit_brannington_driver`
-  (quest 44) and `count`/`countessa`/`daughter_brannington_driver` (quest
-  40, shared `countbran_bits`) are ported; `Brenneth Brannington`
+  (quest 44), `count`/`countessa`/`daughter_brannington_driver` (quest
+  40, shared `countbran_bits`), and `CDR_CENTINEL` (fight-AI reuse +
+  `centinel_dead` kill-counter hook) are ported; `Brenneth Brannington`
   (quests 41-43), `Forester Brannington`, `Guard Brannington` (quest 64),
-  `Broklin` (quests 45/46 + trade service), `Grinnich`+`Shanra`, and
-  `Centinel` (fight-AI reuse + death hook) remain. Details in
-  PORTING_LEDGER.md.
+  `Broklin` (quests 45/46 + trade service), and `Grinnich`+`Shanra` remain.
+  Details in PORTING_LEDGER.md.
 - [ ] **Area 30 - `src/area/30/clanmaster.c`** - clan master NPC (needs P3
   clan system).
 - [ ] **Area 31 - `src/area/31/warrmines.c`** - Warr mines NPCs.
@@ -2064,4 +2064,9 @@ notes live in `PROGRESS_ARCHIVE.md`.
   all 7 `task_*` functions, roster bookkeeping, guard-defense allocation).
   3578 core (+37) + 1168 server tests pass, clean build; only the outer
   per-tick bodies/`create_eguard`/threat-scan remain for this task.
+- 2026-07-11: Area 29 progress: ported `CDR_CENTINEL` (wooden marionette
+  sentinels, `zones/29/wrtower.chr`'s `centinel_count` template) - reuses
+  SimpleBaddy fight/idle AI plus `centinel_dead`'s kill-counter death hook
+  (milestones at 1/10/20, teleport+reset at 30). 3799 core (+1) + 1180
+  server (+4) tests pass, clean build, boot-smoke on area 29.
 

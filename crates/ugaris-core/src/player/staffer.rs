@@ -179,6 +179,17 @@ impl PlayerRuntime {
         self.write_staffer_i32(STAFFER_PPD_YOATIN_STATE_OFFSET, state);
     }
 
+    /// C `struct staffer_ppd::centinel_count` (`src/common/staffer_ppd.h:35`)
+    /// - the sentinel kill counter consumed by `centinel_dead`
+    /// (`src/area/29/brannington.c:2725-2758`).
+    pub fn staffer_centinel_count(&self) -> i32 {
+        self.read_staffer_i32(STAFFER_PPD_CENTINEL_COUNT_OFFSET)
+    }
+
+    pub fn set_staffer_centinel_count(&mut self, count: i32) {
+        self.write_staffer_i32(STAFFER_PPD_CENTINEL_COUNT_OFFSET, count);
+    }
+
     pub fn staffer_dwarfchief_state(&self) -> i32 {
         self.read_staffer_i32(STAFFER_PPD_DWARFCHIEF_STATE_OFFSET)
     }

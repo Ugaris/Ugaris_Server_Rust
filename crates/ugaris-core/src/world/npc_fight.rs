@@ -135,7 +135,8 @@ impl World {
         // same one-line unconditional tail call too, as is `CDR_
         // FORESTMONSTER`'s (`forest.c:909-911`), `CDR_TWOROBBER`'s
         // (`two.c:3163-3165`), `CDR_SMUGGLELEAD`'s (`staffer.c:932-934`),
-        // and `CDR_WHITEROBBERBOSS`'s (`brannington_forest.c:684-686`).
+        // `CDR_WHITEROBBERBOSS`'s (`brannington_forest.c:684-686`), and
+        // `CDR_CENTINEL`'s (`brannington.c:2802-2804`).
         if (attacker.driver != CDR_SIMPLEBADDY
             && attacker.driver != CDR_DUNGEONFIGHTER
             && attacker.driver != CDR_PENTER
@@ -143,7 +144,8 @@ impl World {
             && attacker.driver != CDR_FORESTMONSTER
             && attacker.driver != CDR_TWOROBBER
             && attacker.driver != CDR_SMUGGLELEAD
-            && attacker.driver != CDR_WHITEROBBERBOSS)
+            && attacker.driver != CDR_WHITEROBBERBOSS
+            && attacker.driver != CDR_CENTINEL)
             || attacker.action != 0
             || attacker.flags.contains(CharacterFlags::DEAD)
         {
@@ -2636,7 +2638,8 @@ impl World {
                     || character.driver == CDR_FORESTMONSTER
                     || character.driver == CDR_TWOROBBER
                     || character.driver == CDR_SMUGGLELEAD
-                    || character.driver == CDR_WHITEROBBERBOSS)
+                    || character.driver == CDR_WHITEROBBERBOSS
+                    || character.driver == CDR_CENTINEL)
                     && matches!(
                         character.driver_state,
                         Some(CharacterDriverState::SimpleBaddy(_))

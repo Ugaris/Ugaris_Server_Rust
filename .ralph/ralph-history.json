@@ -1125,14 +1125,52 @@
         "test result: ok. 81 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 0 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 0.00s"
       ]
+    },
+    {
+      "iteration": 33,
+      "startedAt": "2026-07-11T16:14:39.420Z",
+      "endedAt": "2026-07-11T16:47:01.291Z",
+      "durationMs": 1939524,
+      "agent": "opencode",
+      "model": "anthropic/claude-sonnet-5",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "PORTING_TODO.md",
+        "crates/ugaris-core/src/character_driver.rs",
+        "crates/ugaris-core/src/player/misc.rs",
+        "crates/ugaris-core/src/player/staffer.rs",
+        "crates/ugaris-core/src/player/tests/staffer.rs",
+        "crates/ugaris-core/src/world/mod.rs",
+        "crates/ugaris-core/src/world/npc_fight.rs",
+        "crates/ugaris-core/src/world/npc_idle.rs",
+        "crates/ugaris-core/src/zone.rs",
+        "crates/ugaris-server/src/tests/world_events.rs",
+        "crates/ugaris-server/src/world_events/death_hooks.rs",
+        "crates/ugaris-server/src/world_events/mod.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "Verified: `cargo fmt --all`, `cargo test --workspace` (3799 core + 81 db + 3 net + 45 protocol + 1180 server, all green, zero failures), `cargo build -p ugaris-server` clean with zero warnings, and a ",
+        "test result: ok. 1176 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 7.86s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "7435:- Iteration 180 ported `/orbs` (`cmd_orbs`, `src/system/command.c:1498-1559`, dispatched from `command.c:8905-8917` gated on `ch[cn].exp >= 81000` i.e. level 30 - the gate's plain, uncolored reje",
+        "7533:- 2026-07-07: continued the P0.5 \"Finish main() phase decomposition\" task with its fourteenth completed-action-outcome family slice: the \"key-assembly\" family shared by several area `.c` files' t",
+        "7534:- 2026-07-07: continued the P0.5 \"Finish main() phase decomposition\" task with its fifteenth completed-action-outcome family slice: the labyrinth family (`src/area/22/lab2.c`/`lab3.c`, plus area ",
+        "7648:- 2026-07-11: Area 28 (`src/area/28/brannington_forest.c`) CLOSED: `IDR_BRANNINGTONFOREST`'s item driver (`underwater_berry`) was already ported in an earlier iteration - this closed the three re",
+        "7649:- 2026-07-11: Area 29 (`src/area/29/brannington.c`) STARTED: ported `spirit_brannington_driver` (`:1128-1308`), the ghost NPC who explains the necromancer plot and runs \"The Brannington Holy Reli",
+        "7650:- 2026-07-11: Area 29 (`src/area/29/brannington.c`) progress: ported `count_brannington_driver` (`:590-851`, plus its `countbran_give_keys` helper `:546-583`), `countessa_brannington_driver` (`:1",
+        "error: could not compile `ugaris-core` (lib) due to 4 previous errors"
+      ]
     }
   ],
-  "totalDurationMs": 65941527,
+  "totalDurationMs": 67881051,
   "struggleIndicators": {
     "repeatedErrors": {
       "3375 core (+17) and 1168 server (+6) tests all pass, zero failures. Now let's build ugaris-server fo": 1,
       "- `cargo fmt --all`, `cargo test --workspace` (3375 core + 1168 server, zero failures/warnings), `ca": 1,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 32,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 33,
       "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&": 18,
       "test error::tests::error_constants_match_legacy_header ... ok": 16,
       "test error::tests::error_strings_match_legacy_table ... ok": 16,
@@ -1200,7 +1238,7 @@
       "All checks pass cleanly: `cargo fmt --all --check` is silent (no formatting issues), and the full wo": 1,
       "Verification: `cargo fmt --all` clean, `cargo test --workspace` (3534 core + 81 db + 3 net + 45 prot": 1,
       "test result: ok. 1168 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 7.89s": 2,
-      "error: could not compile `ugaris-core` (lib) due to 4 previous errors": 1,
+      "error: could not compile `ugaris-core` (lib) due to 4 previous errors": 2,
       "test result: ok. 1168 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 7.88s": 1,
       "test result: ok. 3513 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.29s": 1,
       "3541 core tests (+7), all green, zero failures. Now let's verify build has zero warnings.": 1,
@@ -1284,7 +1322,15 @@
       "test result: ok. 1176 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 7.88s": 1,
       "Good, workspace is healthy. Let me check for any test failures earlier in the output and read the po": 1,
       "Final verification: `cargo fmt --all`, `cargo test --workspace` (3798 core + 81 db + 45 protocol + 1": 1,
-      "test result: ok. 3774 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.30s": 1
+      "test result: ok. 3774 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.30s": 1,
+      "Verified: `cargo fmt --all`, `cargo test --workspace` (3799 core + 81 db + 3 net + 45 protocol + 118": 1,
+      "test result: ok. 1176 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 7.86s": 1,
+      "7435:- Iteration 180 ported `/orbs` (`cmd_orbs`, `src/system/command.c:1498-1559`, dispatched from `": 1,
+      "7533:- 2026-07-07: continued the P0.5 \"Finish main() phase decomposition\" task with its fourteenth c": 1,
+      "7534:- 2026-07-07: continued the P0.5 \"Finish main() phase decomposition\" task with its fifteenth co": 1,
+      "7648:- 2026-07-11: Area 28 (`src/area/28/brannington_forest.c`) CLOSED: `IDR_BRANNINGTONFOREST`'s it": 1,
+      "7649:- 2026-07-11: Area 29 (`src/area/29/brannington.c`) STARTED: ported `spirit_brannington_driver`": 1,
+      "7650:- 2026-07-11: Area 29 (`src/area/29/brannington.c`) progress: ported `count_brannington_driver`": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

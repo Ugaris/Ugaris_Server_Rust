@@ -1,6 +1,6 @@
 use super::*;
 use ugaris_core::character_driver::{
-    CDR_LABGNOMEDRIVER, CDR_SMUGGLELEAD, CDR_TWOGUARD, CDR_TWOROBBER, CDR_TWOSERVANT,
+    CDR_CENTINEL, CDR_LABGNOMEDRIVER, CDR_SMUGGLELEAD, CDR_TWOGUARD, CDR_TWOROBBER, CDR_TWOSERVANT,
     CDR_WARPFIGHTER, CDR_WHITEROBBERBOSS,
 };
 use ugaris_core::world::{CS_ENEMY, CS_GUEST, LS_DEAD, LS_FINE};
@@ -882,6 +882,64 @@ pub(crate) fn apply_robberboss_death_from_hurt_event(
     world.destroy_items_by_template_id(event.cause_id, IID_STAFF_ROBBERKEY6);
     world.destroy_items_by_template_id(event.cause_id, IID_STAFF_ROBBERKEY7);
     world.destroy_items_by_template_id(event.cause_id, IID_STAFF_ROBBERKEY8);
+    true
+}
+
+/// C `centinel_dead(cn, co)` (`src/area/29/brannington.c:2725-2758`): the
+/// wooden marionette sentinels guarding the Brannington tower
+/// (`zones/29/wrtower.chr`'s `centinel_count` template, `CDR_CENTINEL`).
+/// Increments the killer's `staffer_ppd.centinel_count` (capped at `30`,
+/// C `if (ppd->centinel_count > 30) ppd->centinel_count = 30;`), reports
+/// milestone progress at kills `1`/`10`/`20`, and on the `30`th kill
+/// teleports the killer to `(33,143)` - but only resets the counter back
+/// to `0` if the teleport actually moved the character (C's `if
+/// (teleport_char_driver(co, 33, 143)) { ppd->centinel_count = 0; }`), so a
+/// blocked teleport leaves the counter at `30` for a retry on the next
+/// kill. C's own `if (!(ch[co].flags & CF_PLAYER)) return;` guard is
+/// folded into the `killer.flags.contains(CharacterFlags::PLAYER)` check
+/// below (`co` is the killer, `cn` the dead centinel - `set_data` operates
+/// on `co`, matching `event.cause_id` here, same "target died, cause
+/// killed" mapping as `apply_robberboss_death_from_hurt_event` above).
+pub(crate) fn apply_centinel_death_from_hurt_event(
+    runtime: &mut ServerRuntime,
+    world: &mut World,
+    event: LegacyHurtEvent,
+) -> bool {
+    if !event.outcome.killed {
+        return false;
+    }
+    let is_centinel_kill = world
+        .characters
+        .get(&event.target_id)
+        .zip(world.characters.get(&event.cause_id))
+        .is_some_and(|(target, killer)| {
+            target.driver == CDR_CENTINEL && killer.flags.contains(CharacterFlags::PLAYER)
+        });
+    if !is_centinel_kill {
+        return false;
+    }
+
+    let Some(player) = runtime.player_for_character_mut(event.cause_id) else {
+        return false;
+    };
+    let count = (player.staffer_centinel_count() + 1).min(30);
+    player.set_staffer_centinel_count(count);
+
+    let message = match count {
+        1 => Some("You have killed the first sentinel on this floor, kill 29 more!"),
+        10 => Some("You have killed 10 sentinels, 20 more to go!"),
+        20 => Some("You have killed 20 sentinels, 10 more to go!"),
+        30 => Some("Congratulations, you have killed 30 sentinels! Continue your journey."),
+        _ => None,
+    };
+    if let Some(message) = message {
+        world.queue_system_text(event.cause_id, message);
+    }
+    if count == 30 && world.teleport_char_driver(event.cause_id, 33, 143) {
+        if let Some(player) = runtime.player_for_character_mut(event.cause_id) {
+            player.set_staffer_centinel_count(0);
+        }
+    }
     true
 }
 

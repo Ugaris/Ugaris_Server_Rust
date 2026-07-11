@@ -1,6 +1,6 @@
 use super::*;
 use ugaris_core::character_driver::{
-    ArenaFighterDriverData, ArenaMasterDriverData, CDR_ARENAFIGHTER, CDR_ARENAMASTER,
+    ArenaFighterDriverData, ArenaMasterDriverData, CDR_ARENAFIGHTER, CDR_ARENAMASTER, CDR_CENTINEL,
     CDR_LAMPGHOST, CDR_WARPFIGHTER, MS_FIGHT,
 };
 use ugaris_core::world::npc::area25::WarpFighterDriverData;
@@ -1197,6 +1197,184 @@ fn lethal_gate_fight_hurt_class_eight_turns_killer_seyan_and_clears_turn_seyan_p
 
     let player = runtime.player_for_character(CharacterId(2)).unwrap();
     assert!(player.demonshrines.is_empty());
+}
+
+fn centinel_npc(character_id: CharacterId) -> Character {
+    let mut centinel = login_character(character_id, &login_block("Sentinel"), 1, 190, 200);
+    centinel.flags.remove(CharacterFlags::PLAYER);
+    centinel.driver = CDR_CENTINEL;
+    centinel.hp = POWERSCALE;
+    centinel
+}
+
+#[test]
+fn lethal_centinel_hurt_reports_first_kill_milestone() {
+    let mut world = World::default();
+    world.add_character(centinel_npc(CharacterId(1)));
+    let killer = login_character(CharacterId(2), &login_block("Godmode"), 1, 191, 200);
+    world.add_character(killer);
+
+    let mut runtime = ServerRuntime::default();
+    let mut player = PlayerRuntime::connected(1, 0);
+    player.character_id = Some(CharacterId(2));
+    runtime.players.insert(1, player);
+
+    world.apply_legacy_hurt(
+        CharacterId(1),
+        Some(CharacterId(2)),
+        POWERSCALE * 2,
+        1,
+        0,
+        0,
+    );
+    apply_pk_hate_from_hurt_events(&mut runtime, &mut world, 0, &ZoneLoader::new());
+
+    let player = runtime.player_for_character(CharacterId(2)).unwrap();
+    assert_eq!(player.staffer_centinel_count(), 1);
+    let texts = world.drain_pending_system_texts();
+    assert!(texts
+        .iter()
+        .any(|text| text.message
+            == "You have killed the first sentinel on this floor, kill 29 more!"));
+}
+
+#[test]
+fn lethal_centinel_hurt_reports_progress_at_ten_and_twenty() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let mut player = PlayerRuntime::connected(1, 0);
+    player.character_id = Some(CharacterId(2));
+    player.set_staffer_centinel_count(9);
+    runtime.players.insert(1, player);
+    world.add_character(centinel_npc(CharacterId(1)));
+    world.add_character(login_character(
+        CharacterId(2),
+        &login_block("Godmode"),
+        1,
+        191,
+        200,
+    ));
+
+    world.apply_legacy_hurt(
+        CharacterId(1),
+        Some(CharacterId(2)),
+        POWERSCALE * 2,
+        1,
+        0,
+        0,
+    );
+    apply_pk_hate_from_hurt_events(&mut runtime, &mut world, 0, &ZoneLoader::new());
+
+    let player = runtime.player_for_character(CharacterId(2)).unwrap();
+    assert_eq!(player.staffer_centinel_count(), 10);
+    let texts = world.drain_pending_system_texts();
+    assert!(texts
+        .iter()
+        .any(|text| text.message == "You have killed 10 sentinels, 20 more to go!"));
+
+    let player = runtime.player_for_character_mut(CharacterId(2)).unwrap();
+    player.set_staffer_centinel_count(19);
+    world.add_character(centinel_npc(CharacterId(3)));
+    world.apply_legacy_hurt(
+        CharacterId(3),
+        Some(CharacterId(2)),
+        POWERSCALE * 2,
+        1,
+        0,
+        0,
+    );
+    apply_pk_hate_from_hurt_events(&mut runtime, &mut world, 0, &ZoneLoader::new());
+
+    let player = runtime.player_for_character(CharacterId(2)).unwrap();
+    assert_eq!(player.staffer_centinel_count(), 20);
+    let texts = world.drain_pending_system_texts();
+    assert!(texts
+        .iter()
+        .any(|text| text.message == "You have killed 20 sentinels, 10 more to go!"));
+}
+
+#[test]
+fn lethal_centinel_hurt_at_thirty_teleports_killer_and_resets_counter() {
+    let mut world = World::default();
+    let mut killer = login_character(CharacterId(2), &login_block("Godmode"), 1, 191, 200);
+    killer.action = 0;
+    world.add_character(centinel_npc(CharacterId(1)));
+    world.add_character(killer);
+
+    let mut runtime = ServerRuntime::default();
+    let mut player = PlayerRuntime::connected(1, 0);
+    player.character_id = Some(CharacterId(2));
+    player.set_staffer_centinel_count(29);
+    runtime.players.insert(1, player);
+
+    world.apply_legacy_hurt(
+        CharacterId(1),
+        Some(CharacterId(2)),
+        POWERSCALE * 2,
+        1,
+        0,
+        0,
+    );
+    apply_pk_hate_from_hurt_events(&mut runtime, &mut world, 0, &ZoneLoader::new());
+
+    let player = runtime.player_for_character(CharacterId(2)).unwrap();
+    assert_eq!(player.staffer_centinel_count(), 0);
+    let killer = world.characters.get(&CharacterId(2)).unwrap();
+    assert_eq!((killer.x, killer.y), (33, 143));
+    let texts = world.drain_pending_system_texts();
+    assert!(texts.iter().any(|text| {
+        text.message == "Congratulations, you have killed 30 sentinels! Continue your journey."
+    }));
+}
+
+#[test]
+fn centinel_death_handler_ignores_non_matching_driver_and_non_lethal_hits() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let mut player = PlayerRuntime::connected(1, 0);
+    player.character_id = Some(CharacterId(2));
+    runtime.players.insert(1, player);
+
+    // Non-`CDR_CENTINEL` driver: no counter change even on a lethal hit.
+    let mut other_npc = login_character(CharacterId(1), &login_block("Other"), 1, 190, 200);
+    other_npc.flags.remove(CharacterFlags::PLAYER);
+    other_npc.hp = POWERSCALE;
+    world.add_character(other_npc);
+    world.add_character(login_character(
+        CharacterId(2),
+        &login_block("Godmode"),
+        1,
+        191,
+        200,
+    ));
+    world.apply_legacy_hurt(
+        CharacterId(1),
+        Some(CharacterId(2)),
+        POWERSCALE * 2,
+        1,
+        0,
+        0,
+    );
+    apply_pk_hate_from_hurt_events(&mut runtime, &mut world, 0, &ZoneLoader::new());
+    assert_eq!(
+        runtime
+            .player_for_character(CharacterId(2))
+            .unwrap()
+            .staffer_centinel_count(),
+        0
+    );
+
+    // Non-lethal hit on a real centinel: no counter change.
+    world.add_character(centinel_npc(CharacterId(3)));
+    world.apply_legacy_hurt(CharacterId(3), Some(CharacterId(2)), 1, 1, 0, 0);
+    apply_pk_hate_from_hurt_events(&mut runtime, &mut world, 0, &ZoneLoader::new());
+    assert_eq!(
+        runtime
+            .player_for_character(CharacterId(2))
+            .unwrap()
+            .staffer_centinel_count(),
+        0
+    );
 }
 
 #[test]

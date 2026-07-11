@@ -103,6 +103,27 @@ fn staffer_ppd_tracks_rouven_state_independently_of_carlos2_state() {
 }
 
 #[test]
+fn staffer_ppd_tracks_centinel_count_independently_of_dwarfchief_state() {
+    let mut player = PlayerRuntime::connected(1, 0);
+    assert_eq!(player.staffer_centinel_count(), 0);
+
+    player.set_staffer_centinel_count(29);
+    player.set_staffer_dwarfchief_state(3);
+    assert_eq!(player.staffer_centinel_count(), 29);
+    assert_eq!(player.staffer_dwarfchief_state(), 3);
+
+    let encoded = player.encode_legacy_staffer_ppd();
+    assert_eq!(encoded.len(), LEGACY_STAFFER_PPD_SIZE);
+    assert_eq!(read_i32(&encoded, STAFFER_PPD_CENTINEL_COUNT_OFFSET), 29);
+    assert_eq!(read_i32(&encoded, STAFFER_PPD_DWARFCHIEF_STATE_OFFSET), 3);
+
+    let mut decoded = PlayerRuntime::connected(2, 0);
+    assert!(decoded.decode_legacy_staffer_ppd(&encoded));
+    assert_eq!(decoded.staffer_centinel_count(), 29);
+    assert_eq!(decoded.staffer_dwarfchief_state(), 3);
+}
+
+#[test]
 fn staffer_ppd_exposes_quest_npc_states_for_questlog_init() {
     let mut player = PlayerRuntime::connected(1, 0);
     player.set_staffer_carlos_state(6);
