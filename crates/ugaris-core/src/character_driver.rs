@@ -602,6 +602,19 @@ pub const CDR_DWARFSMITH: u16 = 110;
 /// brownie-points reward shop (`src/area/32/missions.c::
 /// mission_giver_driver`).
 pub const CDR_MISSIONGIVE: u16 = 111;
+/// C `#define CDR_MISSIONFIGHT 112` (`src/system/drvlib.h`, "mission area:
+/// mission giver" - comment typo in C, this is actually the instance-
+/// dungeon fighter): every `start_mission`-spawned NPC (easy/normal/hard/
+/// boss). C's own `mission_fighter_driver` is an unconditional tail call
+/// to `char_driver(CDR_SIMPLEBADDY, ...)` (`missions.c:1849-1851`), same
+/// "reuse SimpleBaddy AI wholesale, keep a distinguishable driver id only
+/// for the death hook" precedent as `CDR_PENTER`/`CDR_WARPFIGHTER` (see
+/// the `character.driver == CDR_SIMPLEBADDY` gates widened alongside this
+/// one in `world/npc_fight.rs`/`world/npc_idle.rs`). `ch[cn].deaths`
+/// (`Character::deaths` here) doubles as the `fID` fighter-tier tag
+/// (`1`=easy/`2`=normal/`3`=hard/`4`=boss) `mission_fighter_dead` reads,
+/// per `build_fighter`'s own `ch[cn].deaths = fID` (`missions.c:772`).
+pub const CDR_MISSIONFIGHT: u16 = 112;
 pub const DRD_SIMPLEBADDYDRIVER: u32 = 0x0100_0013;
 pub const DRD_CLARADRIVER: u32 = 0x0100_0059;
 pub const DRD_SKELLYDRIVER: u32 = 0x0100_006a;

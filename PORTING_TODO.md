@@ -1397,15 +1397,20 @@ Ordered by player progression; the C file is the oracle.
   (needs P3 military). REMAINING: `CDR_MISSIONGIVE` ("Mister Jones")
   dialogue/reward-shop is fully live (22/24 rewards fully functional);
   `start_mission`/`build_fighter` (the 41x41 instance-dungeon spawn) is
-  now also ported (`world/npc/area32/mission_start.rs` + `ugaris-server/
+  ported (`world/npc/area32/mission_start.rs` + `ugaris-server/
   src/area32.rs::spawn_mission_fighter`) - "accept job Alpha/Beta/Gamma"
-  now actually builds the instance, spawns fighters (reusing
-  `CDR_SIMPLEBADDY` AI), wires door/chest keys, and teleports the player
-  in. Still not ported: `missionchest_driver` (`IDR_MISSIONCHEST`) so the
-  reward chest can't be opened yet, `mission_fighter_dead`'s kill-counter
-  hook so `mission_done` never auto-fires, `CTPOT`'s stat-potion flow, and
-  the rotating "special offer" purchase - see `world/npc/area32/
-  governor.rs`'s module doc comment.
+  now actually builds the instance and spawns fighters (as `CDR_
+  MISSIONFIGHT`, reusing `CDR_SIMPLEBADDY` AI wholesale), wires
+  door/chest keys, and teleports the player in. `mission_fighter_dead`'s
+  kill-counter hook is now also ported (`world_events::death_hooks::
+  apply_mission_fighter_death_from_hurt_event`) - killing a mission
+  fighter now bumps the matching kill counter, re-prints the job's HUD
+  status lines, and auto-solves the job once every objective is done.
+  Still not ported: `missionchest_driver` (`IDR_MISSIONCHEST`) so the
+  reward chest can't be opened yet (the `find_item` objective can never
+  actually complete), `CTPOT`'s stat-potion flow, and the rotating
+  "special offer" purchase - see `world/npc/area32/governor.rs`'s module
+  doc comment.
 - [ ] **Area 33 - `src/area/33/tunnel.c`** - long tunnel events. Also wire
   `achievement_add_tunnel_level` using the existing `award_*` helper
   pattern in `crates/ugaris-server/src/achievement.rs` (Achievements
@@ -1455,6 +1460,11 @@ Keep entries to at most three lines: date, task, one-line result.
 Anything longer belongs in `PORTING_LEDGER.md`; historical verbose
 notes live in `PROGRESS_ARCHIVE.md`.
 
+- 2026-07-12: Area 32 progress: ported `mission_fighter_dead`'s kill-
+  counter hook (new `CDR_MISSIONFIGHT` driver id, `world_events::
+  death_hooks::apply_mission_fighter_death_from_hurt_event`) - kills now
+  bump kill counters and auto-solve jobs. 3927 core + 1188 server [+4]
+  tests pass, boot-smoke.
 - 2026-07-11: Area 32 progress: ported `start_mission`/`build_fighter`
   (the 41x41 instance-dungeon spawn, `world/npc/area32/mission_start.rs`
   + `ugaris-server/src/area32.rs::spawn_mission_fighter`) - accepting a

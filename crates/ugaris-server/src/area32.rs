@@ -12,7 +12,7 @@
 use std::collections::HashMap;
 
 use super::*;
-use ugaris_core::character_driver::apply_simple_baddy_create_message;
+use ugaris_core::character_driver::{apply_simple_baddy_create_message, CDR_MISSIONFIGHT};
 use ugaris_core::world::calc_exp;
 use ugaris_core::world::npc::area32::governor::{
     MissionGiveOutcomeEvent, MissionGivePlayerFacts, MIS_REWARDS,
@@ -172,15 +172,16 @@ pub(crate) fn apply_mission_giver_events(
 ///
 /// C's `mission_fighter_driver`'s own dispatch is an unconditional tail
 /// call to `char_driver(CDR_SIMPLEBADDY, ...)` (`missions.c:1849-1851`) -
-/// same "reuse SimpleBaddy AI wholesale" precedent as `CDR_PENTER`/
-/// `CDR_DUNGEONFIGHTER`/etc (`zone.rs`'s template-instantiation special
-/// cases), simplified here to directly assign `CDR_SIMPLEBADDY` as the
-/// spawned fighter's own `driver` (rather than introducing an unused
-/// `CDR_MISSIONFIGHT` id) since this slice does not yet port
-/// `mission_fighter_dead`/`missionchest_driver` - the only C consumers
-/// that would ever need to distinguish a mission fighter from any other
-/// SimpleBaddy by driver id. Revisit (mirroring `CDR_PENTER`'s pattern)
-/// when that death hook is ported.
+/// same "reuse SimpleBaddy AI wholesale, keep a distinguishable driver id
+/// only for the death hook" precedent as `CDR_PENTER`/`CDR_WARPFIGHTER`
+/// (`zone.rs`'s template-instantiation special cases): the spawned
+/// fighter's own `driver` is `CDR_MISSIONFIGHT`, not `CDR_SIMPLEBADDY`
+/// directly, so `world_events::death_hooks::
+/// apply_mission_fighter_death_from_hurt_event` (`mission_fighter_dead`,
+/// `missions.c:1852-1881`) can tell a mission fighter apart from any
+/// other SimpleBaddy-driven NPC. The SimpleBaddy AI gates in
+/// `world/npc_fight.rs`/`world/npc_idle.rs` are widened to also accept
+/// `CDR_MISSIONFIGHT`, same as every other driver on that list.
 pub(crate) fn spawn_mission_fighter(
     world: &mut World,
     loader: &mut ZoneLoader,
@@ -198,7 +199,7 @@ pub(crate) fn spawn_mission_fighter(
         .character_templates
         .get(spec.temp)
         .map(|template| template.args.clone());
-    fighter.driver = CDR_SIMPLEBADDY;
+    fighter.driver = CDR_MISSIONFIGHT;
     fighter.push_driver_message(ugaris_core::character_driver::NT_CREATE, 0, 0, 0);
     apply_simple_baddy_create_message(&mut fighter, simple_baddy_args.as_deref(), 0);
 

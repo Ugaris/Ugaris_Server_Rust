@@ -83,6 +83,7 @@ pub(crate) fn apply_pk_hate_from_hurt_events(
         apply_fdemon_demon_death_from_hurt_event(runtime, world, event);
         apply_lqnpc_death_from_hurt_event(runtime, world, event);
         apply_warpfighter_death_from_hurt_event(world, event);
+        apply_mission_fighter_death_from_hurt_event(runtime, world, event);
 
         let eligible = match (
             world.characters.get(&event.target_id),

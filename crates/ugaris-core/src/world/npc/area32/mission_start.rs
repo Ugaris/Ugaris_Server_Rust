@@ -359,6 +359,49 @@ pub fn mission_status_lines(ppd: &MissionPpd, title: &str, md: &MissionFighterDa
     lines
 }
 
+/// C `mission_fighter_dead`'s kill-counter `switch (nr)` (`missions.c:
+/// 1865-1876`), `nr` being `ch[cn].deaths` (the dying fighter's `fID`
+/// fighter-tier tag, see [`FighterSpawnSpec::fighter_kind`]). Every arm
+/// is `min(done + 1, total)`, so an already-complete counter (or an
+/// out-of-range `fighter_kind`, C's own `switch` default: no `case`, a
+/// silent no-op) never overflows past its `[1]` total.
+pub fn record_mission_fighter_kill(ppd: &mut MissionPpd, fighter_kind: u8) {
+    let counter = match fighter_kind {
+        1 => &mut ppd.kill_easy,
+        2 => &mut ppd.kill_normal,
+        3 => &mut ppd.kill_hard,
+        4 => &mut ppd.kill_boss,
+        _ => return,
+    };
+    counter[0] = (counter[0] + 1).min(counter[1]);
+}
+
+/// C `mission_done(cn, ppd)` (`missions.c:922-940`): once every objective
+/// (`kill_easy`/`kill_normal`/`kill_hard`/`kill_boss`/`find_item`) is
+/// complete, promote `ppd->active` to `ppd->solved` and clear `active`.
+/// Returns `true` only when this call is the one that flips a still-
+/// active job to solved (C's own `if (ppd->active) { ... }` guard - a
+/// mission with `active == 0` already, or one that just got its very
+/// first slot rolled with everything still at `0/0`, never re-triggers
+/// the "finished the job" message on every subsequent call once already
+/// solved).
+pub fn try_solve_mission(ppd: &mut MissionPpd) -> bool {
+    if ppd.kill_easy[1] > ppd.kill_easy[0]
+        || ppd.kill_normal[1] > ppd.kill_normal[0]
+        || ppd.kill_hard[1] > ppd.kill_hard[0]
+        || ppd.kill_boss[1] > ppd.kill_boss[0]
+        || ppd.find_item[1] > ppd.find_item[0]
+    {
+        return false;
+    }
+    if ppd.active != 0 {
+        ppd.solved = ppd.active;
+        ppd.active = 0;
+        return true;
+    }
+    false
+}
+
 fn write_mission_key_id(driver_data: &mut Vec<u8>, key_id: u32) {
     if driver_data.len() < 5 {
         driver_data.resize(5, 0);

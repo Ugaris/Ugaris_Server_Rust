@@ -1353,3 +1353,71 @@ pub(crate) fn apply_warpfighter_death_from_hurt_event(
     world.teleport_char_driver(event.cause_id, data.tx, data.ty);
     true
 }
+
+/// C `ch_died_driver`'s `CDR_MISSIONFIGHT` case (`missions.c:1911-1913`)
+/// -> `mission_fighter_dead(cn, co)` (`:1852-1881`): `nr = ch[cn].deaths`
+/// (the dying fighter's `fID` tier tag, [`Character::deaths`]) increments
+/// the matching kill counter on the *killer's* (`co`) `governor` ppd
+/// (`ppd = set_data(co, DRD_MISSION_PPD, ...)`), then re-prints the job's
+/// `mission_status` HUD lines and runs `mission_done` - which, once every
+/// objective is complete, promotes `active` to `solved` and announces it.
+/// C has no `if (!co) return;` guard here (unlike `missionchest_driver`),
+/// but a `CDT_DEAD` dispatch with no killer never reaches this file's
+/// event-driven port at all ([`LegacyHurtEvent::cause_id`] is only
+/// produced for player-caused kills), so the "no killer" case is already
+/// unreachable rather than silently dropped.
+pub(crate) fn apply_mission_fighter_death_from_hurt_event(
+    runtime: &mut ServerRuntime,
+    world: &mut World,
+    event: LegacyHurtEvent,
+) -> bool {
+    use ugaris_core::character_driver::CDR_MISSIONFIGHT;
+    use ugaris_core::world::npc::area32::governor::MISSION_TEMPLATES;
+    use ugaris_core::world::npc::area32::mission_start::{
+        mission_status_lines, record_mission_fighter_kill, try_solve_mission, MISSION_FIGHTER_DATA,
+    };
+
+    if !event.outcome.killed {
+        return false;
+    }
+    let Some(fighter_kind) = world
+        .characters
+        .get(&event.target_id)
+        .and_then(|target| (target.driver == CDR_MISSIONFIGHT).then_some(target.deaths as u8))
+    else {
+        return false;
+    };
+    if !world
+        .characters
+        .get(&event.cause_id)
+        .is_some_and(|killer| killer.flags.contains(CharacterFlags::PLAYER))
+    {
+        return false;
+    }
+    let Some(player) = runtime.player_for_character_mut(event.cause_id) else {
+        return false;
+    };
+
+    record_mission_fighter_kill(&mut player.governor, fighter_kind);
+    let ppd = player.governor;
+    let md_idx = ppd.md_idx.clamp(0, MISSION_FIGHTER_DATA.len() as i32 - 1) as usize;
+    let title = MISSION_TEMPLATES[md_idx].title;
+    for line in mission_status_lines(&ppd, title, &MISSION_FIGHTER_DATA[md_idx]) {
+        world.queue_system_text(event.cause_id, line);
+    }
+
+    if try_solve_mission(&mut player.governor) {
+        let killer_name = world
+            .characters
+            .get(&event.cause_id)
+            .map(|character| character.name.clone())
+            .unwrap_or_default();
+        world.queue_system_text(
+            event.cause_id,
+            format!(
+                "You've finished the job. Good work, {killer_name}. Now talk to Mr. Jones for your reward."
+            ),
+        );
+    }
+    true
+}
