@@ -134,15 +134,16 @@ impl World {
         // SWAMPMONSTER`'s `ch_driver` dispatch (`swamp.c:807-809`) is the
         // same one-line unconditional tail call too, as is `CDR_
         // FORESTMONSTER`'s (`forest.c:909-911`), `CDR_TWOROBBER`'s
-        // (`two.c:3163-3165`), and `CDR_SMUGGLELEAD`'s
-        // (`staffer.c:932-934`).
+        // (`two.c:3163-3165`), `CDR_SMUGGLELEAD`'s (`staffer.c:932-934`),
+        // and `CDR_WHITEROBBERBOSS`'s (`brannington_forest.c:684-686`).
         if (attacker.driver != CDR_SIMPLEBADDY
             && attacker.driver != CDR_DUNGEONFIGHTER
             && attacker.driver != CDR_PENTER
             && attacker.driver != CDR_SWAMPMONSTER
             && attacker.driver != CDR_FORESTMONSTER
             && attacker.driver != CDR_TWOROBBER
-            && attacker.driver != CDR_SMUGGLELEAD)
+            && attacker.driver != CDR_SMUGGLELEAD
+            && attacker.driver != CDR_WHITEROBBERBOSS)
             || attacker.action != 0
             || attacker.flags.contains(CharacterFlags::DEAD)
         {
@@ -669,7 +670,9 @@ impl World {
             | CharacterDriverState::WarpFighter(_)
             | CharacterDriverState::Warpmaster(_)
             | CharacterDriverState::SmuggleCom(_)
-            | CharacterDriverState::Rouven(_) => None,
+            | CharacterDriverState::Rouven(_)
+            | CharacterDriverState::Aristocrat(_)
+            | CharacterDriverState::Yoatin(_) => None,
         }
     }
 
@@ -2628,7 +2631,8 @@ impl World {
                     || character.driver == CDR_SWAMPMONSTER
                     || character.driver == CDR_FORESTMONSTER
                     || character.driver == CDR_TWOROBBER
-                    || character.driver == CDR_SMUGGLELEAD)
+                    || character.driver == CDR_SMUGGLELEAD
+                    || character.driver == CDR_WHITEROBBERBOSS)
                     && matches!(
                         character.driver_state,
                         Some(CharacterDriverState::SimpleBaddy(_))

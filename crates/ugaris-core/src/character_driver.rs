@@ -482,6 +482,31 @@ pub const CDR_WARPFIGHTER: u16 = 83;
 /// master"): the key-for-stone trader NPC in area 25's warped world
 /// (`src/area/25/warped.c::warpmaster`).
 pub const CDR_WARPMASTER: u16 = 84;
+/// C `#define CDR_ARISTOCRAT 100` (`src/system/drvlib.h:148`, "brannington
+/// forest: robbed noble"): the robbed noble in Brannington Forest who runs
+/// "The Family Heirloom" (quest 38)
+/// (`src/area/28/brannington_forest.c::aristocrat_driver`).
+pub const CDR_ARISTOCRAT: u16 = 100;
+/// C `#define CDR_YOATIN 101` (`src/system/drvlib.h:149`, "brannington
+/// forest: timid hunter"): the timid hunter in Brannington Forest who runs
+/// "Bear Hunt - Again" (quest 39)
+/// (`src/area/28/brannington_forest.c::yoatin_driver`).
+pub const CDR_YOATIN: u16 = 101;
+/// C `#define CDR_WHITEROBBERBOSS 102` (`src/system/drvlib.h:150`,
+/// "brannington forest: robber boss"): the final kill target of the
+/// Brannington robber camp, whose death (`robberboss_dead`) completes quest
+/// 46 ("A Miner's Vengeance") for whichever killer's `broklin_state` sits
+/// in `5..=10`. C's own `ch_driver` dispatch (`brannington_forest.c:684-
+/// 686`) is an unconditional tail call to `char_driver(CDR_SIMPLEBADDY,
+/// ...)`, so `CDR_WHITEROBBERBOSS` characters reuse the SimpleBaddy AI
+/// end-to-end - same precedent as `CDR_PENTER`/`CDR_TWOROBBER`/`CDR_
+/// SMUGGLELEAD` (see the `character.driver == CDR_SIMPLEBADDY` gates
+/// widened alongside those in `world/npc_fight.rs`/`world/npc_idle.rs`,
+/// and its `NT_CREATE` zone-spawn wiring in `zone.rs`). Its own `ch_died_
+/// driver`/`robberboss_dead` death hook lives in `ugaris-server`'s
+/// `apply_robberboss_death_from_hurt_event` (needs `PlayerRuntime`'s
+/// `staffer_broklin_state`).
+pub const CDR_WHITEROBBERBOSS: u16 = 102;
 pub const DRD_SIMPLEBADDYDRIVER: u32 = 0x0100_0013;
 pub const DRD_CLARADRIVER: u32 = 0x0100_0059;
 pub const DRD_SKELLYDRIVER: u32 = 0x0100_006a;
@@ -629,6 +654,8 @@ pub enum CharacterDriverState {
     Warpmaster(crate::world::npc::area25::warpmaster::WarpmasterDriverData),
     SmuggleCom(crate::world::npc::area26::smugglecom::SmuggleComDriverData),
     Rouven(crate::world::npc::area26::rouven::RouvenDriverData),
+    Aristocrat(crate::world::npc::area28::aristocrat::AristocratDriverData),
+    Yoatin(crate::world::npc::area28::yoatin::YoatinDriverData),
 }
 /// C `bank_driver_parse` from `src/module/bank.c`. The C driver defaults
 /// opening hours to 6..23 before parsing (`bank_driver` lines 304-309).
@@ -1431,7 +1458,9 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::WarpFighter(_)
             | CharacterDriverState::Warpmaster(_)
             | CharacterDriverState::SmuggleCom(_)
-            | CharacterDriverState::Rouven(_),
+            | CharacterDriverState::Rouven(_)
+            | CharacterDriverState::Aristocrat(_)
+            | CharacterDriverState::Yoatin(_),
         ) => SimpleBaddyDriverData::default(),
         None => SimpleBaddyDriverData::default(),
     };
@@ -3956,6 +3985,9 @@ pub use crate::world::npc::area22::lab5_seyan::{
 pub use crate::world::npc::area26::rouven::RouvenDriverData;
 pub use crate::world::npc::area26::smugglecom::SmuggleComDriverData;
 pub use crate::world::npc::area26::AREA26_QA;
+pub use crate::world::npc::area28::aristocrat::AristocratDriverData;
+pub use crate::world::npc::area28::yoatin::YoatinDriverData;
+pub use crate::world::npc::area28::AREA28_QA;
 pub use crate::world::npc::area3::astro1::Astro1DriverData;
 pub use crate::world::npc::area3::astro2::Astro2DriverData;
 pub use crate::world::npc::area3::carlos::CarlosDriverData;

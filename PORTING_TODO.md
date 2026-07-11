@@ -1371,7 +1371,11 @@ Ordered by player progression; the C file is the oracle.
   driver`/`smugglelead_died`, and `rouven_driver` (`CDR_ROUVEN = 130`, the
   Imperial Vault guard, quests 62/63, `world/npc/area26/rouven.rs`) are
   all ported. Details in PORTING_LEDGER.md.)*
-- [ ] **Area 28 - `src/area/28/brannington_forest.c`** - forest NPCs.
+- [x] **Area 28 - `src/area/28/brannington_forest.c`** - forest NPCs.
+  *(done - `aristocrat_driver`/`yoatin_driver` (`CDR_ARISTOCRAT`/`CDR_YOATIN`,
+  quests 38/39) and `CDR_WHITEROBBERBOSS`'s `robberboss_dead` death hook
+  (quest 46) all ported; `IDR_BRANNINGTONFOREST` item driver was already
+  done. Details in PORTING_LEDGER.md.)*
 - [ ] **Area 29 - `src/area/29/brannington.c`** - Brannington quest NPCs,
   `DRD_STAFFER_PPD` remaining fields.
 - [ ] **Area 30 - `src/area/30/clanmaster.c`** - clan master NPC (needs P3
@@ -1428,6 +1432,10 @@ Keep entries to at most three lines: date, task, one-line result.
 Anything longer belongs in `PORTING_LEDGER.md`; historical verbose
 notes live in `PROGRESS_ARCHIVE.md`.
 
+- 2026-07-11: Area 28 CLOSED: ported `aristocrat_driver`/`yoatin_driver`
+  (`CDR_ARISTOCRAT`/`CDR_YOATIN`, quests 38/39) and `robberboss_dead`
+  (`CDR_WHITEROBBERBOSS`, quest 46). 3763 core [+23] + 1176 server tests
+  pass, clean build/boot-smoke (area 28, `placed_characters=247`).
 - 2026-07-11: Area 26 CLOSED: ported `rouven_driver` (`CDR_ROUVEN`, the
   Imperial Vault guard, quests 62/63, `world/npc/area26/rouven.rs`),
   including the `vault_key1`/`IID_MAX_VAULTKEY` grant. 3741 core [+17] +

@@ -8,6 +8,7 @@ mod allow;
 mod anticheat;
 mod area_mech;
 mod arena;
+mod aristocrat;
 mod assembly;
 mod astro1;
 mod astro2;
@@ -150,6 +151,7 @@ mod warpmaster;
 mod weather;
 mod world_misc;
 mod yoakin;
+mod yoatin;
 
 use crate::{
     character_driver::{

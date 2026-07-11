@@ -10,27 +10,28 @@ use crate::{
         apply_lab5_seyan_create_message, apply_labgnome_create_message,
         apply_simple_baddy_create_message, parse_arena_manager_driver_args,
         parse_clanclerk_driver_args, parse_clanmaster_driver_args, parse_clubmaster_driver_args,
-        ArenaFighterDriverData, ArenaMasterDriverData, Astro2DriverData, BrithildieDriverData,
-        CamhermitDriverData, CarlosDriverData, CharacterDriverState, ClaraDriverData,
-        DungeonmasterDriverData, FightDriverData, ForestHermitDriverData, ForestImpDriverData,
-        ForestRangerDriverData, ForestWilliamDriverData, GateFightDriverData,
+        ArenaFighterDriverData, ArenaMasterDriverData, AristocratDriverData, Astro2DriverData,
+        BrithildieDriverData, CamhermitDriverData, CarlosDriverData, CharacterDriverState,
+        ClaraDriverData, DungeonmasterDriverData, FightDriverData, ForestHermitDriverData,
+        ForestImpDriverData, ForestRangerDriverData, ForestWilliamDriverData, GateFightDriverData,
         GateWelcomeDriverData, GolemKeyholdDriverData, GreeterDriverData, GwendylonDriverData,
         JanitorDriverData, JessicaDriverData, JiuDriverData, KassimDriverData, KellyDriverData,
         NookDriverData, ReskinDriverData, RouvenDriverData, SeymourDriverData, SirJonesDriverData,
         SmuggleComDriverData, SuperiorDriverData, SupermaxDriverData, TerionDriverData,
         ThomasDriverData, TraderDriverData, TwoAlchemistDriverData, TwoBarkeeperDriverData,
         TwoSanwynDriverData, TwoSkellyDriverData, TwoThiefGuardDriverData,
-        TwoThiefMasterDriverData, YoakinDriverData, ARENA_FIGHTER_REST_POS, CDR_ARENAFIGHTER,
-        CDR_ARENAMANAGER, CDR_ARENAMASTER, CDR_ASTRO2, CDR_BRITHILDIE, CDR_CAMHERMIT, CDR_CARLOS,
-        CDR_CLANCLERK, CDR_CLANMASTER, CDR_CLUBMASTER, CDR_DUNGEONMASTER, CDR_FORESTHERMIT,
-        CDR_FORESTIMP, CDR_FORESTMONSTER, CDR_FORESTWILLIAM, CDR_FOREST_RANGER, CDR_GATE_FIGHT,
-        CDR_GATE_WELCOME, CDR_GOLEMKEYHOLDER, CDR_GREETER, CDR_GWENDYLON, CDR_JANITOR, CDR_JESSICA,
-        CDR_JIU, CDR_KASSIM, CDR_KELLY, CDR_LAB2HERALD, CDR_LAB2UNDEAD, CDR_LAB4GNALB,
-        CDR_LAB4SEYAN, CDR_LAB5DAEMON, CDR_LAB5MAGE, CDR_LAB5SEYAN, CDR_LABGNOMEDRIVER, CDR_NOOK,
-        CDR_RESKIN, CDR_ROUVEN, CDR_SEYMOUR, CDR_SIMPLEBADDY, CDR_SIRJONES, CDR_SMUGGLECOM,
-        CDR_SUPERIOR, CDR_SUPERMAX, CDR_SWAMPCLARA, CDR_TERION, CDR_THOMAS, CDR_TRADER,
-        CDR_TWOALCHEMIST, CDR_TWOBARKEEPER, CDR_TWOGUARD, CDR_TWOSANWYN, CDR_TWOSERVANT,
-        CDR_TWOSKELLY, CDR_TWOTHIEFGUARD, CDR_TWOTHIEFMASTER, CDR_YOAKIN, NT_CREATE,
+        TwoThiefMasterDriverData, YoakinDriverData, YoatinDriverData, ARENA_FIGHTER_REST_POS,
+        CDR_ARENAFIGHTER, CDR_ARENAMANAGER, CDR_ARENAMASTER, CDR_ARISTOCRAT, CDR_ASTRO2,
+        CDR_BRITHILDIE, CDR_CAMHERMIT, CDR_CARLOS, CDR_CLANCLERK, CDR_CLANMASTER, CDR_CLUBMASTER,
+        CDR_DUNGEONMASTER, CDR_FORESTHERMIT, CDR_FORESTIMP, CDR_FORESTMONSTER, CDR_FORESTWILLIAM,
+        CDR_FOREST_RANGER, CDR_GATE_FIGHT, CDR_GATE_WELCOME, CDR_GOLEMKEYHOLDER, CDR_GREETER,
+        CDR_GWENDYLON, CDR_JANITOR, CDR_JESSICA, CDR_JIU, CDR_KASSIM, CDR_KELLY, CDR_LAB2HERALD,
+        CDR_LAB2UNDEAD, CDR_LAB4GNALB, CDR_LAB4SEYAN, CDR_LAB5DAEMON, CDR_LAB5MAGE, CDR_LAB5SEYAN,
+        CDR_LABGNOMEDRIVER, CDR_NOOK, CDR_RESKIN, CDR_ROUVEN, CDR_SEYMOUR, CDR_SIMPLEBADDY,
+        CDR_SIRJONES, CDR_SMUGGLECOM, CDR_SUPERIOR, CDR_SUPERMAX, CDR_SWAMPCLARA, CDR_TERION,
+        CDR_THOMAS, CDR_TRADER, CDR_TWOALCHEMIST, CDR_TWOBARKEEPER, CDR_TWOGUARD, CDR_TWOSANWYN,
+        CDR_TWOSERVANT, CDR_TWOSKELLY, CDR_TWOTHIEFGUARD, CDR_TWOTHIEFMASTER, CDR_WHITEROBBERBOSS,
+        CDR_YOAKIN, CDR_YOATIN, NT_CREATE,
     },
     entity::{
         Character, CharacterFlags, Item, ItemFlags, CHARACTER_VALUE_COUNT, INVENTORY_SIZE,
@@ -1012,6 +1013,35 @@ impl ZoneLoader {
             // same as `CDR_GATE_WELCOME` above.
             character.driver_state =
                 Some(CharacterDriverState::Rouven(RouvenDriverData::default()));
+        }
+        if template.driver == CDR_ARISTOCRAT {
+            // C never parses zone-file args into `struct aristocrat_data`
+            // (`set_data` zero-initializes it) - no args to read here,
+            // same as `CDR_GATE_WELCOME` above.
+            character.driver_state = Some(CharacterDriverState::Aristocrat(
+                AristocratDriverData::default(),
+            ));
+        }
+        if template.driver == CDR_YOATIN {
+            // C never parses zone-file args into `struct yoatin_data`
+            // (`set_data` zero-initializes it) - no args to read here,
+            // same as `CDR_GATE_WELCOME` above.
+            character.driver_state =
+                Some(CharacterDriverState::Yoatin(YoatinDriverData::default()));
+        }
+        if template.driver == CDR_WHITEROBBERBOSS {
+            // C `ch_driver`'s `CDR_WHITEROBBERBOSS` dispatch
+            // (`brannington_forest.c:684-686`): an unconditional every-tick
+            // tail call to `char_driver(CDR_SIMPLEBADDY, CDT_DRIVER, cn,
+            // ret, lastact)`, reusing the SimpleBaddy driver's full idle-
+            // wander/auto-attack AI wholesale - same precedent as
+            // `CDR_PENTER`/`CDR_SWAMPMONSTER`/`CDR_FORESTMONSTER`/
+            // `CDR_TWOROBBER` above. The `Aston_Robber_Boss` template
+            // (`zones/28/WS_Robbers.chr`) carries the same
+            // `arg="aggressive=1;helper=1;scavenger=...;"` shape
+            // SimpleBaddy's own `NT_CREATE` handler parses.
+            character.push_driver_message(NT_CREATE, 0, 0, 0);
+            apply_simple_baddy_create_message(&mut character, Some(&template.args), 0);
         }
         if template.driver == CDR_CARLOS {
             // C never parses zone-file args into `struct

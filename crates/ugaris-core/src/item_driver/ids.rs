@@ -865,3 +865,39 @@ pub const IID_STAFF_SMUGGLECAPE: u32 = make_item_id(DEV_ID_WARR, 0x000008);
 /// C `IID_STAFF_SMUGGLENECKLACE` (`src/common/item_id.h:307`,
 /// `SMUGGLEBIT_NECKLACE`).
 pub const IID_STAFF_SMUGGLENECKLACE: u32 = make_item_id(DEV_ID_WARR, 0x000009);
+/// C `IID_STAFF_ROBBERKEY1` (`src/common/item_id.h:355`): one of the eight
+/// robber-camp keys `robberboss_dead`
+/// (`world_events::death_hooks::apply_robberboss_death_from_hurt_event`)
+/// destroys on the White Robber Boss's death.
+pub const IID_STAFF_ROBBERKEY1: u32 = make_item_id(DEV_ID_WHITESTAR, 0x000003);
+/// C `IID_STAFF_ROBBERKEY2` (`src/common/item_id.h:356`).
+pub const IID_STAFF_ROBBERKEY2: u32 = make_item_id(DEV_ID_WHITESTAR, 0x000004);
+/// C `IID_STAFF_ROBBERKEY3` (`src/common/item_id.h:357`).
+pub const IID_STAFF_ROBBERKEY3: u32 = make_item_id(DEV_ID_WHITESTAR, 0x000005);
+/// C `IID_STAFF_ROBBERKEY4` (`src/common/item_id.h:358`).
+pub const IID_STAFF_ROBBERKEY4: u32 = make_item_id(DEV_ID_WHITESTAR, 0x000006);
+/// C `IID_STAFF_ROBBERKEY5` (`src/common/item_id.h:359`).
+pub const IID_STAFF_ROBBERKEY5: u32 = make_item_id(DEV_ID_WHITESTAR, 0x000007);
+/// C `IID_STAFF_ROBBERKEY6` (`src/common/item_id.h:360`).
+pub const IID_STAFF_ROBBERKEY6: u32 = make_item_id(DEV_ID_WHITESTAR, 0x000008);
+/// C `IID_STAFF_ROBBERKEY7` (`src/common/item_id.h:361`).
+pub const IID_STAFF_ROBBERKEY7: u32 = make_item_id(DEV_ID_WHITESTAR, 0x000009);
+/// C `IID_STAFF_ROBBERKEY8` (`src/common/item_id.h:362`).
+pub const IID_STAFF_ROBBERKEY8: u32 = make_item_id(DEV_ID_WHITESTAR, 0x00000A);
+/// C `IID_STAFF_BOSSLAIR` (`src/common/item_id.h:363`): destroyed alongside
+/// `IID_STAFF_BOSSMASTER` on the White Robber Boss's death.
+pub const IID_STAFF_BOSSLAIR: u32 = make_item_id(DEV_ID_WHITESTAR, 0x00000B);
+/// C `IID_STAFF_BOSSMASTER` (`src/common/item_id.h:364`).
+pub const IID_STAFF_BOSSMASTER: u32 = make_item_id(DEV_ID_WHITESTAR, 0x00000C);
+/// C `IID_STAFF_ARIKEY` (`src/common/item_id.h:366`): `aristocrat_driver`'s
+/// (`world::npc::area28::aristocrat`) quest-38 turn-in companion item,
+/// destroyed alongside `IID_STAFF_ARIAMULET`.
+pub const IID_STAFF_ARIKEY: u32 = make_item_id(DEV_ID_WHITESTAR, 0x00000E);
+/// C `IID_STAFF_ARIAMULET` (`src/common/item_id.h:367`):
+/// `aristocrat_driver`'s (`world::npc::area28::aristocrat`) quest-38
+/// ("The Family Heirloom") turn-in item.
+pub const IID_STAFF_ARIAMULET: u32 = make_item_id(DEV_ID_WHITESTAR, 0x00000F);
+/// C `IID_STAFF_BEARHEAD` (`src/common/item_id.h:368`): `yoatin_driver`'s
+/// (`world::npc::area28::yoatin`) quest-39 ("Bear Hunt - Again") turn-in
+/// item.
+pub const IID_STAFF_BEARHEAD: u32 = make_item_id(DEV_ID_WHITESTAR, 0x000010);

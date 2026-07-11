@@ -55,6 +55,11 @@ pub(crate) const DEV_ID_RHORUN: u32 = 0x07;
 /// hands out/collects.
 pub(crate) const DEV_ID_MAX: u32 = 0x0E;
 
+/// C `DEV_ID_WHITESTAR` (`src/common/item_id.h:41`): the area-28
+/// Brannington Forest quest items `aristocrat_driver`/`yoatin_driver`
+/// (`world::npc::area28::aristocrat`/`yoatin`) hand out/collect.
+pub(crate) const DEV_ID_WHITESTAR: u32 = 0x08;
+
 /// C `DEV_ID_RH` (`src/system/drdata.h:47`/`src/common/item_id.h:54`,
 /// "ID of Roman Haas"): the area-1 hermit-quest teeth item below.
 pub(crate) const DEV_ID_RH: u32 = 0x3A;

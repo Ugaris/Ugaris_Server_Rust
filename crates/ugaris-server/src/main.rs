@@ -19,6 +19,7 @@ mod area22;
 mod area23_24;
 mod area25;
 mod area26;
+mod area28;
 mod area3;
 mod area8;
 mod area8_army;
@@ -101,6 +102,7 @@ pub(crate) use area17::*;
 #[allow(unused_imports)]
 pub(crate) use area25::*;
 pub(crate) use area26::*;
+pub(crate) use area28::*;
 pub(crate) use area3::*;
 pub(crate) use area_apply::*;
 pub(crate) use chests::*;
@@ -204,7 +206,9 @@ use ugaris_core::{
         IDR_WARMFIRE, IDR_WARPBONUS, IID_AREA17_LIBRARYKEY, IID_AREA17_LOCKPICK,
         IID_AREA25_DOORKEY, IID_AREA2_SUN1, IID_AREA2_SUN12, IID_AREA2_SUN123, IID_AREA2_SUN13,
         IID_AREA2_SUN2, IID_AREA2_SUN23, IID_AREA2_SUN3, IID_AREA2_ZOMBIESKULL1,
-        IID_AREA2_ZOMBIESKULL2, IID_AREA2_ZOMBIESKULL3,
+        IID_AREA2_ZOMBIESKULL2, IID_AREA2_ZOMBIESKULL3, IID_STAFF_BOSSLAIR, IID_STAFF_BOSSMASTER,
+        IID_STAFF_ROBBERKEY1, IID_STAFF_ROBBERKEY2, IID_STAFF_ROBBERKEY3, IID_STAFF_ROBBERKEY4,
+        IID_STAFF_ROBBERKEY5, IID_STAFF_ROBBERKEY6, IID_STAFF_ROBBERKEY7, IID_STAFF_ROBBERKEY8,
     },
     item_ops::{
         can_use_inventory_slot, consume_item, give_item_to_character, replace_item_in_character,

@@ -1,7 +1,7 @@
 use super::*;
 use ugaris_core::character_driver::{
     CDR_LABGNOMEDRIVER, CDR_SMUGGLELEAD, CDR_TWOGUARD, CDR_TWOROBBER, CDR_TWOSERVANT,
-    CDR_WARPFIGHTER,
+    CDR_WARPFIGHTER, CDR_WHITEROBBERBOSS,
 };
 use ugaris_core::world::{CS_ENEMY, CS_GUEST, LS_DEAD, LS_FINE};
 
@@ -811,6 +811,77 @@ pub(crate) fn apply_smugglelead_death_from_hurt_event(
     if player.staffer_smugglecom_state() == 8 {
         player.set_staffer_smugglecom_state(9);
     }
+    true
+}
+
+/// C `robberboss_dead(cn, co)` (`src/area/28/brannington_forest.c:634-663`):
+/// the Brannington robber camp's final kill target. Completes quest 46 ("A
+/// Miner's Vengeance") and destroys the boss-kill quest-chain items for
+/// whichever killer's `broklin_state` sits in `5..=10` - `broklin_state`
+/// itself belongs to `src/area/29/brannington.c`'s (unported) `Broklin`
+/// dialogue driver, read directly off `PlayerRuntime` here, same "read
+/// state owned by another area's unported driver" precedent as
+/// `world::npc::area26::rouven`'s `carlos2_state` read.
+pub(crate) fn apply_robberboss_death_from_hurt_event(
+    runtime: &mut ServerRuntime,
+    world: &mut World,
+    event: LegacyHurtEvent,
+) -> bool {
+    if !event.outcome.killed {
+        return false;
+    }
+    // C `if (!co) return; if (!(ch[co].flags & CF_PLAYER)) return;`
+    // (`brannington_forest.c:637-643`).
+    let is_robberboss_kill = world
+        .characters
+        .get(&event.target_id)
+        .zip(world.characters.get(&event.cause_id))
+        .is_some_and(|(target, killer)| {
+            target.driver == CDR_WHITEROBBERBOSS && killer.flags.contains(CharacterFlags::PLAYER)
+        });
+    if !is_robberboss_kill {
+        return false;
+    }
+
+    let Some(level) = world.characters.get(&event.cause_id).map(|c| c.level) else {
+        return false;
+    };
+    let level_val = level_value(level);
+    let Some(player) = runtime.player_for_character_mut(event.cause_id) else {
+        return false;
+    };
+    // C `if (ppd->broklin_state >= 5 && ppd->broklin_state <= 10)`
+    // (`brannington_forest.c:648`).
+    if !(5..=10).contains(&player.staffer_broklin_state()) {
+        return false;
+    }
+    // C `ppd->broklin_state = 11;` (`brannington_forest.c:649`).
+    player.set_staffer_broklin_state(11);
+    world.queue_system_text(
+        event.cause_id,
+        "Well done. You've killed the head robber! Now go see Broklin...",
+    );
+    if let Some(completion) = player.quest_log.complete_legacy(46, level, level_val) {
+        let payload = legacy_questlog_payload(player);
+        world.give_exp(
+            event.cause_id,
+            completion.granted_exp,
+            u32::from(world.area_id),
+        );
+        for (session_id, _) in runtime.sessions_for_character(event.cause_id) {
+            runtime.send_to_session(session_id, payload.clone());
+        }
+    }
+    world.destroy_items_by_template_id(event.cause_id, IID_STAFF_BOSSMASTER);
+    world.destroy_items_by_template_id(event.cause_id, IID_STAFF_BOSSLAIR);
+    world.destroy_items_by_template_id(event.cause_id, IID_STAFF_ROBBERKEY1);
+    world.destroy_items_by_template_id(event.cause_id, IID_STAFF_ROBBERKEY2);
+    world.destroy_items_by_template_id(event.cause_id, IID_STAFF_ROBBERKEY3);
+    world.destroy_items_by_template_id(event.cause_id, IID_STAFF_ROBBERKEY4);
+    world.destroy_items_by_template_id(event.cause_id, IID_STAFF_ROBBERKEY5);
+    world.destroy_items_by_template_id(event.cause_id, IID_STAFF_ROBBERKEY6);
+    world.destroy_items_by_template_id(event.cause_id, IID_STAFF_ROBBERKEY7);
+    world.destroy_items_by_template_id(event.cause_id, IID_STAFF_ROBBERKEY8);
     true
 }
 
