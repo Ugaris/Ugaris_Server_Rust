@@ -663,6 +663,173 @@ impl World {
         }
     }
 
+    /// C `ai_main`'s "find places with too little workers" / threat-
+    /// handling / worklevel-adjustment tail (`strategy.c:2798-2916`),
+    /// called after [`AiData::assign_tasks_to_workers`] with the
+    /// `mindist`/`ragnarok` [`World::ai_refresh_places`] just computed.
+    /// Ported pieces, in C order:
+    ///
+    /// - "find places with too little workers" (`:2798-2808`): sets
+    ///   `missing` if some non-storage, reachable, unthreatened,
+    ///   gold-bearing place is under-staffed relative to `worklevel`.
+    /// - threat-list maintenance (`:2810-2870`): expire stale
+    ///   [`AiThreat`] entries older than 20 seconds, record/refresh an
+    ///   entry for every currently-threatened reachable place (see
+    ///   [`AiThreat`]'s own doc comment for the real place-`0`/"empty
+    ///   slot" sentinel collision this preserves verbatim), sort by
+    ///   [`tcomp`] (see that function's own doc comment for the
+    ///   comparator bugs kept verbatim), then walk the sorted list once:
+    ///   any threat whose whole parent chain up to storage has no
+    ///   *other* already-threatened place gets a real
+    ///   [`World::ai_assign_guards`] call, and the list is truncated
+    ///   exactly where C shrinks `max_at` (see [`AiData::threats`]'s own
+    ///   doc comment).
+    /// - [`AiData::remove_free_guards`] (`:2871`, already ported,
+    ///   just invoked here in C's own call order).
+    /// - worklevel adjustment (`:2913-2916`): grow `worklevel` (capped at
+    ///   [`AI_MAXWORKER`]) after 20 idle seconds with spare workers and no
+    ///   missing-worker place, or shrink it (floored at 1) after 10
+    ///   seconds with zero spare workers and a missing-worker place.
+    ///
+    /// Still unported (see `crate::world::strategy_ai`'s own module doc
+    /// comment): the "place eternal guards" block (`:2892-2911`, needs
+    /// `create_eguard`/`ZoneLoader`) and the trailing `nag_attack()` call
+    /// (already ported as [`World::ai_nag_attack`], just not invoked from
+    /// here yet - deferred to whatever future slice assembles a real
+    /// `ai_main` call, since this method's own caller doesn't have a
+    /// live tick context to source `nag_attack`'s tick-gating cooldown
+    /// from independently of that assembly).
+    ///
+    /// `ragnarok` is C's own same-named `ai_main`-local, threaded in as
+    /// [`AiPlaceRefreshResult::ragnarok`] and threaded back out for the
+    /// caller to eventually commit into [`AiData::ragnarok`] (deferred,
+    /// same "commit only at the very end of a real `ai_main`" precedent
+    /// as [`World::ai_refresh_places`]'s own doc comment) - see C's own
+    /// `ragnarok = ad->ragnarok;` override (`:2864`) this preserves: a
+    /// successfully-defended threat suppresses this tick's freshly
+    /// computed escalation, falling back to the *previous* tick's
+    /// already-committed [`AiData::ragnarok`] field instead.
+    pub fn ai_threat_and_worklevel_tick(
+        &self,
+        ad: &mut AiData,
+        tick: i64,
+        mindist: i32,
+        ragnarok_in: bool,
+    ) -> bool {
+        let mut ragnarok = ragnarok_in;
+
+        // find places with too little workers (`:2798-2808`)
+        let mut missing = false;
+        for n in 0..ad.places.len() {
+            if n != 0
+                && ad.places[n].dist <= mindist
+                && ad.places[n].platin != 0
+                && ad.places[n].threat == 0
+                && ad.places[n].wcnt < ad.worklevel - 1
+                && ad.places[n].wcnt * WORKERPLATIN < ad.places[n].platin
+            {
+                missing = true;
+            }
+        }
+
+        // expire old entries (`:2812-2816`)
+        let expire_before = tick - (TICKS_PER_SECOND as i64) * 20;
+        for entry in ad.threats.iter_mut() {
+            if entry.place != 0 && entry.ticker < expire_before {
+                entry.place = 0;
+            }
+        }
+
+        // update/add current threats (`:2818-2853`)
+        for n in 0..ad.places.len() {
+            if ad.places[n].dist > mindist || ad.places[n].threatcount == 0.0 {
+                continue;
+            }
+            let count = ad.places[n].threatcount + ad.places[n].threatncount;
+            let level = ad.places[n].threatlevel.max(ad.places[n].threatnlevel);
+            if let Some(entry) = ad.threats.iter_mut().find(|t| t.place == n as i32) {
+                entry.ticker = tick;
+                entry.count = count;
+                entry.level = level;
+            } else if let Some(entry) = ad.threats.iter_mut().find(|t| t.place == 0) {
+                entry.place = n as i32;
+                entry.ticker = tick;
+                entry.count = count;
+                entry.level = level;
+            } else {
+                ad.threats.push(AiThreat {
+                    place: n as i32,
+                    ticker: tick,
+                    count,
+                    level,
+                });
+            }
+        }
+
+        // C `qsort(ad->at, ad->max_at, sizeof(ad->at[0]), tcomp);`
+        // (`:2854`) - see `tcomp`'s own doc comment for why the exact
+        // resulting order among ties may differ from glibc's specific
+        // qsort algorithm (same "different sort algorithm, same
+        // comparator" precedent as e.g.
+        // `world::npc::area22::lab1_gnome`'s own gnometorch sort).
+        let places = &ad.places;
+        ad.threats.sort_by(|a, b| tcomp(places, a, b));
+
+        // reduce max_at if possible (`:2856-2875`)
+        let mut last_nonzero = 0usize;
+        for m in 0..ad.threats.len() {
+            if ad.threats[m].place == 0 {
+                continue;
+            }
+            let place = ad.threats[m].place as usize;
+            let mut i = ad.places[place].parent;
+            while i != -1 {
+                if ad.places[i as usize].threatcount != 0.0 {
+                    break;
+                }
+                i = ad.places[i as usize].parent;
+            }
+            if i == -1 {
+                let old_ragnarok = ad.ragnarok;
+                let attacked = self.ai_assign_guards(
+                    ad,
+                    place,
+                    ad.threats[m].count + 1.0,
+                    ad.threats[m].level,
+                    old_ragnarok,
+                );
+                if attacked {
+                    ragnarok = old_ragnarok;
+                }
+            }
+            last_nonzero = m;
+        }
+        // C's `ad->max_at = n + 1;` (`:2875`) - always executes, even if
+        // no entry was ever nonzero (C's own `n = m = 0` initial values
+        // then force `max_at` to `1`); ensure the `Vec` has at least one
+        // (possibly-empty) slot to truncate down to, matching that.
+        if ad.threats.is_empty() {
+            ad.threats.push(AiThreat::default());
+        }
+        ad.threats.truncate(last_nonzero + 1);
+
+        ad.remove_free_guards();
+
+        // increase/decrease worklevel if resources permit (`:2913-2916`)
+        if !missing && ad.free_workers > 0 && tick - ad.lastchange > (TICKS_PER_SECOND as i64) * 20
+        {
+            ad.worklevel = (ad.worklevel + 1).min(AI_MAXWORKER as i32);
+            ad.lastchange = tick;
+        }
+        if missing && ad.free_workers == 0 && tick - ad.lastchange > (TICKS_PER_SECOND as i64) * 10
+        {
+            ad.worklevel = (ad.worklevel - 1).max(1);
+            ad.lastchange = tick;
+        }
+
+        ragnarok
+    }
+
     /// C `ai_init(int in, unsigned int code)` (`strategy.c:2269-2427`):
     /// build a fresh AI party's place graph and discover its currently-
     /// live `CDR_STRATEGY` roster. `code` is the [`STR_OWNER_AI_BASE`]-
@@ -1019,4 +1186,43 @@ fn raw_to_strategy_worker_order(order: i32, or1: i32, or2: i32) -> StrategyWorke
     } else {
         StrategyWorkerOrder::None
     }
+}
+
+/// C `tcomp(const void *a, const void *b)` (`strategy.c:2205-2228`) - the
+/// [`AiThreat`] list sort comparator [`World::ai_threat_and_worklevel_tick`]
+/// uses. Kept verbatim including two real C bugs, neither "fixed" here:
+/// empty slots (`place == 0`, see [`AiThreat`]'s own doc comment) always
+/// compare as [`Ordering::Less`] regardless of which side they're on
+/// (C's `if (!pb) return -1;` should almost certainly have been `return
+/// 1;` to sort empties last - instead they behave identically to `!pa`
+/// and sort first/low, same as the other side); and the real-place
+/// distance comparison always returns [`Ordering::Less`] too, whichever
+/// direction the inequality goes (`ap[pa].dist > ap[pb].dist` and `<`
+/// both `return -1`), so distance never actually influences ordering in
+/// practice - only the final `count` comparison (itself doing an exact
+/// C `int` truncation of a `double` difference, so a sub-1.0 count gap
+/// compares equal) does. C's `qsort` is not a stable sort and this
+/// comparator isn't a valid strict order to begin with (`tcomp(a, b)` and
+/// `tcomp(b, a)` can both return "less"), so the exact resulting
+/// permutation among ties can differ from glibc's specific algorithm
+/// either way - see this method's own call site doc comment.
+fn tcomp(places: &[AiPlace], a: &AiThreat, b: &AiThreat) -> std::cmp::Ordering {
+    use std::cmp::Ordering;
+    if a.place == 0 && b.place == 0 {
+        return Ordering::Equal;
+    }
+    if a.place == 0 || b.place == 0 {
+        return Ordering::Less;
+    }
+
+    let (pa, pb) = (a.place as usize, b.place as usize);
+    if places[pa].dist > places[pb].dist || places[pa].dist < places[pb].dist {
+        return Ordering::Less;
+    }
+
+    // C `return ((struct ai_threat *)b)->count - ((struct ai_threat
+    // *)a)->count;` - an `int`-returning function truncating a `double`
+    // difference toward zero.
+    let diff = (b.count - a.count) as i32;
+    diff.cmp(&0)
 }

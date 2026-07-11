@@ -1266,13 +1266,22 @@ Ordered by player progression; the C file is the oracle.
   character-creation tail is deliberately deferred until a live `ai_main`
   call site exists to call it, avoiding a dead-code function in the
   `ugaris-server` binary crate).
-  REMAINING: the "find places with too little workers"/threat-handling/
-  worklevel-adjustment/"place eternal guards" tail (`:2798-2924` - needs
-  new `at[]`/`max_at`/`lastchange` fields, `tcomp`, and `create_eguard`,
-  which needs `ZoneLoader`), the `ZoneLoader`-needing tail of worker
-  spawning itself, and assembling all ported pieces into one real
-  `ai_main` call (no live spawn/tick call site exists yet for an
-  AI-controlled party).
+  Nineteenth slice done: `World::ai_threat_and_worklevel_tick`
+  (`crates/ugaris-core/src/world/strategy_ai_tasks.rs`, `strategy.c:
+  2798-2916`) - the "find places with too little workers"/threat-list
+  maintenance (expire/record/sort-via-`tcomp`/dispatch-via-
+  `World::ai_assign_guards`/truncate)/worklevel-adjustment tail. New
+  `AiThreat` type plus `AiData::threats`/`lastchange` fields; `tcomp`'s
+  two real comparator bugs (empty-slot side always sorts "less"
+  regardless of side, and the distance branch always returns "less"
+  regardless of direction) are kept verbatim, not fixed. 10 new tests.
+  REMAINING: the "place eternal guards" block (`:2892-2911`, needs a
+  still-unported `create_eguard`, which needs `ZoneLoader`), the
+  `ZoneLoader`-needing tail of worker spawning itself, and assembling
+  all ported pieces (`ai_init`/`ai_refresh_places`/`ai_update_npc_list`/
+  `assign_tasks_to_workers`/`ai_threat_and_worklevel_tick`/
+  `ai_dispatch_tasks`/`ai_nag_attack`) into one real `ai_main` call (no
+  live spawn/tick call site exists yet for an AI-controlled party).
 - [ ] **Area 25 - `src/area/25/warped.c`** - warped NPC dialogue,
   `DRD_WARPFIGHTER` full fight driver.
 - [ ] **Area 26 - `src/area/26/staffer.c`** - vault skull PPD/quest, Rouven
@@ -1334,6 +1343,11 @@ Keep entries to at most three lines: date, task, one-line result.
 Anything longer belongs in `PORTING_LEDGER.md`; historical verbose
 notes live in `PROGRESS_ARCHIVE.md`.
 
+- 2026-07-11: Areas 23/24 strategy minigame: nineteenth slice - ported
+  `World::ai_threat_and_worklevel_tick` (missing-worker detection,
+  `at[]` threat-list expire/record/`tcomp`-sort/`assign_guards`-dispatch/
+  truncate, worklevel adjustment). 3658 core [+9] + 1168 server tests
+  pass, clean build.
 - 2026-07-11: Areas 23/24 strategy minigame: eighteenth slice - split
   `strategy_ai.rs` into a types file + new `strategy_ai_tasks.rs`, then
   ported the "create new workers" loop's pure eligibility/plan half.

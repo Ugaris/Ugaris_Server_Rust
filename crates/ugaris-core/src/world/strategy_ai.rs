@@ -177,32 +177,64 @@
 //! doc comment for the one deviation (`ap[-1]` OOB read in C, treated as
 //! "no parent threat" here).
 //!
+//! Seventeenth slice done: the final per-npc task-dispatch `switch`
+//! (`strategy.c:2932-2972`) is now ported as
+//! [`World::ai_dispatch_tasks`] (`crate::world::strategy_ai_tasks`) -
+//! dispatches every roster NPC to its already-ported `task_*` function
+//! by [`AiTask`] (the [`AiTask::EGuard`] train-vs-idle-vs-guard nested
+//! `if` kept verbatim), then writes the resulting raw `order`/`or1`/
+//! `or2` back onto the live worker's typed `StrategyWorkerOrder` via a
+//! new `raw_to_strategy_worker_order` (the inverse of this file's
+//! existing `strategy_worker_order_to_raw`), auto-vivifying driver state
+//! same as [`World::ai_task_idle`].
+//!
+//! Eighteenth slice done: split this file into the pure `AiData`/
+//! `AiPlace`/`AiNpc` types file plus the sibling
+//! `crate::world::strategy_ai_tasks` carrying every `impl World` method
+//! over them (see the file-size note below), then ported `ai_main`'s
+//! "create new workers" loop's eligibility/spend half (`:2644-2672`) -
+//! [`AiData::register_new_worker`] plus `World::ai_wants_more_workers`/
+//! `World::ai_plan_worker_spawn` (`crate::world::strategy_ai_tasks`) -
+//! the `NPCPRICE`-deduction half; the actual `ZoneLoader`-needing
+//! character-creation tail is deliberately deferred until a live
+//! `ai_main` call site exists to call it, avoiding a dead-code function
+//! in the `ugaris-server` binary crate.
+//!
+//! Nineteenth slice done: [`World::ai_threat_and_worklevel_tick`]
+//! (`crate::world::strategy_ai_tasks`, `strategy.c:2798-2916`) - the
+//! "find places with too little workers"/threat-list maintenance
+//! (expire/record/sort-via-`tcomp`/dispatch-via-[`World::
+//! ai_assign_guards`]/truncate)/worklevel-adjustment tail that runs
+//! right after [`AiData::assign_tasks_to_workers`]. New [`AiThreat`]
+//! type plus [`AiData::threats`]/`lastchange` fields. See that method's
+//! own doc comment for the full C-order breakdown and the two real
+//! `tcomp` comparator bugs preserved verbatim (kept, not "fixed").
+//!
 //! REMAINING (tracked in `PORTING_TODO.md`, left `[~]` on purpose):
-//! `ai_main`'s own outer per-tick body still needs: worker spawning
-//! (`:2644-2672`), the "find places with too little workers"/
-//! threat-handling/worklevel-adjustment/"place eternal guards" tail
-//! (`:2798-2924` - needs new `at[]`/`max_at`/`lastchange` `AiData` fields,
-//! `tcomp`, and `create_eguard`, which needs `ZoneLoader`), and the final
-//! per-npc task-dispatch `switch` (`:2932-2972`, calls the already-ported
-//! `task_*` functions - the only new piece it needs is a raw-ints-to-
-//! [`StrategyWorkerOrder`] conversion for the `dat->order = ad->an[n]
-//! .order` write-back, the inverse of this file's existing
-//! `strategy_worker_order_to_raw`). Also still open: actually assembling
-//! all of these ported pieces (plus [`World::ai_refresh_places`]/
-//! [`World::ai_nag_attack`]/[`World::ai_update_npc_list`]/
-//! [`AiData::assign_tasks_to_workers`]) into one real `ai_main` call in
-//! the exact C order, threading [`World::ai_update_npc_list`]'s real
-//! `cantrain` return value into `ai_refresh_places` instead of that
-//! function's own cached-level stand-in - deferred until a live
-//! spawn/tick call site for an AI-controlled party exists to actually
-//! call it (`ai_init`/`ai_main` are both still `pub fn` with no caller
-//! outside tests).
+//! `ai_main`'s own outer per-tick body still needs: the actual
+//! `ZoneLoader`-needing tail of worker spawning (building a real
+//! character from [`World::ai_plan_worker_spawn`]'s plan, same split as
+//! the player-triggered spawner), and the "place eternal guards" block
+//! (`:2892-2911`, needs a still-unported `create_eguard`, which itself
+//! needs `ZoneLoader`). Also still open: actually assembling all of
+//! these ported pieces (plus [`World::ai_refresh_places`]/
+//! [`World::ai_update_npc_list`]/[`AiData::assign_tasks_to_workers`]/
+//! [`World::ai_threat_and_worklevel_tick`]/[`World::ai_dispatch_tasks`]/
+//! [`World::ai_nag_attack`], the last of which still isn't called from
+//! anywhere in C order either) into one real `ai_main` call, threading
+//! [`World::ai_update_npc_list`]'s real `cantrain` return value into
+//! `ai_refresh_places` instead of that function's own cached-level
+//! stand-in - deferred until a live spawn/tick call site for an
+//! AI-controlled party exists to actually call it (`ai_init`/`ai_main`
+//! are both still not called from anywhere outside tests).
 //!
 //! File-size note: `World`'s own methods over `AiData` (the
 //! `task_*` order-resolution functions, place-graph navigation,
-//! defense allocation/nag-attack, `ai_init`, and `ai_refresh_places`)
-//! live in the sibling `crate::world::strategy_ai_tasks` file, split
-//! out once this file crossed ~1,900 lines.
+//! defense allocation/nag-attack, `ai_init`, `ai_refresh_places`,
+//! `ai_dispatch_tasks`, worker-spawn planning, and
+//! `ai_threat_and_worklevel_tick`) live in the sibling
+//! `crate::world::strategy_ai_tasks` file, split out once this file
+//! crossed ~1,900 lines.
 
 use super::*;
 use crate::player::StrategyPpd;
@@ -421,6 +453,43 @@ impl AiPlace {
     }
 }
 
+/// C `struct ai_threat` (`strategy.c:1740-1745`) - one active/expiring
+/// threatened-place record [`World::ai_threat_and_worklevel_tick`]'s
+/// threat-handling block tracks across ticks (populated from
+/// [`AiPlace::threatcount`]/`threatlevel`/`threatnlevel`, not computed
+/// fresh here). `place == 0` is C's own "slot empty" sentinel
+/// (`ad->at[m].place` used as a bare truthiness test throughout
+/// `strategy.c`) - preserved verbatim including the real C quirk this
+/// creates: place index `0` is *also* the party's real storage place, so
+/// a genuine threat recorded against storage itself is indistinguishable
+/// from an empty slot everywhere this sentinel is tested (expiry, the
+/// existing-entry search, `tcomp`, and the "reduce" loop's `if
+/// (ad->at[m].place)` guard all silently treat a storage threat as "no
+/// entry"). Not "fixed" - see [`World::ai_threat_and_worklevel_tick`]'s
+/// own doc comment.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct AiThreat {
+    pub place: i32,
+    pub level: i32,
+    pub count: f64,
+    pub ticker: i64,
+}
+
+impl Default for AiThreat {
+    /// C's zero-initialized `struct ai_threat` (the whole `at[MAXTHREAT]`
+    /// array starts this way, and expiry re-zeros just `place`, matching
+    /// C's own `ad->at[m].place = 0;`, `:2814` - every other field stays
+    /// stale in both C and here).
+    fn default() -> Self {
+        Self {
+            place: 0,
+            level: 0,
+            count: 0.0,
+            ticker: 0,
+        }
+    }
+}
+
 /// The `ragnarok`/`nogoldleft` locals `ai_main` computes across its whole
 /// per-place refresh loop (`strategy.c:2452-2617`) but only ever commits
 /// to `ad->ragnarok`/`ad->nogoldleft` at the very end of the function
@@ -456,6 +525,20 @@ pub struct AiData {
     pub worklevel: i32,
     pub places: Vec<AiPlace>,
     pub npcs: Vec<AiNpc>,
+    /// C `int max_at; struct ai_threat at[MAXTHREAT];` (`:1776`) - `Vec`-
+    /// backed like [`Self::places`]/[`Self::npcs`] (no fixed `MAXTHREAT =
+    /// 256` capacity), with C's `max_at` bound replaced by `Vec::len`:
+    /// [`World::ai_threat_and_worklevel_tick`]'s own "reduce" step
+    /// `Vec::truncate`s this exactly where C shrinks `max_at`, which has
+    /// the same observable effect (slots beyond the new bound become
+    /// unreachable in both ports) even though C physically keeps the
+    /// stale memory around and this port actually drops it.
+    pub threats: Vec<AiThreat>,
+    /// C `int lastchange` (`:1758`): tick of the last `worklevel`
+    /// increase/decrease, gating how often
+    /// [`World::ai_threat_and_worklevel_tick`] is allowed to adjust it
+    /// again.
+    pub lastchange: i64,
     pub free_workers: i32,
     /// C `int npc_cnt` (`:1762`): live, non-eternal-guard NPC count,
     /// refreshed by [`AiData::update_free_npc_count`].
@@ -518,6 +601,8 @@ impl AiData {
             worklevel: 1,
             places: Vec::new(),
             npcs: Vec::new(),
+            threats: Vec::new(),
+            lastchange: 0,
             free_workers: 0,
             npc_cnt: 0,
             guard: [-1; AI_MAXGUARD],

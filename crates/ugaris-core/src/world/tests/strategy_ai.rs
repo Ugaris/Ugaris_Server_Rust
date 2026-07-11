@@ -1798,6 +1798,155 @@ fn assign_tasks_to_workers_falls_back_to_idle_when_nothing_qualifies() {
     assert_eq!(ad.npcs[0].used, -1);
 }
 
+// --- World::ai_threat_and_worklevel_tick ---
+
+#[test]
+fn threat_tick_forces_at_least_one_threat_slot_when_none_exist() {
+    let world = World::default();
+    let mut ad = AiData::new(StrategyPpd::default());
+    ad.places.push(ai_place(AiPlaceType::Storage, 1, 10, 10));
+
+    world.ai_threat_and_worklevel_tick(&mut ad, 100, 99, true);
+    assert_eq!(ad.threats.len(), 1);
+    assert_eq!(ad.threats[0].place, 0);
+}
+
+#[test]
+fn threat_tick_expires_stale_entries_older_than_twenty_seconds() {
+    let world = World::default();
+    let mut ad = AiData::new(StrategyPpd::default());
+    ad.places.push(ai_place(AiPlaceType::Storage, 1, 10, 10));
+    ad.places.push(ai_place(AiPlaceType::Mine, 2, 50, 50));
+    ad.threats.push(AiThreat {
+        place: 1,
+        level: 5,
+        count: 3.0,
+        ticker: 0,
+    });
+
+    let tick = (TICKS_PER_SECOND as i64) * 21;
+    world.ai_threat_and_worklevel_tick(&mut ad, tick, 99, true);
+    // Expired back to the "empty" sentinel, then reused/truncated by the
+    // reduce step - no place-1 entry survives.
+    assert!(ad.threats.iter().all(|t| t.place != 1));
+}
+
+#[test]
+fn threat_tick_records_a_new_threat_entry_for_a_threatened_reachable_place() {
+    let world = World::default();
+    let mut ad = AiData::new(StrategyPpd::default());
+    ad.places.push(ai_place(AiPlaceType::Storage, 1, 10, 10));
+    ad.places.push(ai_place(AiPlaceType::Mine, 2, 50, 50));
+    ad.places[1].dist = 3;
+    ad.places[1].threatcount = 7.0;
+    ad.places[1].threatncount = 1.0;
+    ad.places[1].threatlevel = 20;
+    ad.places[1].threatnlevel = 10;
+
+    world.ai_threat_and_worklevel_tick(&mut ad, 100, 5, true);
+    let entry = ad.threats.iter().find(|t| t.place == 1).unwrap();
+    assert_eq!(entry.count, 8.0);
+    assert_eq!(entry.level, 20);
+}
+
+#[test]
+fn threat_tick_ignores_a_threatened_place_beyond_mindist() {
+    let world = World::default();
+    let mut ad = AiData::new(StrategyPpd::default());
+    ad.places.push(ai_place(AiPlaceType::Storage, 1, 10, 10));
+    ad.places.push(ai_place(AiPlaceType::Mine, 2, 50, 50));
+    ad.places[1].dist = 10;
+    ad.places[1].threatcount = 7.0;
+
+    world.ai_threat_and_worklevel_tick(&mut ad, 100, 5, true);
+    assert!(ad.threats.iter().all(|t| t.place != 1));
+}
+
+#[test]
+fn threat_tick_dispatches_guards_to_an_untraced_threat_and_truncates_the_list() {
+    let mut world = World::default();
+    world
+        .characters
+        .insert(CharacterId(1), char_at(1, 10, 10, 20));
+    world.characters.get_mut(&CharacterId(1)).unwrap().hp = 999_999;
+
+    let mut ad = AiData::new(StrategyPpd::default());
+    ad.places.push(ai_place(AiPlaceType::Storage, 1, 10, 10));
+    ad.places.push(ai_place(AiPlaceType::Mine, 2, 50, 50));
+    ad.places[1].dist = 3;
+    ad.places[1].parent = 0; // storage, whose own threatcount stays 0
+    ad.places[1].threatcount = 7.0;
+    ad.places[1].threatlevel = 5;
+    ad.npcs.push(ai_npc(1, 10, 10, 20));
+    ad.guard[0] = 0;
+    ad.npcs[0].used = 0; // on standby
+
+    world.ai_threat_and_worklevel_tick(&mut ad, 100, 5, false);
+    assert_eq!(ad.npcs[0].target, 1);
+    assert_eq!(ad.npcs[0].used, 1);
+    // Only the one real entry (plus, at most, the reduce loop's own
+    // trailing bound) should remain.
+    assert!(ad.threats.len() <= 2);
+}
+
+#[test]
+fn threat_tick_shrinks_worklevel_when_missing_and_no_free_workers() {
+    let world = World::default();
+    let mut ad = AiData::new(StrategyPpd::default());
+    ad.worklevel = 2;
+    ad.free_workers = 0;
+    ad.lastchange = 0;
+    ad.places.push(ai_place(AiPlaceType::Storage, 1, 10, 10));
+    ad.places.push(ai_place(AiPlaceType::Mine, 2, 50, 50));
+    ad.places[1].dist = 3;
+    ad.places[1].platin = 500;
+    ad.places[1].wcnt = 0;
+
+    let tick = (TICKS_PER_SECOND as i64) * 11;
+    world.ai_threat_and_worklevel_tick(&mut ad, tick, 5, true);
+    assert_eq!(ad.worklevel, 1);
+    assert_eq!(ad.lastchange, tick);
+}
+
+#[test]
+fn threat_tick_grows_worklevel_when_nothing_missing_and_workers_idle() {
+    let world = World::default();
+    let mut ad = AiData::new(StrategyPpd::default());
+    ad.worklevel = 2;
+    ad.free_workers = 1;
+    ad.lastchange = 0;
+    ad.places.push(ai_place(AiPlaceType::Storage, 1, 10, 10));
+
+    let tick = (TICKS_PER_SECOND as i64) * 21;
+    world.ai_threat_and_worklevel_tick(&mut ad, tick, 5, true);
+    assert_eq!(ad.worklevel, 3);
+    assert_eq!(ad.lastchange, tick);
+}
+
+#[test]
+fn threat_tick_worklevel_capped_at_ai_maxworker() {
+    let world = World::default();
+    let mut ad = AiData::new(StrategyPpd::default());
+    ad.worklevel = AI_MAXWORKER as i32;
+    ad.free_workers = 1;
+    ad.lastchange = 0;
+    ad.places.push(ai_place(AiPlaceType::Storage, 1, 10, 10));
+
+    let tick = (TICKS_PER_SECOND as i64) * 21;
+    world.ai_threat_and_worklevel_tick(&mut ad, tick, 5, true);
+    assert_eq!(ad.worklevel, AI_MAXWORKER as i32);
+}
+
+#[test]
+fn threat_tick_leaves_ragnarok_untouched_when_no_guards_dispatched() {
+    let world = World::default();
+    let mut ad = AiData::new(StrategyPpd::default());
+    ad.places.push(ai_place(AiPlaceType::Storage, 1, 10, 10));
+
+    let result = world.ai_threat_and_worklevel_tick(&mut ad, 100, 5, true);
+    assert!(result);
+}
+
 // --- World::ai_dispatch_tasks ---
 
 #[test]
