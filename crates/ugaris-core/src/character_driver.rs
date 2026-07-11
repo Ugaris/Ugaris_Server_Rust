@@ -565,6 +565,17 @@ pub const CDR_WHITEROBBERBOSS: u16 = 102;
 /// id or the kill-counter hook at all - a real, data-driven distinction
 /// between the two near-identical templates, not a porting gap.
 pub const CDR_CENTINEL: u16 = 106;
+/// C `#define CDR_GRINNICH 104` (`src/system/drvlib.h:152`, "staffer2
+/// area: grinnich"): the hermit at the entrance of the Brannington tower
+/// dungeon who hints at the buried tower and hands adventurers off to
+/// Shanra in the basement (`src/area/29/brannington.c::grinnich_driver`).
+pub const CDR_GRINNICH: u16 = 104;
+/// C `#define CDR_SHANRA 105` (`src/system/drvlib.h:153`, "staffer2 area:
+/// shanra"): the storyteller in the Brannington tower dungeon's basement
+/// who rewards the tower's sentinel gauntlet with the Grimoire of
+/// Animation and teleports adventurers there and back
+/// (`src/area/29/brannington.c::shanra_driver`).
+pub const CDR_SHANRA: u16 = 105;
 pub const DRD_SIMPLEBADDYDRIVER: u32 = 0x0100_0013;
 pub const DRD_CLARADRIVER: u32 = 0x0100_0059;
 pub const DRD_SKELLYDRIVER: u32 = 0x0100_006a;
@@ -722,6 +733,8 @@ pub enum CharacterDriverState {
     CountessaBran(crate::world::npc::area29::countessabran::CountessaBranDriverData),
     DaughterBran(crate::world::npc::area29::daughterbran::DaughterBranDriverData),
     ForestBran(crate::world::npc::area29::forestbran::ForestBranDriverData),
+    Grinnich(crate::world::npc::area29::grinnich::GrinnichDriverData),
+    Shanra(crate::world::npc::area29::shanra::ShanraDriverData),
 }
 /// C `bank_driver_parse` from `src/module/bank.c`. The C driver defaults
 /// opening hours to 6..23 before parsing (`bank_driver` lines 304-309).
@@ -1534,7 +1547,9 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::CountBran(_)
             | CharacterDriverState::CountessaBran(_)
             | CharacterDriverState::DaughterBran(_)
-            | CharacterDriverState::ForestBran(_),
+            | CharacterDriverState::ForestBran(_)
+            | CharacterDriverState::Grinnich(_)
+            | CharacterDriverState::Shanra(_),
         ) => SimpleBaddyDriverData::default(),
         None => SimpleBaddyDriverData::default(),
     };
@@ -4068,7 +4083,9 @@ pub use crate::world::npc::area29::countbran::CountBranDriverData;
 pub use crate::world::npc::area29::countessabran::CountessaBranDriverData;
 pub use crate::world::npc::area29::daughterbran::DaughterBranDriverData;
 pub use crate::world::npc::area29::forestbran::ForestBranDriverData;
+pub use crate::world::npc::area29::grinnich::GrinnichDriverData;
 pub use crate::world::npc::area29::guardbran::GuardBranDriverData;
+pub use crate::world::npc::area29::shanra::ShanraDriverData;
 pub use crate::world::npc::area29::spiritbran::SpiritBranDriverData;
 pub use crate::world::npc::area3::astro1::Astro1DriverData;
 pub use crate::world::npc::area3::astro2::Astro2DriverData;

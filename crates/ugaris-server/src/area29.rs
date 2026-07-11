@@ -31,9 +31,11 @@ use ugaris_core::world::npc::area29::daughterbran::{
     DaughterBranOutcomeEvent, DaughterBranPlayerFacts,
 };
 use ugaris_core::world::npc::area29::forestbran::{ForestBranOutcomeEvent, ForestBranPlayerFacts};
+use ugaris_core::world::npc::area29::grinnich::{GrinnichOutcomeEvent, GrinnichPlayerFacts};
 use ugaris_core::world::npc::area29::guardbran::{
     qlog_guardbran, GuardBranOutcomeEvent, GuardBranPlayerFacts,
 };
+use ugaris_core::world::npc::area29::shanra::{ShanraOutcomeEvent, ShanraPlayerFacts};
 use ugaris_core::world::npc::area29::spiritbran::{
     spiritbran_save_cap, SpiritBranOutcomeEvent, SpiritBranPlayerFacts,
 };
@@ -796,6 +798,113 @@ pub(crate) fn apply_broklin_events(
                         world.destroy_item(item_id);
                     }
                 }
+                applied += 1;
+            }
+        }
+    }
+    applied
+}
+
+pub(crate) fn grinnich_player_facts(
+    runtime: &ServerRuntime,
+) -> HashMap<CharacterId, GrinnichPlayerFacts> {
+    runtime
+        .players
+        .values()
+        .filter_map(|player| {
+            let character_id = player.character_id?;
+            Some((
+                character_id,
+                GrinnichPlayerFacts {
+                    grinnich_state: player.staffer_grinnich_state(),
+                },
+            ))
+        })
+        .collect()
+}
+
+/// Applies each [`GrinnichOutcomeEvent`] queued by `World::
+/// process_grinnich_actions`. Unlike `apply_spiritbran_events`, neither
+/// event here touches `World::characters` (no quest, no exp, no item
+/// reward) - both are plain `PlayerRuntime` state writes.
+pub(crate) fn apply_grinnich_events(
+    runtime: &mut ServerRuntime,
+    events: Vec<GrinnichOutcomeEvent>,
+) -> usize {
+    let mut applied = 0;
+    for event in events {
+        match event {
+            GrinnichOutcomeEvent::UpdateGrinnichState {
+                player_id,
+                new_state,
+            } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.set_staffer_grinnich_state(new_state);
+                applied += 1;
+            }
+            // C `case 3:` (`brannington.c:2513-2518`): the god-only "reset
+            // me" state wipe.
+            GrinnichOutcomeEvent::ResetGrinnich { player_id } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.set_staffer_grinnich_state(0);
+                applied += 1;
+            }
+        }
+    }
+    applied
+}
+
+pub(crate) fn shanra_player_facts(
+    runtime: &ServerRuntime,
+) -> HashMap<CharacterId, ShanraPlayerFacts> {
+    runtime
+        .players
+        .values()
+        .filter_map(|player| {
+            let character_id = player.character_id?;
+            Some((
+                character_id,
+                ShanraPlayerFacts {
+                    shanra_state: player.staffer_shanra_state(),
+                },
+            ))
+        })
+        .collect()
+}
+
+/// Applies each [`ShanraOutcomeEvent`] queued by `World::
+/// process_shanra_actions`. Like `apply_grinnich_events`, both variants
+/// here are plain `PlayerRuntime` state writes - the teleports themselves
+/// already happened directly on `World` inside `process_shanra_actions`
+/// (see that module's doc comment).
+pub(crate) fn apply_shanra_events(
+    runtime: &mut ServerRuntime,
+    events: Vec<ShanraOutcomeEvent>,
+) -> usize {
+    let mut applied = 0;
+    for event in events {
+        match event {
+            ShanraOutcomeEvent::UpdateShanraState {
+                player_id,
+                new_state,
+            } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.set_staffer_shanra_state(new_state);
+                applied += 1;
+            }
+            // C `case 3:` (`brannington.c:2679-2683`): the god-only "reset
+            // me" state wipe.
+            ShanraOutcomeEvent::ResetShanra { player_id } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.set_staffer_shanra_state(0);
                 applied += 1;
             }
         }

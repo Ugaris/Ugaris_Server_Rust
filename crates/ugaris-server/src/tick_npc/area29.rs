@@ -288,3 +288,74 @@ pub(crate) async fn broklin_driver_139(
         );
     }
 }
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn grinnich_driver_141(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    _zone_loader: &mut ZoneLoader,
+    config: &ServerConfig,
+    _args: &Args,
+    _completed_actions: &[WorldActionCompletion],
+    _achievement_repository: &Option<ugaris_db::PgAchievementRepository>,
+    _character_repository: &Option<ugaris_db::PgCharacterRepository>,
+    _area_repository: &Option<ugaris_db::PgAreaRepository>,
+    _clan_repository: &Option<ugaris_db::PgClanRegistryRepository>,
+    _clan_log_repository: &Option<ugaris_db::PgClanLogRepository>,
+    _merchant_repository: &Option<ugaris_db::PgMerchantRepository>,
+    _military_master_storage_repository: &Option<ugaris_db::PgMilitaryMasterStorageRepository>,
+    _military_advisor_storage_repository: &Option<ugaris_db::PgMilitaryAdvisorStorageRepository>,
+    _notes_repository: &Option<ugaris_db::PgNotesRepository>,
+    _anticheat_repository: &Option<ugaris_db::PgAntiCheatRepository>,
+    _auction_repository: &Option<ugaris_db::PgAuctionRepository>,
+) {
+    // C `grinnich_driver`: the hermit at the entrance of the Brannington
+    // tower dungeon who hints at the buried tower and hands adventurers off
+    // to Shanra in the basement (`src/area/29/brannington.c`).
+    let grinnich_facts = grinnich_player_facts(runtime);
+    let grinnich_events = world.process_grinnich_actions(&grinnich_facts, config.area_id);
+    let grinnich_events_applied = apply_grinnich_events(runtime, grinnich_events);
+    if grinnich_events_applied != 0 {
+        info!(
+            grinnich_events_applied,
+            tick = world.tick.0,
+            "applied grinnich dialogue events"
+        );
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn shanra_driver_142(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    _zone_loader: &mut ZoneLoader,
+    config: &ServerConfig,
+    _args: &Args,
+    _completed_actions: &[WorldActionCompletion],
+    _achievement_repository: &Option<ugaris_db::PgAchievementRepository>,
+    _character_repository: &Option<ugaris_db::PgCharacterRepository>,
+    _area_repository: &Option<ugaris_db::PgAreaRepository>,
+    _clan_repository: &Option<ugaris_db::PgClanRegistryRepository>,
+    _clan_log_repository: &Option<ugaris_db::PgClanLogRepository>,
+    _merchant_repository: &Option<ugaris_db::PgMerchantRepository>,
+    _military_master_storage_repository: &Option<ugaris_db::PgMilitaryMasterStorageRepository>,
+    _military_advisor_storage_repository: &Option<ugaris_db::PgMilitaryAdvisorStorageRepository>,
+    _notes_repository: &Option<ugaris_db::PgNotesRepository>,
+    _anticheat_repository: &Option<ugaris_db::PgAntiCheatRepository>,
+    _auction_repository: &Option<ugaris_db::PgAuctionRepository>,
+) {
+    // C `shanra_driver`: the storyteller in the Brannington tower dungeon's
+    // basement who rewards the tower's sentinel gauntlet with the Grimoire
+    // of Animation and teleports adventurers there and back
+    // (`src/area/29/brannington.c`).
+    let shanra_facts = shanra_player_facts(runtime);
+    let shanra_events = world.process_shanra_actions(&shanra_facts, config.area_id);
+    let shanra_events_applied = apply_shanra_events(runtime, shanra_events);
+    if shanra_events_applied != 0 {
+        info!(
+            shanra_events_applied,
+            tick = world.tick.0,
+            "applied shanra dialogue events"
+        );
+    }
+}

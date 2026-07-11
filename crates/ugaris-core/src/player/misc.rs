@@ -873,6 +873,12 @@ pub(crate) const STAFFER_PPD_ARISTOCRAT_STATE_OFFSET: usize = 13 * 4;
 
 pub(crate) const STAFFER_PPD_YOATIN_STATE_OFFSET: usize = 14 * 4;
 
+/// C `struct staffer_ppd::grinnich_state` (`src/common/staffer_ppd.h:33`,
+/// field index 15): `grinnich_driver`'s (`world::npc::area29::grinnich`)
+/// tower-entrance hint dialogue, mirrored by `shanra_state` below for the
+/// tower's basement NPC.
+pub(crate) const STAFFER_PPD_GRINNICH_STATE_OFFSET: usize = 15 * 4;
+
 pub(crate) const STAFFER_PPD_SHANRA_STATE_OFFSET: usize = 16 * 4;
 
 /// C `struct staffer_ppd::centinel_count` (`src/common/staffer_ppd.h:35`,

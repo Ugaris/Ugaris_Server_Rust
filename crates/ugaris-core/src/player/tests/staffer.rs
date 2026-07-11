@@ -170,6 +170,28 @@ fn staffer_ppd_tracks_guardbran_state_independently_of_brennethbran_state() {
 }
 
 #[test]
+fn staffer_ppd_tracks_grinnich_state_independently_of_shanra_state() {
+    let mut player = PlayerRuntime::connected(1, 0);
+    assert_eq!(player.staffer_grinnich_state(), 0);
+    assert_eq!(player.staffer_shanra_state(), 0);
+
+    player.set_staffer_grinnich_state(4);
+    player.set_staffer_shanra_state(5);
+    assert_eq!(player.staffer_grinnich_state(), 4);
+    assert_eq!(player.staffer_shanra_state(), 5);
+
+    let encoded = player.encode_legacy_staffer_ppd();
+    assert_eq!(encoded.len(), LEGACY_STAFFER_PPD_SIZE);
+    assert_eq!(read_i32(&encoded, STAFFER_PPD_GRINNICH_STATE_OFFSET), 4);
+    assert_eq!(read_i32(&encoded, STAFFER_PPD_SHANRA_STATE_OFFSET), 5);
+
+    let mut decoded = PlayerRuntime::connected(2, 0);
+    assert!(decoded.decode_legacy_staffer_ppd(&encoded));
+    assert_eq!(decoded.staffer_grinnich_state(), 4);
+    assert_eq!(decoded.staffer_shanra_state(), 5);
+}
+
+#[test]
 fn staffer_ppd_exposes_quest_npc_states_for_questlog_init() {
     let mut player = PlayerRuntime::connected(1, 0);
     player.set_staffer_carlos_state(6);

@@ -6,7 +6,9 @@ pub mod countbran;
 pub mod countessabran;
 pub mod daughterbran;
 pub mod forestbran;
+pub mod grinnich;
 pub mod guardbran;
+pub mod shanra;
 pub mod spiritbran;
 
 #[allow(unused_imports)]
@@ -22,7 +24,11 @@ pub use daughterbran::*;
 #[allow(unused_imports)]
 pub use forestbran::*;
 #[allow(unused_imports)]
+pub use grinnich::*;
+#[allow(unused_imports)]
 pub use guardbran::*;
+#[allow(unused_imports)]
+pub use shanra::*;
 #[allow(unused_imports)]
 pub use spiritbran::*;
 

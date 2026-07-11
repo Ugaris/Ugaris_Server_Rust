@@ -682,7 +682,9 @@ impl World {
             | CharacterDriverState::CountBran(_)
             | CharacterDriverState::CountessaBran(_)
             | CharacterDriverState::DaughterBran(_)
-            | CharacterDriverState::ForestBran(_) => None,
+            | CharacterDriverState::ForestBran(_)
+            | CharacterDriverState::Grinnich(_)
+            | CharacterDriverState::Shanra(_) => None,
         }
     }
 

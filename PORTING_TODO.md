@@ -1376,16 +1376,12 @@ Ordered by player progression; the C file is the oracle.
   quests 38/39) and `CDR_WHITEROBBERBOSS`'s `robberboss_dead` death hook
   (quest 46) all ported; `IDR_BRANNINGTONFOREST` item driver was already
   done. Details in PORTING_LEDGER.md.)*
-- [~] **Area 29 - `src/area/29/brannington.c`** - Brannington quest NPCs,
-  `DRD_STAFFER_PPD` remaining fields. REMAINING: `spirit_brannington_driver`
-  (quest 44), `count`/`countessa`/`daughter_brannington_driver` (quest
-  40, shared `countbran_bits`), `CDR_CENTINEL` (fight-AI reuse +
-  `centinel_dead` kill-counter hook), `forest_brannington_driver` (no
-  quest, thief-mage treasure-map hint NPC), `brenneth_brannington_
-  driver` (quests 41-43), `broklin_driver` (quests 45/46 + trade
-  service), and `guard_brannington_driver` (quest 64, "Finding Arkhata")
-  are ported; only `Grinnich`+`Shanra` (shared tower dungeon flow) remain.
-  Details in PORTING_LEDGER.md.
+- [x] **Area 29 - `src/area/29/brannington.c`** - Brannington quest NPCs,
+  `DRD_STAFFER_PPD` remaining fields. *(done - `grinnich_driver`/
+  `shanra_driver` (`CDR_GRINNICH`/`CDR_SHANRA`, the shared tower-dungeon
+  hint/reward/teleport flow) close out every NPC in this file; all other
+  `brannington.c` drivers were already ported in earlier iterations.
+  Details in PORTING_LEDGER.md.)*
 - [ ] **Area 30 - `src/area/30/clanmaster.c`** - clan master NPC (needs P3
   clan system).
 - [ ] **Area 31 - `src/area/31/warrmines.c`** - Warr mines NPCs.
@@ -2088,4 +2084,8 @@ notes live in `PROGRESS_ARCHIVE.md`.
   SimpleBaddy fight/idle AI plus `centinel_dead`'s kill-counter death hook
   (milestones at 1/10/20, teleport+reset at 30). 3799 core (+1) + 1180
   server (+4) tests pass, clean build, boot-smoke on area 29.
+- 2026-07-11: Area 29 closed: ported `grinnich_driver`/`shanra_driver`
+  (`CDR_GRINNICH`/`CDR_SHANRA`, tower-entrance hint + basement reward/
+  teleport flow, `grinnich_state`/`shanra_state` PPD fields). 3876 core
+  (+23) + 1180 server tests pass, clean build/boot-smoke on area 29.
 

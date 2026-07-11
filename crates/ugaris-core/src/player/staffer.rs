@@ -212,6 +212,32 @@ impl PlayerRuntime {
     /// C `struct staffer_ppd::centinel_count` (`src/common/staffer_ppd.h:35`)
     /// - the sentinel kill counter consumed by `centinel_dead`
     /// (`src/area/29/brannington.c:2725-2758`).
+    /// C `struct staffer_ppd::grinnich_state` (`src/common/staffer_ppd.h:
+    /// 33`) - `grinnich_driver`'s (`src/area/29/brannington.c:2397-2534`)
+    /// tower-entrance hint dialogue state, consumed by
+    /// `world::npc::area29::grinnich`.
+    pub fn staffer_grinnich_state(&self) -> i32 {
+        self.read_staffer_i32(STAFFER_PPD_GRINNICH_STATE_OFFSET)
+    }
+
+    pub fn set_staffer_grinnich_state(&mut self, state: i32) {
+        self.write_staffer_i32(STAFFER_PPD_GRINNICH_STATE_OFFSET, state);
+    }
+
+    /// C `struct staffer_ppd::shanra_state` (`src/common/staffer_ppd.h:34`)
+    /// - `shanra_driver`'s (`src/area/29/brannington.c:2560-2691`) tower-
+    /// basement reward/teleport dialogue state, consumed by
+    /// `world::npc::area29::shanra`. Also read (but not written) by
+    /// [`Self::mark_staffer_animation_book_seen`] above for the unrelated
+    /// animation-book item pickup.
+    pub fn staffer_shanra_state(&self) -> i32 {
+        self.read_staffer_i32(STAFFER_PPD_SHANRA_STATE_OFFSET)
+    }
+
+    pub fn set_staffer_shanra_state(&mut self, state: i32) {
+        self.write_staffer_i32(STAFFER_PPD_SHANRA_STATE_OFFSET, state);
+    }
+
     pub fn staffer_centinel_count(&self) -> i32 {
         self.read_staffer_i32(STAFFER_PPD_CENTINEL_COUNT_OFFSET)
     }
