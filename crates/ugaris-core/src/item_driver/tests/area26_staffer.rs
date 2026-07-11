@@ -153,3 +153,172 @@ fn staffer_block_delegates_to_existing_block_move_and_area_guard() {
         }
     );
 }
+
+#[test]
+fn vault_skull_opens_only_when_rouven_state_is_0_through_5() {
+    let mut player = character(1);
+    let mut skull = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_STAFFER);
+    skull.driver_data = vec![4];
+
+    for state in 0..=5 {
+        let outcome = execute_item_driver_with_context(
+            &mut player,
+            &mut skull,
+            ItemDriverRequest::Driver {
+                driver: IDR_STAFFER,
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            26,
+            false,
+            &ItemDriverContext {
+                rouven_state: Some(state),
+                ..ItemDriverContext::default()
+            },
+        );
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::VaultSkullOpened {
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+            },
+            "state {state} should open the skull"
+        );
+    }
+
+    for state in [-1, 6, 13] {
+        let outcome = execute_item_driver_with_context(
+            &mut player,
+            &mut skull,
+            ItemDriverRequest::Driver {
+                driver: IDR_STAFFER,
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            26,
+            false,
+            &ItemDriverContext {
+                rouven_state: Some(state),
+                ..ItemDriverContext::default()
+            },
+        );
+        assert_eq!(
+            outcome,
+            ItemDriverOutcome::Noop,
+            "state {state} is out of range"
+        );
+    }
+
+    // Timer calls (`cn == 0`) are always a no-op, matching C's `if (!cn)
+    // return;` guard.
+    let mut timer_character = character(0);
+    let outcome = execute_item_driver_with_context(
+        &mut timer_character,
+        &mut skull,
+        ItemDriverRequest::Driver {
+            driver: IDR_STAFFER,
+            item_id: ItemId(7),
+            character_id: CharacterId(0),
+            spec: 0,
+        },
+        26,
+        false,
+        &ItemDriverContext {
+            rouven_state: Some(0),
+            ..ItemDriverContext::default()
+        },
+    );
+    assert_eq!(outcome, ItemDriverOutcome::Noop);
+}
+
+#[test]
+fn vault_shelf_selects_reward_by_drdata1() {
+    let mut player = character(1);
+
+    let mut ritual_shelf = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_STAFFER);
+    ritual_shelf.driver_data = vec![5, 2];
+    assert_eq!(
+        execute_item_driver(
+            &mut player,
+            &mut ritual_shelf,
+            ItemDriverRequest::Driver {
+                driver: IDR_STAFFER,
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            26,
+            false,
+        ),
+        ItemDriverOutcome::VaultShelfSearch {
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            find: VaultShelfFind::Ritual,
+        }
+    );
+
+    let mut journal_shelf = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_STAFFER);
+    journal_shelf.driver_data = vec![5, 1];
+    assert_eq!(
+        execute_item_driver(
+            &mut player,
+            &mut journal_shelf,
+            ItemDriverRequest::Driver {
+                driver: IDR_STAFFER,
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            26,
+            false,
+        ),
+        ItemDriverOutcome::VaultShelfSearch {
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            find: VaultShelfFind::Journal,
+        }
+    );
+
+    let mut empty_shelf = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_STAFFER);
+    empty_shelf.driver_data = vec![5, 0];
+    assert_eq!(
+        execute_item_driver(
+            &mut player,
+            &mut empty_shelf,
+            ItemDriverRequest::Driver {
+                driver: IDR_STAFFER,
+                item_id: ItemId(7),
+                character_id: CharacterId(1),
+                spec: 0,
+            },
+            26,
+            false,
+        ),
+        ItemDriverOutcome::VaultShelfSearch {
+            item_id: ItemId(7),
+            character_id: CharacterId(1),
+            find: VaultShelfFind::Nothing,
+        }
+    );
+
+    // Timer calls (`cn == 0`) are always a no-op, matching C's `if (!cn)
+    // return;` guard.
+    let mut timer_character = character(0);
+    assert_eq!(
+        execute_item_driver(
+            &mut timer_character,
+            &mut ritual_shelf,
+            ItemDriverRequest::Driver {
+                driver: IDR_STAFFER,
+                item_id: ItemId(7),
+                character_id: CharacterId(0),
+                spec: 0,
+            },
+            26,
+            false,
+        ),
+        ItemDriverOutcome::Noop
+    );
+}

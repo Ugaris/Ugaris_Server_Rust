@@ -175,6 +175,18 @@ impl PlayerRuntime {
         self.write_staffer_i32(STAFFER_PPD_DWARFSHAMAN_STATE_OFFSET, state);
     }
 
+    /// C `struct staffer_ppd::rouven_state` (`src/common/staffer_ppd.h:44`)
+    /// - `rouven_driver`'s Imperial Vault guard quest state, also read by
+    /// `vault_skull` (`IDR_STAFFER` `drdata[0]==4`) via
+    /// `ItemDriverContext::rouven_state`.
+    pub fn staffer_rouven_state(&self) -> i32 {
+        self.read_staffer_i32(STAFFER_PPD_ROUVEN_STATE_OFFSET)
+    }
+
+    pub fn set_staffer_rouven_state(&mut self, state: i32) {
+        self.write_staffer_i32(STAFFER_PPD_ROUVEN_STATE_OFFSET, state);
+    }
+
     /// Snapshot of the `staffer_ppd` fields consumed by
     /// `questlog_init_staff` (`src/system/questlog.c:1203-1394`), for
     /// `crate::quest::init_staff_quests`.

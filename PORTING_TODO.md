@@ -1366,8 +1366,16 @@ Ordered by player progression; the C file is the oracle.
   `warpfighter`'s rare "spoiled potion of freeze" self-curse sub-branch,
   which needs a `create_spell_timer` mechanism this codebase has not
   ported anywhere yet. Details in PORTING_LEDGER.md.)*
-- [ ] **Area 26 - `src/area/26/staffer.c`** - vault skull PPD/quest, Rouven
+- [~] **Area 26 - `src/area/26/staffer.c`** - vault skull PPD/quest, Rouven
   smuggler dialogue.
+  REMAINING: `IDR_STAFFER` subtypes 4 (`vault_skull`, quest-62 completion)
+  and 5 (`vault_shelf`, `vault_ritual`/`vault_journal` template rewards)
+  are now ported, plus a new `PlayerRuntime::staffer_rouven_state`
+  accessor. Still unported: `rouven_driver` (`CDR_ROUVEN`, the Imperial
+  Vault guard, quests 62/63), `smugglecom_driver`/`smugglelead_died`
+  (`CDR_SMUGGLECOM`/`CDR_SMUGGLELEAD`, quests 35-37) - see
+  `PORTING_LEDGER.md` for the full function-by-function breakdown and
+  first-slice recommendation already researched for the next iteration.
 - [ ] **Area 28 - `src/area/28/brannington_forest.c`** - forest NPCs.
 - [ ] **Area 29 - `src/area/29/brannington.c`** - Brannington quest NPCs,
   `DRD_STAFFER_PPD` remaining fields.
@@ -1425,6 +1433,10 @@ Keep entries to at most three lines: date, task, one-line result.
 Anything longer belongs in `PORTING_LEDGER.md`; historical verbose
 notes live in `PROGRESS_ARCHIVE.md`.
 
+- 2026-07-11: Area 26 progress: ported `IDR_STAFFER` subtypes 4/5
+  (`vault_skull` quest-62 completion, `vault_shelf` ritual/journal
+  rewards). 3705 core [+3] + 1176 server tests pass, clean build/boot-smoke
+  (area 26). `rouven_driver`/`smugglecom_driver` remain.
 - 2026-07-11: Area 25 CLOSED: ported `CDR_WARPMASTER` (key-for-stone
   trader) and `CDR_WARPFIGHTER` (trial-room fighter, full `warped_raise`
   stat/equipment scaling, self-destruct, death-hook teleport-back). 3702

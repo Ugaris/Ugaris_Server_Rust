@@ -89,6 +89,69 @@ pub(crate) async fn dispatch_keyassembly_outcome(
             feedback.push((character_id, "It won't move.".to_string()));
             *executed += 1;
         }
+        // C `vault_skull` (`src/area/26/staffer.c:327-345`): only ever
+        // produced when `rouven_state` was `0..=5` (see
+        // `vault_skull_driver`), so the state write/quest completion here
+        // is unconditional.
+        ugaris_core::item_driver::ItemDriverOutcome::VaultSkullOpened { character_id, .. } => {
+            let level = world
+                .characters
+                .get(&character_id)
+                .map(|character| character.level)
+                .unwrap_or(0);
+            let level_val = level_value(level);
+            if let Some(player) = runtime.player_for_character_mut(character_id) {
+                player.set_staffer_rouven_state(6);
+                if let Some(completion) = player.quest_log.complete_legacy(62, level, level_val) {
+                    let payload = legacy_questlog_payload(player);
+                    world.give_exp(
+                        character_id,
+                        completion.granted_exp,
+                        u32::from(args.area_id),
+                    );
+                    for (session_id, _) in runtime.sessions_for_character(character_id) {
+                        runtime.send_to_session(session_id, payload.clone());
+                    }
+                }
+            }
+            feedback.push((
+                character_id,
+                "You feel an evil aura coming from the skulls. A magical barrier prevents anyone from getting close and you decide to report back to Rouven.".to_string(),
+            ));
+            *executed += 1;
+        }
+        // C `vault_shelf` (`src/area/26/staffer.c:348-372`).
+        ugaris_core::item_driver::ItemDriverOutcome::VaultShelfSearch {
+            character_id,
+            find,
+            ..
+        } => {
+            let template = match find {
+                ugaris_core::item_driver::VaultShelfFind::Ritual => Some("vault_ritual"),
+                ugaris_core::item_driver::VaultShelfFind::Journal => Some("vault_journal"),
+                ugaris_core::item_driver::VaultShelfFind::Nothing => None,
+            };
+            let message = match template.and_then(|template| {
+                zone_loader
+                    .instantiate_item_template(template, Some(character_id))
+                    .ok()
+            }) {
+                Some(item) => {
+                    let item_name = item.name.clone();
+                    let item_id = item.id;
+                    world.add_item(item);
+                    if world.give_char_item(character_id, item_id) {
+                        format!("After a lengthy search you find {item_name}.")
+                    } else {
+                        world.destroy_item(item_id);
+                        "Please make room in your inventory!".to_string()
+                    }
+                }
+                None => "After a lengthy search you find nothing of interest".to_string(),
+            };
+            feedback.push((character_id, message));
+            *executed += 1;
+        }
         ugaris_core::item_driver::ItemDriverOutcome::StafferSpecDoorLocked {
             character_id, ..
         } => {

@@ -69,7 +69,7 @@ pub(crate) use area20_lq::*;
 pub(crate) use area22_lab::*;
 pub(crate) use area23_24::*;
 pub use area25_warped::*;
-pub(crate) use area26_staffer::*;
+pub use area26_staffer::*;
 pub(crate) use area28_forest::*;
 pub use area29_brannington::*;
 pub use area30_clan::*;

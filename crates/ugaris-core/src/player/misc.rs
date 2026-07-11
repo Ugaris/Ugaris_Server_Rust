@@ -851,6 +851,12 @@ pub(crate) const STAFFER_PPD_DWARFSHAMAN_STATE_OFFSET: usize = 19 * 4;
 /// `carlos_driver`'s Imperial Vault ritual quest (`src/area/3/area3.c`).
 pub(crate) const STAFFER_PPD_CARLOS2_STATE_OFFSET: usize = 23 * 4;
 
+/// C `struct staffer_ppd::rouven_state` (`src/common/staffer_ppd.h:44`,
+/// field index 24, the last field): `rouven_driver`'s Imperial Vault
+/// guard quest state (`src/area/26/staffer.c`), also read by `vault_skull`
+/// (`IDR_STAFFER` `drdata[0]==4`).
+pub(crate) const STAFFER_PPD_ROUVEN_STATE_OFFSET: usize = 24 * 4;
+
 pub(crate) const FARMY_PPD_BOSS_STAGE_OFFSET: usize = 0;
 
 /// C `struct farmy_ppd::boss_timer` (`src/area/8/fdemon.c:362`, second

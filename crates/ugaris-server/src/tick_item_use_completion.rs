@@ -847,6 +847,8 @@ pub(crate) async fn process_completed_action_outcomes(
                             | ugaris_core::item_driver::ItemDriverOutcome::StafferAnimationBook { .. }
                             | ugaris_core::item_driver::ItemDriverOutcome::StafferMineExhausted { .. }
                             | ugaris_core::item_driver::ItemDriverOutcome::StafferBlockBlocked { .. }
+                            | ugaris_core::item_driver::ItemDriverOutcome::VaultSkullOpened { .. }
+                            | ugaris_core::item_driver::ItemDriverOutcome::VaultShelfSearch { .. }
                             | ugaris_core::item_driver::ItemDriverOutcome::StafferSpecDoorLocked { .. }
                             | ugaris_core::item_driver::ItemDriverOutcome::StafferMineDig { .. }
                             | ugaris_core::item_driver::ItemDriverOutcome::StafferMineTimer { .. }

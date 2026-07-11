@@ -294,6 +294,16 @@ pub(crate) fn item_driver_context_for_request(
             ..ugaris_core::item_driver::ItemDriverContext::default()
         };
     }
+    if *driver == ugaris_core::item_driver::IDR_STAFFER {
+        return ugaris_core::item_driver::ItemDriverContext {
+            rouven_state: Some(
+                player
+                    .map(|player| player.staffer_rouven_state())
+                    .unwrap_or_default(),
+            ),
+            ..ugaris_core::item_driver::ItemDriverContext::default()
+        };
+    }
     if *driver == ugaris_core::item_driver::IDR_LAB3_SPECIAL {
         return ugaris_core::item_driver::ItemDriverContext {
             lab3_guard_talkstep: Some(

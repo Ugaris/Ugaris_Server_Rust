@@ -137,6 +137,11 @@ pub struct ItemDriverContext {
     /// `PlayerRuntime::lab5_ritual_state`), same precedent as
     /// `lab5_ritual_daemon`.
     pub lab5_ritual_state: Option<u8>,
+    /// C `staffer_ppd.rouven_state` (`src/common/staffer_ppd.h:44`), read
+    /// before `vault_skull` runs its `0..=5` range check
+    /// (`staffer.c:339`). `None` when the item isn't `IDR_STAFFER`
+    /// `drdata[0]==4`.
+    pub rouven_state: Option<i32>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -2199,6 +2204,24 @@ pub enum ItemDriverOutcome {
     StafferBlockBlocked {
         item_id: ItemId,
         character_id: CharacterId,
+    },
+    /// C `vault_skull` (`src/area/26/staffer.c:327-345`): touching the
+    /// burning skulls bumps `staffer_ppd.rouven_state` from `0..=5` to
+    /// `6` and completes quest 62. Only produced when that range check
+    /// holds (`ItemDriverContext::rouven_state`) - otherwise the item
+    /// driver returns `Noop`, matching C's silent no-op outside the
+    /// range.
+    VaultSkullOpened {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    /// C `vault_shelf` (`src/area/26/staffer.c:348-372`): searching the
+    /// shelf creates `vault_ritual`/`vault_journal`/nothing depending on
+    /// `it[in].drdata[1]`.
+    VaultShelfSearch {
+        item_id: ItemId,
+        character_id: CharacterId,
+        find: VaultShelfFind,
     },
     BoneBridgePlace {
         item_id: ItemId,

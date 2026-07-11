@@ -81,6 +81,28 @@ fn staffer_ppd_tracks_carlos2_state_independently_of_carlos_state() {
 }
 
 #[test]
+fn staffer_ppd_tracks_rouven_state_independently_of_carlos2_state() {
+    let mut player = PlayerRuntime::connected(1, 0);
+    assert_eq!(player.staffer_carlos2_state(), 0);
+    assert_eq!(player.staffer_rouven_state(), 0);
+
+    player.set_staffer_carlos2_state(5);
+    player.set_staffer_rouven_state(6);
+    assert_eq!(player.staffer_carlos2_state(), 5);
+    assert_eq!(player.staffer_rouven_state(), 6);
+
+    let encoded = player.encode_legacy_staffer_ppd();
+    assert_eq!(encoded.len(), LEGACY_STAFFER_PPD_SIZE);
+    assert_eq!(read_i32(&encoded, STAFFER_PPD_CARLOS2_STATE_OFFSET), 5);
+    assert_eq!(read_i32(&encoded, STAFFER_PPD_ROUVEN_STATE_OFFSET), 6);
+
+    let mut decoded = PlayerRuntime::connected(2, 0);
+    assert!(decoded.decode_legacy_staffer_ppd(&encoded));
+    assert_eq!(decoded.staffer_carlos2_state(), 5);
+    assert_eq!(decoded.staffer_rouven_state(), 6);
+}
+
+#[test]
 fn staffer_ppd_exposes_quest_npc_states_for_questlog_init() {
     let mut player = PlayerRuntime::connected(1, 0);
     player.set_staffer_carlos_state(6);
