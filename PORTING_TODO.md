@@ -1357,8 +1357,15 @@ Ordered by player progression; the C file is the oracle.
   two tickers. Boot-smoke against areas 23/24 confirms spawners
   self-perpetuate forever with no panics. This closes Areas 23/24 for
   real - every checkbox in this task's own plan is now live.
-- [ ] **Area 25 - `src/area/25/warped.c`** - warped NPC dialogue,
-  `DRD_WARPFIGHTER` full fight driver.
+- [x] **Area 25 - `src/area/25/warped.c`** - warped NPC dialogue,
+  `DRD_WARPFIGHTER` full fight driver. *(done - `CDR_WARPMASTER`/
+  `CDR_WARPFIGHTER` both ported, plus `warped_raise`'s full stat-rescale/
+  equipment-item synthesis wired into the trial-door spawn and the
+  player-teleport-back-on-kill death hook; item drivers were already
+  ported in earlier iterations. REMAINING (deferred, documented no-op):
+  `warpfighter`'s rare "spoiled potion of freeze" self-curse sub-branch,
+  which needs a `create_spell_timer` mechanism this codebase has not
+  ported anywhere yet. Details in PORTING_LEDGER.md.)*
 - [ ] **Area 26 - `src/area/26/staffer.c`** - vault skull PPD/quest, Rouven
   smuggler dialogue.
 - [ ] **Area 28 - `src/area/28/brannington_forest.c`** - forest NPCs.
@@ -1418,6 +1425,10 @@ Keep entries to at most three lines: date, task, one-line result.
 Anything longer belongs in `PORTING_LEDGER.md`; historical verbose
 notes live in `PROGRESS_ARCHIVE.md`.
 
+- 2026-07-11: Area 25 CLOSED: ported `CDR_WARPMASTER` (key-for-stone
+  trader) and `CDR_WARPFIGHTER` (trial-room fighter, full `warped_raise`
+  stat/equipment scaling, self-destruct, death-hook teleport-back). 3702
+  core [+20] + 1176 server [+6] tests pass, clean build/boot-smoke (area 25).
 - 2026-07-11: Areas 23/24 strategy minigame CLOSED: twenty-third slice -
   wired the live `IDR_STR_SPAWNER` `cn==0` ambient tick to `World::ai_main`
   (`str_spawner_ambient_tick`/`str_spawner_first_activation`, zone-load

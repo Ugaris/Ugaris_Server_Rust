@@ -450,6 +450,15 @@ pub const CDR_KASSIM: u16 = 156;
 /// raiser"): the NPC who raises attributes/skills/spells past
 /// `skillmax` for a gold+exp fee (`src/area/3/area3.c::supermax_driver`).
 pub const CDR_SUPERMAX: u16 = 98;
+/// C `#define CDR_WARPFIGHTER 83` (`src/system/drvlib.h:131`, "warped:
+/// fighter"): the hired opponent `warptrialdoor_driver`
+/// (`src/area/25/warped.c::warptrialdoor_driver`) spawns inside a trial
+/// room, self-destructing once its summoning player leaves the room.
+pub const CDR_WARPFIGHTER: u16 = 83;
+/// C `#define CDR_WARPMASTER 84` (`src/system/drvlib.h:132`, "warped:
+/// master"): the key-for-stone trader NPC in area 25's warped world
+/// (`src/area/25/warped.c::warpmaster`).
+pub const CDR_WARPMASTER: u16 = 84;
 pub const DRD_SIMPLEBADDYDRIVER: u32 = 0x0100_0013;
 pub const DRD_CLARADRIVER: u32 = 0x0100_0059;
 pub const DRD_SKELLYDRIVER: u32 = 0x0100_006a;
@@ -593,6 +602,8 @@ pub enum CharacterDriverState {
     Lab5Daemon(crate::world::npc::area22::lab5_daemon::Lab5DaemonDriverData),
     Lab5Mage(crate::world::npc::area22::lab5_mage::Lab5MageDriverData),
     StrategyWorker(crate::world::npc::area23_24::worker::StrategyWorkerDriverData),
+    WarpFighter(crate::world::npc::area25::warpfighter::WarpFighterDriverData),
+    Warpmaster(crate::world::npc::area25::warpmaster::WarpmasterDriverData),
 }
 /// C `bank_driver_parse` from `src/module/bank.c`. The C driver defaults
 /// opening hours to 6..23 before parsing (`bank_driver` lines 304-309).
@@ -1391,7 +1402,9 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::Lab5Seyan(_)
             | CharacterDriverState::Lab5Daemon(_)
             | CharacterDriverState::Lab5Mage(_)
-            | CharacterDriverState::StrategyWorker(_),
+            | CharacterDriverState::StrategyWorker(_)
+            | CharacterDriverState::WarpFighter(_)
+            | CharacterDriverState::Warpmaster(_),
         ) => SimpleBaddyDriverData::default(),
         None => SimpleBaddyDriverData::default(),
     };

@@ -128,6 +128,17 @@ pub(crate) fn spawn_chestspawn_character(
     world.apply_chestspawn_spawn_result(item_id, character_id, 0)
 }
 
+/// C `warptrialdoor_driver`'s successful-open tail (`warped.c:764-813`):
+/// instantiate the `warped_fighter` template, run `warped_raise(co,
+/// ppd->base)` (rescale skills/exp/level plus the `equip1`/`equip2`/
+/// `equip3`/`armor_spell`/`weapon_spell` "spell of equipment" items,
+/// `world::npc::area25::warpfighter::apply_warped_raise` for the pure
+/// half), `update_char(co)`, then set `hp`/`endurance`/`mana`/
+/// `lifeshield` from the recomputed `value[0]` - matching the exact C
+/// call order. `owner`/`owner_serial`/`tx`/`ty`/`xs`/`xe`/`ys`/`ye` seed
+/// the fighter's own `DRD_WARPFIGHTER`-equivalent driver state (`dat->co`/
+/// `cser`/`tx`/`ty`/`xs`/`xe`/`ys`/`ye`).
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn spawn_warp_trial_fighter(
     world: &mut World,
     loader: &mut ZoneLoader,
@@ -135,20 +146,108 @@ pub(crate) fn spawn_warp_trial_fighter(
     template: &str,
     x: u16,
     y: u16,
+    base: i32,
+    owner: CharacterId,
+    owner_serial: u32,
+    tx: u16,
+    ty: u16,
+    xs: u16,
+    xe: u16,
+    ys: u16,
+    ye: u16,
 ) -> bool {
+    use ugaris_core::world::npc::area25::{
+        apply_warped_raise, warped_armor_spell_mod_value, warped_equip_mod_value,
+        warped_weapon_spell_mod_value, WarpFighterDriverData, WARPFIGHTER_START_DIST,
+        WARPFIGHTER_STOP_DIST,
+    };
+
     let character_id = runtime.allocate_character_id();
-    let Ok((mut fighter, inventory_items)) =
+    let Ok((mut fighter, mut inventory_items)) =
         loader.instantiate_character_template(template, character_id)
     else {
         return false;
     };
     fighter.dir = Direction::RightDown as u8;
-    fighter.hp = i32::from(fighter.values[0][CharacterValue::Hp as usize]) * POWERSCALE;
-    fighter.endurance =
-        i32::from(fighter.values[0][CharacterValue::Endurance as usize]) * POWERSCALE;
-    fighter.mana = i32::from(fighter.values[0][CharacterValue::Mana as usize]) * POWERSCALE;
-    fighter.lifeshield =
-        i32::from(fighter.values[0][CharacterValue::MagicShield as usize]) * POWERSCALE;
+
+    // C `warped_raise(co, ppd->base);` (`warped.c:777`).
+    apply_warped_raise(&mut fighter, base);
+    let equip_value = warped_equip_mod_value(base);
+    set_warped_raise_equip_item(
+        &mut fighter,
+        loader,
+        &mut inventory_items,
+        12,
+        "equip1",
+        5,
+        equip_value,
+    );
+    set_warped_raise_equip_item(
+        &mut fighter,
+        loader,
+        &mut inventory_items,
+        13,
+        "equip2",
+        4,
+        equip_value,
+    );
+    set_warped_raise_equip_item(
+        &mut fighter,
+        loader,
+        &mut inventory_items,
+        14,
+        "equip3",
+        5,
+        equip_value,
+    );
+    let armor_value = warped_armor_spell_mod_value(&fighter);
+    set_warped_raise_equip_item(
+        &mut fighter,
+        loader,
+        &mut inventory_items,
+        15,
+        "armor_spell",
+        1,
+        armor_value,
+    );
+    let weapon_value = warped_weapon_spell_mod_value(&fighter);
+    set_warped_raise_equip_item(
+        &mut fighter,
+        loader,
+        &mut inventory_items,
+        16,
+        "weapon_spell",
+        1,
+        weapon_value,
+    );
+
+    // C `ch[co].tmpx = ch[co].x; ch[co].tmpy = ch[co].y;` (`warped.c:774-
+    // 775`): the fighter's own rest/post position reuses `rest_x`/
+    // `rest_y`, the same substitution every other stationary NPC uses.
+    fighter.rest_x = x;
+    fighter.rest_y = y;
+
+    // C `fight_driver_set_dist(cn, 40, 0, 40);` (`warped.c:880`, run from
+    // the fighter's own `NT_CREATE` in C - seeded directly here instead,
+    // same precedent as every other custom-spawned NPC in this codebase).
+    let fight_driver = fighter
+        .fight_driver
+        .get_or_insert_with(FightDriverData::default);
+    fight_driver.start_dist = WARPFIGHTER_START_DIST;
+    fight_driver.stop_dist = WARPFIGHTER_STOP_DIST;
+
+    fighter.driver_state = Some(CharacterDriverState::WarpFighter(WarpFighterDriverData {
+        owner,
+        owner_serial,
+        tx,
+        ty,
+        xs,
+        xe,
+        ys,
+        ye,
+        creation_time: world.tick.0,
+        pot_done: 0,
+    }));
 
     if !world.spawn_character(fighter, usize::from(x), usize::from(y)) {
         return false;
@@ -156,6 +255,44 @@ pub(crate) fn spawn_warp_trial_fighter(
     for item in inventory_items {
         world.items.insert(item.id, item);
     }
+
+    // C `update_char(co); ch[co].hp = ch[co].value[0][V_HP] * POWERSCALE;
+    // ch[co].endurance = ch[co].value[0][V_ENDURANCE] * POWERSCALE;
+    // ch[co].mana = ch[co].value[0][V_MANA] * POWERSCALE; ch[co].lifeshield
+    // = ch[co].value[0][V_MAGICSHIELD] * POWERSCALE;` (`warped.c:779-784`).
+    world.update_character(character_id);
+    if let Some(character) = world.characters.get_mut(&character_id) {
+        character.hp = i32::from(character.values[0][CharacterValue::Hp as usize]) * POWERSCALE;
+        character.endurance =
+            i32::from(character.values[0][CharacterValue::Endurance as usize]) * POWERSCALE;
+        character.mana = i32::from(character.values[0][CharacterValue::Mana as usize]) * POWERSCALE;
+        character.lifeshield =
+            i32::from(character.values[0][CharacterValue::MagicShield as usize]) * POWERSCALE;
+    }
+    true
+}
+
+/// Instantiates one of the `equip1`/`equip2`/`equip3`/`armor_spell`/
+/// `weapon_spell` "spell of equipment" item templates, overwrites its
+/// first `modifier_count` `mod_value` slots with `value`, and carries it
+/// in the given non-worn inventory slot (C `ch[cn].item[12..16]`).
+fn set_warped_raise_equip_item(
+    character: &mut Character,
+    loader: &mut ZoneLoader,
+    inventory_items: &mut Vec<Item>,
+    slot: usize,
+    template: &str,
+    modifier_count: usize,
+    value: i16,
+) -> bool {
+    let Ok(mut item) = loader.instantiate_item_template(template, Some(character.id)) else {
+        return false;
+    };
+    for slot_value in item.modifier_value.iter_mut().take(modifier_count) {
+        *slot_value = value;
+    }
+    character.inventory[slot] = Some(item.id);
+    inventory_items.push(item);
     true
 }
 

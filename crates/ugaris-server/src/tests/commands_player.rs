@@ -155,15 +155,44 @@ fn warp_trial_door_spawn_helper_instantiates_fighter_at_room_center() {
         "warped_fighter",
         7,
         8,
+        40,
+        CharacterId(99),
+        7,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
     ));
 
     let fighter = world.characters.get(&CharacterId(50)).unwrap();
     assert_eq!((fighter.x, fighter.y), (7, 8));
     assert_eq!(fighter.name, "Hrus-tak-lan");
     assert_eq!(fighter.dir, Direction::RightDown as u8);
-    assert_eq!(fighter.hp, 10 * POWERSCALE);
-    assert_eq!(fighter.endurance, 8 * POWERSCALE);
-    assert_eq!(fighter.lifeshield, 3 * POWERSCALE);
+    assert_eq!((fighter.rest_x, fighter.rest_y), (7, 8));
+    // C `warped_raise(co, 40)` rescales the template's already-present
+    // `V_HP`/`V_ENDURANCE` (both `max(10, base - base/4)` at `base=40` ->
+    // `30`) and `V_MAGICSHIELD` (falls to the `default: max(1, base-40)`
+    // branch at `base=40` -> `1`); `V_MANA` stays `0` (`warped_raise`
+    // skips any already-zero present value). No `equip1`/`equip2`/
+    // `equip3`/`armor_spell`/`weapon_spell` item templates exist in this
+    // test's zone data, so none of those bonuses apply and `update_char`
+    // leaves `value[0]` equal to the rescaled `value[1]`.
+    assert_eq!(fighter.hp, 30 * POWERSCALE);
+    assert_eq!(fighter.endurance, 30 * POWERSCALE);
+    assert_eq!(fighter.mana, 0);
+    assert_eq!(fighter.lifeshield, 1 * POWERSCALE);
+
+    let Some(ugaris_core::character_driver::CharacterDriverState::WarpFighter(data)) =
+        fighter.driver_state
+    else {
+        panic!("expected WarpFighter driver state");
+    };
+    assert_eq!(data.owner, CharacterId(99));
+    assert_eq!(data.owner_serial, 7);
+    assert_eq!((data.tx, data.ty), (1, 2));
+    assert_eq!((data.xs, data.xe, data.ys, data.ye), (3, 4, 5, 6));
 }
 
 #[test]

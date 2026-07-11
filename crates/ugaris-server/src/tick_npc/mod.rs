@@ -15,6 +15,7 @@ pub(crate) mod area2;
 pub(crate) mod area20;
 pub(crate) mod area22;
 pub(crate) mod area23_24;
+pub(crate) mod area25;
 pub(crate) mod area3;
 pub(crate) mod area30;
 pub(crate) mod area32;
@@ -2421,6 +2422,48 @@ pub(crate) async fn run_all(
     .await;
 
     area23_24::strategy_boss_driver_118(
+        &mut *world,
+        &mut *runtime,
+        &mut *zone_loader,
+        config,
+        args,
+        completed_actions,
+        achievement_repository,
+        character_repository,
+        area_repository,
+        clan_repository,
+        clan_log_repository,
+        merchant_repository,
+        military_master_storage_repository,
+        military_advisor_storage_repository,
+        notes_repository,
+        anticheat_repository,
+        auction_repository,
+    )
+    .await;
+
+    area25::warpmaster_driver_119(
+        &mut *world,
+        &mut *runtime,
+        &mut *zone_loader,
+        config,
+        args,
+        completed_actions,
+        achievement_repository,
+        character_repository,
+        area_repository,
+        clan_repository,
+        clan_log_repository,
+        merchant_repository,
+        military_master_storage_repository,
+        military_advisor_storage_repository,
+        notes_repository,
+        anticheat_repository,
+        auction_repository,
+    )
+    .await;
+
+    area25::warpfighter_driver_120(
         &mut *world,
         &mut *runtime,
         &mut *zone_loader,

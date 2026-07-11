@@ -306,10 +306,56 @@ pub(crate) async fn dispatch_warp_outcome(
             character_id,
             spawn_x,
             spawn_y,
+            player_x,
+            player_y,
+            fighter_target_x,
+            fighter_target_y,
+            xs,
+            ys,
+            xe,
+            ye,
             template,
             ..
         } => {
-            if spawn_warp_trial_fighter(world, zone_loader, runtime, template, spawn_x, spawn_y) {
+            // C `warptrialdoor_driver` (`warped.c:764-813`): the player's
+            // own `ppd->base` (defaulting to 40, same as `warpbonus_
+            // driver`) scales the spawned fighter's skills.
+            let base = runtime
+                .player_for_character(character_id)
+                .map(|player| {
+                    if player.warp_base > 0 {
+                        player.warp_base
+                    } else {
+                        40
+                    }
+                })
+                .unwrap_or(40);
+            let owner_serial = world
+                .characters
+                .get(&character_id)
+                .map(|character| character.serial)
+                .unwrap_or_default();
+            if spawn_warp_trial_fighter(
+                world,
+                zone_loader,
+                runtime,
+                template,
+                spawn_x,
+                spawn_y,
+                base,
+                character_id,
+                owner_serial,
+                fighter_target_x,
+                fighter_target_y,
+                xs,
+                xe,
+                ys,
+                ye,
+            ) {
+                // C `teleport_char_driver(cn, it[in].x + dx, it[in].y +
+                // dy);` (`warped.c:813`): only teleport the player through
+                // the door once the fighter is fully set up.
+                world.teleport_char_driver(character_id, player_x, player_y);
                 *executed += 1;
             } else {
                 feedback.push((character_id, "Bug #319i, sorry.".to_string()));

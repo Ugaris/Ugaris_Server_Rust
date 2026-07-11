@@ -663,7 +663,9 @@ impl World {
             | CharacterDriverState::Lab5Seyan(_)
             | CharacterDriverState::Lab5Daemon(_)
             | CharacterDriverState::Lab5Mage(_)
-            | CharacterDriverState::StrategyWorker(_) => None,
+            | CharacterDriverState::StrategyWorker(_)
+            | CharacterDriverState::WarpFighter(_)
+            | CharacterDriverState::Warpmaster(_) => None,
         }
     }
 

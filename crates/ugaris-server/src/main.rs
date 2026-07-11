@@ -17,6 +17,7 @@ mod area19;
 mod area20;
 mod area22;
 mod area23_24;
+mod area25;
 mod area3;
 mod area8;
 mod area8_army;
@@ -94,6 +95,10 @@ pub(crate) use achievement::*;
 pub(crate) use area1::*;
 pub(crate) use area16::*;
 pub(crate) use area17::*;
+// Only consumed by `tests::area25`/`tests::spawns` today - `tick_npc::
+// area25` calls `apply_warpmaster_events` via its fully-qualified path.
+#[allow(unused_imports)]
+pub(crate) use area25::*;
 pub(crate) use area3::*;
 pub(crate) use area_apply::*;
 pub(crate) use chests::*;

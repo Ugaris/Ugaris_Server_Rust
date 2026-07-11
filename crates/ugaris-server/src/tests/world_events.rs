@@ -1,8 +1,9 @@
 use super::*;
 use ugaris_core::character_driver::{
     ArenaFighterDriverData, ArenaMasterDriverData, CDR_ARENAFIGHTER, CDR_ARENAMASTER,
-    CDR_LAMPGHOST, MS_FIGHT,
+    CDR_LAMPGHOST, CDR_WARPFIGHTER, MS_FIGHT,
 };
+use ugaris_core::world::npc::area25::WarpFighterDriverData;
 use ugaris_core::world::LegacyHurtOutcome;
 
 #[test]
@@ -1738,5 +1739,132 @@ fn lqnpc_death_handler_ignores_non_matching_driver_and_non_lethal_hits() {
         &mut runtime,
         &mut world2,
         lethal_wrong_driver
+    ));
+}
+
+fn warpfighter_npc(
+    id: CharacterId,
+    owner: CharacterId,
+    owner_serial: u32,
+    xs: u16,
+    xe: u16,
+    ys: u16,
+    ye: u16,
+) -> Character {
+    let mut fighter = login_character(id, &login_block("Hrus-tak-lan"), 25, 15, 15);
+    fighter.flags.remove(CharacterFlags::PLAYER);
+    fighter.driver = CDR_WARPFIGHTER;
+    fighter.driver_state = Some(CharacterDriverState::WarpFighter(WarpFighterDriverData {
+        owner,
+        owner_serial,
+        tx: 40,
+        ty: 41,
+        xs,
+        xe,
+        ys,
+        ye,
+        creation_time: 0,
+        pot_done: 0,
+    }));
+    fighter
+}
+
+#[test]
+fn warpfighter_death_teleports_the_owner_who_landed_the_killing_blow() {
+    let mut world = World::default();
+    world.add_character(warpfighter_npc(
+        CharacterId(1),
+        CharacterId(2),
+        2,
+        10,
+        20,
+        10,
+        20,
+    ));
+    let mut owner = login_character(CharacterId(2), &login_block("Godmode"), 25, 15, 15);
+    owner.x = 15;
+    owner.y = 15;
+    world.add_character(owner);
+
+    let lethal_by_owner = LegacyHurtEvent {
+        target_id: CharacterId(1),
+        cause_id: CharacterId(2),
+        outcome: LegacyHurtOutcome {
+            killed: true,
+            ..Default::default()
+        },
+    };
+    assert!(apply_warpfighter_death_from_hurt_event(
+        &mut world,
+        lethal_by_owner
+    ));
+    let owner = world.characters.get(&CharacterId(2)).unwrap();
+    assert_eq!((owner.x, owner.y), (40, 41));
+}
+
+#[test]
+fn warpfighter_death_ignores_a_kill_by_someone_other_than_the_owner() {
+    let mut world = World::default();
+    world.add_character(warpfighter_npc(
+        CharacterId(1),
+        CharacterId(2),
+        2,
+        10,
+        20,
+        10,
+        20,
+    ));
+    let mut owner = login_character(CharacterId(2), &login_block("Godmode"), 25, 15, 15);
+    owner.x = 15;
+    owner.y = 15;
+    world.add_character(owner);
+    let mut someone_else = login_character(CharacterId(3), &login_block("Bystander"), 25, 16, 15);
+    world.add_character(someone_else.clone());
+    someone_else.x = 16;
+
+    let lethal_by_someone_else = LegacyHurtEvent {
+        target_id: CharacterId(1),
+        cause_id: CharacterId(3),
+        outcome: LegacyHurtOutcome {
+            killed: true,
+            ..Default::default()
+        },
+    };
+    assert!(!apply_warpfighter_death_from_hurt_event(
+        &mut world,
+        lethal_by_someone_else
+    ));
+    let owner = world.characters.get(&CharacterId(2)).unwrap();
+    assert_eq!((owner.x, owner.y), (15, 15));
+}
+
+#[test]
+fn warpfighter_death_ignores_the_owner_having_already_left_the_room() {
+    let mut world = World::default();
+    world.add_character(warpfighter_npc(
+        CharacterId(1),
+        CharacterId(2),
+        2,
+        10,
+        20,
+        10,
+        20,
+    ));
+    let mut owner = login_character(CharacterId(2), &login_block("Godmode"), 25, 15, 15);
+    owner.x = 99; // outside xs=10..xe=20
+    owner.y = 15;
+    world.add_character(owner);
+
+    let lethal_by_owner = LegacyHurtEvent {
+        target_id: CharacterId(1),
+        cause_id: CharacterId(2),
+        outcome: LegacyHurtOutcome {
+            killed: true,
+            ..Default::default()
+        },
+    };
+    assert!(!apply_warpfighter_death_from_hurt_event(
+        &mut world,
+        lethal_by_owner
     ));
 }

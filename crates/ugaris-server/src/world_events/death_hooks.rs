@@ -1,6 +1,6 @@
 use super::*;
 use ugaris_core::character_driver::{
-    CDR_LABGNOMEDRIVER, CDR_TWOGUARD, CDR_TWOROBBER, CDR_TWOSERVANT,
+    CDR_LABGNOMEDRIVER, CDR_TWOGUARD, CDR_TWOROBBER, CDR_TWOSERVANT, CDR_WARPFIGHTER,
 };
 use ugaris_core::world::{CS_ENEMY, CS_GUEST, LS_DEAD, LS_FINE};
 
@@ -1101,5 +1101,52 @@ pub(crate) fn apply_lqnpc_death_from_hurt_event(
             }
         }
     }
+    true
+}
+
+/// C `warpfighter_died(cn, co)` (`src/area/25/warped.c:971-991`): only the
+/// *owning player's own killing blow* (`dat->co == co`) teleports them
+/// back through the trial-room door - a kill by anyone/anything else, or
+/// the owner having already left the room bounds by the time the fighter
+/// dies, is a silent no-op in C (`xlog(...)`-only, not player-visible).
+pub(crate) fn apply_warpfighter_death_from_hurt_event(
+    world: &mut World,
+    event: LegacyHurtEvent,
+) -> bool {
+    if !event.outcome.killed {
+        return false;
+    }
+    let Some(data) = world.characters.get(&event.target_id).and_then(|target| {
+        if target.driver != CDR_WARPFIGHTER {
+            return None;
+        }
+        match target.driver_state.as_ref() {
+            Some(CharacterDriverState::WarpFighter(data)) => Some(*data),
+            _ => None,
+        }
+    }) else {
+        return false;
+    };
+
+    // C `if (dat->co != co) { xlog("1"); return; }` (`warped.c:979-982`).
+    if data.owner != event.cause_id {
+        return false;
+    }
+    // C `if (!ch[co].flags || ch[co].serial != dat->cser || ch[co].x <
+    // dat->xs || ch[co].y < dat->ys || ch[co].x > dat->xe || ch[co].y >
+    // dat->ye) { xlog("2"); return; }` (`warped.c:983-987`).
+    let owner_valid = world.characters.get(&event.cause_id).is_some_and(|owner| {
+        owner.serial == data.owner_serial
+            && owner.x >= data.xs
+            && owner.x <= data.xe
+            && owner.y >= data.ys
+            && owner.y <= data.ye
+    });
+    if !owner_valid {
+        return false;
+    }
+
+    // C `teleport_char_driver(co, dat->tx, dat->ty);` (`warped.c:989`).
+    world.teleport_char_driver(event.cause_id, data.tx, data.ty);
     true
 }

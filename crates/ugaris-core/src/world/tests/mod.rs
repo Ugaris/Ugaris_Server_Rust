@@ -143,6 +143,8 @@ mod two_skelly;
 mod values;
 mod vampire;
 mod vampire2;
+mod warpfighter;
+mod warpmaster;
 mod weather;
 mod world_misc;
 mod yoakin;

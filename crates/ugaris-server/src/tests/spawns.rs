@@ -834,3 +834,89 @@ fn respawn_npc_character_allows_lampghost_once_palace_is_dark() {
     let npc = world.characters.get(&CharacterId(300)).unwrap();
     assert_eq!(npc.driver, CDR_LAMPGHOST);
 }
+
+/// C `warptrialdoor_driver`'s successful-open tail (`warped.c:764-813`):
+/// `warped_raise`'s five "spell of equipment" items actually attach when
+/// their templates exist, with `mod_value`s computed from the *already
+/// rescaled* `warped_raise` skills.
+#[test]
+fn spawn_warp_trial_fighter_attaches_warped_raise_equipment() {
+    let mut world = World::default();
+    let mut loader = ZoneLoader::new();
+    loader
+        .load_character_templates_str(
+            r#"
+                warped_fighter:
+                  name="Hrus-tak-lan"
+                  description="A weird looking creature."
+                  sprite=36
+                  flag=CF_ALIVE
+                  V_HP=10
+                  V_ENDURANCE=8
+                  V_MANA=0
+                  V_MAGICSHIELD=3
+                  V_ARMORSKILL=20
+                  V_HAND=50
+                  driver=83
+                ;
+                "#,
+        )
+        .unwrap();
+    loader
+        .load_item_templates_str(
+            r#"
+                equip1:
+                  name="Equipment Spell"
+                ;
+                equip2:
+                  name="Equipment Spell"
+                ;
+                equip3:
+                  name="Equipment Spell"
+                ;
+                armor_spell:
+                  name="Armor Spell"
+                ;
+                weapon_spell:
+                  name="Weapon Spell"
+                ;
+                "#,
+        )
+        .unwrap();
+    let mut runtime = ServerRuntime::default();
+    runtime.set_next_character_id(50);
+
+    assert!(spawn_warp_trial_fighter(
+        &mut world,
+        &mut loader,
+        &mut runtime,
+        "warped_fighter",
+        7,
+        8,
+        40,
+        CharacterId(99),
+        7,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+    ));
+
+    let fighter = world.characters.get(&CharacterId(50)).unwrap();
+    let equip_item = |slot: usize| -> &Item {
+        let item_id = fighter.inventory[slot].expect("equipment slot should be filled");
+        world.items.get(&item_id).unwrap()
+    };
+    // `1 + 40 / 2.75 = 15`.
+    assert_eq!(equip_item(12).modifier_value[..5], [15, 15, 15, 15, 15]);
+    assert_eq!(equip_item(13).modifier_value[..4], [15, 15, 15, 15]);
+    assert_eq!(equip_item(14).modifier_value[..5], [15, 15, 15, 15, 15]);
+    // `ArmorSkill` rescales to `max(1, (40/10)*10) = 40`;
+    // `max(13, min(123, 40 + 10)) * 20 = 50 * 20 = 1000`.
+    assert_eq!(equip_item(15).modifier_value[0], 1000);
+    // `Hand` rescales to `max(1, 40) = 40`;
+    // `max(13, min(123, 40 + 10)) = 50`.
+    assert_eq!(equip_item(16).modifier_value[0], 50);
+}
