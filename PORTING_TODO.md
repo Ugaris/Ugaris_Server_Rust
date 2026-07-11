@@ -1084,7 +1084,7 @@ Ordered by player progression; the C file is the oracle.
   sweep with an `IDR_LAB5_ITEM` entry was sufficient (verified against
   real zone data: `scheduled_light_timers` 0 -> 29 on `--area-id 22`,
   matching the real placement count). This closes Area 22.
-- [~] **Areas 23/24 - `src/area/23_24/strategy.c` (3,599 lines)** - the
+- [x] **Areas 23/24 - `src/area/23_24/strategy.c` (3,599 lines)** - the
   strategy minigame (mission ownership, worker spawning, resources).
   Item dispatch is stubbed as no-ops; this is a full subsystem - plan in
   ledger first.
@@ -1335,18 +1335,28 @@ Ordered by player progression; the C file is the oracle.
   `cn==0` timer tick calls `ai_main` yet - see REMAINING. 10 new focused
   tests (`world/tests/strategy_ai_main.rs`) plus 2 reschedule-bug
   regression tests.
-  REMAINING: wiring a live `IDR_STR_SPAWNER` `cn==0` ambient/AI-init timer
-  tick (`spawner`, `strategy.c:1319-1356`) to actually call `World::
-  ai_main` and dispatch its returned spawn plans via `ugaris-server`'s
-  existing (currently `#[allow(dead_code)]`'d) `spawn_ai_worker`/
-  `spawn_ai_eguard` - the one remaining gap between `ai_main` existing and
-  a real AI opponent ever appearing in live gameplay. Needs a new item-
-  driver outcome for the `cn==0` branch (waiting-for-mission sentinel vs.
-  active-AI reschedule+dispatch), zone-load priming for `IDR_STR_SPAWNER`
-  itself (same `schedule_existing_light_timers` mechanism just extended
-  for the two tickers), and the one-time `spawner2storage` name/income
-  setup C's own `spawner` does the first time a mission activates a slot
-  (cosmetic + storage-income-seeding only, no other AI-init dependency).
+  Twenty-third (final) slice done: the live `IDR_STR_SPAWNER` `cn==0`
+  ambient/AI-init timer tick (`spawner`, `strategy.c:1319-1356`) is now
+  wired end to end - `World::str_spawner_ambient_tick` (new
+  `ItemDriverOutcome::StrSpawnerAmbientTick`, dispatched from `World::
+  apply_item_driver_outcome` since it needs the LCG random seed for its
+  jittered `TICKS + RANDOM(TICKS)` reschedule) resolves the spawner's
+  owner code, runs the one-time rename/storage-income-seed setup
+  (`World::str_spawner_first_activation`) on the first tick after a
+  mission assigns it, then calls `World::ai_main` every tick after and
+  queues any returned worker/eternal-guard plan onto two new pending-spawn
+  `World` queues for `ugaris-server` to drain unconditionally every tick
+  (`tick_world.rs`, reusing the already-implemented, now-live
+  `spawn_ai_worker`/`spawn_ai_eguard`). `World::ai_init` also now seeds
+  `ad.ppd.npc_color` directly from the spawner's own `drdata[10]` byte
+  (C mutates the static `preset[].ppd.npc_color` in place before its own
+  `ai_init` call; `AI_PRESETS` is an immutable `const` table in this port,
+  so the override applies straight to the fresh `AiData` instead).
+  `IDR_STR_SPAWNER` is now included in `World::
+  schedule_existing_light_timers`'s zone-load priming sweep alongside the
+  two tickers. Boot-smoke against areas 23/24 confirms spawners
+  self-perpetuate forever with no panics. This closes Areas 23/24 for
+  real - every checkbox in this task's own plan is now live.
 - [ ] **Area 25 - `src/area/25/warped.c`** - warped NPC dialogue,
   `DRD_WARPFIGHTER` full fight driver.
 - [ ] **Area 26 - `src/area/26/staffer.c`** - vault skull PPD/quest, Rouven
@@ -1408,6 +1418,11 @@ Keep entries to at most three lines: date, task, one-line result.
 Anything longer belongs in `PORTING_LEDGER.md`; historical verbose
 notes live in `PROGRESS_ARCHIVE.md`.
 
+- 2026-07-11: Areas 23/24 strategy minigame CLOSED: twenty-third slice -
+  wired the live `IDR_STR_SPAWNER` `cn==0` ambient tick to `World::ai_main`
+  (`str_spawner_ambient_tick`/`str_spawner_first_activation`, zone-load
+  priming, `tick_world.rs` spawn-plan drain). 3682 core [+5] + 1170 server
+  tests pass, clean build/boot-smoke (areas 23/24, no panics).
 - 2026-07-11: Areas 23/24 strategy minigame: twenty-second slice - fixed
   the LqTicker/StrTicker reschedule+priming prerequisite bugs (both now
   self-perpetuate forever, boot-smoke confirmed) and assembled `World::

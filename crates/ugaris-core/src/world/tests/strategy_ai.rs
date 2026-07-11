@@ -713,6 +713,26 @@ fn ai_init_seeds_ppd_from_the_matching_ai_preset() {
 }
 
 #[test]
+fn ai_init_seeds_npc_color_from_the_spawners_own_drdata_slot_10() {
+    // C `preset[code - STR_OWNER_AI_BASE].ppd.npc_color = it[in].
+    // drdata[10];` (`strategy.c:1349`), applied right before `ai_init`
+    // runs (`:1352`) - ported as a direct override on this call's own
+    // `ad.ppd` instead of mutating the (immutable, in this port)
+    // `AI_PRESETS` table, see `World::ai_init`'s own doc comment.
+    let mut world = World::default();
+    let (mut spawner, storage) = spawner_and_storage(3);
+    spawner.driver_data[10] = 5;
+    world.add_item(spawner);
+    world.map.tile_mut(10, 9).unwrap().item = 2;
+    world.add_item(storage);
+
+    let ad = world
+        .ai_init(ItemId(1), STR_OWNER_AI_BASE + 1)
+        .expect("ai_init should succeed");
+    assert_eq!(ad.ppd.npc_color, 5);
+}
+
+#[test]
 fn ai_init_discovers_mine_and_depot_in_the_same_slot_and_connects_them() {
     let mut world = World::default();
     let (spawner, storage) = spawner_and_storage(5);

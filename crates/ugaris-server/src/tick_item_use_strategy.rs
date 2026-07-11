@@ -103,6 +103,22 @@ pub(crate) fn dispatch_strategy_outcome(
             }
             *executed += 1;
         }
+        // `StrSpawnerAmbientTick` is only ever produced by the driver when
+        // `character_id == 0` (a timer callback), a case that never
+        // reaches this player-`item_use`-completion dispatcher in
+        // practice - the real dispatch point (`World::
+        // apply_item_driver_outcome`, called from `process_due_timers`)
+        // already applies `World::str_spawner_ambient_tick` and the
+        // reschedule; any resulting AI worker/eguard spawn plan is drained
+        // unconditionally by `tick_world.rs` every tick instead (same
+        // "match the outcome after `process_due_timers`" precedent as
+        // `LqTicker`/`StrTicker` in `tick_item_use_clan_lq_arena.rs`).
+        // This arm only exists so the shared `match` in
+        // `tick_item_use_completion.rs` compiles against the full
+        // `ItemDriverOutcome` union it dispatches through.
+        ugaris_core::item_driver::ItemDriverOutcome::StrSpawnerAmbientTick { .. } => {
+            *executed += 1;
+        }
         _ => {}
     }
 }
@@ -194,15 +210,10 @@ fn spawn_strategy_worker(
 /// `AiData::register_new_worker`) - or `None` on drop failure (no free
 /// adjacent tile), matching that `break`; the `NPCPRICE` Platinum was
 /// already deducted by `ai_plan_worker_spawn` and is deliberately NOT
-/// refunded here (see that method's own doc comment). Not yet reachable
-/// live - `ai_main` itself isn't assembled into one real call site yet
-/// (see `crate::world::strategy_ai`'s module doc comment) - so this is
-/// exercised directly by tests only, same precedent as several `strategy_
-/// ai`/`strategy_ai_tasks` slices before their own live call site landed
-/// (exercised directly by `tests::strategy`, hence `#[allow(dead_code)]`
-/// - same precedent as `dungeon.rs`/`snapshots.rs`/`depot.rs`/
-/// `events.rs`'s pre-wired-but-not-yet-called code).
-#[allow(dead_code)]
+/// refunded here (see that method's own doc comment). Called from
+/// `tick_world::world_step`'s unconditional per-tick
+/// `World::drain_pending_ai_worker_spawns` drain, the same "pure `World`
+/// queues, `ugaris-server` drains" precedent as the LQ NPC spawn queue.
 pub(crate) fn spawn_ai_worker(
     world: &mut World,
     zone_loader: &mut ZoneLoader,
@@ -260,10 +271,9 @@ pub(crate) fn spawn_ai_worker(
 /// roster-registration tail (already ported as `AiData::
 /// register_new_eguard`) - or `None` on drop failure (no free tile at
 /// `(x, y)`), same "just don't register a live character, don't refund
-/// the already-spent cost" precedent as [`spawn_ai_worker`]. Not yet
-/// reachable live, same reason as `spawn_ai_worker` - also
-/// `#[allow(dead_code)]`'d for the same reason.
-#[allow(dead_code)]
+/// the already-spent cost" precedent as [`spawn_ai_worker`]. Called the
+/// same way from `tick_world::world_step`, see that function's own doc
+/// comment.
 pub(crate) fn spawn_ai_eguard(
     world: &mut World,
     zone_loader: &mut ZoneLoader,

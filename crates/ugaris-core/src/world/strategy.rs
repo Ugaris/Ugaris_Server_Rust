@@ -1184,6 +1184,127 @@ impl World {
         self.pending_strategy_rewards.drain(..).collect()
     }
 
+    /// Drains the queue [`Self::str_spawner_ambient_tick`] fills whenever
+    /// [`Self::ai_main`] plans a new worker.
+    pub fn drain_pending_ai_worker_spawns(&mut self) -> Vec<(u32, AiWorkerSpawnPlan)> {
+        self.pending_ai_worker_spawns.drain(..).collect()
+    }
+
+    /// Drains the queue [`Self::str_spawner_ambient_tick`] fills whenever
+    /// [`Self::ai_main`] plans a new eternal guard.
+    pub fn drain_pending_ai_eguard_spawns(&mut self) -> Vec<(u32, usize, AiEguardSpawnPlan)> {
+        self.pending_ai_eguard_spawns.drain(..).collect()
+    }
+
+    /// C `spawner(int in, int cn)`'s `cn == 0` ambient/AI-init branch
+    /// (`strategy.c:1319-1356`) - see `ItemDriverOutcome::
+    /// StrSpawnerAmbientTick`'s own doc comment for why this all lives
+    /// here instead of the pure item driver. Branches on the spawner's
+    /// own [`str_item_owner`] (`code`):
+    /// - `code < STR_OWNER_AI_UNASSIGNED` (a real player serial, or the
+    ///   unclaimed [`STR_OWNER_NONE`]): C's own ambient chain silently
+    ///   dies here - no reschedule at all, matching `spawner`'s
+    ///   unconditional `return;` right after both `if` branches with
+    ///   nothing else in between.
+    /// - [`STR_OWNER_AI_UNASSIGNED`] (designated-but-not-yet-missioned):
+    ///   reschedule only, no other effect.
+    /// - a real [`STR_OWNER_AI_BASE`]-range AI code: reschedules (jittered
+    ///   `TICKS + RANDOM(TICKS)`, matching C's own `ticker + TICKS +
+    ///   RANDOM(TICKS)` exactly), then either runs the one-time
+    ///   rename/income-seed setup ([`Self::str_spawner_first_activation`],
+    ///   the spawner's own `drdata[9]` "init done" byte still `0`) or
+    ///   calls [`Self::ai_main`] and queues any returned worker/eternal-
+    ///   guard spawn plan onto [`Self::pending_ai_worker_spawns`]/
+    ///   [`Self::pending_ai_eguard_spawns`].
+    pub fn str_spawner_ambient_tick(&mut self, item_id: ItemId) {
+        let Some((code, init_done)) = self.items.get(&item_id).map(|spawner| {
+            (
+                str_item_owner(spawner),
+                spawner.driver_data.get(9).copied().unwrap_or(0) != 0,
+            )
+        }) else {
+            return;
+        };
+
+        if code < STR_OWNER_AI_UNASSIGNED {
+            return;
+        }
+
+        let reschedule = TICKS_PER_SECOND
+            + u64::from(legacy_random_below_from_seed(
+                &mut self.legacy_random_seed,
+                TICKS_PER_SECOND as u32,
+            ));
+        self.schedule_item_driver_timer(item_id, CharacterId(0), reschedule);
+
+        if code == STR_OWNER_AI_UNASSIGNED {
+            return;
+        }
+
+        if !init_done {
+            self.str_spawner_first_activation(item_id, code);
+            return;
+        }
+
+        let ai_outcome = self.ai_main(item_id, code);
+        if let Some(plan) = ai_outcome.worker_plan {
+            self.pending_ai_worker_spawns.push((code, plan));
+        }
+        if let Some((place, plan)) = ai_outcome.eguard_plan {
+            self.pending_ai_eguard_spawns.push((code, place, plan));
+        }
+    }
+
+    /// C `spawner`'s one-time setup on a spawner slot's first ambient
+    /// tick after its owner code becomes a real AI preset (`strategy.c:
+    /// 1338-1353`, `it[in].drdata[9] == 0`): renames the spawner and its
+    /// paired storage item to `"<preset name>'s Spawner (<slot>)"`/
+    /// `"...'s Storage (<slot>)"`, seeds the storage's own `drdata[9]`
+    /// income-per-tick byte from the preset (read by the still-unported
+    /// `storage` `cn == 0` periodic-income tick, see `item_driver::
+    /// area23_24`'s module doc comment), and marks the spawner's own
+    /// `drdata[9]` "init done". Does *not* call `ai_init` itself (unlike
+    /// C's own explicit `ai_init(in, code)` call right after this setup,
+    /// `:1352`) - deferred to the very next ambient tick's `ai_main` call,
+    /// whose own `!ad->ai_init`-equivalent gate ([`Self::ai_main`]'s
+    /// `!self.ai_parties.contains_key(&code)` check) runs it just as
+    /// correctly one tick later, since nothing else reads this party's
+    /// state in between. C's `elog(...)` + `return;` on a missing storage
+    /// item is silent to players (`cn == 0`) - preserved as a plain
+    /// early-return no-op.
+    fn str_spawner_first_activation(&mut self, spawner_id: ItemId, code: u32) {
+        let Some(preset_index) = code.checked_sub(STR_OWNER_AI_BASE) else {
+            return;
+        };
+        let Some(preset) = AI_PRESETS.get(preset_index as usize) else {
+            return;
+        };
+        let Some(storage_id) = self.str_spawner_storage_item(spawner_id) else {
+            return;
+        };
+        let slot = self
+            .items
+            .get(&spawner_id)
+            .and_then(|item| item.driver_data.get(8).copied())
+            .unwrap_or(0);
+        let name: String = preset.name.chars().take(20).collect();
+
+        if let Some(item) = self.items.get_mut(&spawner_id) {
+            if item.driver_data.len() <= 9 {
+                item.driver_data.resize(10, 0);
+            }
+            item.driver_data[9] = 1;
+            item.name = format!("{name}'s Spawner ({slot})");
+        }
+        if let Some(item) = self.items.get_mut(&storage_id) {
+            if item.driver_data.len() <= 9 {
+                item.driver_data.resize(10, 0);
+            }
+            item.driver_data[9] = preset.income as u8;
+            item.name = format!("{name}'s Storage ({slot})");
+        }
+    }
+
     /// C `init_mission(int n)` (`strategy.c:337-379`): resets a mission
     /// area's depot/storage/mine ownership and starting gold, and assigns
     /// each pre-designated-AI spawner slot an AI preset index from

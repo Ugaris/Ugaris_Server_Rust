@@ -852,6 +852,17 @@ impl World {
         let mut ad = AiData::new(preset.to_strategy_ppd());
 
         let spawner = self.items.get(&spawner_item)?;
+        // C `preset[code - STR_OWNER_AI_BASE].ppd.npc_color = it[in].
+        // drdata[10];` (`strategy.c:1349`), mutating the *static* preset
+        // table in place right before this very `ai_init` call so the
+        // `ad->ppd = preset[...].ppd` copy above picks it up. `AI_PRESETS`
+        // is an immutable `const` table in this port, so the equivalent
+        // override is applied directly to this call's own `ad.ppd` from
+        // the same source byte instead - functionally identical, since a
+        // real `code` only ever maps to one spawner in practice (see
+        // `World::str_spawner_first_activation`, the only caller-adjacent
+        // site that used to run this write in C).
+        ad.ppd.npc_color = i32::from(*spawner.driver_data.get(10).unwrap_or(&0));
         let area_slot = *spawner.driver_data.get(8).unwrap_or(&0);
         let storage_item = self.str_spawner_storage_item(spawner_item)?;
         let storage = self.items.get(&storage_item)?;

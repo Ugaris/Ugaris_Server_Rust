@@ -32,22 +32,28 @@
 //! `IDR_STR_SPAWNER`'s `ch[cn].flags & CF_PLAYER` branch
 //! ([`str_spawner_driver`]) now triggers a real worker-recruit attempt -
 //! see `ItemDriverOutcome::StrSpawnerUse`'s own doc comment for the full
-//! `World`/`ugaris-server` split. The `cn == 0` ambient/AI-init branch and
-//! the full `ai_main`/`ai_init` AI-opponent driver remain full no-ops (no
-//! AI-opponent wiring exists yet).
+//! `World`/`ugaris-server` split. The `cn == 0` ambient/AI-init branch
+//! ([`str_spawner_driver`]'s other arm) is now also wired end to end -
+//! see `ItemDriverOutcome::StrSpawnerAmbientTick`'s own doc comment.
 
 use super::*;
 use crate::world::{character_value_base, str_item_gold, str_item_owner};
 
-/// C `spawner(int in, int cn)`'s `ch[cn].flags & CF_PLAYER` branch
-/// trigger (`strategy.c:1355-1381`) - see `ItemDriverOutcome::
-/// StrSpawnerUse`'s own doc comment for why all the actual business
-/// logic (ownership/gold/eligibility checks, the fresh-character spawn)
-/// lives in `World::try_dispatch_strategy_spawner_use`/`ugaris-server`
-/// instead of here. The `cn == 0` ambient/AI-init branch (`:1298-1331`)
-/// remains a documented gap (this module's own doc comment).
+/// C `spawner(int in, int cn)` (`strategy.c:1319-1385`): dispatches
+/// between the `cn == 0` ambient/AI-init branch (`:1323-1356`, see
+/// `ItemDriverOutcome::StrSpawnerAmbientTick`'s own doc comment for why
+/// the pure driver only detects the tick and defers every branch to
+/// `World`) and the `ch[cn].flags & CF_PLAYER` player-use trigger
+/// (`:1355-1381`, see `ItemDriverOutcome::StrSpawnerUse`'s own doc
+/// comment for why all the actual business logic lives in `World::
+/// try_dispatch_strategy_spawner_use`/`ugaris-server` instead of here). A
+/// non-player character using the item (`:1357-1359`) is a plain no-op,
+/// matching C's own `if (!(ch[cn].flags & CF_PLAYER)) return;`.
 pub(crate) fn str_spawner_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
-    if character.id.0 == 0 || !character.flags.contains(CharacterFlags::PLAYER) {
+    if character.id.0 == 0 {
+        return ItemDriverOutcome::StrSpawnerAmbientTick { item_id: item.id };
+    }
+    if !character.flags.contains(CharacterFlags::PLAYER) {
         return ItemDriverOutcome::Noop;
     }
     ItemDriverOutcome::StrSpawnerUse {

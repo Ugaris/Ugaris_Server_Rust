@@ -479,6 +479,10 @@ impl World {
                 self.schedule_item_driver_timer(item_id, CharacterId(0), schedule_after_ticks);
                 outcome
             }
+            ItemDriverOutcome::StrSpawnerAmbientTick { item_id } => {
+                self.str_spawner_ambient_tick(item_id);
+                outcome
+            }
             ItemDriverOutcome::StrStorageInteract {
                 item_id,
                 conversion:

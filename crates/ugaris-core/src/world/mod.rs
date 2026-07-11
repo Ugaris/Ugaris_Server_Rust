@@ -413,6 +413,20 @@ pub struct World {
     /// `CDR_STRATEGY` roster the next time `ai_main` runs after a
     /// restart).
     pub ai_parties: HashMap<u32, AiData>,
+    /// `World::str_spawner_ambient_tick`'s queue of pending AI worker
+    /// spawn plans (`ai_main`'s "create new workers" tail, `strategy.c:
+    /// 2644-2672`), paired with the party `code` `ugaris-server` must
+    /// hand back to `World::register_ai_worker` once the character is
+    /// actually built (`AiWorkerSpawnPlan::group` is `u16`-narrowed and
+    /// can't round-trip the real `code`, see that field's own doc
+    /// comment). `World` can't build the character itself (needs
+    /// `ZoneLoader`), same "pure `World` queues, `ugaris-server` drains"
+    /// precedent as [`Self::pending_lq_npc_spawns`].
+    pending_ai_worker_spawns: Vec<(u32, AiWorkerSpawnPlan)>,
+    /// Same as [`Self::pending_ai_worker_spawns`] for `ai_main`'s "place
+    /// eternal guards" tail (`strategy.c:2892-2916`); the `usize` is the
+    /// place index `World::register_ai_eguard` needs back.
+    pending_ai_eguard_spawns: Vec<(u32, usize, AiEguardSpawnPlan)>,
     /// `World::str_reward_winner`'s queue of pending `reward_winner`
     /// (`strategy.c:428-454`) `ppd` mutations - `World` can't reach
     /// session-owned `PlayerRuntime::strategy` directly, so `ugaris-

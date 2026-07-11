@@ -909,6 +909,123 @@ fn str_ticker_reschedules_itself_via_apply_item_driver_outcome() {
 }
 
 #[test]
+fn str_spawner_driver_produces_ambient_tick_outcome_for_a_timer_call() {
+    // Same shape as `str_ticker_reschedules_itself_via_apply_item_driver_
+    // outcome`: exercises the real driver dispatch -> `World::
+    // apply_item_driver_outcome` path end to end for `IDR_STR_SPAWNER`'s
+    // `cn == 0` branch (`strategy.c:1319-1356`).
+    let mut world = World::default();
+    let mut spawner = strategy_item(7, IDR_STR_SPAWNER, vec![0; 11]);
+    spawner.flags = ItemFlags::USED | ItemFlags::USE;
+    set_str_item_owner(&mut spawner, STR_OWNER_AI_UNASSIGNED);
+    world.add_item(spawner);
+
+    assert_eq!(world.timers.used_timers(), 0);
+    let outcome = world.execute_item_driver_timer_request(
+        ItemDriverRequest::Driver {
+            driver: IDR_STR_SPAWNER,
+            item_id: ItemId(7),
+            character_id: CharacterId(0),
+            spec: 0,
+        },
+        23,
+        &ItemDriverContext {
+            timer_call: true,
+            ..ItemDriverContext::default()
+        },
+    );
+    assert!(matches!(
+        outcome,
+        ItemDriverOutcome::StrSpawnerAmbientTick { .. }
+    ));
+    // C: `code == 0xfffff000` reschedules only, no other effect.
+    assert_eq!(world.timers.used_timers(), 1);
+}
+
+#[test]
+fn str_spawner_ambient_tick_stops_forever_for_a_player_owned_slot() {
+    // C `spawner`'s `cn == 0` branch has no reschedule at all once the
+    // owner code is a real player serial (or the unclaimed
+    // `STR_OWNER_NONE`) - the ambient chain silently dies.
+    let mut world = World::default();
+    let mut spawner = strategy_item(1, IDR_STR_SPAWNER, vec![0; 11]);
+    set_str_item_owner(&mut spawner, 42);
+    world.add_item(spawner);
+
+    world.str_spawner_ambient_tick(ItemId(1));
+
+    assert_eq!(world.timers.used_timers(), 0);
+}
+
+#[test]
+fn str_spawner_ambient_tick_first_activation_renames_and_seeds_storage_income() {
+    let mut world = World::default();
+    // AI_PRESETS[22] == "Death", income 20 (strategy.c's `preset[22]`).
+    let code = STR_OWNER_AI_BASE + 22;
+
+    let mut spawner = strategy_item(1, IDR_STR_SPAWNER, vec![0; 11]);
+    spawner.x = 5;
+    spawner.y = 5;
+    spawner.driver_data[8] = 3; // slot
+    set_str_item_owner(&mut spawner, code);
+    world.add_item(spawner);
+
+    let mut storage = strategy_item(2, IDR_STR_STORAGE, vec![0; 10]);
+    storage.x = 5;
+    storage.y = 4;
+    world.add_item(storage);
+    world.map.tile_mut(5, 4).expect("tile exists").item = 2;
+
+    world.str_spawner_ambient_tick(ItemId(1));
+
+    // Rescheduled, but `ai_init`/`ai_main` deferred to the *next* ambient
+    // tick (see `World::str_spawner_first_activation`'s own doc comment).
+    assert_eq!(world.timers.used_timers(), 1);
+    assert!(!world.ai_parties.contains_key(&code));
+    assert!(world.drain_pending_ai_worker_spawns().is_empty());
+
+    let spawner = &world.items[&ItemId(1)];
+    assert_eq!(spawner.driver_data[9], 1, "init-done flag set");
+    assert_eq!(spawner.name, "Death's Spawner (3)");
+
+    let storage = &world.items[&ItemId(2)];
+    assert_eq!(storage.driver_data[9], 20, "income seeded from the preset");
+    assert_eq!(storage.name, "Death's Storage (3)");
+}
+
+#[test]
+fn str_spawner_ambient_tick_steady_state_calls_ai_main_and_queues_a_worker_plan() {
+    let mut world = World::default();
+    let code = STR_OWNER_AI_BASE + 1; // "Zakath"
+
+    let mut spawner = strategy_item(1, IDR_STR_SPAWNER, vec![0; 11]);
+    spawner.x = 5;
+    spawner.y = 5;
+    set_str_item_owner(&mut spawner, code);
+    spawner.driver_data[9] = 1; // init already done on an earlier tick
+    world.add_item(spawner);
+
+    let mut storage = strategy_item(2, IDR_STR_STORAGE, vec![0; 10]);
+    storage.x = 5;
+    storage.y = 4;
+    set_str_item_gold(&mut storage, NPCPRICE as u32 * 2);
+    world.add_item(storage);
+    world.map.tile_mut(5, 4).expect("tile exists").item = 2;
+
+    world.str_spawner_ambient_tick(ItemId(1));
+
+    assert_eq!(world.timers.used_timers(), 1);
+    assert!(
+        world.ai_parties.contains_key(&code),
+        "ai_main's own !ad->ai_init fallback should have run ai_init"
+    );
+    let plans = world.drain_pending_ai_worker_spawns();
+    assert_eq!(plans.len(), 1);
+    assert_eq!(plans[0].0, code);
+    assert_eq!(plans[0].1.owner_name, "Zakath");
+}
+
+#[test]
 fn queue_mission_appends_to_first_free_slot() {
     let mut world = World::default();
     world.add_character(strategy_player(1, 111));

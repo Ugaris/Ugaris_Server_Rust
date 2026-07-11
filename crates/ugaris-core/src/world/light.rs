@@ -185,10 +185,12 @@ impl World {
                 // every other entry in this match, just ticking a
                 // per-area mission scan instead of a light. `IDR_STR_
                 // SPAWNER`'s own `cn == 0` ambient/AI-init branch
-                // (`spawner`, `strategy.c:1319-1356`) remains a
-                // documented gap - see `item_driver::area23_24`'s module
-                // doc comment.
-                IDR_LQ_TICKER | IDR_STR_TICKER => Some(item_id),
+                // (`spawner`, `strategy.c:1319-1356`) is primed the same
+                // way, unconditionally (every real spawner needs its
+                // ambient tick regardless of current owner-code content -
+                // `World::str_spawner_ambient_tick` itself decides
+                // reschedule-vs-stop from the live owner code each tick).
+                IDR_LQ_TICKER | IDR_STR_TICKER | IDR_STR_SPAWNER => Some(item_id),
                 // C `create_item_nr` (`src/system/create.c:947-949`) arms
                 // *every* driver-bearing item's first `call_item` at
                 // creation time; this port only reproduces that for the

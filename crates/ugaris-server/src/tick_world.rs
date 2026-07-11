@@ -427,6 +427,56 @@ pub(crate) async fn world_step(
             );
         }
     }
+    // `World::ai_main`'s "create new workers"/"place eternal guards"
+    // tails (`strategy.c:2644-2672,2892-2916`), planned by `World::
+    // str_spawner_ambient_tick` and queued since building the actual
+    // character needs `ZoneLoader` - same unconditional-per-tick drain
+    // precedent as the LQ NPC spawn queue above.
+    let ai_worker_spawns = world.drain_pending_ai_worker_spawns();
+    if !ai_worker_spawns.is_empty() {
+        let mut spawned = 0;
+        for (code, plan) in ai_worker_spawns {
+            if let Some((character_id, x, y)) = tick_item_use_strategy::spawn_ai_worker(
+                &mut world,
+                &mut zone_loader,
+                &mut runtime,
+                plan,
+            ) {
+                world.register_ai_worker(code, character_id, x, y);
+                spawned += 1;
+            }
+        }
+        if spawned != 0 {
+            info!(
+                count = spawned,
+                tick = world.tick.0,
+                "spawned AI worker characters"
+            );
+        }
+    }
+    let ai_eguard_spawns = world.drain_pending_ai_eguard_spawns();
+    if !ai_eguard_spawns.is_empty() {
+        let mut spawned = 0;
+        for (code, place, plan) in ai_eguard_spawns {
+            let (x, y) = (plan.x, plan.y);
+            if let Some(character_id) = tick_item_use_strategy::spawn_ai_eguard(
+                &mut world,
+                &mut zone_loader,
+                &mut runtime,
+                plan,
+            ) {
+                world.register_ai_eguard(code, character_id, x, y, place);
+                spawned += 1;
+            }
+        }
+        if spawned != 0 {
+            info!(
+                count = spawned,
+                tick = world.tick.0,
+                "spawned AI eternal guard characters"
+            );
+        }
+    }
     // C respawn_callback: recreate dead template NPCs at their
     // spawn tile, retrying every ten seconds while blocked.
     let respawn_requests = world.drain_pending_npc_respawns();

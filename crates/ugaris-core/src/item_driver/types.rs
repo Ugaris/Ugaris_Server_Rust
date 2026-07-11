@@ -1231,6 +1231,23 @@ pub enum ItemDriverOutcome {
         item_id: ItemId,
         character_id: CharacterId,
     },
+    /// C `spawner`'s `cn == 0` ambient/AI-init branch (`strategy.c:1319-
+    /// 1356`): the pure driver only detects "this is a timer-fired
+    /// spawner tick" - every actual branch (owner-code read, jittered
+    /// reschedule, one-time rename/income-seed/`ai_init` setup, and the
+    /// steady-state [`crate::world::World::ai_main`] call) needs `World`
+    /// access (map/other-item lookups, the LCG random seed) the pure
+    /// driver doesn't have, so it all lives in `World::
+    /// str_spawner_ambient_tick` instead, called from `World::
+    /// apply_item_driver_outcome`'s arm for this variant. Any resulting
+    /// worker/eternal-guard spawn plan is queued onto `World::
+    /// pending_ai_worker_spawns`/`pending_ai_eguard_spawns` for
+    /// `ugaris-server` to build (needs `ZoneLoader`) - see this codebase's
+    /// `StrategyRewardEvent`/`LqNpcSpawnRequest` "pure `World` queues,
+    /// `ugaris-server` drains" precedent.
+    StrSpawnerAmbientTick {
+        item_id: ItemId,
+    },
     LqEntranceClosed {
         item_id: ItemId,
         character_id: CharacterId,
