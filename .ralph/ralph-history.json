@@ -595,21 +595,50 @@
         "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 45 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
       ]
+    },
+    {
+      "iteration": 19,
+      "startedAt": "2026-07-11T08:58:09.490Z",
+      "endedAt": "2026-07-11T09:12:08.850Z",
+      "durationMs": 838043,
+      "agent": "opencode",
+      "model": "anthropic/claude-sonnet-5",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "PORTING_TODO.md",
+        "crates/ugaris-core/src/world/strategy_ai.rs",
+        "crates/ugaris-core/src/world/tests/strategy_ai.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "All green, zero warnings, zero failures. This iteration ported a self-contained slice of the Areas 23/24 strategy AI subsystem (the final per-NPC task-dispatch switch, `World::ai_dispatch_tasks`), add",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&1 | grep -E \"FAILED|error|test result\"",
+        "test error::tests::error_constants_match_legacy_header ... ok",
+        "test error::tests::error_strings_match_legacy_table ... ok",
+        "test error::tests::out_of_range_errors_use_c_fallback_string ... ok",
+        "test world::tests::dungeon_master::attack_command_failure_says_error_and_never_charges_or_queues ... ok",
+        "test result: ok. 3633 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.29s",
+        "test result: ok. 81 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+      ]
     }
   ],
-  "totalDurationMs": 39834958,
+  "totalDurationMs": 40673001,
   "struggleIndicators": {
     "repeatedErrors": {
       "3375 core (+17) and 1168 server (+6) tests all pass, zero failures. Now let's build ugaris-server fo": 1,
       "- `cargo fmt --all`, `cargo test --workspace` (3375 core + 1168 server, zero failures/warnings), `ca": 1,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 18,
-      "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&": 9,
-      "test error::tests::error_constants_match_legacy_header ... ok": 8,
-      "test error::tests::error_strings_match_legacy_table ... ok": 8,
-      "test error::tests::out_of_range_errors_use_c_fallback_string ... ok": 8,
-      "test world::tests::dungeon_master::attack_command_failure_says_error_and_never_charges_or_queues ...": 5,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 19,
+      "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&": 10,
+      "test error::tests::error_constants_match_legacy_header ... ok": 9,
+      "test error::tests::error_strings_match_legacy_table ... ok": 9,
+      "test error::tests::out_of_range_errors_use_c_fallback_string ... ok": 9,
+      "test world::tests::dungeon_master::attack_command_failure_says_error_and_never_charges_or_queues ...": 6,
       "test result: ok. 3358 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.30s": 1,
-      "test result: ok. 81 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 11,
+      "test result: ok. 81 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 12,
       "test result: ok. 1168 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 8.03s": 1,
       "122-| `src/module/weather/weather.c`, `src/module/weather/weather_client.c` | `crates/ugaris-server/": 1,
       "7548:- 2026-07-07: closed the P4 \"Area 1\" task's last gap: `tutorial_ppd`/`tutorial()` (`src/system/": 1,
@@ -626,7 +655,7 @@
       "119-| `src/system/clubmaster.c` | `crates/ugaris-core/src/character_driver.rs`, `crates/ugaris-core/": 1,
       "120-| `src/module/military.c` / `military.h`, `src/system/tool.c` (`get_army_rank_int`/`set_army_ran": 1,
       "test result: ok. 3406 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.29s": 1,
-      "test result: ok. 0 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 0.00s": 8,
+      "test result: ok. 0 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 0.00s": 9,
       "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 5,
       "test result: ok. 45 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 4,
       "3436 core (+8, one test wasn't counted separately from before? Let's check) + 1168 server all pass, ": 1,
@@ -700,7 +729,9 @@
       "Now fix the second failing test's `used` assertion:": 1,
       "**Verification**: `cargo fmt --all`, `cargo test --workspace` (3633 core + 1168 server, all green, z": 1,
       "\u001b[0m$ \u001b[0mcargo test --workspace 2>&1 | grep -E \"FAILED|test result|error\\[\" | tail -40": 1,
-      "test result: ok. 3621 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.30s": 1
+      "test result: ok. 3621 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.30s": 1,
+      "All green, zero warnings, zero failures. This iteration ported a self-contained slice of the Areas 2": 1,
+      "test result: ok. 3633 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.29s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

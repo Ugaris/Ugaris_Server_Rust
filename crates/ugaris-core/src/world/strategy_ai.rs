@@ -1233,6 +1233,74 @@ impl World {
         ad.npcs[n].or2 = i32::from(ad.places[t].y);
     }
 
+    /// C `ai_main`'s final "make NPCs do their jobs" `switch` (`strategy.c:
+    /// 2932-2972`): dispatch every roster NPC to the `task_*` function
+    /// matching its current [`AiTask`], then sync the raw `order`/`or1`/
+    /// `or2` triple that call just wrote back onto the live worker
+    /// character's own [`StrategyWorkerDriverData::order`] (C's `dat->order
+    /// = ad->an[n].order` etc., auto-vivifying the driver state exactly
+    /// like C's `set_data` and [`World::ai_task_idle`] above, for the same
+    /// reason: a live AI-controlled worker's driver state is not
+    /// guaranteed to have been touched by a real tick yet the first time
+    /// this runs). [`AiTask::EGuard`]'s nested `if` (train if idle at
+    /// storage and the economy can afford it, else idle; guard if it has
+    /// an actual assigned target) and [`AiTask::Ignore`]'s no-op
+    /// (eternal guards keep whatever order they were created with) are
+    /// both kept verbatim.
+    pub fn ai_dispatch_tasks(&mut self, ad: &mut AiData) {
+        for n in 0..ad.npcs.len() {
+            match ad.npcs[n].task {
+                AiTask::Idle => self.ai_task_idle(ad, n),
+                AiTask::Mine => self.ai_task_mine(ad, n),
+                AiTask::Transfer => self.ai_task_transfer(ad, n),
+                AiTask::Fight => self.ai_task_fight(ad, n),
+                AiTask::EGuard => {
+                    if ad.npcs[n].target == 0 {
+                        let level = ad.npcs[n]
+                            .cn
+                            .and_then(|cn| self.characters.get(&cn))
+                            .map(|c| c.level as i32)
+                            .unwrap_or(0);
+                        let storage_platin = ad.places.first().map(|p| p.platin).unwrap_or(0);
+                        if level < ad.ppd.max_level
+                            && (storage_platin > NPCPRICE * 2
+                                || ad.free_workers != 0
+                                || ad.npcs[n].platin > ad.ppd.trainspeed * TRAINMULTI * 2
+                                || ad.npc_cnt >= ad.ppd.max_worker)
+                        {
+                            self.ai_task_train(ad, n);
+                        } else {
+                            self.ai_task_idle(ad, n);
+                        }
+                    } else {
+                        self.ai_task_guard(ad, n);
+                    }
+                }
+                AiTask::Ignore => {}
+                AiTask::Take => self.ai_task_take(ad, n),
+            }
+
+            let Some(worker_id) = ad.npcs[n].cn else {
+                continue;
+            };
+            let order =
+                raw_to_strategy_worker_order(ad.npcs[n].order, ad.npcs[n].or1, ad.npcs[n].or2);
+            if let Some(character) = self.characters.get_mut(&worker_id) {
+                match character.driver_state.get_or_insert_with(|| {
+                    CharacterDriverState::StrategyWorker(StrategyWorkerDriverData::default())
+                }) {
+                    CharacterDriverState::StrategyWorker(data) => data.order = order,
+                    other => {
+                        *other = CharacterDriverState::StrategyWorker(StrategyWorkerDriverData {
+                            order,
+                            ..Default::default()
+                        })
+                    }
+                }
+            }
+        }
+    }
+
     /// C `assign_guards(int place, double count, int level, int
     /// ragnarok)` (`strategy.c:2111-2193`): decide whether enough guard
     /// strength ([`THREAT`](Self::ai_threat)-summed) is already assigned
@@ -1799,5 +1867,57 @@ fn strategy_worker_order_to_raw(order: StrategyWorkerOrder) -> (i32, i32, i32) {
         }
         StrategyWorkerOrder::Train { storage_item } => (OR_TRAIN, storage_item.0 as i32, 0),
         StrategyWorkerOrder::EternalGuard { x, y } => (OR_ETERNALGUARD, i32::from(x), i32::from(y)),
+    }
+}
+
+/// The other direction: C's `dat->order = ad->an[n].order; dat->or1 =
+/// ad->an[n].or1; dat->or2 = ad->an[n].or2;` write-back at the end of
+/// `ai_main`'s per-npc dispatch loop (`strategy.c:2967-2971`), needed by
+/// [`World::ai_dispatch_tasks`] to sync a `task_*` function's raw output
+/// back onto the live worker's typed [`StrategyWorkerOrder`]. An
+/// unrecognized raw order code (never produced by any `task_*` function
+/// or `create_eguard`, so unreachable in practice) falls back to
+/// [`StrategyWorkerOrder::None`], same "unknown raw state coerces to the
+/// default" precedent used elsewhere in this port.
+fn raw_to_strategy_worker_order(order: i32, or1: i32, or2: i32) -> StrategyWorkerOrder {
+    if order == OR_MINE {
+        StrategyWorkerOrder::Mine {
+            mine_item: ItemId(or1 as u32),
+            depot_item: ItemId(or2 as u32),
+        }
+    } else if order == OR_FOLLOW {
+        StrategyWorkerOrder::Follow {
+            leader: CharacterId(or1 as u32),
+        }
+    } else if order == OR_GUARD {
+        StrategyWorkerOrder::Guard {
+            x: or1 as u16,
+            y: or2 as u16,
+        }
+    } else if order == OR_FIGHTER {
+        StrategyWorkerOrder::Fighter {
+            leader: CharacterId(or1 as u32),
+        }
+    } else if order == OR_TAKE {
+        StrategyWorkerOrder::Take {
+            depot_item: ItemId(or1 as u32),
+            leader: CharacterId(or2 as u32),
+        }
+    } else if order == OR_TRANSFER {
+        StrategyWorkerOrder::Transfer {
+            from_item: ItemId(or1 as u32),
+            to_item: ItemId(or2 as u32),
+        }
+    } else if order == OR_TRAIN {
+        StrategyWorkerOrder::Train {
+            storage_item: ItemId(or1 as u32),
+        }
+    } else if order == OR_ETERNALGUARD {
+        StrategyWorkerOrder::EternalGuard {
+            x: or1 as u16,
+            y: or2 as u16,
+        }
+    } else {
+        StrategyWorkerOrder::None
     }
 }

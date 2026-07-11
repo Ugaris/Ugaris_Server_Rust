@@ -1246,14 +1246,23 @@ Ordered by player progression; the C file is the oracle.
   tick's values) and a new `AiPlaceRefreshResult::mindist` field support
   this; one documented deviation (C's `ap[-1]` OOB read on a storage-
   parented NPC is treated as "no parent threat"). 11 new tests.
+  Seventeenth slice done: the final per-npc task-dispatch `switch`
+  (`strategy.c:2932-2972`) is now ported as `World::ai_dispatch_tasks`
+  (`crates/ugaris-core/src/world/strategy_ai.rs`) - dispatches every
+  roster NPC to its already-ported `task_*` function by `AiTask` (the
+  `T_EGUARD` train-vs-idle-vs-guard nested `if` kept verbatim), then
+  writes the resulting raw `order`/`or1`/`or2` back onto the live
+  worker's typed `StrategyWorkerOrder` via a new `raw_to_strategy_
+  worker_order` (the inverse of the existing `strategy_worker_
+  order_to_raw`), auto-vivifying driver state same as `ai_task_idle`.
+  7 new tests. `strategy_ai.rs` is now 1,923 lines - split it before
+  adding the next slice.
   REMAINING: worker spawning (`:2644-2672`), the "find places with too
   little workers"/threat-handling/worklevel-adjustment/"place eternal
   guards" tail (`:2798-2924` - needs new `at[]`/`max_at`/`lastchange`
-  fields, `tcomp`, and `create_eguard`, which needs `ZoneLoader`), the
-  final per-npc task-dispatch switch (`:2932-2972`, needs a raw-ints-to-
-  `StrategyWorkerOrder` conversion for its write-back), and assembling
-  all ported pieces into one real `ai_main` call (no live spawn/tick call
-  site exists yet for an AI-controlled party).
+  fields, `tcomp`, and `create_eguard`, which needs `ZoneLoader`), and
+  assembling all ported pieces into one real `ai_main` call (no live
+  spawn/tick call site exists yet for an AI-controlled party).
 - [ ] **Area 25 - `src/area/25/warped.c`** - warped NPC dialogue,
   `DRD_WARPFIGHTER` full fight driver.
 - [ ] **Area 26 - `src/area/26/staffer.c`** - vault skull PPD/quest, Rouven

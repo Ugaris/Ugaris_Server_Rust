@@ -1797,3 +1797,185 @@ fn assign_tasks_to_workers_falls_back_to_idle_when_nothing_qualifies() {
     assert_eq!(ad.npcs[0].target, 0);
     assert_eq!(ad.npcs[0].used, -1);
 }
+
+// --- World::ai_dispatch_tasks ---
+
+#[test]
+fn ai_dispatch_tasks_take_writes_typed_order_back_onto_the_live_worker() {
+    let mut world = World::default();
+    let worker_id = CharacterId(1);
+    world.characters.insert(worker_id, char_at(1, 10, 10, 10));
+
+    let mut ad = AiData::new(StrategyPpd::default());
+    ad.places.push(ai_place(AiPlaceType::Depot, 42, 10, 10));
+    ad.npcs.push(ai_npc(1, 10, 10, 10));
+    ad.npcs[0].task = AiTask::Take;
+    ad.npcs[0].target = 0;
+
+    world.ai_dispatch_tasks(&mut ad);
+
+    assert_eq!(ad.npcs[0].order, OR_TAKE);
+    match world.characters[&worker_id].driver_state.as_ref() {
+        Some(CharacterDriverState::StrategyWorker(data)) => {
+            assert_eq!(
+                data.order,
+                StrategyWorkerOrder::Take {
+                    depot_item: ItemId(42),
+                    leader: CharacterId(0),
+                }
+            );
+        }
+        _ => panic!("expected StrategyWorker driver state to be created"),
+    }
+}
+
+#[test]
+fn ai_dispatch_tasks_mine_writes_typed_mine_order() {
+    let mut world = World::default();
+    let worker_id = CharacterId(1);
+    world.characters.insert(worker_id, char_at(1, 15, 10, 10));
+
+    let mut ad = AiData::new(StrategyPpd::default());
+    ad.places.push(ai_place(AiPlaceType::Storage, 1, 10, 10));
+    ad.places.push(ai_place(AiPlaceType::Mine, 2, 15, 10));
+    ad.places[1].parent = 0;
+    ad.npcs.push(ai_npc(1, 15, 10, 10));
+    ad.npcs[0].task = AiTask::Mine;
+    ad.npcs[0].target = 1;
+
+    world.ai_dispatch_tasks(&mut ad);
+
+    match world.characters[&worker_id].driver_state.as_ref() {
+        Some(CharacterDriverState::StrategyWorker(data)) => {
+            assert_eq!(
+                data.order,
+                StrategyWorkerOrder::Mine {
+                    mine_item: ItemId(2),
+                    depot_item: ItemId(1),
+                }
+            );
+        }
+        _ => panic!("expected StrategyWorker driver state to be created"),
+    }
+}
+
+#[test]
+fn ai_dispatch_tasks_ignore_leaves_eternal_guard_order_untouched() {
+    let mut world = World::default();
+    let worker_id = CharacterId(1);
+    world.characters.insert(worker_id, char_at(1, 20, 20, 60));
+
+    let mut ad = AiData::new(StrategyPpd::default());
+    ad.places.push(ai_place(AiPlaceType::Storage, 1, 10, 10));
+    ad.npcs.push(ai_npc(1, 20, 20, 60));
+    ad.npcs[0].task = AiTask::Ignore;
+    ad.npcs[0].order = OR_ETERNALGUARD;
+    ad.npcs[0].or1 = 20;
+    ad.npcs[0].or2 = 20;
+
+    world.ai_dispatch_tasks(&mut ad);
+
+    // T_IGNORE runs no `task_*` function - `order`/`or1`/`or2` are
+    // whatever `create_eguard`/`register_npc` last stamped them as.
+    assert_eq!(ad.npcs[0].order, OR_ETERNALGUARD);
+    match world.characters[&worker_id].driver_state.as_ref() {
+        Some(CharacterDriverState::StrategyWorker(data)) => {
+            assert_eq!(
+                data.order,
+                StrategyWorkerOrder::EternalGuard { x: 20, y: 20 }
+            );
+        }
+        _ => panic!("expected StrategyWorker driver state to be created"),
+    }
+}
+
+#[test]
+fn ai_dispatch_tasks_eguard_with_no_target_trains_when_economy_can_afford_it() {
+    let mut world = World::default();
+    let worker_id = CharacterId(1);
+    world.characters.insert(worker_id, char_at(1, 10, 10, 10));
+
+    let mut ppd = StrategyPpd::default();
+    ppd.max_level = 60;
+    let mut ad = AiData::new(ppd);
+    ad.places.push(ai_place(AiPlaceType::Storage, 9, 10, 10));
+    ad.places[0].platin = NPCPRICE * 3; // > NPCPRICE * 2: can afford training
+    ad.npcs.push(ai_npc(1, 10, 10, 10));
+    ad.npcs[0].task = AiTask::EGuard;
+    ad.npcs[0].target = 0; // "at storage, no specific place assigned"
+
+    world.ai_dispatch_tasks(&mut ad);
+
+    assert_eq!(ad.npcs[0].order, OR_TRAIN);
+    match world.characters[&worker_id].driver_state.as_ref() {
+        Some(CharacterDriverState::StrategyWorker(data)) => {
+            assert_eq!(
+                data.order,
+                StrategyWorkerOrder::Train {
+                    storage_item: ItemId(9)
+                }
+            );
+        }
+        _ => panic!("expected StrategyWorker driver state to be created"),
+    }
+}
+
+#[test]
+fn ai_dispatch_tasks_eguard_with_no_target_idles_when_already_max_level() {
+    let mut world = World::default();
+    let worker_id = CharacterId(1);
+    world.characters.insert(worker_id, char_at(1, 10, 10, 60));
+
+    let mut ppd = StrategyPpd::default();
+    ppd.max_level = 60; // level (60) is not < max_level: never trains
+    let mut ad = AiData::new(ppd);
+    ad.places.push(ai_place(AiPlaceType::Storage, 9, 10, 10));
+    ad.places[0].platin = NPCPRICE * 3;
+    ad.npcs.push(ai_npc(1, 10, 10, 60));
+    ad.npcs[0].task = AiTask::EGuard;
+    ad.npcs[0].target = 0;
+
+    world.ai_dispatch_tasks(&mut ad);
+
+    // Falls back to `task_idle`, which delegates to `restplace`/`OR_GUARD`.
+    assert_eq!(ad.npcs[0].order, OR_GUARD);
+}
+
+#[test]
+fn ai_dispatch_tasks_eguard_with_a_target_guards_it() {
+    let mut world = World::default();
+    let worker_id = CharacterId(1);
+    world.characters.insert(worker_id, char_at(1, 55, 66, 10));
+
+    let mut ad = AiData::new(StrategyPpd::default());
+    ad.places.push(ai_place(AiPlaceType::Storage, 1, 10, 10));
+    ad.places.push(ai_place(AiPlaceType::Depot, 2, 55, 66));
+    ad.npcs.push(ai_npc(1, 55, 66, 10));
+    ad.npcs[0].task = AiTask::EGuard;
+    ad.npcs[0].target = 1; // assigned to defend place 1
+
+    world.ai_dispatch_tasks(&mut ad);
+
+    assert_eq!(ad.npcs[0].order, OR_GUARD);
+    assert_eq!(ad.npcs[0].or1, 55);
+    assert_eq!(ad.npcs[0].or2, 66);
+}
+
+#[test]
+fn ai_dispatch_tasks_skips_write_back_for_a_despawned_npc() {
+    // `cn == None` (C's "slot emptied" sentinel, `ai_update_npc_list`):
+    // no live character to write back onto, but the task dispatch itself
+    // must not panic.
+    let mut world = World::default();
+    let mut ad = AiData::new(StrategyPpd::default());
+    ad.places.push(ai_place(AiPlaceType::Depot, 42, 10, 10));
+    ad.npcs.push(ai_npc(1, 10, 10, 10));
+    ad.npcs[0].cn = None;
+    ad.npcs[0].task = AiTask::Take;
+    ad.npcs[0].target = 0;
+
+    world.ai_dispatch_tasks(&mut ad);
+
+    assert_eq!(ad.npcs[0].order, OR_TAKE);
+    assert!(world.characters.is_empty());
+}
