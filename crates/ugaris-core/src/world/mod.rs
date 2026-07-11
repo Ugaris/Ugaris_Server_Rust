@@ -67,6 +67,7 @@ mod spells;
 mod steal;
 mod strategy;
 mod strategy_ai;
+mod strategy_ai_tasks;
 mod strategy_special;
 mod strategy_worker;
 mod teleport;

@@ -1257,12 +1257,22 @@ Ordered by player progression; the C file is the oracle.
   order_to_raw`), auto-vivifying driver state same as `ai_task_idle`.
   7 new tests. `strategy_ai.rs` is now 1,923 lines - split it before
   adding the next slice.
-  REMAINING: worker spawning (`:2644-2672`), the "find places with too
-  little workers"/threat-handling/worklevel-adjustment/"place eternal
-  guards" tail (`:2798-2924` - needs new `at[]`/`max_at`/`lastchange`
-  fields, `tcomp`, and `create_eguard`, which needs `ZoneLoader`), and
-  assembling all ported pieces into one real `ai_main` call (no live
-  spawn/tick call site exists yet for an AI-controlled party).
+  Eighteenth slice done: split `strategy_ai.rs` into the pure `AiData`/
+  `AiPlace`/`AiNpc` types file plus a new sibling `strategy_ai_tasks.rs`
+  carrying every `impl World` method over them, then ported `ai_main`'s
+  "create new workers" loop (`:2644-2672`) - `AiData::register_new_worker`
+  plus `World::ai_wants_more_workers`/`ai_plan_worker_spawn` (the
+  eligibility/`NPCPRICE`-deduction half; the actual `ZoneLoader`-needing
+  character-creation tail is deliberately deferred until a live `ai_main`
+  call site exists to call it, avoiding a dead-code function in the
+  `ugaris-server` binary crate).
+  REMAINING: the "find places with too little workers"/threat-handling/
+  worklevel-adjustment/"place eternal guards" tail (`:2798-2924` - needs
+  new `at[]`/`max_at`/`lastchange` fields, `tcomp`, and `create_eguard`,
+  which needs `ZoneLoader`), the `ZoneLoader`-needing tail of worker
+  spawning itself, and assembling all ported pieces into one real
+  `ai_main` call (no live spawn/tick call site exists yet for an
+  AI-controlled party).
 - [ ] **Area 25 - `src/area/25/warped.c`** - warped NPC dialogue,
   `DRD_WARPFIGHTER` full fight driver.
 - [ ] **Area 26 - `src/area/26/staffer.c`** - vault skull PPD/quest, Rouven
@@ -1324,6 +1334,10 @@ Keep entries to at most three lines: date, task, one-line result.
 Anything longer belongs in `PORTING_LEDGER.md`; historical verbose
 notes live in `PROGRESS_ARCHIVE.md`.
 
+- 2026-07-11: Areas 23/24 strategy minigame: eighteenth slice - split
+  `strategy_ai.rs` into a types file + new `strategy_ai_tasks.rs`, then
+  ported the "create new workers" loop's pure eligibility/plan half.
+  3649 core [+9] + 1168 server tests pass, clean build/boot-smoke.
 - 2026-07-11: Areas 23/24 strategy minigame: sixteenth slice - ported
   `AiData::assign_tasks_to_workers` (the panic/non-panic per-tick
   task-assignment loop, `ai_main`'s core planning decision). 3633 core

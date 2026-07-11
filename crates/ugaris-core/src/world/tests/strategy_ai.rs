@@ -1979,3 +1979,168 @@ fn ai_dispatch_tasks_skips_write_back_for_a_despawned_npc() {
     assert_eq!(ad.npcs[0].order, OR_TAKE);
     assert!(world.characters.is_empty());
 }
+
+// --- `register_new_worker` (`ai_main`'s "add new npc to list" tail) ---
+
+#[test]
+fn register_new_worker_appends_when_no_empty_slot_exists() {
+    let mut ad = AiData::new(StrategyPpd::default());
+    ad.npcs.push(ai_npc(1, 5, 5, 10));
+
+    let idx = ad.register_new_worker(CharacterId(2), 20, 21);
+
+    assert_eq!(idx, 1);
+    assert_eq!(ad.npcs.len(), 2);
+    let fresh = &ad.npcs[1];
+    assert_eq!(fresh.cn, Some(CharacterId(2)));
+    assert_eq!((fresh.x, fresh.y), (20, 21));
+    assert_eq!(fresh.order, OR_NONE);
+    assert_eq!(fresh.task, AiTask::Idle);
+    assert_eq!(fresh.target, 0);
+    assert_eq!(fresh.current, 0);
+    assert_eq!(fresh.used, -1);
+}
+
+#[test]
+fn register_new_worker_reuses_the_first_emptied_slot() {
+    let mut ad = AiData::new(StrategyPpd::default());
+    ad.npcs.push(ai_npc(1, 5, 5, 10));
+    ad.npcs.push(ai_npc(2, 6, 6, 10));
+    ad.npcs[0].cn = None; // emptied by `ai_update_npc_list`
+
+    let idx = ad.register_new_worker(CharacterId(3), 30, 31);
+
+    assert_eq!(idx, 0);
+    assert_eq!(ad.npcs.len(), 2); // reused, did not grow
+    assert_eq!(ad.npcs[0].cn, Some(CharacterId(3)));
+    assert_eq!((ad.npcs[0].x, ad.npcs[0].y), (30, 31));
+    assert_eq!(ad.npcs[1].cn, Some(CharacterId(2))); // untouched
+}
+
+// --- `ai_wants_more_workers` (`ai_main`'s "create new workers" `while`
+// loop condition) ---
+
+#[test]
+fn ai_wants_more_workers_false_when_storage_item_is_missing() {
+    let world = World::default();
+    let mut ad = AiData::new(StrategyPpd::default());
+    ad.storage_item = ItemId(2);
+    ad.panic = true;
+    ad.npc_cnt = 0;
+
+    assert!(!world.ai_wants_more_workers(&ad));
+}
+
+#[test]
+fn ai_wants_more_workers_true_when_panicking_and_under_cap() {
+    let mut world = World::default();
+    let (_, storage) = spawner_and_storage(1);
+    ad_storage_with_gold(&mut world, &storage, 0);
+
+    let mut ppd = StrategyPpd::default();
+    ppd.max_worker = 10;
+    let mut ad = AiData::new(ppd);
+    ad.storage_item = ItemId(2);
+    ad.panic = true;
+    ad.free_workers = 3; // would otherwise block on "free_workers != 0"
+    ad.npc_cnt = 5; // < min(10, 16 + 0/500) == 10
+
+    assert!(world.ai_wants_more_workers(&ad));
+}
+
+#[test]
+fn ai_wants_more_workers_false_when_not_panicking_and_workers_are_free() {
+    let mut world = World::default();
+    let (_, storage) = spawner_and_storage(1);
+    ad_storage_with_gold(&mut world, &storage, 0);
+
+    let mut ad = AiData::new(StrategyPpd::default());
+    ad.storage_item = ItemId(2);
+    ad.panic = false;
+    ad.free_workers = 1;
+    ad.npc_cnt = 0;
+
+    assert!(!world.ai_wants_more_workers(&ad));
+}
+
+#[test]
+fn ai_wants_more_workers_false_once_npc_cnt_reaches_the_gold_scaled_cap() {
+    let mut world = World::default();
+    let (_, storage) = spawner_and_storage(1);
+    // `16 + gold / 500` with `gold = 500` -> cap 17, still below
+    // `max_worker` (default higher), so the gold-derived term is the
+    // binding one.
+    ad_storage_with_gold(&mut world, &storage, 500);
+
+    let mut ppd = StrategyPpd::default();
+    ppd.max_worker = 100;
+    let mut ad = AiData::new(ppd);
+    ad.storage_item = ItemId(2);
+    ad.panic = true;
+    ad.npc_cnt = 17; // == cap, not < cap
+
+    assert!(!world.ai_wants_more_workers(&ad));
+}
+
+// --- `ai_plan_worker_spawn` (`ai_main`'s "spawn new worker" body up to
+// the character-creation call) ---
+
+fn ad_storage_with_gold(world: &mut World, storage: &Item, gold: u32) {
+    let mut storage = storage.clone();
+    set_str_item_gold(&mut storage, gold);
+    world.add_item(storage);
+}
+
+#[test]
+fn ai_plan_worker_spawn_returns_none_for_a_code_outside_ai_presets_range() {
+    let mut world = World::default();
+    let (_, storage) = spawner_and_storage(1);
+    ad_storage_with_gold(&mut world, &storage, NPCPRICE as u32 * 10);
+    let ad = AiData::new(StrategyPpd::default());
+
+    assert!(world
+        .ai_plan_worker_spawn(ItemId(1), &ad, STR_OWNER_AI_BASE - 1)
+        .is_none());
+}
+
+#[test]
+fn ai_plan_worker_spawn_returns_none_when_not_enough_gold() {
+    let mut world = World::default();
+    let (_, storage) = spawner_and_storage(1);
+    ad_storage_with_gold(&mut world, &storage, NPCPRICE as u32 - 1);
+    let mut ad = AiData::new(AI_PRESETS[1].to_strategy_ppd());
+    ad.storage_item = ItemId(2);
+
+    assert!(world
+        .ai_plan_worker_spawn(ItemId(1), &ad, STR_OWNER_AI_BASE + 1)
+        .is_none());
+    // Not enough gold: no deduction happened either.
+    assert_eq!(str_item_gold(&world.items[&ItemId(2)]), NPCPRICE as u32 - 1);
+}
+
+#[test]
+fn ai_plan_worker_spawn_deducts_npcprice_and_returns_the_preset_plan() {
+    let mut world = World::default();
+    let (_, storage) = spawner_and_storage(1);
+    ad_storage_with_gold(&mut world, &storage, NPCPRICE as u32 * 3);
+    let preset = &AI_PRESETS[1]; // "Zakath"
+    let mut ad = AiData::new(preset.to_strategy_ppd());
+    ad.storage_item = ItemId(2);
+    let code = STR_OWNER_AI_BASE + 1;
+
+    let plan = world
+        .ai_plan_worker_spawn(ItemId(1), &ad, code)
+        .expect("enough gold, valid preset code");
+
+    assert_eq!(plan.spawner_id, ItemId(1));
+    assert_eq!(plan.group, code as u16);
+    assert_eq!(plan.owner_name, preset.name);
+    assert_eq!(plan.warcry, preset.to_strategy_ppd().warcry);
+    assert_eq!(plan.endurance, preset.to_strategy_ppd().endurance);
+    assert_eq!(plan.speed, preset.to_strategy_ppd().speed);
+    assert_eq!(plan.trainspeed, preset.to_strategy_ppd().trainspeed);
+    assert_eq!(plan.max_level, preset.to_strategy_ppd().max_level);
+    assert_eq!(plan.npc_color, preset.to_strategy_ppd().npc_color);
+
+    assert_eq!(str_item_gold(&world.items[&ItemId(2)]), NPCPRICE as u32 * 2);
+}
