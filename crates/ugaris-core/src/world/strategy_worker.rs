@@ -833,4 +833,34 @@ impl World {
             ));
         }
     }
+
+    /// C `create_eguard`'s driver-state stamp (`strategy.c:3016-3023`),
+    /// once the fresh eternal-guard character already exists in
+    /// `self.characters` (`ugaris-server` handles `create_char`/
+    /// `drop_char`/the fixed level+`WIS`/`INT`/`AGI`/`STR` stamp/
+    /// `update_char`/hp-endurance-mana-to-max/dir/sprite/group first -
+    /// see `ugaris-server::tick_item_use_strategy::spawn_ai_eguard`). A sibling to
+    /// [`Self::finish_strategy_worker_spawn`] that additionally stamps
+    /// the `OR_ETERNALGUARD` order/coordinates `create_eguard` sets
+    /// (unlike a recruited worker, which spawns with no order at all -
+    /// `trainspeed`/`max_level` are likewise never set by `create_eguard`,
+    /// so they stay at `StrategyWorkerDriverData::default()`'s `0`).
+    pub fn finish_ai_eguard_spawn(
+        &mut self,
+        character_id: CharacterId,
+        owner_name: String,
+        x: u16,
+        y: u16,
+    ) {
+        if let Some(character) = self.characters.get_mut(&character_id) {
+            character.driver = CDR_STRATEGY;
+            character.driver_state = Some(CharacterDriverState::StrategyWorker(
+                StrategyWorkerDriverData {
+                    owner_name,
+                    order: StrategyWorkerOrder::EternalGuard { x, y },
+                    ..StrategyWorkerDriverData::default()
+                },
+            ));
+        }
+    }
 }

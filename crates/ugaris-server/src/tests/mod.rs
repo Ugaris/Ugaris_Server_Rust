@@ -41,6 +41,7 @@ mod shutdown;
 mod snapshots;
 mod spawns;
 mod stacks;
+mod strategy;
 mod transport;
 mod tutorial;
 mod weather;

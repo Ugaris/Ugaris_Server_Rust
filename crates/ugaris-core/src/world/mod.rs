@@ -134,6 +134,7 @@ pub(crate) use spells::*;
 pub use steal::*;
 pub use strategy::*;
 pub use strategy_ai::*;
+pub use strategy_ai_tasks::{AiEguardSpawnPlan, AiWorkerSpawnPlan};
 pub use strategy_special::*;
 pub use strategy_worker::*;
 #[allow(unused_imports)]
