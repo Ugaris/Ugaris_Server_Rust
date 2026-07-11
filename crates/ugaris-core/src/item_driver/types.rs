@@ -765,6 +765,18 @@ pub enum ItemDriverOutcome {
         item_id: ItemId,
         character_id: CharacterId,
     },
+    /// C `it_driver`'s `IDR_MISSIONCHEST` case (`src/area/32/missions.c:
+    /// 1897-1901`) -> `missionchest_driver` (`:1790-1847`): the Area 32
+    /// job-board mission reward chest. Fully deferred to
+    /// `ugaris-server` (`area32::apply_mission_chest_open`) since it needs
+    /// both the acting player's `governor: MissionPpd` (which `md_idx` and
+    /// `find_item` to write) and a `ZoneLoader` to create the reward item -
+    /// same "defer everything, pure driver only gates `character.id != 0`"
+    /// precedent as [`ItemDriverOutcome::ChestTreasure`].
+    MissionChestOpen {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
     InfiniteChest {
         item_id: ItemId,
         character_id: CharacterId,

@@ -17,16 +17,14 @@
 //! wiring, `mission_status` HUD lines, `teleport_char_driver`) and defers
 //! the actual `ZoneLoader`-needing character creation to `ugaris-server`'s
 //! `area32.rs::spawn_mission_fighters` via a new `SpawnMissionFighters`
-//! event - see that module's own doc comment for the exact split. The
-//! following remain **not yet ported**, tracked in `PORTING_TODO.md`:
-//! - `missionchest_driver` (`IDR_MISSIONCHEST`)/`mission_done`/
-//!   `mission_fighter_dead`'s kill-counter hook (`CDR_MISSIONFIGHT`, a
-//!   thin `CDR_SIMPLEBADDY` wrapper): a mission can now be started and
-//!   its dungeon populated, but nothing yet decrements `ppd->kill_*`/
-//!   `find_item` on a fighter kill or chest loot, so `mission_done`'s
-//!   auto-solve never fires and the reward chest cannot be opened
-//!   (`IDR_MISSIONCHEST`'s driver id has no dispatch case yet, a safe
-//!   non-crashing no-op).
+//! event - see that module's own doc comment for the exact split.
+//! `mission_fighter_dead`'s kill-counter hook (`CDR_MISSIONFIGHT`, a thin
+//! `CDR_SIMPLEBADDY` wrapper) and `missionchest_driver`/`mission_done`
+//! (`IDR_MISSIONCHEST`, `item_driver::area32_missions` +
+//! `ugaris-server::area32::apply_mission_chest_open`) are now also ported,
+//! so a mission's `kill_*`/`find_item` objectives actually track kills/
+//! loot and `mission_done`'s auto-solve fires for real. The following
+//! remain **not yet ported**, tracked in `PORTING_TODO.md`:
 //! - The rotating procedural "special offer" gear purchase (qa codes
 //!   18/19, `dat->next_spec`/`dat->spec_cost`/`ch[cn].item[30]`): needs
 //!   `World::create_special_item` wired through a `ZoneLoader`-backed

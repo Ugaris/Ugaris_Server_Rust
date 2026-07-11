@@ -233,6 +233,7 @@ pub fn execute_item_driver_with_context(
                 IDR_RANDOMSHRINE => randomshrine_driver(character, item, context),
                 IDR_SHRINE => zombie_shrine_driver(character, item, context),
                 IDR_RATCHEST => ratchest_driver(character, item),
+                IDR_MISSIONCHEST => missionchest_driver(character, item),
                 IDR_CHESTSPAWN => chestspawn_driver(character, item),
                 IDR_PARKSHRINE => parkshrine_driver(character, item),
                 IDR_BOOK => book_driver(character, item),

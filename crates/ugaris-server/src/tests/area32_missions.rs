@@ -1,6 +1,7 @@
 use super::*;
 use ugaris_core::character_driver::CDR_MISSIONFIGHT;
 use ugaris_core::entity::CharacterValue;
+use ugaris_core::item_driver::IDR_MISSIONCHEST;
 use ugaris_core::player::MissionPpd;
 use ugaris_core::world::npc::area32::mission_start::FighterSpawnSpec;
 use ugaris_core::world::LegacyHurtOutcome;
@@ -26,6 +27,7 @@ const MISSION_ITM: &str = r#"
     mis_key: name="Key" ;
     armor_spell: name="Armor Spell" ;
     weapon_spell: name="Weapon Spell" ;
+    mis_documents: name="Documents" sprite=88 flag=IF_TAKE ;
 "#;
 
 fn mission_loader() -> ZoneLoader {
@@ -304,4 +306,304 @@ fn mission_fighter_death_ignores_a_non_mission_fighter_driver() {
         &mut world,
         event
     ));
+}
+
+fn mission_chest_item(driver_data: Vec<u8>) -> ugaris_core::entity::Item {
+    let mut chest = test_item_with_driver(ItemId(200), IDR_MISSIONCHEST);
+    chest.driver_data = driver_data;
+    chest
+}
+
+fn mission_player(governor: MissionPpd) -> PlayerRuntime {
+    let mut player = PlayerRuntime::connected(1, 0);
+    player.character_id = Some(CharacterId(7));
+    player.governor = governor;
+    player
+}
+
+// C `missionchest_driver`'s empty-chest branch (`missions.c:1806-1809`):
+// `mdtab[ppd->md_idx]->itemtemp == NULL` (the beast/ruffian/vampire
+// mission templates have no find-item objective).
+#[test]
+fn mission_chest_open_reports_empty_when_template_has_no_find_item() {
+    let mut world = World::default();
+    world.add_character(login_character(
+        CharacterId(7),
+        &login_block("Tester"),
+        32,
+        5,
+        5,
+    ));
+    world.add_item(mission_chest_item(vec![0, 0, 0, 0, 0]));
+    let mut loader = mission_loader();
+    let mut player = mission_player(MissionPpd {
+        md_idx: 2, // beast_data: itemtemp == None.
+        ..Default::default()
+    });
+
+    let result = apply_mission_chest_open(
+        &mut world,
+        &mut loader,
+        Some(&mut player),
+        ItemId(200),
+        CharacterId(7),
+    );
+    assert_eq!(result, MissionChestApplyResult::Empty);
+}
+
+// C `missionchest_driver`'s no-key-required happy path
+// (`missions.c:1833-1846`): item is created with the template's
+// `itemname`/`itemdesc`, placed on the cursor, `find_item[0]` is set, and
+// `mission_status`'s HUD lines are re-printed. The job isn't solved yet
+// since `kill_easy` still has an outstanding count.
+#[test]
+fn mission_chest_open_grants_item_and_reports_status_without_solving() {
+    let mut world = World::default();
+    world.add_character(login_character(
+        CharacterId(7),
+        &login_block("Tester"),
+        32,
+        5,
+        5,
+    ));
+    world.add_item(mission_chest_item(vec![0, 0, 0, 0, 0]));
+    let mut loader = mission_loader();
+    let mut player = mission_player(MissionPpd {
+        active: 1,
+        md_idx: 0, // thief_data: itemtemp = "mis_documents".
+        kill_easy: [0, 1],
+        find_item: [0, 1],
+        ..Default::default()
+    });
+
+    let result = apply_mission_chest_open(
+        &mut world,
+        &mut loader,
+        Some(&mut player),
+        ItemId(200),
+        CharacterId(7),
+    );
+    match result {
+        MissionChestApplyResult::Granted {
+            item_name,
+            key_name,
+            status_lines,
+            solved_message,
+        } => {
+            assert_eq!(item_name, "Documents");
+            assert_eq!(key_name, None);
+            assert!(status_lines
+                .iter()
+                .any(|line| line == "#30Stolen Documents"));
+            assert!(status_lines
+                .iter()
+                .any(|line| line.contains("Kill 1 Thief Apprentice")));
+            assert_eq!(solved_message, None);
+        }
+        other => panic!("expected Granted, got {other:?}"),
+    }
+
+    let character = world.characters.get(&CharacterId(7)).unwrap();
+    let item = world.items.get(&character.cursor_item.unwrap()).unwrap();
+    assert_eq!(item.name, "Documents");
+    assert_eq!(item.description, "The stolen documents.");
+    assert!(character.flags.contains(CharacterFlags::ITEMS));
+    assert_eq!(player.governor.find_item, [1, 1]);
+    // `active` unchanged: `kill_easy` is still outstanding.
+    assert_eq!(player.governor.active, 1);
+    assert_eq!(player.governor.solved, 0);
+}
+
+// C `mission_done`'s auto-solve (`missions.c:922-947`): once
+// `missionchest_driver` sets `find_item[0]` and every other objective is
+// already complete, `mission_done` promotes `active` to `solved` and
+// prints the "finished the job" line.
+#[test]
+fn mission_chest_open_solves_the_job_once_it_is_the_last_objective() {
+    let mut world = World::default();
+    world.add_character(login_character(
+        CharacterId(7),
+        &login_block("Godmode"),
+        32,
+        5,
+        5,
+    ));
+    world.add_item(mission_chest_item(vec![0, 0, 0, 0, 0]));
+    let mut loader = mission_loader();
+    let mut player = mission_player(MissionPpd {
+        active: 1,
+        md_idx: 0,
+        kill_easy: [1, 1],
+        find_item: [0, 1],
+        ..Default::default()
+    });
+
+    let result = apply_mission_chest_open(
+        &mut world,
+        &mut loader,
+        Some(&mut player),
+        ItemId(200),
+        CharacterId(7),
+    );
+    match result {
+        MissionChestApplyResult::Granted { solved_message, .. } => {
+            assert_eq!(
+                solved_message,
+                Some(
+                    "You've finished the job. Good work, Godmode. Now talk to Mr. Jones for your reward."
+                        .to_string()
+                )
+            );
+        }
+        other => panic!("expected Granted, got {other:?}"),
+    }
+    assert_eq!(player.governor.active, 0);
+    assert_eq!(player.governor.solved, 1);
+}
+
+// C's key-search loop (`missions.c:1811-1824`): no matching key anywhere
+// in inventory slots 30.. or on the cursor refuses the chest.
+#[test]
+fn mission_chest_open_requires_the_matching_key() {
+    let mut world = World::default();
+    world.add_character(login_character(
+        CharacterId(7),
+        &login_block("Tester"),
+        32,
+        5,
+        5,
+    ));
+    world.add_item(mission_chest_item(vec![0, 0x44, 0x33, 0x22, 0x11]));
+    let mut loader = mission_loader();
+    let mut player = mission_player(MissionPpd {
+        active: 1,
+        md_idx: 0,
+        kill_easy: [0, 1],
+        find_item: [0, 1],
+        ..Default::default()
+    });
+
+    let result = apply_mission_chest_open(
+        &mut world,
+        &mut loader,
+        Some(&mut player),
+        ItemId(200),
+        CharacterId(7),
+    );
+    assert_eq!(result, MissionChestApplyResult::KeyRequired);
+}
+
+// The matching key, carried in inventory slot 30.., unlocks the chest
+// (`missions.c:1812-1818`) and the "You use ... to unlock the chest."
+// line is reported alongside the granted item.
+#[test]
+fn mission_chest_open_unlocks_with_a_carried_key() {
+    let mut world = World::default();
+    let mut character = login_character(CharacterId(7), &login_block("Tester"), 32, 5, 5);
+    character.inventory[30] = Some(ItemId(30));
+    world.add_character(character);
+    let mut key = test_item(ItemId(30), 1, ItemFlags::TAKE);
+    key.template_id = 0x1122_3344;
+    key.name = "Door Key I".to_string();
+    world.add_item(key);
+    world.add_item(mission_chest_item(vec![0, 0x44, 0x33, 0x22, 0x11]));
+    let mut loader = mission_loader();
+    let mut player = mission_player(MissionPpd {
+        active: 1,
+        md_idx: 0,
+        kill_easy: [0, 1],
+        find_item: [0, 1],
+        ..Default::default()
+    });
+
+    let result = apply_mission_chest_open(
+        &mut world,
+        &mut loader,
+        Some(&mut player),
+        ItemId(200),
+        CharacterId(7),
+    );
+    match result {
+        MissionChestApplyResult::Granted {
+            item_name,
+            key_name,
+            ..
+        } => {
+            assert_eq!(item_name, "Documents");
+            assert_eq!(key_name, Some("Door Key I".to_string()));
+        }
+        other => panic!("expected Granted, got {other:?}"),
+    }
+}
+
+// The real C quirk (`missions.c:1811-1831`): the key-search/unlock
+// message runs *before* the cursor-occupied check, so if the only carried
+// copy of the required key sits on the cursor itself, C still reports the
+// unlock line even though the same non-empty cursor then blocks the
+// reward item.
+#[test]
+fn mission_chest_open_reports_unlock_message_even_when_the_key_itself_blocks_the_cursor() {
+    let mut world = World::default();
+    let mut character = login_character(CharacterId(7), &login_block("Tester"), 32, 5, 5);
+    let mut key = test_item(ItemId(30), 1, ItemFlags::TAKE);
+    key.template_id = 0x1122_3344;
+    key.name = "Door Key I".to_string();
+    character.cursor_item = Some(ItemId(30));
+    world.add_character(character);
+    world.add_item(key);
+    world.add_item(mission_chest_item(vec![0, 0x44, 0x33, 0x22, 0x11]));
+    let mut loader = mission_loader();
+    let mut player = mission_player(MissionPpd {
+        active: 1,
+        md_idx: 0,
+        kill_easy: [0, 1],
+        find_item: [0, 1],
+        ..Default::default()
+    });
+
+    let result = apply_mission_chest_open(
+        &mut world,
+        &mut loader,
+        Some(&mut player),
+        ItemId(200),
+        CharacterId(7),
+    );
+    assert_eq!(
+        result,
+        MissionChestApplyResult::CursorOccupied {
+            key_name: Some("Door Key I".to_string())
+        }
+    );
+}
+
+// Cursor already holding an unrelated item, no key required: the plain
+// "Please empty your hand" branch, no unlock message.
+#[test]
+fn mission_chest_open_reports_cursor_occupied_without_key_message_when_no_key_needed() {
+    let mut world = World::default();
+    let mut character = login_character(CharacterId(7), &login_block("Tester"), 32, 5, 5);
+    character.cursor_item = Some(ItemId(30));
+    world.add_character(character);
+    world.add_item(test_item(ItemId(30), 1, ItemFlags::TAKE));
+    world.add_item(mission_chest_item(vec![0, 0, 0, 0, 0]));
+    let mut loader = mission_loader();
+    let mut player = mission_player(MissionPpd {
+        active: 1,
+        md_idx: 0,
+        kill_easy: [0, 1],
+        find_item: [0, 1],
+        ..Default::default()
+    });
+
+    let result = apply_mission_chest_open(
+        &mut world,
+        &mut loader,
+        Some(&mut player),
+        ItemId(200),
+        CharacterId(7),
+    );
+    assert_eq!(
+        result,
+        MissionChestApplyResult::CursorOccupied { key_name: None }
+    );
 }

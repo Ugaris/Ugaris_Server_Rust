@@ -15,10 +15,11 @@ use super::*;
 use ugaris_core::character_driver::{apply_simple_baddy_create_message, CDR_MISSIONFIGHT};
 use ugaris_core::world::calc_exp;
 use ugaris_core::world::npc::area32::governor::{
-    MissionGiveOutcomeEvent, MissionGivePlayerFacts, MIS_REWARDS,
+    MissionGiveOutcomeEvent, MissionGivePlayerFacts, MISSION_TEMPLATES, MIS_REWARDS,
 };
 use ugaris_core::world::npc::area32::mission_start::{
-    build_fighter_stat_values, special_item_tier_for_level, FighterSpawnSpec,
+    build_fighter_stat_values, mission_status_lines, special_item_tier_for_level,
+    try_solve_mission, FighterSpawnSpec, MISSION_FIGHTER_DATA,
 };
 
 pub(crate) fn mission_giver_player_facts(
@@ -270,4 +271,134 @@ pub(crate) fn spawn_mission_fighter(
         character.mana = i32::from(character.values[0][CharacterValue::Mana as usize]) * POWERSCALE;
     }
     true
+}
+
+/// Outcome of [`apply_mission_chest_open`].
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum MissionChestApplyResult {
+    /// The reward item was created and placed on the cursor. `status_lines`
+    /// is C `mission_status`'s re-printed HUD (`missions.c:1842`);
+    /// `solved_message` is `mission_done`'s "You've finished the job..."
+    /// line, only present the one time this call flips the job from
+    /// `active` to `solved` (`try_solve_mission`'s own `bool` return).
+    Granted {
+        item_name: String,
+        key_name: Option<String>,
+        status_lines: Vec<String>,
+        solved_message: Option<String>,
+    },
+    /// C `if (!md->itemtemp) { ... "The chest is empty." ... }`
+    /// (`missions.c:1806-1809`).
+    Empty,
+    /// C's "You need a key to open this chest." branch (`:1821`).
+    KeyRequired,
+    /// C's "Please empty your 'hand' (mouse cursor) first." branch
+    /// (`:1829`). `key_name` is `Some` in the one real C quirk this
+    /// preserves: if the only carried copy of the required key sits on
+    /// the cursor itself, C still prints the "You use ... to unlock the
+    /// chest." line (the key search/unlock message runs *before* the
+    /// cursor-occupied check, `missions.c:1811-1831`) even though the very
+    /// same non-empty cursor then blocks the reward item a few lines
+    /// later.
+    CursorOccupied {
+        key_name: Option<String>,
+    },
+    MissingPlayer,
+}
+
+/// C `missionchest_driver` (`missions.c:1790-1847`), minus the `if (!cn)
+/// return;` guard already applied by the pure
+/// `item_driver::area32_missions::missionchest_driver` gate. Needs both
+/// the acting player's `governor: MissionPpd` (to resolve `mdtab[ppd->
+/// md_idx]` and write `find_item[0]`/re-run `mission_status`/
+/// `mission_done`) and a `ZoneLoader` (`create_item`), neither of which
+/// `ugaris-core`'s pure item drivers can reach - see
+/// `ItemDriverOutcome::MissionChestOpen`'s own doc comment.
+pub(crate) fn apply_mission_chest_open(
+    world: &mut World,
+    loader: &mut ZoneLoader,
+    player: Option<&mut PlayerRuntime>,
+    item_id: ItemId,
+    character_id: CharacterId,
+) -> MissionChestApplyResult {
+    let Some(player) = player else {
+        return MissionChestApplyResult::MissingPlayer;
+    };
+    let mut ppd = player.governor;
+    let md_idx = ppd.md_idx.clamp(0, MISSION_FIGHTER_DATA.len() as i32 - 1) as usize;
+    let md = &MISSION_FIGHTER_DATA[md_idx];
+    let Some(itemtemp) = md.itemtemp else {
+        return MissionChestApplyResult::Empty;
+    };
+
+    // C `if (it[in].drdata[1] || it[in].drdata[2]) { ... }`
+    // (`missions.c:1811-1826`): `chest_required_key_id` reads the full
+    // little-endian `u32` at `drdata[1..5]` rather than just its low two
+    // bytes, a harmless deviation in practice - `start_mission` only ever
+    // writes small `DEV_ID_MISSION`-prefixed key IDs whose low 16 bits are
+    // nonzero for any realistic `mcnt`.
+    let required_key_id = world
+        .items
+        .get(&item_id)
+        .map(chest_required_key_id)
+        .unwrap_or_default();
+    let key_name = if required_key_id != 0 {
+        match exact_carried_door_key_access(world, character_id, required_key_id) {
+            Some(access) => Some(access.name),
+            None => return MissionChestApplyResult::KeyRequired,
+        }
+    } else {
+        None
+    };
+
+    if world
+        .characters
+        .get(&character_id)
+        .is_none_or(|character| character.cursor_item.is_some())
+    {
+        return MissionChestApplyResult::CursorOccupied { key_name };
+    }
+
+    let Ok(mut item) = loader.instantiate_item_template(itemtemp, Some(character_id)) else {
+        return MissionChestApplyResult::Empty;
+    };
+    item.name = md.itemname.unwrap_or_default().to_string();
+    item.description = md.itemdesc.unwrap_or_default().to_string();
+    let item_id_new = item.id;
+    let item_name = item.name.clone();
+
+    let Some(character) = world.characters.get_mut(&character_id) else {
+        return MissionChestApplyResult::MissingPlayer;
+    };
+    if character.cursor_item.is_some() {
+        return MissionChestApplyResult::CursorOccupied { key_name };
+    }
+    character.cursor_item = Some(item_id_new);
+    character.flags.insert(CharacterFlags::ITEMS);
+    world.add_item(item);
+
+    ppd.find_item[0] = 1;
+    let title = MISSION_TEMPLATES[md_idx].title;
+    let status_lines = mission_status_lines(&ppd, title, md);
+
+    let solved_message = if try_solve_mission(&mut ppd) {
+        let killer_name = world
+            .characters
+            .get(&character_id)
+            .map(|character| character.name.clone())
+            .unwrap_or_default();
+        Some(format!(
+            "You've finished the job. Good work, {killer_name}. Now talk to Mr. Jones for your reward."
+        ))
+    } else {
+        None
+    };
+    player.governor = ppd;
+
+    MissionChestApplyResult::Granted {
+        item_name,
+        key_name,
+        status_lines,
+        solved_message,
+    }
 }

@@ -19,6 +19,7 @@ mod area28_forest;
 mod area29_brannington;
 mod area30_clan;
 mod area31_warrmines;
+mod area32_missions;
 mod area34_teufel;
 mod area36_caligar;
 mod area37_arkhata;

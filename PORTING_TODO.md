@@ -1406,11 +1406,13 @@ Ordered by player progression; the C file is the oracle.
   apply_mission_fighter_death_from_hurt_event`) - killing a mission
   fighter now bumps the matching kill counter, re-prints the job's HUD
   status lines, and auto-solves the job once every objective is done.
-  Still not ported: `missionchest_driver` (`IDR_MISSIONCHEST`) so the
-  reward chest can't be opened yet (the `find_item` objective can never
-  actually complete), `CTPOT`'s stat-potion flow, and the rotating
-  "special offer" purchase - see `world/npc/area32/governor.rs`'s module
-  doc comment.
+  `missionchest_driver`/`mission_done` (`IDR_MISSIONCHEST`) is now also
+  ported (`item_driver::area32_missions` + `ugaris-server::area32::
+  apply_mission_chest_open`) - the reward chest can now actually be
+  opened, `find_item` tracks correctly, and `mission_done`'s auto-solve
+  fires for real when the chest is the last remaining objective. Still
+  not ported: `CTPOT`'s stat-potion flow and the rotating "special offer"
+  purchase - see `world/npc/area32/governor.rs`'s module doc comment.
 - [ ] **Area 33 - `src/area/33/tunnel.c`** - long tunnel events. Also wire
   `achievement_add_tunnel_level` using the existing `award_*` helper
   pattern in `crates/ugaris-server/src/achievement.rs` (Achievements
@@ -1460,6 +1462,11 @@ Keep entries to at most three lines: date, task, one-line result.
 Anything longer belongs in `PORTING_LEDGER.md`; historical verbose
 notes live in `PROGRESS_ARCHIVE.md`.
 
+- 2026-07-12: Area 32 progress: ported `missionchest_driver`/`mission_done`
+  (`IDR_MISSIONCHEST`, `item_driver::area32_missions` + `ugaris-server::
+  area32::apply_mission_chest_open`) - the reward chest can now be opened
+  and `find_item`/auto-solve work end to end. 3929 core [+2] + 1195
+  server [+7] tests pass, boot-smoke.
 - 2026-07-12: Area 32 progress: ported `mission_fighter_dead`'s kill-
   counter hook (new `CDR_MISSIONFIGHT` driver id, `world_events::
   death_hooks::apply_mission_fighter_death_from_hurt_event`) - kills now

@@ -225,7 +225,8 @@ pub(crate) async fn process_completed_action_outcomes(
                             | ugaris_core::item_driver::ItemDriverOutcome::PickChestLocked { .. }
                             | ugaris_core::item_driver::ItemDriverOutcome::PickChestBug { .. }
                             | ugaris_core::item_driver::ItemDriverOutcome::ChestSpawn { .. }
-                            | ugaris_core::item_driver::ItemDriverOutcome::ChestSpawnCheck { .. }) => {
+                            | ugaris_core::item_driver::ItemDriverOutcome::ChestSpawnCheck { .. }
+                            | ugaris_core::item_driver::ItemDriverOutcome::MissionChestOpen { .. }) => {
                                 tick_item_use_chests::dispatch_chest_outcome(
                                     &mut world,
                                     &mut zone_loader,

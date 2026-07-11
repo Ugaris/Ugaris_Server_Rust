@@ -348,6 +348,67 @@ pub(crate) async fn dispatch_chest_outcome(
             }
         }
         ugaris_core::item_driver::ItemDriverOutcome::ChestSpawnCheck { .. } => {}
+        ugaris_core::item_driver::ItemDriverOutcome::MissionChestOpen {
+            item_id,
+            character_id,
+        } => {
+            match apply_mission_chest_open(
+                world,
+                zone_loader,
+                runtime.player_for_character_mut(character_id),
+                item_id,
+                character_id,
+            ) {
+                MissionChestApplyResult::Granted {
+                    item_name,
+                    key_name,
+                    status_lines,
+                    solved_message,
+                } => {
+                    if let Some(key_name) = key_name {
+                        feedback.push((
+                            character_id,
+                            format!("You use {key_name} to unlock the chest."),
+                        ));
+                    }
+                    for line in status_lines {
+                        feedback.push((character_id, line));
+                    }
+                    feedback.push((character_id, format!("You got a {item_name}.")));
+                    if let Some(solved_message) = solved_message {
+                        feedback.push((character_id, solved_message));
+                    }
+                    *executed += 1;
+                }
+                MissionChestApplyResult::Empty => {
+                    feedback.push((character_id, "The chest is empty.".to_string()));
+                    *blocked += 1;
+                }
+                MissionChestApplyResult::KeyRequired => {
+                    feedback.push((
+                        character_id,
+                        "You need a key to open this chest.".to_string(),
+                    ));
+                    *blocked += 1;
+                }
+                MissionChestApplyResult::CursorOccupied { key_name } => {
+                    if let Some(key_name) = key_name {
+                        feedback.push((
+                            character_id,
+                            format!("You use {key_name} to unlock the chest."),
+                        ));
+                    }
+                    feedback.push((
+                        character_id,
+                        "Please empty your 'hand' (mouse cursor) first.".to_string(),
+                    ));
+                    *blocked += 1;
+                }
+                MissionChestApplyResult::MissingPlayer => {
+                    *failed += 1;
+                }
+            }
+        }
         _ => {}
     }
 }
