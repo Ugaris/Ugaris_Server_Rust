@@ -39,13 +39,35 @@
 //!   `dat->order != OR_ETERNALGUARD`, `:748-749`) - deferred to whatever
 //!   eventually drives a live worker character, since none can exist yet.
 //!
+//! Also ported here, still fully pure/testable:
+//!
+//! - [`strategy_train_price`]/[`strategy_worker_name`]/
+//!   [`strategy_worker_description`]: C `setname` (`:627-664`) split into
+//!   its three pure pieces (`TRAINPRICE` macro, the per-order name
+//!   template, and the description line) - the `strcmp`+`reset_name`
+//!   "did the name actually change" half stays with whatever eventually
+//!   drives a live worker character, same deferral as the NT_TEXT
+//!   command cascade above.
+//! - [`World::strategy_find_storage_owned_by_group`]: C `findstorage`
+//!   (`:564-577`) - a linear first-match scan (not a spiral search like
+//!   `finditem`/`finddepot`) for the `IDR_STR_STORAGE` item owned by a
+//!   given `ch[cn].group`, in ascending item-index order (same
+//!   determinism precedent as `ensure_strategy_areas_initialized`'s own
+//!   doc comment, since `self.items` is an unordered `HashMap`).
+//! - [`World::strategy_worker_rest_place`]: C `restplace` (`:682-712`) -
+//!   the worker's "step aside so the next miner in the queue has room"
+//!   fixed-offset fallback search. C's `dat->restplace` persists as a raw
+//!   `m`-space integer offset; this port carries it as an `Option<(dx,
+//!   dy)>` tile-delta pair instead (`None` standing in for C's `0`
+//!   sentinel, since no entry in `restlist` is ever `(0, 0)`).
+//!
 //! REMAINING (tracked in `PORTING_TODO.md`): `strategy_driver`'s NT_CREATE
-//! handling, `setname`/`restplace`/`findstorage`, the full per-tick
-//! order-execution switch (movement/`use_driver` dispatch per order), the
-//! `CDR_STRATEGY`/`CharacterDriverState` wiring and `spawner_sub`
-//! spawning needed to ever construct a live worker in the first place,
-//! the `mine`/`storage`/`depot`/`spawner` item drivers' NPC-worker
-//! branches, and the full `ai_main`/`ai_init` AI-opponent driver.
+//! handling, the full per-tick order-execution switch (movement/
+//! `use_driver` dispatch per order), the `CDR_STRATEGY`/
+//! `CharacterDriverState` wiring and `spawner_sub` spawning needed to
+//! ever construct a live worker in the first place, the
+//! `mine`/`storage`/`depot`/`spawner` item drivers' NPC-worker branches,
+//! and the full `ai_main`/`ai_init` AI-opponent driver.
 
 use super::*;
 
@@ -453,5 +475,165 @@ impl World {
         }
 
         (order, messages)
+    }
+}
+
+/// C `TRAINPRICE(cn)` macro (`strategy.c:86`): `(ch[cn].level - 45) * 10`.
+pub fn strategy_train_price(level: i32) -> i32 {
+    (level - 45) * 10
+}
+
+/// C `setname`'s per-order name template (`strategy.c:630-659`), applied
+/// to `owner_name` (C's `dat->name`) and `worker_numeric_id` (C's `cn`,
+/// same identity-simplification precedent as
+/// [`World::strategy_worker_apply_order_text`]'s own doc comment).
+pub fn strategy_worker_name(
+    order: StrategyWorkerOrder,
+    owner_name: &str,
+    worker_numeric_id: u32,
+) -> String {
+    let label = match order {
+        StrategyWorkerOrder::Mine { .. } => "Miner",
+        StrategyWorkerOrder::Follow { .. } => "Minion",
+        StrategyWorkerOrder::Guard { .. } => "Guard",
+        StrategyWorkerOrder::EternalGuard { .. } => "E-Guard",
+        StrategyWorkerOrder::Fighter { .. } | StrategyWorkerOrder::Take { .. } => "Fighter",
+        StrategyWorkerOrder::Transfer { .. } => "Transfer",
+        StrategyWorkerOrder::Train { .. } => "Trainee",
+        StrategyWorkerOrder::None => "Worker",
+    };
+    format!("{owner_name}'s {label} {worker_numeric_id}")
+}
+
+/// C `setname`'s description line (`strategy.c:664`).
+pub fn strategy_worker_description(platin: i32, exp: i32, level: i32) -> String {
+    format!(
+        "Carrying {platin} Platinum, {exp} of {} exp",
+        strategy_train_price(level)
+    )
+}
+
+/// C `restplace`'s fixed-offset fallback list (`strategy.c:683-697`), as
+/// `(dx, dy)` tile deltas instead of raw `m`-space integer offsets - see
+/// this module's doc comment for why. Order matters: it's a search
+/// priority, not a set.
+const STRATEGY_REST_OFFSETS: [(i32, i32); 32] = [
+    (-3, -5),
+    (-4, -5),
+    (-5, -5),
+    (-6, -5),
+    (-3, 5),
+    (-4, 5),
+    (-5, 5),
+    (-6, 5),
+    (3, -5),
+    (4, -5),
+    (5, -5),
+    (6, -5),
+    (3, 5),
+    (4, 5),
+    (5, 5),
+    (6, 5),
+    (-3, -3),
+    (-4, -3),
+    (-5, -3),
+    (-6, -3),
+    (-3, 3),
+    (-4, 3),
+    (-5, 3),
+    (-6, 3),
+    (3, -3),
+    (4, -3),
+    (5, -3),
+    (6, -3),
+    (3, 3),
+    (4, 3),
+    (5, 3),
+    (6, 3),
+];
+
+impl World {
+    /// C `findstorage(int cn)` (`strategy.c:564-577`): the first
+    /// `IDR_STR_STORAGE` item (ascending item-index order) whose owner
+    /// code ([`str_item_owner`]) matches `group`.
+    pub fn strategy_find_storage_owned_by_group(&self, group: u16) -> Option<ItemId> {
+        let mut item_ids: Vec<ItemId> = self
+            .items
+            .iter()
+            .filter(|(_, item)| !item.flags.is_empty())
+            .map(|(id, _)| *id)
+            .collect();
+        item_ids.sort_by_key(|id| id.0);
+
+        for item_id in item_ids {
+            let Some(item) = self.items.get(&item_id) else {
+                continue;
+            };
+            if item.driver == IDR_STR_STORAGE && str_item_owner(item) == u32::from(group) {
+                return Some(item_id);
+            }
+        }
+        None
+    }
+
+    /// Whether the tile at `(x, y)` is a legal `restplace` target for
+    /// `worker`: not blocked (`MF_MOVEBLOCK`/`MF_TMOVEBLOCK`), or blocked
+    /// only by `worker` itself already standing there (C's `map[m +
+    /// dat->restplace].ch == cn` override, `strategy.c:701`). Out-of-map
+    /// tiles (C never bounds-checks `m + offset`) are treated as
+    /// illegal, matching every other spiral-search helper in this file.
+    fn strategy_rest_tile_is_free(
+        &self,
+        worker: CharacterId,
+        x: i32,
+        y: i32,
+    ) -> Option<(u16, u16)> {
+        if x < 0 || y < 0 {
+            return None;
+        }
+        let (ux, uy) = (x as usize, y as usize);
+        if !self.map.legacy_inner_bounds(ux, uy) {
+            return None;
+        }
+        let tile = self.map.tile(ux, uy)?;
+        let blocked = tile
+            .flags
+            .intersects(MapFlags::MOVEBLOCK | MapFlags::TMOVEBLOCK);
+        let is_self = tile.character == worker.0 as u16;
+        if blocked && !is_self {
+            return None;
+        }
+        Some((x as u16, y as u16))
+    }
+
+    /// C `restplace(int cn, int m, struct strategy_data *dat)`
+    /// (`strategy.c:682-712`). `current_offset` stands in for C's
+    /// `dat->restplace` (see this module's doc comment); returns the
+    /// offset to persist back into that field (unchanged if neither the
+    /// cached offset nor any fallback candidate is free - matching C's
+    /// "return `m` unmodified, `dat->restplace` untouched" tail,
+    /// `:711-712`) plus the resolved target tile (`base` itself in that
+    /// same all-blocked case).
+    pub fn strategy_worker_rest_place(
+        &self,
+        worker: CharacterId,
+        base: (u16, u16),
+        current_offset: Option<(i32, i32)>,
+    ) -> (Option<(i32, i32)>, (u16, u16)) {
+        let (bx, by) = (i32::from(base.0), i32::from(base.1));
+
+        if let Some((dx, dy)) = current_offset {
+            if let Some(pos) = self.strategy_rest_tile_is_free(worker, bx + dx, by + dy) {
+                return (current_offset, pos);
+            }
+        }
+
+        for &(dx, dy) in &STRATEGY_REST_OFFSETS {
+            if let Some(pos) = self.strategy_rest_tile_is_free(worker, bx + dx, by + dy) {
+                return (Some((dx, dy)), pos);
+            }
+        }
+
+        (current_offset, base)
     }
 }

@@ -1137,13 +1137,20 @@ Ordered by player progression; the C file is the oracle.
   "sorry, ..." failure text, digit-for-digit. Not wired to a live
   character yet (no `CDR_*`/`CharacterDriverState` exists for a worker -
   same gap the item-driver doc comment above already calls out).
-  REMAINING: `strategy_driver`'s NT_CREATE handling, `setname`/
-  `restplace`/`findstorage`, the per-tick order-execution switch
-  (movement/`use_driver` dispatch per order), the `CDR_STRATEGY`/
-  `CharacterDriverState`/`spawner_sub` spawning wiring needed to ever
-  construct a live worker, the `mine`/`storage`/`depot`/`spawner` item
-  drivers' NPC-worker branches, and the full `ai_main`/`ai_init`
-  AI-opponent driver.
+  Seventh slice done: `setname`'s three pure pieces - `strategy_train_price`
+  (`TRAINPRICE` macro), `strategy_worker_name` (per-order name template),
+  `strategy_worker_description` - plus `findstorage`
+  (`World::strategy_find_storage_owned_by_group`) and `restplace`
+  (`World::strategy_worker_rest_place`, C's `dat->restplace` persisted as
+  an `Option<(dx, dy)>` tile-delta instead of a raw `m`-space offset) are
+  now also ported in `world/strategy_worker.rs`, all pure/testable without
+  a live worker character (18 new tests).
+  REMAINING: `strategy_driver`'s NT_CREATE handling, the per-tick
+  order-execution switch (movement/`use_driver` dispatch per order), the
+  `CDR_STRATEGY`/`CharacterDriverState`/`spawner_sub` spawning wiring
+  needed to ever construct a live worker, the `mine`/`storage`/`depot`/
+  `spawner` item drivers' NPC-worker branches, and the full `ai_main`/
+  `ai_init` AI-opponent driver.
 - [ ] **Area 25 - `src/area/25/warped.c`** - warped NPC dialogue,
   `DRD_WARPFIGHTER` full fight driver.
 - [ ] **Area 26 - `src/area/26/staffer.c`** - vault skull PPD/quest, Rouven

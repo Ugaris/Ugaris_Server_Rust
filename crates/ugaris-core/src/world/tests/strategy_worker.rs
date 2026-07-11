@@ -404,3 +404,226 @@ fn strategy_find_item_near_gives_up_outside_the_search_radius() {
 
     assert_eq!(world.strategy_find_item_near(50, 50, IDR_STR_MINE), None);
 }
+
+// --- setname (strategy_train_price/strategy_worker_name/_description) ---
+
+#[test]
+fn strategy_train_price_matches_the_c_macro() {
+    assert_eq!(strategy_train_price(45), 0);
+    assert_eq!(strategy_train_price(55), 100);
+    assert_eq!(strategy_train_price(40), -50);
+}
+
+#[test]
+fn strategy_worker_name_picks_the_right_label_per_order() {
+    assert_eq!(
+        strategy_worker_name(
+            StrategyWorkerOrder::Mine {
+                mine_item: ItemId(1),
+                depot_item: ItemId(2)
+            },
+            "Neutral",
+            42
+        ),
+        "Neutral's Miner 42"
+    );
+    assert_eq!(
+        strategy_worker_name(StrategyWorkerOrder::None, "Neutral", 7),
+        "Neutral's Worker 7"
+    );
+    assert_eq!(
+        strategy_worker_name(
+            StrategyWorkerOrder::Follow {
+                leader: CharacterId(3)
+            },
+            "Neutral",
+            7
+        ),
+        "Neutral's Minion 7"
+    );
+    assert_eq!(
+        strategy_worker_name(StrategyWorkerOrder::Guard { x: 1, y: 1 }, "Neutral", 7),
+        "Neutral's Guard 7"
+    );
+    assert_eq!(
+        strategy_worker_name(
+            StrategyWorkerOrder::EternalGuard { x: 1, y: 1 },
+            "Neutral",
+            7
+        ),
+        "Neutral's E-Guard 7"
+    );
+    assert_eq!(
+        strategy_worker_name(
+            StrategyWorkerOrder::Fighter {
+                leader: CharacterId(3)
+            },
+            "Neutral",
+            7
+        ),
+        "Neutral's Fighter 7"
+    );
+    assert_eq!(
+        strategy_worker_name(
+            StrategyWorkerOrder::Take {
+                depot_item: ItemId(1),
+                leader: CharacterId(3)
+            },
+            "Neutral",
+            7
+        ),
+        "Neutral's Fighter 7"
+    );
+    assert_eq!(
+        strategy_worker_name(
+            StrategyWorkerOrder::Transfer {
+                from_item: ItemId(1),
+                to_item: ItemId(2)
+            },
+            "Neutral",
+            7
+        ),
+        "Neutral's Transfer 7"
+    );
+    assert_eq!(
+        strategy_worker_name(
+            StrategyWorkerOrder::Train {
+                storage_item: ItemId(1)
+            },
+            "Neutral",
+            7
+        ),
+        "Neutral's Trainee 7"
+    );
+}
+
+#[test]
+fn strategy_worker_description_matches_c_format() {
+    assert_eq!(
+        strategy_worker_description(120, 30, 55),
+        "Carrying 120 Platinum, 30 of 100 exp"
+    );
+}
+
+// --- findstorage ---
+
+#[test]
+fn strategy_find_storage_owned_by_group_matches_owner_code() {
+    let mut world = World::default();
+    let mut storage_a = item(30, ItemFlags::USED);
+    storage_a.driver = IDR_STR_STORAGE;
+    set_str_item_owner(&mut storage_a, 5);
+    world.add_item(storage_a);
+
+    let mut storage_b = item(31, ItemFlags::USED);
+    storage_b.driver = IDR_STR_STORAGE;
+    set_str_item_owner(&mut storage_b, 9);
+    world.add_item(storage_b);
+
+    assert_eq!(
+        world.strategy_find_storage_owned_by_group(9),
+        Some(ItemId(31))
+    );
+    assert_eq!(world.strategy_find_storage_owned_by_group(1234), None);
+}
+
+#[test]
+fn strategy_find_storage_owned_by_group_ignores_wrong_driver() {
+    let mut world = World::default();
+    let mut mine = item(32, ItemFlags::USED);
+    mine.driver = IDR_STR_MINE;
+    set_str_item_owner(&mut mine, 5);
+    world.add_item(mine);
+
+    assert_eq!(world.strategy_find_storage_owned_by_group(5), None);
+}
+
+// --- restplace ---
+
+#[test]
+fn rest_place_returns_base_tile_when_no_cached_offset_and_nothing_blocked() {
+    let world = World::default();
+    let (offset, pos) = world.strategy_worker_rest_place(CharacterId(1), (50, 50), None);
+    // Nearest fallback candidate in search order is (-3, -5).
+    assert_eq!(offset, Some((-3, -5)));
+    assert_eq!(pos, (47, 45));
+}
+
+#[test]
+fn rest_place_reuses_a_still_free_cached_offset() {
+    let world = World::default();
+    let (offset, pos) = world.strategy_worker_rest_place(CharacterId(1), (50, 50), Some((4, 5)));
+    assert_eq!(offset, Some((4, 5)));
+    assert_eq!(pos, (54, 55));
+}
+
+#[test]
+fn rest_place_falls_back_when_the_cached_offset_becomes_blocked() {
+    let mut world = World::default();
+    world.map.set_flags(54, 55, MapFlags::MOVEBLOCK);
+
+    let (offset, pos) = world.strategy_worker_rest_place(CharacterId(1), (50, 50), Some((4, 5)));
+    // Falls through to the next free candidate in STRATEGY_REST_OFFSETS.
+    assert_eq!(offset, Some((-3, -5)));
+    assert_eq!(pos, (47, 45));
+}
+
+#[test]
+fn rest_place_treats_the_worker_itself_as_a_free_occupant() {
+    let mut world = World::default();
+    world.map.set_flags(47, 45, MapFlags::TMOVEBLOCK);
+    world.map.tile_mut(47, 45).unwrap().character = 1;
+
+    let (offset, pos) = world.strategy_worker_rest_place(CharacterId(1), (50, 50), None);
+    assert_eq!(offset, Some((-3, -5)));
+    assert_eq!(pos, (47, 45));
+}
+
+#[test]
+fn rest_place_returns_base_unchanged_when_every_candidate_is_blocked() {
+    let mut world = World::default();
+    for &(dx, dy) in &[
+        (-3, -5),
+        (-4, -5),
+        (-5, -5),
+        (-6, -5),
+        (-3, 5),
+        (-4, 5),
+        (-5, 5),
+        (-6, 5),
+        (3, -5),
+        (4, -5),
+        (5, -5),
+        (6, -5),
+        (3, 5),
+        (4, 5),
+        (5, 5),
+        (6, 5),
+        (-3, -3),
+        (-4, -3),
+        (-5, -3),
+        (-6, -3),
+        (-3, 3),
+        (-4, 3),
+        (-5, 3),
+        (-6, 3),
+        (3, -3),
+        (4, -3),
+        (5, -3),
+        (6, -3),
+        (3, 3),
+        (4, 3),
+        (5, 3),
+        (6, 3),
+    ] {
+        world.map.set_flags(
+            (50i32 + dx) as usize,
+            (50i32 + dy) as usize,
+            MapFlags::MOVEBLOCK,
+        );
+    }
+
+    let (offset, pos) = world.strategy_worker_rest_place(CharacterId(1), (50, 50), None);
+    assert_eq!(offset, None);
+    assert_eq!(pos, (50, 50));
+}
