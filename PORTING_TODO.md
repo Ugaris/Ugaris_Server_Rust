@@ -1382,8 +1382,12 @@ Ordered by player progression; the C file is the oracle.
   hint/reward/teleport flow) close out every NPC in this file; all other
   `brannington.c` drivers were already ported in earlier iterations.
   Details in PORTING_LEDGER.md.)*
-- [ ] **Area 30 - `src/area/30/clanmaster.c`** - clan master NPC (needs P3
-  clan system).
+- [x] **Area 30 - `src/area/30/clanmaster.c`** - clan master NPC (needs P3
+  clan system). *(done - found already almost fully ported (`CDR_CLANMASTER`/
+  `CDR_CLANCLERK`, all 4 item drivers, tick registration, event
+  application) from earlier work whose checkbox was never ticked; closed
+  the one real gap, the `clanmaster_dead` charlog-only death hook for both
+  drivers. Details in PORTING_LEDGER.md.)*
 - [ ] **Area 31 - `src/area/31/warrmines.c`** - Warr mines NPCs.
 - [ ] **Area 32 - `src/area/32/missions.c`** - governor mission NPCs
   (needs P3 military).
@@ -1436,6 +1440,10 @@ Keep entries to at most three lines: date, task, one-line result.
 Anything longer belongs in `PORTING_LEDGER.md`; historical verbose
 notes live in `PROGRESS_ARCHIVE.md`.
 
+- 2026-07-11: Area 30 CLOSED: found the NPCs/item-drivers already fully
+  ported from earlier work (stale checkbox); closed the last gap, the
+  `clanmaster_dead` charlog-only death hook for `CDR_CLANMASTER`/
+  `CDR_CLANCLERK`. 3876 core + 1182 server [+2] tests pass, boot-smoke.
 - 2026-07-11: Area 29 progress: ported `guard_brannington_driver`
   (`CDR_GUARDBRAN`, quest 64 "Finding Arkhata", `world/npc/area29/
   guardbran.rs`), incl. `case1->2`/`case6->7` real fallthrough and a

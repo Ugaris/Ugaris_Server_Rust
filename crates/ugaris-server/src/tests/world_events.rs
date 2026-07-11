@@ -1,7 +1,7 @@
 use super::*;
 use ugaris_core::character_driver::{
     ArenaFighterDriverData, ArenaMasterDriverData, CDR_ARENAFIGHTER, CDR_ARENAMASTER, CDR_CENTINEL,
-    CDR_LAMPGHOST, CDR_WARPFIGHTER, MS_FIGHT,
+    CDR_CLANCLERK, CDR_CLANMASTER, CDR_LAMPGHOST, CDR_WARPFIGHTER, MS_FIGHT,
 };
 use ugaris_core::world::npc::area25::WarpFighterDriverData;
 use ugaris_core::world::LegacyHurtOutcome;
@@ -1624,6 +1624,74 @@ fn area1_quest_giver_death_handler_ignores_non_matching_driver_and_non_lethal_hi
         },
     };
     assert!(!apply_area1_quest_giver_death_from_hurt_event(
+        &world2,
+        lethal_wrong_driver
+    ));
+}
+
+#[test]
+fn area30_clan_npc_death_handler_covers_both_drivers() {
+    // C `ch_died_driver`'s `CDR_CLANMASTER`/`CDR_CLANCLERK` branches both
+    // route to `clanmaster_dead` (`clanmaster.c:1215-1217,1537-1549`), the
+    // same `charlog`-only bug line as the other immortal quest NPCs.
+    for driver in [CDR_CLANMASTER, CDR_CLANCLERK] {
+        let mut world = World::default();
+        let mut npc = login_character(CharacterId(1), &login_block("Npc"), 1, 190, 200);
+        npc.flags.remove(CharacterFlags::PLAYER);
+        npc.driver = driver;
+        world.add_character(npc);
+
+        let lethal = LegacyHurtEvent {
+            target_id: CharacterId(1),
+            cause_id: CharacterId(2),
+            outcome: LegacyHurtOutcome {
+                killed: true,
+                ..Default::default()
+            },
+        };
+        assert!(
+            apply_area30_clan_npc_death_from_hurt_event(&world, lethal),
+            "driver {driver} was not covered"
+        );
+    }
+}
+
+#[test]
+fn area30_clan_npc_death_handler_ignores_non_matching_driver_and_non_lethal_hits() {
+    let mut world = World::default();
+    let mut other_npc = login_character(CharacterId(1), &login_block("Other"), 1, 190, 200);
+    other_npc.flags.remove(CharacterFlags::PLAYER);
+    other_npc.hp = POWERSCALE * 5;
+    world.add_character(other_npc);
+
+    let non_lethal = LegacyHurtEvent {
+        target_id: CharacterId(1),
+        cause_id: CharacterId(2),
+        outcome: LegacyHurtOutcome {
+            killed: false,
+            ..Default::default()
+        },
+    };
+    assert!(!apply_area30_clan_npc_death_from_hurt_event(
+        &world, non_lethal
+    ));
+
+    let mut world2 = World::default();
+    let mut clanmaster_npc =
+        login_character(CharacterId(1), &login_block("Clanmaster"), 1, 190, 200);
+    clanmaster_npc.flags.remove(CharacterFlags::PLAYER);
+    clanmaster_npc.driver = CDR_GATE_FIGHT; // not CDR_CLANMASTER/CDR_CLANCLERK
+    world2.add_character(clanmaster_npc);
+
+    let lethal_wrong_driver = LegacyHurtEvent {
+        target_id: CharacterId(1),
+        cause_id: CharacterId(2),
+        outcome: LegacyHurtOutcome {
+            killed: true,
+            ..Default::default()
+        },
+    };
+    assert!(!apply_area30_clan_npc_death_from_hurt_event(
         &world2,
         lethal_wrong_driver
     ));

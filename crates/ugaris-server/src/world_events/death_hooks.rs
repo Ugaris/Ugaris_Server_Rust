@@ -1,7 +1,7 @@
 use super::*;
 use ugaris_core::character_driver::{
-    CDR_CENTINEL, CDR_LABGNOMEDRIVER, CDR_SMUGGLELEAD, CDR_TWOGUARD, CDR_TWOROBBER, CDR_TWOSERVANT,
-    CDR_WARPFIGHTER, CDR_WHITEROBBERBOSS,
+    CDR_CENTINEL, CDR_CLANCLERK, CDR_CLANMASTER, CDR_LABGNOMEDRIVER, CDR_SMUGGLELEAD, CDR_TWOGUARD,
+    CDR_TWOROBBER, CDR_TWOSERVANT, CDR_WARPFIGHTER, CDR_WHITEROBBERBOSS,
 };
 use ugaris_core::world::{CS_ENEMY, CS_GUEST, LS_DEAD, LS_FINE};
 
@@ -592,6 +592,37 @@ pub(crate) fn apply_area3_immortal_death_from_hurt_event(
         CDR_SUPERMAX,
     ];
     if !AREA3_IMMORTAL_DRIVERS.contains(&target.driver) {
+        return false;
+    }
+    debug!(
+        target: "client_log",
+        "{}",
+        format_client_log_message(
+            &target.name,
+            target.id.0,
+            "I JUST DIED! I'M SUPPOSED TO BE IMMORTAL!"
+        )
+    );
+    true
+}
+
+/// C `ch_died_driver`/`CDR_CLANMASTER`/`CDR_CLANCLERK` dispatch
+/// (`clanmaster.c:1537-1549`) both route to `clanmaster_dead(cn, co)`
+/// (`:1215-1217`), the identical `charlog`-only bug line already ported
+/// for `CDR_GATE_WELCOME`/`CDR_DUNGEONMASTER`/area-1/area-3 above - same
+/// text, same immortal-so-unreachable-in-practice caveat (both NPC
+/// templates carry `CF_IMMORTAL`).
+pub(crate) fn apply_area30_clan_npc_death_from_hurt_event(
+    world: &World,
+    event: LegacyHurtEvent,
+) -> bool {
+    if !event.outcome.killed {
+        return false;
+    }
+    let Some(target) = world.characters.get(&event.target_id) else {
+        return false;
+    };
+    if target.driver != CDR_CLANMASTER && target.driver != CDR_CLANCLERK {
         return false;
     }
     debug!(

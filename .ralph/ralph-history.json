@@ -1368,21 +1368,51 @@
         "test result: ok. 81 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 0 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 0.00s"
       ]
+    },
+    {
+      "iteration": 39,
+      "startedAt": "2026-07-11T19:17:17.893Z",
+      "endedAt": "2026-07-11T19:28:04.575Z",
+      "durationMs": 645169,
+      "agent": "opencode",
+      "model": "anthropic/claude-sonnet-5",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "PORTING_TODO.md",
+        "crates/ugaris-server/src/tests/world_events.rs",
+        "crates/ugaris-server/src/world_events/death_hooks.rs",
+        "crates/ugaris-server/src/world_events/mod.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "Verification: `cargo fmt --all`, `cargo test --workspace` (3876 core + 81 db + 3 net + 45 protocol + 1182 server, all green, zero failures), `cargo build -p ugaris-server` clean with zero warnings, an",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&1 | grep -E \"FAILED|test result|error\\[\"",
+        "test result: ok. 3876 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.32s",
+        "test result: ok. 81 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 45 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 1180 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 7.88s",
+        "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&1 | grep -E \"FAILED|test result|error\\[|warning:\""
+      ]
     }
   ],
-  "totalDurationMs": 76859147,
+  "totalDurationMs": 77504316,
   "struggleIndicators": {
     "repeatedErrors": {
       "3375 core (+17) and 1168 server (+6) tests all pass, zero failures. Now let's build ugaris-server fo": 1,
       "- `cargo fmt --all`, `cargo test --workspace` (3375 core + 1168 server, zero failures/warnings), `ca": 1,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 38,
-      "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&": 20,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 39,
+      "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&": 22,
       "test error::tests::error_constants_match_legacy_header ... ok": 18,
       "test error::tests::error_strings_match_legacy_table ... ok": 18,
       "test error::tests::out_of_range_errors_use_c_fallback_string ... ok": 18,
       "test world::tests::dungeon_master::attack_command_failure_says_error_and_never_charges_or_queues ...": 9,
       "test result: ok. 3358 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.30s": 1,
-      "test result: ok. 81 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 23,
+      "test result: ok. 81 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 24,
       "test result: ok. 1168 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 8.03s": 1,
       "122-| `src/module/weather/weather.c`, `src/module/weather/weather_client.c` | `crates/ugaris-server/": 1,
       "7548:- 2026-07-07: closed the P4 \"Area 1\" task's last gap: `tutorial_ppd`/`tutorial()` (`src/system/": 1,
@@ -1399,9 +1429,9 @@
       "119-| `src/system/clubmaster.c` | `crates/ugaris-core/src/character_driver.rs`, `crates/ugaris-core/": 1,
       "120-| `src/module/military.c` / `military.h`, `src/system/tool.c` (`get_army_rank_int`/`set_army_ran": 1,
       "test result: ok. 3406 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.29s": 1,
-      "test result: ok. 0 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 0.00s": 18,
-      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 8,
-      "test result: ok. 45 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 6,
+      "test result: ok. 0 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 0.00s": 19,
+      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 9,
+      "test result: ok. 45 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 7,
       "3436 core (+8, one test wasn't counted separately from before? Let's check) + 1168 server all pass, ": 1,
       "All green: 3436 core + 81 db + 3 net + 45 protocol + 1168 server tests, zero failures, no warnings (": 1,
       "- Verified: `cargo fmt --all` clean, `cargo test --workspace` green (3436 core [+8] + 81 db + 3 net ": 1,
@@ -1543,7 +1573,7 @@
       "Verification: `cargo fmt --all`, `cargo test --workspace` (3821 core + 1180 server, all green, zero ": 1,
       "test result: ok. 1180 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 7.90s": 2,
       "error: could not compile `ugaris-core` (lib) due to 2 previous errors": 1,
-      "test result: ok. 1180 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 7.88s": 1,
+      "test result: ok. 1180 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 7.88s": 2,
       "test result: ok. 3810 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.30s": 1,
       "test result: ok. 1180 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 7.89s": 1,
       "Error message: JSON Parse error: Unable to parse JSON string": 1,
@@ -1554,7 +1584,9 @@
       "**Verification**: `cargo fmt --all`, `cargo test --workspace` (3854 core [+17], 81 db, 3 net, 45 pro": 1,
       "Health check passes. Let's check the full test output for any failures higher up, then read PORTING_": 1,
       "Verification: `cargo fmt --all` clean, `cargo test --workspace` (3876 core + 81 db + 3 net + 45 prot": 1,
-      "test result: ok. 3854 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.31s": 1
+      "test result: ok. 3854 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.31s": 1,
+      "Verification: `cargo fmt --all`, `cargo test --workspace` (3876 core + 81 db + 3 net + 45 protocol +": 1,
+      "test result: ok. 3876 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.32s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0
