@@ -645,3 +645,192 @@ impl World {
         (current_offset, base)
     }
 }
+
+// ---- `spawner`/`spawner_sub` (`strategy.c:1244-1381`) ----
+
+use crate::{character_driver::CDR_STRATEGY, player::StrategyPpd};
+
+/// Everything [`World::try_dispatch_strategy_spawner_use`] needs to hand
+/// off once eligibility passes - `ugaris-server` builds the actual fresh
+/// `"strategy_npc"` character from these fields (via `ZoneLoader` +
+/// `World::spawn_character_from_item_drop`) and finishes it off with
+/// [`World::finish_strategy_worker_spawn`]. Field names mirror C
+/// `spawner_sub`'s own parameters/`ppd` reads (`strategy.c:1244-1286`).
+pub struct StrategySpawnerSpawnPlan {
+    pub spawner_id: ItemId,
+    /// C `group` (`ch[cn].ID`, i.e. the recruiting player's
+    /// [`Character::serial`]) - narrowed to `u16` to match
+    /// [`Character::group`]'s own field type, same precedent as
+    /// [`World::str_did_party_lose`]'s doc comment.
+    pub group: u16,
+    /// C `name` (`ch[cn].name`, truncated to 20 chars by `spawner_sub`'s
+    /// own `strncpy(dat->name, name, 19)`).
+    pub owner_name: String,
+    pub warcry: i32,
+    pub endurance: i32,
+    pub speed: i32,
+    pub trainspeed: i32,
+    pub max_level: i32,
+    pub npc_color: i32,
+}
+
+/// Result of [`World::try_dispatch_strategy_spawner_use`].
+pub enum StrategySpawnerUseOutcome {
+    /// Not eligible right now (missing character/item, ownership
+    /// mismatch, missing storage item, not enough Platinum, or the
+    /// worker-count cap already reached) - the matching C failure message
+    /// is already queued via `queue_system_text` (or, for the first two
+    /// "shouldn't happen" cases, silently, matching C's own early
+    /// `return;` with no message).
+    Rejected,
+    /// C `spawner_sub`'s own eligibility scan passed and the `NPCPRICE`
+    /// Platinum cost has already been deducted (see this variant's own
+    /// doc comment on [`World::try_dispatch_strategy_spawner_use`] for
+    /// the real C quirk that ordering preserves) - the caller should now
+    /// build the fresh worker character.
+    Ready(StrategySpawnerSpawnPlan),
+}
+
+impl World {
+    /// C `spawner(int in, int cn)`'s `ch[cn].flags & CF_PLAYER` branch
+    /// (`strategy.c:1355-1381`) plus `spawner_sub`'s own worker-count
+    /// eligibility scan (`:1244-1253`) - everything computable without
+    /// actually creating a character (that half needs `ZoneLoader`, only
+    /// `ugaris-server` has one - see [`StrategySpawnerUseOutcome`]'s own
+    /// doc comment).
+    ///
+    /// A real C quirk is preserved deliberately, not "fixed": once the
+    /// worker-count cap check passes, `spawner_sub` deducts the storage's
+    /// `NPCPRICE` Platinum *unconditionally*, *before* `create_char`/
+    /// `item_drop_char` ever runs - so a subsequent drop failure (no free
+    /// adjacent tile) still spends the Platinum with nothing to show for
+    /// it. This method reproduces that ordering exactly: the deduction
+    /// happens right here, in the `Ready` branch, before the caller ever
+    /// attempts to build the character; the caller must NOT refund it if
+    /// character creation subsequently fails.
+    pub fn try_dispatch_strategy_spawner_use(
+        &mut self,
+        character_id: CharacterId,
+        spawner_id: ItemId,
+        ppd: &StrategyPpd,
+    ) -> StrategySpawnerUseOutcome {
+        let Some(character) = self.characters.get(&character_id) else {
+            return StrategySpawnerUseOutcome::Rejected;
+        };
+        let serial = character.serial;
+        // C `strncpy(dat->name, name, 19); dat->name[19] = 0;` - 19
+        // chars plus the null terminator, so 19 visible characters (the
+        // sibling `strategy_take_spawner`'s own `name` truncation uses 20
+        // - a real, harmless one-character difference between the two C
+        // call sites, reproduced faithfully rather than unified).
+        let owner_name: String = character.name.chars().take(19).collect();
+
+        let Some(spawner) = self.items.get(&spawner_id) else {
+            return StrategySpawnerUseOutcome::Rejected;
+        };
+        if str_item_owner(spawner) != serial {
+            self.queue_system_text(
+                character_id,
+                "This spawner belongs to somebody else.".to_string(),
+            );
+            return StrategySpawnerUseOutcome::Rejected;
+        }
+
+        let Some(storage_id) = self.str_spawner_storage_item(spawner_id) else {
+            self.queue_system_text(
+                character_id,
+                "Failed. Please report bug #25476e".to_string(),
+            );
+            return StrategySpawnerUseOutcome::Rejected;
+        };
+        let Some(storage) = self.items.get(&storage_id) else {
+            self.queue_system_text(
+                character_id,
+                "Failed. Please report bug #25476e".to_string(),
+            );
+            return StrategySpawnerUseOutcome::Rejected;
+        };
+        if str_item_gold(storage) < NPCPRICE as u32 {
+            self.queue_system_text(
+                character_id,
+                "Not enough Platinum to create a worker.".to_string(),
+            );
+            return StrategySpawnerUseOutcome::Rejected;
+        }
+
+        // C `spawner_sub`'s own eligibility scan (`:1246-1252`): count
+        // every live `CDR_STRATEGY` character in this same `group` whose
+        // order isn't `OR_ETERNALGUARD`.
+        let group = serial as u16;
+        let worker_count = self
+            .characters
+            .values()
+            .filter(|worker| {
+                if worker.driver != CDR_STRATEGY
+                    || !worker.flags.contains(CharacterFlags::USED)
+                    || worker.group != group
+                {
+                    return false;
+                }
+                match &worker.driver_state {
+                    Some(CharacterDriverState::StrategyWorker(data)) => {
+                        !matches!(data.order, StrategyWorkerOrder::EternalGuard { .. })
+                    }
+                    _ => true,
+                }
+            })
+            .count();
+        if worker_count as i32 >= ppd.max_worker {
+            self.queue_system_text(
+                character_id,
+                "No space to drop char or max worker reached.".to_string(),
+            );
+            return StrategySpawnerUseOutcome::Rejected;
+        }
+
+        // C `*(unsigned int *)(it[in2].drdata + 4) -= NPCPRICE;` - see
+        // this method's own doc comment for the drop-failure quirk this
+        // preserves.
+        if let Some(item) = self.items.get_mut(&storage_id) {
+            let new_gold = str_item_gold(item).saturating_sub(NPCPRICE as u32);
+            set_str_item_gold(item, new_gold);
+        }
+
+        StrategySpawnerUseOutcome::Ready(StrategySpawnerSpawnPlan {
+            spawner_id,
+            group,
+            owner_name,
+            warcry: ppd.warcry,
+            endurance: ppd.endurance,
+            speed: ppd.speed,
+            trainspeed: ppd.trainspeed,
+            max_level: ppd.max_level,
+            npc_color: ppd.npc_color,
+        })
+    }
+
+    /// C `spawner_sub`'s driver-state stamp (`strategy.c:1280-1286`),
+    /// once the fresh worker character already exists in `self.
+    /// characters` (`ugaris-server` handles `create_char`/`item_drop_char`
+    /// /`update_char`/hp-endurance-mana-to-max/dir/sprite/group first -
+    /// see `ugaris-server::area23_24::spawn_strategy_worker`).
+    pub fn finish_strategy_worker_spawn(
+        &mut self,
+        character_id: CharacterId,
+        owner_name: String,
+        trainspeed: i32,
+        max_level: i32,
+    ) {
+        if let Some(character) = self.characters.get_mut(&character_id) {
+            character.driver = CDR_STRATEGY;
+            character.driver_state = Some(CharacterDriverState::StrategyWorker(
+                StrategyWorkerDriverData {
+                    owner_name,
+                    trainspeed,
+                    max_level,
+                    ..StrategyWorkerDriverData::default()
+                },
+            ));
+        }
+    }
+}

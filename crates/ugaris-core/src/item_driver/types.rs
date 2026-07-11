@@ -1217,6 +1217,20 @@ pub enum ItemDriverOutcome {
         character_id: CharacterId,
         owner: u32,
     },
+    /// C `spawner`'s `ch[cn].flags & CF_PLAYER` branch trigger
+    /// (`strategy.c:1355-1381`): a player used an `IDR_STR_SPAWNER` item,
+    /// requesting a worker recruit attempt. The pure driver only detects
+    /// "a player used this item" - every actual business rule (ownership
+    /// match, storage lookup, Platinum cost, worker-count cap, and - on
+    /// success - the fresh character only `ugaris-server`'s `ZoneLoader`
+    /// can create) lives in `World::try_dispatch_strategy_spawner_use`,
+    /// see that method's own doc comment. The `cn == 0` ambient/AI-init
+    /// branch and the full `ai_main`/`ai_init` AI-opponent driver remain
+    /// documented gaps (`item_driver::area23_24`'s module doc comment).
+    StrSpawnerUse {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
     LqEntranceClosed {
         item_id: ItemId,
         character_id: CharacterId,

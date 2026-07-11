@@ -1448,3 +1448,206 @@ fn str_depot_npc_worker_transfers_platin_once_ownership_matches() {
     );
     assert_eq!(str_item_gold(&world.items[&ItemId(7)]), 140);
 }
+
+// --- `spawner`/`spawner_sub` (`strategy.c:1244-1381`) ---
+
+/// Places a spawner/storage pair at the fixed C layout convention
+/// (`spawner2storage`: storage sits directly north, `y - 1`), returning
+/// `(spawner_id, storage_id)`.
+fn spawner_and_storage(world: &mut World, owner: u32, gold: u32) -> (ItemId, ItemId) {
+    let mut spawner = strategy_item(1, IDR_STR_SPAWNER, vec![0; 11]);
+    spawner.x = 5;
+    spawner.y = 5;
+    set_str_item_owner(&mut spawner, owner);
+    world.add_item(spawner);
+
+    let mut storage = strategy_item(2, IDR_STR_STORAGE, vec![0; 10]);
+    storage.x = 5;
+    storage.y = 4;
+    set_str_item_gold(&mut storage, gold);
+    world.add_item(storage);
+    world.map.tile_mut(5, 4).expect("tile exists").item = 2;
+
+    (ItemId(1), ItemId(2))
+}
+
+fn assert_only_system_text(world: &mut World, character_id: CharacterId, expected: &str) {
+    let texts = world.drain_pending_system_texts();
+    assert_eq!(texts.len(), 1);
+    assert_eq!(texts[0].character_id, character_id);
+    assert_eq!(texts[0].message, expected);
+}
+
+#[test]
+fn spawner_use_rejects_ownership_mismatch() {
+    let mut world = World::default();
+    let (spawner_id, _storage_id) = spawner_and_storage(&mut world, 99, NPCPRICE as u32);
+    world.add_character(strategy_player(3, 42));
+    let ppd = StrategyPpd {
+        max_worker: 4,
+        ..Default::default()
+    };
+
+    let outcome = world.try_dispatch_strategy_spawner_use(CharacterId(3), spawner_id, &ppd);
+
+    assert!(matches!(outcome, StrategySpawnerUseOutcome::Rejected));
+    assert_only_system_text(
+        &mut world,
+        CharacterId(3),
+        "This spawner belongs to somebody else.",
+    );
+    // Gold untouched - rejected before the deduction.
+    assert_eq!(str_item_gold(&world.items[&ItemId(2)]), NPCPRICE as u32);
+}
+
+#[test]
+fn spawner_use_rejects_missing_storage() {
+    let mut world = World::default();
+    let mut spawner = strategy_item(1, IDR_STR_SPAWNER, vec![0; 11]);
+    spawner.x = 5;
+    spawner.y = 5;
+    set_str_item_owner(&mut spawner, 42);
+    world.add_item(spawner);
+    // No item placed on the tile directly north - `spawner2storage` finds
+    // nothing.
+    world.add_character(strategy_player(3, 42));
+    let ppd = StrategyPpd::default();
+
+    let outcome = world.try_dispatch_strategy_spawner_use(CharacterId(3), ItemId(1), &ppd);
+
+    assert!(matches!(outcome, StrategySpawnerUseOutcome::Rejected));
+    assert_only_system_text(
+        &mut world,
+        CharacterId(3),
+        "Failed. Please report bug #25476e",
+    );
+}
+
+#[test]
+fn spawner_use_rejects_not_enough_gold() {
+    let mut world = World::default();
+    let (spawner_id, storage_id) = spawner_and_storage(&mut world, 42, NPCPRICE as u32 - 1);
+    world.add_character(strategy_player(3, 42));
+    let ppd = StrategyPpd {
+        max_worker: 4,
+        ..Default::default()
+    };
+
+    let outcome = world.try_dispatch_strategy_spawner_use(CharacterId(3), spawner_id, &ppd);
+
+    assert!(matches!(outcome, StrategySpawnerUseOutcome::Rejected));
+    assert_only_system_text(
+        &mut world,
+        CharacterId(3),
+        "Not enough Platinum to create a worker.",
+    );
+    assert_eq!(
+        str_item_gold(&world.items[&storage_id]),
+        NPCPRICE as u32 - 1
+    );
+}
+
+#[test]
+fn spawner_use_rejects_when_worker_cap_reached() {
+    let mut world = World::default();
+    let (spawner_id, storage_id) = spawner_and_storage(&mut world, 42, NPCPRICE as u32);
+    world.add_character(strategy_player(3, 42));
+    // One existing worker already fills the (max_worker == 1) cap.
+    world.add_character(strategy_worker(4, 42, StrategyWorkerOrder::None, 0));
+    let ppd = StrategyPpd {
+        max_worker: 1,
+        ..Default::default()
+    };
+
+    let outcome = world.try_dispatch_strategy_spawner_use(CharacterId(3), spawner_id, &ppd);
+
+    assert!(matches!(outcome, StrategySpawnerUseOutcome::Rejected));
+    assert_only_system_text(
+        &mut world,
+        CharacterId(3),
+        "No space to drop char or max worker reached.",
+    );
+    // Gold untouched - the cap check runs before the deduction.
+    assert_eq!(str_item_gold(&world.items[&storage_id]), NPCPRICE as u32);
+}
+
+#[test]
+fn spawner_use_ignores_eternal_guards_when_counting_the_cap() {
+    let mut world = World::default();
+    let (spawner_id, _storage_id) = spawner_and_storage(&mut world, 42, NPCPRICE as u32);
+    world.add_character(strategy_player(3, 42));
+    // An eternal guard doesn't count toward `max_worker`, so a cap of 1
+    // still leaves room for a new recruit.
+    world.add_character(strategy_worker(
+        4,
+        42,
+        StrategyWorkerOrder::EternalGuard { x: 1, y: 1 },
+        0,
+    ));
+    let ppd = StrategyPpd {
+        max_worker: 1,
+        ..Default::default()
+    };
+
+    let outcome = world.try_dispatch_strategy_spawner_use(CharacterId(3), spawner_id, &ppd);
+
+    assert!(matches!(outcome, StrategySpawnerUseOutcome::Ready(_)));
+}
+
+#[test]
+fn spawner_use_ready_deducts_npcprice_and_carries_ppd_fields() {
+    let mut world = World::default();
+    let (spawner_id, storage_id) = spawner_and_storage(&mut world, 42, NPCPRICE as u32 + 50);
+    world.add_character(strategy_player(3, 42));
+    let ppd = StrategyPpd {
+        max_worker: 4,
+        warcry: 5,
+        endurance: 10,
+        speed: 3,
+        trainspeed: 2,
+        max_level: 90,
+        npc_color: 1,
+        ..Default::default()
+    };
+
+    let outcome = world.try_dispatch_strategy_spawner_use(CharacterId(3), spawner_id, &ppd);
+
+    let StrategySpawnerUseOutcome::Ready(plan) = outcome else {
+        panic!("expected Ready, got a Rejected outcome");
+    };
+    assert_eq!(plan.spawner_id, spawner_id);
+    assert_eq!(plan.group, 42);
+    assert_eq!(plan.owner_name, world.characters[&CharacterId(3)].name);
+    assert_eq!(plan.warcry, 5);
+    assert_eq!(plan.endurance, 10);
+    assert_eq!(plan.speed, 3);
+    assert_eq!(plan.trainspeed, 2);
+    assert_eq!(plan.max_level, 90);
+    assert_eq!(plan.npc_color, 1);
+    // Deducted immediately, before any character is ever created - see
+    // `try_dispatch_strategy_spawner_use`'s own doc comment on the C
+    // "spend Platinum even if the drop later fails" quirk.
+    assert_eq!(str_item_gold(&world.items[&storage_id]), 50);
+    // No message queued on success (C's `spawner_sub` logs nothing).
+    assert!(world.drain_pending_system_texts().is_empty());
+}
+
+#[test]
+fn finish_strategy_worker_spawn_stamps_driver_and_driver_state() {
+    let mut world = World::default();
+    world.add_character(strategy_npc(9, 42, "Worker"));
+
+    world.finish_strategy_worker_spawn(CharacterId(9), "Some Player".to_string(), 2, 90);
+
+    let worker = &world.characters[&CharacterId(9)];
+    assert_eq!(worker.driver, CDR_STRATEGY);
+    match &worker.driver_state {
+        Some(CharacterDriverState::StrategyWorker(data)) => {
+            assert_eq!(data.owner_name, "Some Player");
+            assert_eq!(data.trainspeed, 2);
+            assert_eq!(data.max_level, 90);
+            assert_eq!(data.order, StrategyWorkerOrder::None);
+        }
+        other => panic!("expected StrategyWorker driver state, got {other:?}"),
+    }
+}

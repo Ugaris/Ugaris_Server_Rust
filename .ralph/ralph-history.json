@@ -384,21 +384,55 @@
         "test result: ok. 81 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 0 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 0.00s"
       ]
+    },
+    {
+      "iteration": 12,
+      "startedAt": "2026-07-11T05:46:51.261Z",
+      "endedAt": "2026-07-11T06:18:00.490Z",
+      "durationMs": 1867983,
+      "agent": "opencode",
+      "model": "anthropic/claude-sonnet-5",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "PORTING_TODO.md",
+        "crates/ugaris-core/src/item_driver/area23_24.rs",
+        "crates/ugaris-core/src/item_driver/dispatch.rs",
+        "crates/ugaris-core/src/item_driver/types.rs",
+        "crates/ugaris-core/src/world/strategy_worker.rs",
+        "crates/ugaris-core/src/world/tests/strategy.rs",
+        "crates/ugaris-server/src/tick_item_use_completion.rs",
+        "crates/ugaris-server/src/tick_item_use_strategy.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "3541 core tests (+7), all green, zero failures. Now let's verify build has zero warnings.",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&1 | grep -E \"FAILED|error\\[|error:|test result\"",
+        "test error::tests::error_constants_match_legacy_header ... ok",
+        "test error::tests::error_strings_match_legacy_table ... ok",
+        "test error::tests::out_of_range_errors_use_c_fallback_string ... ok",
+        "test result: ok. 3534 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.29s",
+        "test result: ok. 81 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+      ]
     }
   ],
-  "totalDurationMs": 28394559,
+  "totalDurationMs": 30262542,
   "struggleIndicators": {
     "repeatedErrors": {
       "3375 core (+17) and 1168 server (+6) tests all pass, zero failures. Now let's build ugaris-server fo": 1,
       "- `cargo fmt --all`, `cargo test --workspace` (3375 core + 1168 server, zero failures/warnings), `ca": 1,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 11,
-      "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&": 5,
-      "test error::tests::error_constants_match_legacy_header ... ok": 3,
-      "test error::tests::error_strings_match_legacy_table ... ok": 3,
-      "test error::tests::out_of_range_errors_use_c_fallback_string ... ok": 3,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 12,
+      "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&": 6,
+      "test error::tests::error_constants_match_legacy_header ... ok": 4,
+      "test error::tests::error_strings_match_legacy_table ... ok": 4,
+      "test error::tests::out_of_range_errors_use_c_fallback_string ... ok": 4,
       "test world::tests::dungeon_master::attack_command_failure_says_error_and_never_charges_or_queues ...": 3,
       "test result: ok. 3358 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.30s": 1,
-      "test result: ok. 81 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 6,
+      "test result: ok. 81 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 7,
       "test result: ok. 1168 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 8.03s": 1,
       "122-| `src/module/weather/weather.c`, `src/module/weather/weather_client.c` | `crates/ugaris-server/": 1,
       "7548:- 2026-07-07: closed the P4 \"Area 1\" task's last gap: `tutorial_ppd`/`tutorial()` (`src/system/": 1,
@@ -415,8 +449,8 @@
       "119-| `src/system/clubmaster.c` | `crates/ugaris-core/src/character_driver.rs`, `crates/ugaris-core/": 1,
       "120-| `src/module/military.c` / `military.h`, `src/system/tool.c` (`get_army_rank_int`/`set_army_ran": 1,
       "test result: ok. 3406 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.29s": 1,
-      "test result: ok. 0 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 0.00s": 4,
-      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 2,
+      "test result: ok. 0 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 0.00s": 5,
+      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 3,
       "test result: ok. 45 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 2,
       "3436 core (+8, one test wasn't counted separately from before? Let's check) + 1168 server all pass, ": 1,
       "All green: 3436 core + 81 db + 3 net + 45 protocol + 1168 server tests, zero failures, no warnings (": 1,
@@ -461,7 +495,9 @@
       "test result: ok. 1168 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 7.89s": 1,
       "error: could not compile `ugaris-core` (lib) due to 4 previous errors": 1,
       "test result: ok. 1168 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 7.88s": 1,
-      "test result: ok. 3513 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.29s": 1
+      "test result: ok. 3513 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.29s": 1,
+      "3541 core tests (+7), all green, zero failures. Now let's verify build has zero warnings.": 1,
+      "test result: ok. 3534 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.29s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

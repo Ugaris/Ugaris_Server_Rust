@@ -1176,9 +1176,24 @@ Ordered by player progression; the C file is the oracle.
   spawning remains unported - so this is tested via directly-constructed
   test characters only (registered in `tick_npc::run_all` regardless, per
   precedent).
-  REMAINING: `spawner_sub`/`take_spawner` spawning (needed for a live
-  worker through real gameplay), `IDR_STR_SPAWNER`, and the full
-  `ai_main`/`ai_init` AI-opponent driver.
+  Tenth slice done: `IDR_STR_SPAWNER`'s player-facing `spawner`/
+  `spawner_sub` (`strategy.c:1244-1381`) is now ported end to end - a
+  live `CDR_STRATEGY` worker can finally be recruited through real
+  gameplay. `World::try_dispatch_strategy_spawner_use` (new in
+  `world/strategy_worker.rs`) ports the ownership/storage-lookup/
+  Platinum-cost/worker-count-cap eligibility checks (all pure `World`
+  logic, including a real C quirk preserved deliberately: the `NPCPRICE`
+  Platinum is deducted *before* character creation is ever attempted, so
+  a drop failure still spends it - not "fixed"); `ugaris-server`'s new
+  `tick_item_use_strategy::spawn_strategy_worker` builds the actual fresh
+  `"strategy_npc"` character via `ZoneLoader` +
+  `World::spawn_character_from_item_drop` (C `create_char`+
+  `item_drop_char`), applies the `value[1]` warcry/endurance/speed
+  bonuses before `update_char`, restores hp/endurance/mana to max, and
+  finishes via a new `World::finish_strategy_worker_spawn` driver-state
+  stamp. 7 new tests in `world::tests::strategy`.
+  REMAINING: the full `ai_main`/`ai_init` AI-opponent driver (538 lines) -
+  the only remaining gap in this entire task.
 - [ ] **Area 25 - `src/area/25/warped.c`** - warped NPC dialogue,
   `DRD_WARPFIGHTER` full fight driver.
 - [ ] **Area 26 - `src/area/26/staffer.c`** - vault skull PPD/quest, Rouven

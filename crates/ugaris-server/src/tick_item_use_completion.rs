@@ -544,8 +544,12 @@ pub(crate) async fn process_completed_action_outcomes(
                             | ugaris_core::item_driver::ItemDriverOutcome::StrStorageInteract { .. }
                             | ugaris_core::item_driver::ItemDriverOutcome::StrMineWorkerDig { .. }
                             | ugaris_core::item_driver::ItemDriverOutcome::StrBuildingWorkerTransfer { .. }
-                            | ugaris_core::item_driver::ItemDriverOutcome::StrDepotWorkerTakeover { .. }) => {
+                            | ugaris_core::item_driver::ItemDriverOutcome::StrDepotWorkerTakeover { .. }
+                            | ugaris_core::item_driver::ItemDriverOutcome::StrSpawnerUse { .. }) => {
                                 tick_item_use_strategy::dispatch_strategy_outcome(
+                                    &mut world,
+                                    &mut zone_loader,
+                                    &mut runtime,
                                     outcome,
                                     &mut feedback,
                                     &mut executed,

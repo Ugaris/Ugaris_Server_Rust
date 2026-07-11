@@ -29,13 +29,32 @@
 //! `IDR_LAB5_ITEM`'s fireface/lightface branches (see `World::
 //! schedule_existing_light_timers`'s own doc comment).
 //!
-//! `IDR_STR_SPAWNER`'s `spawner`/`spawner_sub` (recruit-an-NPC-worker) and
-//! the `ai_main`/`ai_init` AI-opponent driver remain full no-ops (no
-//! spawning wiring exists yet - see `world::strategy_worker`'s module doc
-//! comment).
+//! `IDR_STR_SPAWNER`'s `ch[cn].flags & CF_PLAYER` branch
+//! ([`str_spawner_driver`]) now triggers a real worker-recruit attempt -
+//! see `ItemDriverOutcome::StrSpawnerUse`'s own doc comment for the full
+//! `World`/`ugaris-server` split. The `cn == 0` ambient/AI-init branch and
+//! the full `ai_main`/`ai_init` AI-opponent driver remain full no-ops (no
+//! AI-opponent wiring exists yet).
 
 use super::*;
 use crate::world::{character_value_base, str_item_gold, str_item_owner};
+
+/// C `spawner(int in, int cn)`'s `ch[cn].flags & CF_PLAYER` branch
+/// trigger (`strategy.c:1355-1381`) - see `ItemDriverOutcome::
+/// StrSpawnerUse`'s own doc comment for why all the actual business
+/// logic (ownership/gold/eligibility checks, the fresh-character spawn)
+/// lives in `World::try_dispatch_strategy_spawner_use`/`ugaris-server`
+/// instead of here. The `cn == 0` ambient/AI-init branch (`:1298-1331`)
+/// remains a documented gap (this module's own doc comment).
+pub(crate) fn str_spawner_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
+    if character.id.0 == 0 || !character.flags.contains(CharacterFlags::PLAYER) {
+        return ItemDriverOutcome::Noop;
+    }
+    ItemDriverOutcome::StrSpawnerUse {
+        item_id: item.id,
+        character_id: character.id,
+    }
+}
 
 pub(crate) fn str_ticker_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
     if character.id.0 != 0 {
