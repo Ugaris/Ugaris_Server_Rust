@@ -1419,11 +1419,17 @@ Ordered by player progression; the C file is the oracle.
   `give experience`/`give military`/`give money`/`give godly` dialogue,
   `special_rat_reward`'s 7-tier item ladder) is now ported
   (`world/npc/area34/teufelquest.rs` + shared `TEUFEL_QA`/
-  `teufel_analyse_text` in `world/npc/area34/mod.rs`). Still unported:
-  `teufeldemon_driver` (self-defense sighting hook + `CDR_SIMPLEBADDY`
-  tail call), `teufelgambler_driver` (the 3 chip-tier dice game, shares
-  `TEUFEL_QA`), and `teufelrat_driver`'s own tick body (death-scoring
-  already ported; the live wander/attack AI is not).
+  `teufel_analyse_text` in `world/npc/area34/mod.rs`). `teufeldemon_driver`
+  (the `NT_CHAR` self-defense hook + `CDR_SIMPLEBADDY` tail call) is now
+  also ported (`world/npc/area34/teufeldemon.rs` +
+  `CDR_SIMPLEBADDY`-gate widening in `world/npc_fight.rs`/
+  `world/npc_idle.rs`, plus a hook into `world/npc_messages.rs`'s generic
+  message drain - see the module's own doc comment for why it can't be a
+  normal `tick_npc` pass). Still unported: `teufelgambler_driver` (the 3
+  chip-tier dice game, shares `TEUFEL_QA`) and `teufelrat_driver`'s own
+  tick body (death-scoring already ported; the live wander/attack AI is
+  not - needs the same `CDR_SIMPLEBADDY`-gate widening `CDR_TEUFELDEMON`
+  just got).
 - [ ] **Area 36 - `src/area/36/caligar.c`** - Caligar quest NPCs, PPD
   quest state beyond skelly doors.
 - [ ] **Area 37 - `src/area/37/arkhata.c` (4,764 lines)** - Arkhata clerk/

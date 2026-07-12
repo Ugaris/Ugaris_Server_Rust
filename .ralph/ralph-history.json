@@ -1916,21 +1916,57 @@
         "7524:- 2026-07-07: continued the P0.5 \"Finish main() phase decomposition\" task with its second completed-action-outcome family slice: the chest family - 16 `ItemDriverOutcome` variants (`ChestTreasure",
         "7525:- 2026-07-07: continued the P0.5 \"Finish main() phase decomposition\" task with its third completed-action-outcome family slice: the dungeon family (`src/area/13/dungeon.c`) - 7 contiguous `ItemDr"
       ]
+    },
+    {
+      "iteration": 54,
+      "startedAt": "2026-07-12T07:18:37.052Z",
+      "endedAt": "2026-07-12T07:49:22.774Z",
+      "durationMs": 1844087,
+      "agent": "opencode",
+      "model": "anthropic/claude-sonnet-5",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "PORTING_TODO.md",
+        "crates/ugaris-core/src/world/mod.rs",
+        "crates/ugaris-core/src/world/npc/area34/mod.rs",
+        "crates/ugaris-core/src/world/npc_fight.rs",
+        "crates/ugaris-core/src/world/npc_idle.rs",
+        "crates/ugaris-core/src/world/npc_messages.rs",
+        "crates/ugaris-core/src/world/tests/mod.rs",
+        "crates/ugaris-core/src/zone.rs",
+        "crates/ugaris-core/src/world/npc/area34/teufeldemon.rs",
+        "crates/ugaris-core/src/world/tests/teufeldemon.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "All tests pass. Let's confirm the core crate test count increased and check for any failures earlier in the output.",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&1 | grep -E \"FAILED|test result|error\\[|error:\" | head -50",
+        "test error::tests::error_constants_match_legacy_header ... ok",
+        "test error::tests::error_strings_match_legacy_table ... ok",
+        "test error::tests::out_of_range_errors_use_c_fallback_string ... ok",
+        "test result: ok. 3998 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.28s",
+        "test result: ok. 81 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+      ]
     }
   ],
-  "totalDurationMs": 119973836,
+  "totalDurationMs": 121817923,
   "struggleIndicators": {
     "repeatedErrors": {
       "3375 core (+17) and 1168 server (+6) tests all pass, zero failures. Now let's build ugaris-server fo": 1,
       "- `cargo fmt --all`, `cargo test --workspace` (3375 core + 1168 server, zero failures/warnings), `ca": 1,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 53,
-      "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&": 31,
-      "test error::tests::error_constants_match_legacy_header ... ok": 26,
-      "test error::tests::error_strings_match_legacy_table ... ok": 26,
-      "test error::tests::out_of_range_errors_use_c_fallback_string ... ok": 26,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 54,
+      "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&": 32,
+      "test error::tests::error_constants_match_legacy_header ... ok": 27,
+      "test error::tests::error_strings_match_legacy_table ... ok": 27,
+      "test error::tests::out_of_range_errors_use_c_fallback_string ... ok": 27,
       "test world::tests::dungeon_master::attack_command_failure_says_error_and_never_charges_or_queues ...": 14,
       "test result: ok. 3358 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.30s": 1,
-      "test result: ok. 81 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 31,
+      "test result: ok. 81 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 32,
       "test result: ok. 1168 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 8.03s": 1,
       "122-| `src/module/weather/weather.c`, `src/module/weather/weather_client.c` | `crates/ugaris-server/": 1,
       "7548:- 2026-07-07: closed the P4 \"Area 1\" task's last gap: `tutorial_ppd`/`tutorial()` (`src/system/": 1,
@@ -1947,8 +1983,8 @@
       "119-| `src/system/clubmaster.c` | `crates/ugaris-core/src/character_driver.rs`, `crates/ugaris-core/": 1,
       "120-| `src/module/military.c` / `military.h`, `src/system/tool.c` (`get_army_rank_int`/`set_army_ran": 1,
       "test result: ok. 3406 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.29s": 1,
-      "test result: ok. 0 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 0.00s": 23,
-      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 10,
+      "test result: ok. 0 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 0.00s": 24,
+      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 11,
       "test result: ok. 45 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 8,
       "3436 core (+8, one test wasn't counted separately from before? Let's check) + 1168 server all pass, ": 1,
       "All green: 3436 core + 81 db + 3 net + 45 protocol + 1168 server tests, zero failures, no warnings (": 1,
@@ -2170,7 +2206,9 @@
       "7510:- Iteration 251 confirmed the workspace was still green (`cargo test --workspace`: 2348 core + ": 1,
       "7523:- 2026-07-07: continued the P0.5 \"Finish main() phase decomposition\" task with its first comple": 1,
       "7524:- 2026-07-07: continued the P0.5 \"Finish main() phase decomposition\" task with its second compl": 1,
-      "7525:- 2026-07-07: continued the P0.5 \"Finish main() phase decomposition\" task with its third comple": 1
+      "7525:- 2026-07-07: continued the P0.5 \"Finish main() phase decomposition\" task with its third comple": 1,
+      "All tests pass. Let's confirm the core crate test count increased and check for any failures earlier": 1,
+      "test result: ok. 3998 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.28s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

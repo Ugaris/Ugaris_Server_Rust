@@ -37,10 +37,10 @@ use crate::{
         CDR_LAB5MAGE, CDR_LAB5SEYAN, CDR_LABGNOMEDRIVER, CDR_LOSTDWARF, CDR_MISSIONGIVE, CDR_NOOK,
         CDR_RESKIN, CDR_ROUVEN, CDR_SEYMOUR, CDR_SHANRA, CDR_SIMPLEBADDY, CDR_SIRJONES,
         CDR_SMUGGLECOM, CDR_SPIRITBRAN, CDR_SUPERIOR, CDR_SUPERMAX, CDR_SWAMPCLARA, CDR_TERION,
-        CDR_TEUFELQUEST, CDR_THOMAS, CDR_TRADER, CDR_TUNNELER_GORWIN, CDR_TWOALCHEMIST,
-        CDR_TWOBARKEEPER, CDR_TWOGUARD, CDR_TWOSANWYN, CDR_TWOSERVANT, CDR_TWOSKELLY,
-        CDR_TWOTHIEFGUARD, CDR_TWOTHIEFMASTER, CDR_WHITEROBBERBOSS, CDR_YOAKIN, CDR_YOATIN,
-        NT_CREATE,
+        CDR_TEUFELDEMON, CDR_TEUFELQUEST, CDR_THOMAS, CDR_TRADER, CDR_TUNNELER_GORWIN,
+        CDR_TWOALCHEMIST, CDR_TWOBARKEEPER, CDR_TWOGUARD, CDR_TWOSANWYN, CDR_TWOSERVANT,
+        CDR_TWOSKELLY, CDR_TWOTHIEFGUARD, CDR_TWOTHIEFMASTER, CDR_WHITEROBBERBOSS, CDR_YOAKIN,
+        CDR_YOATIN, NT_CREATE,
     },
     entity::{
         Character, CharacterFlags, Item, ItemFlags, CHARACTER_VALUE_COUNT, INVENTORY_SIZE,
@@ -652,6 +652,24 @@ impl ZoneLoader {
             // templates (`zones/17/two.chr`) carry the same
             // `arg="aggressive=1;helper=0;scavenger=...;"` shape
             // SimpleBaddy's own `NT_CREATE` handler parses.
+            character.push_driver_message(NT_CREATE, 0, 0, 0);
+            apply_simple_baddy_create_message(&mut character, Some(&template.args), 0);
+        }
+        if template.driver == CDR_TEUFELDEMON {
+            // C `ch_driver`'s `CDR_TEUFELDEMON` dispatch
+            // (`teufel.c:373-394`): an `NT_CHAR` self-defense hook
+            // (ported as `World::apply_teufeldemon_sighting_messages`,
+            // see `world::npc::area34::teufeldemon`'s module doc comment)
+            // followed by an unconditional every-tick tail call to
+            // `char_driver(CDR_SIMPLEBADDY, CDT_DRIVER, cn, ret,
+            // lastact)`, reusing the SimpleBaddy driver's full idle-
+            // wander/auto-attack AI wholesale - same precedent as
+            // `CDR_PENTER`/`CDR_SWAMPMONSTER`/`CDR_FORESTMONSTER`/
+            // `CDR_TWOROBBER` above. The `teufer1`-`teufer3` templates
+            // (`zones/34/teufel.chr`) carry the same
+            // `arg="aggressive=0;helper=0;scavenger=0;startdist=20;
+            // chardist=0;stopdist=40;"` shape SimpleBaddy's own
+            // `NT_CREATE` handler parses.
             character.push_driver_message(NT_CREATE, 0, 0, 0);
             apply_simple_baddy_create_message(&mut character, Some(&template.args), 0);
         }

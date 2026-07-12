@@ -8,8 +8,11 @@
 //! port can reuse them, matching the `AREA3_QA`/`TWOCITY_QA` precedent
 //! from `world::npc::area3`/`world::npc::area17`.
 
+pub mod teufeldemon;
 pub mod teufelquest;
 
+#[allow(unused_imports)]
+pub use teufeldemon::*;
 #[allow(unused_imports)]
 pub use teufelquest::*;
 

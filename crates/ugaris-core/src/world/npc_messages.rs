@@ -33,6 +33,12 @@ impl World {
             return Vec::new();
         }
         self.clear_simple_baddy_bless_friend(character_id);
+        // `CDR_TEUFELDEMON`'s own `NT_CHAR` self-defense hook
+        // (`world::npc::area34::teufeldemon`) must observe the same
+        // still-queued messages the generic drain below is about to
+        // consume - see that module's doc comment for why it runs here
+        // rather than as its own `tick_npc` pass.
+        self.apply_teufeldemon_sighting_messages(character_id);
         let Some(character) = self.characters.get_mut(&character_id) else {
             return Vec::new();
         };

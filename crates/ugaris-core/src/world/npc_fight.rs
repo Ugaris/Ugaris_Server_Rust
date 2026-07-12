@@ -137,7 +137,10 @@ impl World {
         // (`two.c:3163-3165`), `CDR_SMUGGLELEAD`'s (`staffer.c:932-934`),
         // `CDR_WHITEROBBERBOSS`'s (`brannington_forest.c:684-686`),
         // `CDR_CENTINEL`'s (`brannington.c:2802-2804`), and `CDR_
-        // MISSIONFIGHT`'s (`missions.c:1849-1851`).
+        // MISSIONFIGHT`'s (`missions.c:1849-1851`). `CDR_TEUFELDEMON`'s
+        // (`teufel.c:373-394`) is the same tail call too, though it also
+        // needs its own extra `NT_CHAR` handling - see
+        // `world::npc::area34::teufeldemon`'s module doc comment.
         if (attacker.driver != CDR_SIMPLEBADDY
             && attacker.driver != CDR_DUNGEONFIGHTER
             && attacker.driver != CDR_PENTER
@@ -147,7 +150,8 @@ impl World {
             && attacker.driver != CDR_SMUGGLELEAD
             && attacker.driver != CDR_WHITEROBBERBOSS
             && attacker.driver != CDR_CENTINEL
-            && attacker.driver != CDR_MISSIONFIGHT)
+            && attacker.driver != CDR_MISSIONFIGHT
+            && attacker.driver != CDR_TEUFELDEMON)
             || attacker.action != 0
             || attacker.flags.contains(CharacterFlags::DEAD)
         {
@@ -2655,7 +2659,8 @@ impl World {
                     || character.driver == CDR_SMUGGLELEAD
                     || character.driver == CDR_WHITEROBBERBOSS
                     || character.driver == CDR_CENTINEL
-                    || character.driver == CDR_MISSIONFIGHT)
+                    || character.driver == CDR_MISSIONFIGHT
+                    || character.driver == CDR_TEUFELDEMON)
                     && matches!(
                         character.driver_state,
                         Some(CharacterDriverState::SimpleBaddy(_))

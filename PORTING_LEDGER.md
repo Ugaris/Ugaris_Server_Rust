@@ -8071,3 +8071,54 @@ startup log line unchanged.
   -p ugaris-server` clean, 8s boot-smoke on area 34 confirmed "entering
   Rust game loop" `area_id=34`, no panics. `PORTING_TODO.md` Area 34
   marked `[~]` with the above REMAINING note.
+- Area 34 `CDR_TEUFELDEMON` (`teufel.c::teufeldemon_driver`, `:373-394`)
+  is now ported. New `crates/ugaris-core/src/world/npc/area34/
+  teufeldemon.rs`: `World::apply_teufeldemon_sighting_messages` ports the
+  driver's own `NT_CHAR` self-defense hook (`(ch[co].flags & CF_PLAYER)
+  && !is_demon(co)` then `is_valid_enemy(cn, co, -1)` +
+  `fight_driver_add_enemy(cn, co, 0, 1)`), reusing the already-ported
+  `World::simple_baddy_can_add_standard_enemy(.., require_visible: true,
+  hurtme: false)` + `add_simple_baddy_enemy_unchecked(.., priority: 0,
+  ..)` pair instead of reimplementing `is_valid_enemy`'s group/
+  `can_attack`/`char_see_char` checks plus `fight_driver_add_enemy`'s own
+  `start_dist`/`char_dist`/neutral-zone gating. Unlike the *pure*
+  tail-call NPCs (`CDR_PENTER`/`CDR_FORESTMONSTER`/`CDR_TWOROBBER`, just a
+  gate widening with no extra logic), this driver needed a real
+  architectural call: C's `char_driver` never calls `remove_message`
+  between `teufeldemon_driver`'s own `NT_CHAR` loop and its
+  `CDR_SIMPLEBADDY` tail call, so both handlers observe the *same*
+  still-queued messages in the same tick - reproduced by calling the new
+  hook from `world::npc_messages::process_simple_baddy_message_actions_
+  with_random` immediately *before* that function's own generic message
+  drain (which does consume/clear `driver_messages`), rather than as a
+  separate `tick_npc` pass (any pass registered at its own position in
+  `tick_npc::run_all`, which is what every other NPC file does, would
+  observe an already-drained queue, since the generic SimpleBaddy message
+  pass runs very early - `area22::pass_0` - relative to where an
+  area34-numbered pass would land). The real zone data confirms why the
+  hook matters: `zones/34/teufel.chr`'s `teufer1`-`teufer3` templates
+  spawn with `aggressive=0`, so the generic SimpleBaddy `NT_CHAR` aggro
+  branch (gated on that flag) never fires on its own - this driver's own
+  override is the *entire* source of Teufelheim demons attacking
+  disguise-less players. `zone.rs` spawn wiring seeds `NT_CREATE` +
+  `apply_simple_baddy_create_message` from the template's own
+  `aggressive=0;helper=0;scavenger=0;startdist=20;chardist=0;stopdist=40;`
+  arg string, same precedent as `CDR_PENTER`/`CDR_TWOROBBER`. Also widened
+  the `CDR_SIMPLEBADDY` fight/idle gates (`world/npc_fight.rs`'s two
+  lists, `world/npc_idle.rs`'s two lists) to include `CDR_TEUFELDEMON`,
+  since without that the enemies this hook records would never actually
+  get attacked (`process_simple_baddy_attack_action`'s driver gate would
+  reject them). 4 new focused tests (`world/tests/teufeldemon.rs`):
+  disguise-less-player attacked, demon-suit-disguised player ignored,
+  non-player sighting ignored, and an end-to-end message-then-attack
+  check proving the gate widening actually lets a recorded enemy be
+  attacked. `cargo fmt --all`, `cargo test --workspace`: 4002 core [+4] +
+  81 db + 3 net + 45 protocol + 1204 server, all green, zero
+  failures/warnings. `cargo build -p ugaris-server` clean, 8s boot-smoke
+  on area 34 confirmed "entering Rust game loop" `area_id=34`, no panics.
+  Still unported in this file: `teufelgambler_driver` (the 3 chip-tier
+  dice-betting NPC) and `teufelrat_driver`'s own live tick body (death
+  scoring exists; nothing yet widens `CDR_TEUFELRAT` into the
+  `CDR_SIMPLEBADDY` fight/idle gates the way `CDR_TEUFELDEMON` now is, so
+  spawned rat-nest rats still don't wander/fight). `PORTING_TODO.md` Area
+  34 left at `[~]` with an updated REMAINING note.
