@@ -238,6 +238,11 @@ pub const CDR_ARKHATASKELLY: u16 = 138;
 /// apply_arkhata_prisoner_death_from_hurt_event`, is the only other
 /// C-visible behavior this driver has).
 pub const CDR_ARKHATAPRISON: u16 = 151;
+/// C `#define CDR_RAMMY 131` (`src/system/drvlib.h:181`, comment
+/// "arkhata"): the ruler of Arkhata, quest 65 ("Rammy's Crown") and quest
+/// 71 ("Entrance Passes") giver, see `world::npc::area37::rammy`'s module
+/// doc comment.
+pub const CDR_RAMMY: u16 = 131;
 /// C `#define CDR_LAB2HERALD 196` (`src/system/drvlib.h:222`): the lab2
 /// graveyard chapel keeper (`src/area/22/lab2.c::lab2_herald_driver`), see
 /// `world::npc::area22::lab2_herald`'s module doc comment.
@@ -867,6 +872,7 @@ pub enum CharacterDriverState {
     TeufelGambler(crate::world::npc::area34::teufelgambler::TeufelGambleDriverData),
     TeufelQuest(crate::world::npc::area34::teufelquest::TeufelQuestDriverData),
     Nop(crate::world::npc::area37::nop::NopDriverData),
+    Rammy(crate::world::npc::area37::rammy::RammyDriverData),
 }
 /// C `bank_driver_parse` from `src/module/bank.c`. The C driver defaults
 /// opening hours to 6..23 before parsing (`bank_driver` lines 304-309).
@@ -1690,7 +1696,8 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::Gorwin(_)
             | CharacterDriverState::TeufelGambler(_)
             | CharacterDriverState::TeufelQuest(_)
-            | CharacterDriverState::Nop(_),
+            | CharacterDriverState::Nop(_)
+            | CharacterDriverState::Rammy(_),
         ) => SimpleBaddyDriverData::default(),
         None => SimpleBaddyDriverData::default(),
     };
@@ -4267,6 +4274,7 @@ pub use crate::world::npc::area33::gorwin::GorwinDriverData;
 pub use crate::world::npc::area34::teufelgambler::TeufelGambleDriverData;
 pub use crate::world::npc::area34::teufelquest::TeufelQuestDriverData;
 pub use crate::world::npc::area37::nop::{parse_nop_driver_args, NopDriverData};
+pub use crate::world::npc::area37::rammy::RammyDriverData;
 pub use crate::world::npc::area4::tester::TesterDriverData;
 pub use crate::world::npc::area8::fdemon_army::FarmyData;
 pub use crate::world::npc::arena::{

@@ -359,6 +359,7 @@ pub(crate) fn countbran_player_facts(
                     countbran_bits: player.staffer_countbran_bits(),
                     quest40_count: player.quest_log.count(qlog_countbran()),
                     quest40_is_done: player.quest_log.is_done(qlog_countbran()),
+                    arkhata_letter_bits: player.arkhata_letter_bits(),
                 },
             ))
         })
@@ -454,6 +455,14 @@ pub(crate) fn apply_countbran_events(
                 player.set_staffer_countbran_state(0);
                 player.set_staffer_countessabran_state(0);
                 player.set_staffer_daughterbran_state(0);
+                applied += 1;
+            }
+            // C `ppd2->letter_bits |= 4;` (`brannington.c:818`).
+            CountBranOutcomeEvent::SetArkhataLetterBit { player_id, bit } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.set_arkhata_letter_bits(player.arkhata_letter_bits() | bit);
                 applied += 1;
             }
         }

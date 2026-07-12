@@ -613,6 +613,31 @@ pub(crate) const IID_ARKHATA_AKEY23: u32 = make_item_id(DEV_ID_DB, 0x0000CE);
 
 pub(crate) const IID_ARKHATA_AKEY: u32 = make_item_id(0x3B, 0x000089);
 
+/// C `#define IID_ARKHATA_CROWN MAKE_ITEMID(DEV_ID_DB, 0x0000B5)`
+/// (`src/common/item_id.h:244`): Rammy's stolen crown, `rammy_driver`'s
+/// (`world::npc::area37::rammy`) quest-65 turn-in item. Placed statically
+/// by `zones/37/Item.itm` (`Rammy_Crown`), not created at runtime.
+pub(crate) const IID_ARKHATA_CROWN: u32 = make_item_id(DEV_ID_DB, 0x0000B5);
+
+/// C `#define IID_ARKHATA_FORTRESSKEY MAKE_ITEMID(DEV_ID_FIRENA, 0x000014)`
+/// (`src/common/item_id.h:273`): the Fortress key `rammy_driver`
+/// (`world::npc::area37::rammy`) hands out at `rammy_state` 16.
+pub(crate) const IID_ARKHATA_FORTRESSKEY: u32 = make_item_id(DEV_ID_FIRENA, 0x000014);
+
+/// C `#define IID_ARKHATA_LETTER1 MAKE_ITEMID(DEV_ID_DB, 0x0000BB)`
+/// (`src/common/item_id.h:250`): the introduction letter `rammy_driver`
+/// hands out at `rammy_state` 16, later consumed by the still-unported
+/// `captain_driver`/`judge_driver`.
+pub(crate) const IID_ARKHATA_LETTER1: u32 = make_item_id(DEV_ID_DB, 0x0000BB);
+
+/// C `#define IID_ARKHATA_LETTER3 MAKE_ITEMID(DEV_ID_DB, 0x0000BD)`
+/// (`src/common/item_id.h:252`): the still-unported `judge_driver`'s
+/// letter meant for Count Brannington, whose `NT_GIVE` turn-in
+/// (`world::npc::area29::countbran`) writes the cross-area
+/// `arkhata_ppd.letter_bits` bit `world::npc::area37::rammy`'s quest-71
+/// completion gate reads.
+pub(crate) const IID_ARKHATA_LETTER3: u32 = make_item_id(DEV_ID_DB, 0x0000BD);
+
 pub const IID_AREA25_TELEKEY: u32 = make_item_id(DEV_ID_DB, 0x000090);
 
 pub const IID_AREA25_DOORKEY: u32 = make_item_id(DEV_ID_DB, 0x000091);

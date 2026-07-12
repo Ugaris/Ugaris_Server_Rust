@@ -892,6 +892,36 @@ impl PlayerRuntime {
         write_i32(&mut self.arkhata_ppd, ARKHATA_PPD_RAMIN_STATE_OFFSET, state);
     }
 
+    /// C `struct arkhata_ppd::rammy_state` write half - see
+    /// [`ARKHATA_PPD_RAMMY_STATE_OFFSET`]'s doc comment. `rammy_driver`
+    /// (`world::npc::area37::rammy`) is the only writer.
+    pub fn set_arkhata_rammy_state(&mut self, state: i32) {
+        if self.arkhata_ppd.len() < LEGACY_ARKHATA_PPD_SIZE {
+            self.arkhata_ppd.resize(LEGACY_ARKHATA_PPD_SIZE, 0);
+        }
+        write_i32(&mut self.arkhata_ppd, ARKHATA_PPD_RAMMY_STATE_OFFSET, state);
+    }
+
+    /// C `struct arkhata_ppd::letter_bits` - see
+    /// [`ARKHATA_PPD_LETTER_BITS_OFFSET`]'s doc comment.
+    pub fn arkhata_letter_bits(&self) -> i32 {
+        if self.arkhata_ppd.len() < LEGACY_ARKHATA_PPD_SIZE {
+            return 0;
+        }
+        read_i32(&self.arkhata_ppd, ARKHATA_PPD_LETTER_BITS_OFFSET)
+    }
+
+    /// C `ppd->letter_bits |= bit;`/`ppd2->letter_bits |= bit;` - written
+    /// by `ramin_driver`/`captain_driver` (still unported, bits `2`/`8`)
+    /// and `count_brannington_driver`'s cross-area `IID_ARKHATA_LETTER3`
+    /// turn-in (`world::npc::area29::countbran`, bit `4`).
+    pub fn set_arkhata_letter_bits(&mut self, bits: i32) {
+        if self.arkhata_ppd.len() < LEGACY_ARKHATA_PPD_SIZE {
+            self.arkhata_ppd.resize(LEGACY_ARKHATA_PPD_SIZE, 0);
+        }
+        write_i32(&mut self.arkhata_ppd, ARKHATA_PPD_LETTER_BITS_OFFSET, bits);
+    }
+
     fn ensure_caligar_ppd_sized(&mut self) {
         if self.caligar_ppd.len() < LEGACY_CALIGAR_PPD_SIZE {
             self.caligar_ppd.resize(LEGACY_CALIGAR_PPD_SIZE, 0);

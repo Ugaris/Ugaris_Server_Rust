@@ -2,7 +2,7 @@
 //!
 //! `src/area/37/arkhata.c` (4,764 lines, 23 character drivers) is only
 //! partially ported so far - see `PORTING_TODO.md`/`PORTING_LEDGER.md`
-//! for the remaining `rammy`/`jaz`/`fiona`/`ramin`/`arkhataskelly`/
+//! for the remaining `jaz`/`fiona`/`ramin`/`arkhataskelly`/
 //! `arkhatamonk`/`bookeater`/`captain`/`judge`/`fortressguard`/`jada`/
 //! `potmaker`/`hunter`/`thaipan`/`clerk`/`trainer`/`kidnappee`/`krenach`
 //! drivers, most of which read/write the shared `struct arkhata_ppd`
@@ -16,9 +16,12 @@
 //! `CDR_MADHERMIT` character regardless of which area loaded it.
 
 pub mod nop;
+pub mod rammy;
 
 #[allow(unused_imports)]
 pub use nop::*;
+#[allow(unused_imports)]
+pub use rammy::*;
 
 use crate::character_driver::TextQaEntry;
 

@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use super::*;
 use crate::character_driver::{CountBranDriverData, CDR_COUNTBRAN, NT_CHAR, NT_GIVE};
 use crate::item_driver::{
-    IID_STAFF_COUNTESSAJEWEL, IID_STAFF_COUNTJEWEL, IID_STAFF_DAUGHTERJEWEL,
+    IID_ARKHATA_LETTER3, IID_STAFF_COUNTESSAJEWEL, IID_STAFF_COUNTJEWEL, IID_STAFF_DAUGHTERJEWEL,
     IID_STAFF_MAUSOLEUMKEY1,
 };
 use crate::world::npc::area29::countbran::{CountBranOutcomeEvent, CountBranPlayerFacts};
@@ -34,6 +34,25 @@ fn facts(
     quest40_count: u8,
     quest40_is_done: bool,
 ) -> HashMap<CharacterId, CountBranPlayerFacts> {
+    facts_with_letter_bits(
+        player_id,
+        countbran_state,
+        countbran_bits,
+        quest40_count,
+        quest40_is_done,
+        0,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn facts_with_letter_bits(
+    player_id: CharacterId,
+    countbran_state: i32,
+    countbran_bits: i32,
+    quest40_count: u8,
+    quest40_is_done: bool,
+    arkhata_letter_bits: i32,
+) -> HashMap<CharacterId, CountBranPlayerFacts> {
     let mut map = HashMap::new();
     map.insert(
         player_id,
@@ -42,6 +61,7 @@ fn facts(
             countbran_bits,
             quest40_count,
             quest40_is_done,
+            arkhata_letter_bits,
         },
     );
     map
@@ -205,6 +225,69 @@ fn give_all_three_jewels_marks_quest40_done() {
     assert!(events.contains(&CountBranOutcomeEvent::MarkQuestDone {
         player_id: CharacterId(2),
     }));
+}
+
+#[test]
+fn give_arkhata_letter3_sets_letter_bit_and_destroys_letter() {
+    let mut world = World::default();
+    let mut countbran = countbran_npc(1);
+    countbran.cursor_item = Some(ItemId(50));
+    world.add_character(countbran);
+    let mut letter = item(50, ItemFlags::empty());
+    letter.template_id = IID_ARKHATA_LETTER3;
+    letter.carried_by = Some(CharacterId(1));
+    world.add_item(letter);
+    let godmode = player(2, "Godmode");
+    world.add_character(godmode);
+
+    if let Some(countbran) = world.characters.get_mut(&CharacterId(1)) {
+        countbran.push_driver_message(NT_GIVE, 2, 50, 0);
+    }
+
+    let events = world.process_countbran_actions(
+        &facts_with_letter_bits(CharacterId(2), 4, 1 | 2 | 4, 0, false, 0),
+        1,
+    );
+    assert!(
+        events.contains(&CountBranOutcomeEvent::SetArkhataLetterBit {
+            player_id: CharacterId(2),
+            bit: 4,
+        })
+    );
+    assert!(world.items.get(&ItemId(50)).is_none());
+    let texts = world.drain_pending_area_texts();
+    assert!(texts
+        .iter()
+        .any(|text| text.message.contains("most clever solution")));
+}
+
+#[test]
+fn give_arkhata_letter3_when_bit_already_set_falls_back_to_no_use_for_it() {
+    let mut world = World::default();
+    let mut countbran = countbran_npc(1);
+    countbran.cursor_item = Some(ItemId(50));
+    world.add_character(countbran);
+    let mut letter = item(50, ItemFlags::empty());
+    letter.template_id = IID_ARKHATA_LETTER3;
+    letter.carried_by = Some(CharacterId(1));
+    world.add_item(letter);
+    let godmode = player(2, "Godmode");
+    world.add_character(godmode);
+
+    if let Some(countbran) = world.characters.get_mut(&CharacterId(1)) {
+        countbran.push_driver_message(NT_GIVE, 2, 50, 0);
+    }
+
+    // bit 4 already set: not accepted again, handed back instead.
+    let events = world.process_countbran_actions(
+        &facts_with_letter_bits(CharacterId(2), 4, 1 | 2, 0, false, 4),
+        1,
+    );
+    assert!(!events
+        .iter()
+        .any(|event| matches!(event, CountBranOutcomeEvent::SetArkhataLetterBit { .. })));
+    // Handed back, not destroyed.
+    assert!(world.items.get(&ItemId(50)).is_some());
 }
 
 #[test]

@@ -69,6 +69,11 @@ pub(crate) const DEV_ID_WHITESTAR: u32 = 0x08;
 /// "ID of Roman Haas"): the area-1 hermit-quest teeth item below.
 pub(crate) const DEV_ID_RH: u32 = 0x3A;
 
+/// C `DEV_ID_FIRENA` (`src/common/item_id.h:49`, "firena and tolight"):
+/// the Arkhata fortress-key item below. Already used correctly (as a
+/// private `0x13` literal) by `key_registry.rs`'s `REGISTERED_KEY_IDS`.
+pub(crate) const DEV_ID_FIRENA: u32 = 0x13;
+
 /// C `DEV_ID_KW` (`src/system/drdata.h:43`, "ID of Kenneth Wright"): the
 /// area-1 Jessica robber-note quest item below.
 pub(crate) const DEV_ID_KW: u32 = 55;

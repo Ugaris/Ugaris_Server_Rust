@@ -859,14 +859,22 @@ pub const ARKHATA_PPD_CLERK_STATE_OFFSET: usize = 16 * 4;
 pub const ARKHATA_PPD_CLERK_TIME_OFFSET: usize = 17 * 4;
 
 /// C `struct arkhata_ppd::rammy_state` (`src/area/37/arkhata.h:5`, field
-/// index 0, the first field): `rammy_driver`'s (`src/area/37/arkhata.c`,
-/// still entirely unported) own dialogue state. Read-only here - only
+/// index 0, the first field): `rammy_driver`'s (`world::npc::
+/// area37::rammy`) own dialogue state. Also read by
 /// `guard_brannington_driver`'s (`world::npc::area29::guardbran`) "Finding
 /// Arkhata" (quest 64) completion check (`ppd->rammy_state > 0`,
-/// `brannington.c:1938`) needs it - same "read state owned by another
-/// area's unported driver" precedent as `PlayerRuntime::
-/// staffer_broklin_state`/`staffer_carlos2_state`.
+/// `brannington.c:1938`) - same "read state owned by another area's
+/// driver" precedent as `PlayerRuntime::staffer_broklin_state`/
+/// `staffer_carlos2_state`.
 pub const ARKHATA_PPD_RAMMY_STATE_OFFSET: usize = 0 * 4;
+
+/// C `struct arkhata_ppd::letter_bits` (`src/area/37/arkhata.h:13`, field
+/// index 8): the introduction-letter turn-in bitmask (`2`=`captain_state`
+/// wrote it, `4`=`judge_state` wrote it, `8`=... - all three still-
+/// unported drivers) `rammy_driver` (`world::npc::area37::rammy`) reads
+/// at `rammy_state` 17 (`== (2|4|8)`) to advance to the "trade route is
+/// open" completion line.
+pub const ARKHATA_PPD_LETTER_BITS_OFFSET: usize = 8 * 4;
 
 /// C `struct arkhata_ppd::monk_state` (`src/area/37/arkhata.h:9`, field
 /// index 4): the still-unported `arkhata.c` monk driver's own dialogue

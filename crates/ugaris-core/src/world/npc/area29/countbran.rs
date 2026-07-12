@@ -42,13 +42,12 @@
 //!   [`CountBranOutcomeEvent::ResetAllBranStates`], applied by
 //!   `ugaris-server`'s `apply_countbran_events` since it touches fields
 //!   `world::npc::area29::countessabran`/`daughterbran` also read.
-//! - C's `IID_ARKHATA_LETTER3` `NT_GIVE` sub-branch (`:814-818`) is not
-//!   ported: it belongs to area 37's Arkhata quest chain
-//!   (`src/area/37/arkhata.c`), which is still entirely unported (see
-//!   `PORTING_TODO.md`'s Area 37 entry) and `arkhata_ppd.letter_bits` has
-//!   no accessor in `crate::player` yet. A player handing in that letter
-//!   here falls through to the generic "no use for it" branch instead - a
-//!   documented gap, not a silent one.
+//! - C's `IID_ARKHATA_LETTER3` `NT_GIVE` sub-branch (`:814-818`) is now
+//!   also ported (`world::npc::area37::rammy`'s cross-area "Entrance
+//!   Passes" quest-71 chain): the `ppd2->letter_bits |= 4` write is a
+//!   cross-area `PlayerRuntime::arkhata_ppd` mutation, applied via
+//!   [`CountBranOutcomeEvent::SetArkhataLetterBit`] same as every other
+//!   `PlayerRuntime`-touching side effect in this file.
 //! - Unlike every other `brannington.c` NPC's identical fallback line
 //!   (which this port's sibling files also use `npc_quiet_say` for), C's
 //!   own fallback here (`:820`) is `quiet_say`, matching this file; C's
@@ -117,6 +116,11 @@ pub struct CountBranPlayerFacts {
     /// `PlayerRuntime::quest_log.is_done(40)` (C `questlog_isdone(co,
     /// 40)`).
     pub quest40_is_done: bool,
+    /// `PlayerRuntime::arkhata_letter_bits()` (`ppd2->letter_bits`,
+    /// `brannington.c:814`): the cross-area Arkhata "Entrance Passes"
+    /// (quest 71) letter-turn-in bitmask, read (and one bit written) by
+    /// the `IID_ARKHATA_LETTER3` `NT_GIVE` sub-branch below.
+    pub arkhata_letter_bits: i32,
 }
 
 /// A side effect [`World::process_countbran_actions`] could not apply
@@ -150,6 +154,10 @@ pub enum CountBranOutcomeEvent {
     /// clearing `countbran_bits`/`countbran_state`/`countessabran_state`/
     /// `daughterbran_state` all at once.
     ResetAllBranStates { player_id: CharacterId },
+    /// C `ppd2->letter_bits |= 4;` (`brannington.c:818`): the cross-area
+    /// write into Arkhata's `arkhata_ppd.letter_bits` (`world::npc::
+    /// area37::rammy`'s quest-71 completion gate).
+    SetArkhataLetterBit { player_id: CharacterId, bit: i32 },
 }
 
 impl World {
@@ -673,8 +681,27 @@ impl World {
             return;
         }
 
-        // C's `IID_ARKHATA_LETTER3` branch (`brannington.c:814-818`) is not
-        // ported - see the module doc comment's deviations list.
+        // C `else if (it[in].ID == IID_ARKHATA_LETTER3 && ppd &&
+        // !(ppd2->letter_bits & 4))` (`brannington.c:814-818`).
+        if item.template_id == IID_ARKHATA_LETTER3
+            && is_player
+            && facts.is_some_and(|facts| facts.arkhata_letter_bits & 4 == 0)
+        {
+            self.npc_quiet_say(
+                countbran_id,
+                &format!(
+                    "Ahh, this is a most clever solution. Thank you once again, {}.",
+                    giver.name
+                ),
+            );
+            self.destroy_items_by_template_id(giver_id, IID_ARKHATA_LETTER3);
+            events.push(CountBranOutcomeEvent::SetArkhataLetterBit {
+                player_id: giver_id,
+                bit: 4,
+            });
+            self.destroy_item(item_id);
+            return;
+        }
 
         // C's fallback `else` branch (`brannington.c:819-825`): hand the
         // item back to the giver.
@@ -753,14 +780,14 @@ impl World {
 
 use crate::character_driver::{CDR_COUNTBRAN, CDR_LOSTCON};
 use crate::item_driver::{
-    IID_STAFF_BLUEKEY1, IID_STAFF_BLUEKEY12, IID_STAFF_BLUEKEY123, IID_STAFF_BLUEKEY13,
-    IID_STAFF_BLUEKEY2, IID_STAFF_BLUEKEY23, IID_STAFF_BLUEKEY3, IID_STAFF_COUNTESSAJEWEL,
-    IID_STAFF_COUNTJEWEL, IID_STAFF_DAUGHTERJEWEL, IID_STAFF_GREENKEY1, IID_STAFF_GREENKEY12,
-    IID_STAFF_GREENKEY123, IID_STAFF_GREENKEY13, IID_STAFF_GREENKEY2, IID_STAFF_GREENKEY23,
-    IID_STAFF_GREENKEY3, IID_STAFF_MAUSOLEUMKEY1, IID_STAFF_MAUSOLEUMKEY2, IID_STAFF_MAUSOLEUMKEY3,
-    IID_STAFF_REDKEY1, IID_STAFF_REDKEY12, IID_STAFF_REDKEY123, IID_STAFF_REDKEY13,
-    IID_STAFF_REDKEY2, IID_STAFF_REDKEY23, IID_STAFF_REDKEY3, IID_STAFF_THIEFKEY1,
-    IID_STAFF_THIEFKEY2, IID_STAFF_THIEFKEY3,
+    IID_ARKHATA_LETTER3, IID_STAFF_BLUEKEY1, IID_STAFF_BLUEKEY12, IID_STAFF_BLUEKEY123,
+    IID_STAFF_BLUEKEY13, IID_STAFF_BLUEKEY2, IID_STAFF_BLUEKEY23, IID_STAFF_BLUEKEY3,
+    IID_STAFF_COUNTESSAJEWEL, IID_STAFF_COUNTJEWEL, IID_STAFF_DAUGHTERJEWEL, IID_STAFF_GREENKEY1,
+    IID_STAFF_GREENKEY12, IID_STAFF_GREENKEY123, IID_STAFF_GREENKEY13, IID_STAFF_GREENKEY2,
+    IID_STAFF_GREENKEY23, IID_STAFF_GREENKEY3, IID_STAFF_MAUSOLEUMKEY1, IID_STAFF_MAUSOLEUMKEY2,
+    IID_STAFF_MAUSOLEUMKEY3, IID_STAFF_REDKEY1, IID_STAFF_REDKEY12, IID_STAFF_REDKEY123,
+    IID_STAFF_REDKEY13, IID_STAFF_REDKEY2, IID_STAFF_REDKEY23, IID_STAFF_REDKEY3,
+    IID_STAFF_THIEFKEY1, IID_STAFF_THIEFKEY2, IID_STAFF_THIEFKEY3,
 };
 
 /// C `struct count_brannington_data` (`src/area/29/brannington.c:585-588`).

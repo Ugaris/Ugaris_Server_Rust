@@ -1444,13 +1444,21 @@ Ordered by player progression; the C file is the oracle.
   entirely, so Book Eater characters never actually got a
   `CharacterDriverState::SimpleBaddy` and could never fight back or
   idle-wander despite the driver-id gates already listing them - fixed
-  alongside this slice. Still unported: `rammy`/`jaz`/
-  `fiona`/`ramin`/`arkhatamonk`/`captain`/
-  `judge`/`fortressguard`/`jada`/`potmaker`/`hunter`/`thaipan`/`clerk`/
-  `trainer`/`kidnappee`/`krenach` - most read/write the shared
-  `struct arkhata_ppd` quest-state blob (`PlayerRuntime::arkhata_ppd`,
-  scaffolded in `player/areas_misc.rs`; its `LEGACY_ARKHATA_PPD_SIZE` had
-  a pre-existing size bug, now fixed - see ledger).
+  alongside this slice. `rammy_driver` (`CDR_RAMMY`, the ruler of Arkhata,
+  quest 65 "Rammy's Crown" + quest 71 "Entrance Passes",
+  `world::npc::area37::rammy`) is now also ported end to end, including
+  the `case 6`/`13`/`17` fallthrough collapses and the `NT_TEXT` "repeat"
+  four-way state-range reset. As a side effect, the cross-area
+  `IID_ARKHATA_LETTER3` `NT_GIVE` sub-branch in `count_brannington_driver`
+  (`world::npc::area29::countbran`, `brannington.c:814-818`, previously a
+  documented gap) is now also ported, since it writes the same
+  `arkhata_ppd.letter_bits` field rammy's quest-71 completion gate reads.
+  Still unported: `jaz`/`fiona`/`ramin`/`arkhatamonk`/`captain`/`judge`/
+  `fortressguard`/`jada`/`potmaker`/`hunter`/`thaipan`/`clerk`/`trainer`/
+  `kidnappee`/`krenach` - most read/write the shared `struct arkhata_ppd`
+  quest-state blob (`PlayerRuntime::arkhata_ppd`, scaffolded in
+  `player/areas_misc.rs`; its `LEGACY_ARKHATA_PPD_SIZE` had a
+  pre-existing size bug, now fixed - see ledger).
 - [ ] **Area 38 - `src/area/38/shrike.c`** - Shrike NPCs (amulet assembly
   ported).
 - [ ] **Common NPCs - `src/common/professor.c`, `src/common/npc_states.h`,
@@ -1490,6 +1498,10 @@ Keep entries to at most three lines: date, task, one-line result.
 Anything longer belongs in `PORTING_LEDGER.md`; historical verbose
 notes live in `PROGRESS_ARCHIVE.md`.
 
+- 2026-07-12: Area 37 CONTINUED: ported `rammy_driver` (`CDR_RAMMY`, quests
+  65/71) plus the cross-area `IID_ARKHATA_LETTER3` gap in
+  `count_brannington_driver` it depends on. 4090 core [+23] + 1213 server
+  tests pass, clean build/boot-smoke (area 37, no panics).
 - 2026-07-12: Area 37 CONTINUED: ported `CDR_BOOKEATER` ("The Book Eater"
   monster, pure `CDR_SIMPLEBADDY` tail call + `bookeater_dead`'s quest-70
   completion death hook, `apply_arkhata_bookeater_death_from_hurt_event`);
