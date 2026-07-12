@@ -158,3 +158,52 @@ fn exit_reward_on_already_maxed_level_with_no_promotion_available() {
         vec!["You have used all 10 completions at level 50. No reward given.".to_string()]
     );
 }
+
+// C `check_area_clear` (`tunnel.c:750-762`): an empty rectangle in front
+// of the door is clear.
+#[test]
+fn mean_door_area_clear_is_true_when_the_rectangle_ahead_is_empty() {
+    let world = World::default();
+    assert!(world.tunnel_mean_door_area_clear(10, 10));
+}
+
+// A non-player character anywhere in the `DOOR_RANGE`x`DOOR_DEPTH`
+// rectangle blocks the door from opening.
+#[test]
+fn mean_door_area_clear_is_false_when_a_non_player_character_is_in_range() {
+    let mut world = World::default();
+    let mut baddy = character(1);
+    baddy.flags = CharacterFlags::USED;
+    assert!(world.spawn_character(baddy, 10, 15));
+
+    assert!(!world.tunnel_mean_door_area_clear(10, 10));
+}
+
+// Players in the rectangle don't block the door - only non-player
+// characters count (`ch[co].flags & CF_PLAYER`).
+#[test]
+fn mean_door_area_clear_ignores_player_characters_in_range() {
+    let mut world = World::default();
+    let mut player = character(1);
+    player.flags = CharacterFlags::USED | CharacterFlags::PLAYER;
+    assert!(world.spawn_character(player, 10, 15));
+
+    assert!(world.tunnel_mean_door_area_clear(10, 10));
+}
+
+// Characters outside the rectangle (too far horizontally, or above/at the
+// door's own row) don't block it.
+#[test]
+fn mean_door_area_clear_ignores_characters_outside_the_rectangle() {
+    let mut world = World::default();
+    // Horizontally out of DOOR_RANGE (4) from x=10.
+    let mut far = character(1);
+    far.flags = CharacterFlags::USED;
+    assert!(world.spawn_character(far, 20, 15));
+    // At the door's own row (y+1 is the first checked row).
+    let mut same_row = character(2);
+    same_row.flags = CharacterFlags::USED;
+    assert!(world.spawn_character(same_row, 10, 10));
+
+    assert!(world.tunnel_mean_door_area_clear(10, 10));
+}

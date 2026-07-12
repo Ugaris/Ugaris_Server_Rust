@@ -1235,6 +1235,18 @@ pub(crate) async fn process_completed_action_outcomes(
                                 )
                                 .await;
                             }
+                            ugaris_core::item_driver::ItemDriverOutcome::TunnelDoorAreaCheck {
+                                ..
+                            }
+                            | ugaris_core::item_driver::ItemDriverOutcome::TunnelDoorFlavor {
+                                ..
+                            } => {
+                                // World mutation (door open + reschedule) already
+                                // happened inside `apply_item_driver_outcome`
+                                // (`World::execute_item_driver_request_with_context`);
+                                // nothing left to dispatch here.
+                                executed += 1;
+                            }
                             ugaris_core::item_driver::ItemDriverOutcome::IdentityTag { .. } => {
                                 executed += 1;
                             }

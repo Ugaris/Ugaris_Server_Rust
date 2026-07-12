@@ -1426,12 +1426,15 @@ Ordered by player progression; the C file is the oracle.
   `world::tunnel::apply_tunnel_reward`, dispatched via
   `tick_item_use_tunnel.rs`; a new shared
   `player::find_next_available_tunnel_level` factors the promote-search
-  logic out of `gorwin.rs`'s own copy). Still unported: `tunneldoor`'s
-  `DOOR_ENTRY`/`DOOR_CONTINUE` branches (the procedural creeper-dungeon
-  generator: `build_fighter`/`handle_block_marker`/`handle_creeper_marker`/
-  `find_unused_sector`) and `IDR_TUNNELDOOR2` (`mean_door`) - until the
-  former lands, a player has no live-gameplay way to actually reach an
-  exit pillar. `IID_TUNNELDOOR1/2`/`IID_TUNNELENEMY1/2/3/ALL` item-id
+  logic out of `gorwin.rs`'s own copy). `IDR_TUNNELDOOR2` (`mean_door`) is
+  now also ported (`item_driver::area33_tunnel::mean_door_driver` +
+  `World::tunnel_mean_door_area_clear`/`apply_item_driver_outcome`'s
+  `TunnelDoorAreaCheck`/`TunnelDoorFlavor` arms). Still unported:
+  `tunneldoor`'s `DOOR_ENTRY`/`DOOR_CONTINUE` branches (the procedural
+  creeper-dungeon generator: `build_fighter`/`handle_block_marker`/
+  `handle_creeper_marker`/`find_unused_sector`) - until that lands, a
+  player has no live-gameplay way to actually reach an exit pillar or a
+  mean door. `IID_TUNNELDOOR1/2`/`IID_TUNNELENEMY1/2/3/ALL` item-id
   constants are already added for that follow-up.
 - [ ] **Area 34 - `src/area/34/teufel.c`** - rat/gambler NPCs, arena score
   rewards (rat nest items ported).
@@ -1478,6 +1481,11 @@ Keep entries to at most three lines: date, task, one-line result.
 Anything longer belongs in `PORTING_LEDGER.md`; historical verbose
 notes live in `PROGRESS_ARCHIVE.md`.
 
+- 2026-07-12: fixed a broken build left by iteration 50 (unhandled
+  `TunnelDoorAreaCheck`/`TunnelDoorFlavor` match arms in
+  `tick_item_use_completion.rs`) and added the missing tests for
+  `mean_door_driver`/`tunnel_mean_door_area_clear` (`IDR_TUNNELDOOR2`).
+  3973 core [+9] + 1204 server tests, boot-smoke.
 - 2026-07-12: Area 33 progress: ported `IDR_TUNNELDOOR`'s exp/military
   exit-pillar branches + `give_reward` (auto-promote ladder,
   `achievement_add_tunnel_level` wiring). `DOOR_ENTRY`/`DOOR_CONTINUE`

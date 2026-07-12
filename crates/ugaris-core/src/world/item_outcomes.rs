@@ -1941,7 +1941,8 @@ impl World {
                     // C `open_door` (`tunnel.c:764-772`).
                     if let Some(tile) = self.map.tile_mut(usize::from(x), usize::from(y)) {
                         tile.foreground_sprite = 0;
-                        tile.flags.remove(MapFlags::TMOVEBLOCK | MapFlags::TSIGHTBLOCK);
+                        tile.flags
+                            .remove(MapFlags::TMOVEBLOCK | MapFlags::TSIGHTBLOCK);
                     }
                     self.mark_dirty_sector(usize::from(x), usize::from(y));
                     self.pending_area_texts.push(WorldAreaText {
