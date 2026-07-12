@@ -615,7 +615,10 @@ impl World {
                 | CharacterDriverState::TeufelQuest(_)
                 | CharacterDriverState::Nop(_)
                 | CharacterDriverState::Rammy(_)
-                | CharacterDriverState::Jaz(_) => None,
+                | CharacterDriverState::Jaz(_)
+                | CharacterDriverState::Fiona(_)
+                | CharacterDriverState::BridgeGuard(_)
+                | CharacterDriverState::Gladiator(_) => None,
             });
         let Some(target_id) = target_id else {
             return false;

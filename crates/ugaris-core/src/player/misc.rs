@@ -901,6 +901,11 @@ pub const ARKHATA_PPD_MONK_STATE_OFFSET: usize = 4 * 4;
 /// `PlayerRuntime::set_arkhata_ramin_state`.
 pub const ARKHATA_PPD_RAMIN_STATE_OFFSET: usize = 3 * 4;
 
+/// C `struct arkhata_ppd::fiona_state` (`src/area/37/arkhata.h:8`, field
+/// index 2): `fiona_driver`'s (`world::npc::area37::fiona`) own quest-67
+/// ("The Missing Ring") dialogue/student-challenge/skill-raise state.
+pub const ARKHATA_PPD_FIONA_STATE_OFFSET: usize = 2 * 4;
+
 // `struct staffer_ppd` field offsets (`src/common/staffer_ppd.h:13-` /
 // `src/system/game/ppd_structs.h:566-`), in declaration order. Only the
 // fields consumed by `questlog_init_staff` (`src/system/questlog.c:1203-

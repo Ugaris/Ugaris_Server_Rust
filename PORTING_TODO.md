@@ -1458,17 +1458,36 @@ Ordered by player progression; the C file is the oracle.
   the `case 0`->`1` fallthrough collapse and the `NT_TEXT` "repeat"
   two-way state-range reset; new `PlayerRuntime::arkhata_jaz_state`
   accessor and `IID_ARKHATA_BRACELET` item id.
-  Still unported: `fiona`/`ramin`/`gladiator`/`bridgeguard`/`arkhatamonk`/
-  `captain`/`judge`/`fortressguard`/`jada`/`potmaker`/`hunter`/`thaipan`/
-  `clerk`/`trainer`/`kidnappee`/`krenach` - most read/write the shared
-  `struct arkhata_ppd` quest-state blob (`PlayerRuntime::arkhata_ppd`,
-  scaffolded in `player/areas_misc.rs`; its `LEGACY_ARKHATA_PPD_SIZE` had a
-  pre-existing size bug, now fixed - see ledger). Note: `gladiator`/
-  `bridgeguard` (`CDR_GLADIATOR`/`CDR_BRIDGEGUARD`) were missing from this
-  file's own previous "still unported" list - confirmed via a fresh
-  `ch_driver` dispatch-table cross-check against the C source; `fiona`
-  spawns `gladiator` instances via `fight_student`, so both remain
-  unported together as one future slice.
+  `fiona_driver` (`CDR_FIONA`, the Fighting School headmistress, quest 67
+  "The Missing Ring" + student-challenge/skill-raise chain,
+  `world::npc::area37::fiona`) and `gladiator_driver` (`CDR_GLADIATOR`, the
+  disposable student opponent `fight_student` spawns, `world::npc::
+  area37::gladiator`) are now also ported together end to end, plus
+  `bridgeguard_driver` (`CDR_BRIDGEGUARD`, the bridge-crossing guards,
+  `world::npc::area37::bridgeguard`) - the only other driver in this file
+  with real combat self-defense besides the SimpleBaddy tail calls. All
+  three reproduce `standard_message_driver`'s `NT_CHAR`/`NT_SEEHIT`/
+  `NT_GOTHIT` semantics directly (same `world::npc::area25::warpfighter`
+  precedent, not `CharacterDriverState::SimpleBaddy`); `fiona_raise`'s
+  doubled `raise_value_exp` call (a real C quirk: a successful raise
+  request actually raises up to 2 points) is reproduced verbatim. New
+  `PlayerRuntime::arkhata_fiona_state` accessor, `IID_ARKHATA_RING` item
+  id, and `apply_gladiator_death_from_hurt_event` death hook (a plain
+  `notify_area` broadcast, not the usual `LegacyHurtEvent`-keyed family
+  shape). Fixed a real gap uncovered while wiring `fight_student`'s
+  `ZoneLoader`-needing spawn tail: `CDR_GLADIATOR` needed its driver-
+  independent `Character::fight_driver` slot seeded at creation time (C
+  never calls `fight_driver_set_dist` for this driver anywhere, relying
+  entirely on `set_data`'s zero-init-on-first-touch auto-vivification,
+  which `World::simple_baddy_enemy_within_start_limits` doesn't replicate
+  for a still-`None` slot) - same precedent as the `CDR_FDEMON_ARMY`
+  soldier-spawning gap fixed in Area 8.
+  Still unported: `ramin`/`arkhatamonk`/`captain`/`judge`/`fortressguard`/
+  `jada`/`potmaker`/`hunter`/`thaipan`/`clerk`/`trainer`/`kidnappee`/
+  `krenach` - most read/write the shared `struct arkhata_ppd` quest-state
+  blob (`PlayerRuntime::arkhata_ppd`, scaffolded in `player/areas_misc.rs`;
+  its `LEGACY_ARKHATA_PPD_SIZE` had a pre-existing size bug, now fixed -
+  see ledger).
 - [ ] **Area 38 - `src/area/38/shrike.c`** - Shrike NPCs (amulet assembly
   ported).
 - [ ] **Common NPCs - `src/common/professor.c`, `src/common/npc_states.h`,
@@ -1508,6 +1527,10 @@ Keep entries to at most three lines: date, task, one-line result.
 Anything longer belongs in `PORTING_LEDGER.md`; historical verbose
 notes live in `PROGRESS_ARCHIVE.md`.
 
+- 2026-07-12: Area 37 CONTINUED: ported `fiona_driver`+`gladiator_driver`
+  (quest 67 "The Missing Ring" + student-challenge chain) and
+  `bridgeguard_driver` together. 4128 core [+30] + 1213 server tests pass,
+  clean build/boot-smoke (area 37, no panics).
 - 2026-07-12: Area 37 CONTINUED: ported `jaz_driver` (`CDR_JAZ`, quest 66
   "Ishtar's Bracelet"); also found `gladiator`/`bridgeguard` were missing
   from the file's own "still unported" list. 4098 core [+11] + 1213

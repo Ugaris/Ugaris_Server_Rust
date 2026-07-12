@@ -99,3 +99,88 @@ pub(crate) async fn jaz_driver_169(
         );
     }
 }
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn fiona_driver_170(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    zone_loader: &mut ZoneLoader,
+    config: &ServerConfig,
+    _args: &Args,
+    _completed_actions: &[WorldActionCompletion],
+    _achievement_repository: &Option<ugaris_db::PgAchievementRepository>,
+    _character_repository: &Option<ugaris_db::PgCharacterRepository>,
+    _area_repository: &Option<ugaris_db::PgAreaRepository>,
+    _clan_repository: &Option<ugaris_db::PgClanRegistryRepository>,
+    _clan_log_repository: &Option<ugaris_db::PgClanLogRepository>,
+    _merchant_repository: &Option<ugaris_db::PgMerchantRepository>,
+    _military_master_storage_repository: &Option<ugaris_db::PgMilitaryMasterStorageRepository>,
+    _military_advisor_storage_repository: &Option<ugaris_db::PgMilitaryAdvisorStorageRepository>,
+    _notes_repository: &Option<ugaris_db::PgNotesRepository>,
+    _anticheat_repository: &Option<ugaris_db::PgAntiCheatRepository>,
+    _auction_repository: &Option<ugaris_db::PgAuctionRepository>,
+) {
+    // C `fiona_driver`: the Fighting School headmistress, quest 67 ("The
+    // Missing Ring") giver and student-challenge/skill-raise NPC (area 37,
+    // `src/area/37/arkhata.c`).
+    let fiona_facts = fiona_player_facts(runtime);
+    let fiona_events = world.process_fiona_actions(&fiona_facts, config.area_id);
+    let fiona_events_applied = apply_fiona_events(world, runtime, zone_loader, fiona_events).await;
+    if fiona_events_applied != 0 {
+        info!(
+            fiona_events_applied,
+            tick = world.tick.0,
+            "applied fiona dialogue events"
+        );
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn bridgeguard_driver_171(
+    world: &mut World,
+    _runtime: &mut ServerRuntime,
+    _zone_loader: &mut ZoneLoader,
+    config: &ServerConfig,
+    _args: &Args,
+    _completed_actions: &[WorldActionCompletion],
+    _achievement_repository: &Option<ugaris_db::PgAchievementRepository>,
+    _character_repository: &Option<ugaris_db::PgCharacterRepository>,
+    _area_repository: &Option<ugaris_db::PgAreaRepository>,
+    _clan_repository: &Option<ugaris_db::PgClanRegistryRepository>,
+    _clan_log_repository: &Option<ugaris_db::PgClanLogRepository>,
+    _merchant_repository: &Option<ugaris_db::PgMerchantRepository>,
+    _military_master_storage_repository: &Option<ugaris_db::PgMilitaryMasterStorageRepository>,
+    _military_advisor_storage_repository: &Option<ugaris_db::PgMilitaryAdvisorStorageRepository>,
+    _notes_repository: &Option<ugaris_db::PgNotesRepository>,
+    _anticheat_repository: &Option<ugaris_db::PgAntiCheatRepository>,
+    _auction_repository: &Option<ugaris_db::PgAuctionRepository>,
+) {
+    // C `bridgeguard_driver`: the bridge-crossing guards outside Arkhata
+    // (area 37, `src/area/37/arkhata.c`).
+    world.process_bridgeguard_actions(config.area_id);
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn gladiator_driver_172(
+    world: &mut World,
+    _runtime: &mut ServerRuntime,
+    _zone_loader: &mut ZoneLoader,
+    config: &ServerConfig,
+    _args: &Args,
+    _completed_actions: &[WorldActionCompletion],
+    _achievement_repository: &Option<ugaris_db::PgAchievementRepository>,
+    _character_repository: &Option<ugaris_db::PgCharacterRepository>,
+    _area_repository: &Option<ugaris_db::PgAreaRepository>,
+    _clan_repository: &Option<ugaris_db::PgClanRegistryRepository>,
+    _clan_log_repository: &Option<ugaris_db::PgClanLogRepository>,
+    _merchant_repository: &Option<ugaris_db::PgMerchantRepository>,
+    _military_master_storage_repository: &Option<ugaris_db::PgMilitaryMasterStorageRepository>,
+    _military_advisor_storage_repository: &Option<ugaris_db::PgMilitaryAdvisorStorageRepository>,
+    _notes_repository: &Option<ugaris_db::PgNotesRepository>,
+    _anticheat_repository: &Option<ugaris_db::PgAntiCheatRepository>,
+    _auction_repository: &Option<ugaris_db::PgAuctionRepository>,
+) {
+    // C `gladiator_driver`: Fiona's disposable student opponents (area 37,
+    // `src/area/37/arkhata.c`).
+    world.process_gladiator_actions(config.area_id);
+}

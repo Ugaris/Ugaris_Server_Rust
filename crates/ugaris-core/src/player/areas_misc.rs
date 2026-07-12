@@ -892,6 +892,25 @@ impl PlayerRuntime {
         write_i32(&mut self.arkhata_ppd, ARKHATA_PPD_RAMIN_STATE_OFFSET, state);
     }
 
+    /// C `struct arkhata_ppd::fiona_state` (`src/area/37/arkhata.h:8`) -
+    /// see [`ARKHATA_PPD_FIONA_STATE_OFFSET`]'s doc comment.
+    pub fn arkhata_fiona_state(&self) -> i32 {
+        if self.arkhata_ppd.len() < LEGACY_ARKHATA_PPD_SIZE {
+            return 0;
+        }
+        read_i32(&self.arkhata_ppd, ARKHATA_PPD_FIONA_STATE_OFFSET)
+    }
+
+    /// C `struct arkhata_ppd::fiona_state` write half - see
+    /// [`ARKHATA_PPD_FIONA_STATE_OFFSET`]'s doc comment. `fiona_driver`
+    /// (`world::npc::area37::fiona`) is the only writer.
+    pub fn set_arkhata_fiona_state(&mut self, state: i32) {
+        if self.arkhata_ppd.len() < LEGACY_ARKHATA_PPD_SIZE {
+            self.arkhata_ppd.resize(LEGACY_ARKHATA_PPD_SIZE, 0);
+        }
+        write_i32(&mut self.arkhata_ppd, ARKHATA_PPD_FIONA_STATE_OFFSET, state);
+    }
+
     /// C `struct arkhata_ppd::rammy_state` write half - see
     /// [`ARKHATA_PPD_RAMMY_STATE_OFFSET`]'s doc comment. `rammy_driver`
     /// (`world::npc::area37::rammy`) is the only writer.

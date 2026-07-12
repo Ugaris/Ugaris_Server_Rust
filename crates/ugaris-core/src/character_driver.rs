@@ -247,6 +247,20 @@ pub const CDR_RAMMY: u16 = 131;
 /// the Arkhata townsman who runs "Ishtar's Bracelet" (quest 66), see
 /// `world::npc::area37::jaz`'s module doc comment.
 pub const CDR_JAZ: u16 = 132;
+/// C `#define CDR_BRIDGEGUARD 133` (`src/system/drvlib.h:183`, comment
+/// "arkhata"): the bridge-crossing guards outside Arkhata proper, see
+/// `world::npc::area37::bridgeguard`'s module doc comment.
+pub const CDR_BRIDGEGUARD: u16 = 133;
+/// C `#define CDR_FIONA 134` (`src/system/drvlib.h:184`, comment
+/// "arkhata"): the Fighting School headmistress, quest 67 ("The Missing
+/// Ring") giver and student-challenge/skill-raise NPC, see
+/// `world::npc::area37::fiona`'s module doc comment.
+pub const CDR_FIONA: u16 = 134;
+/// C `#define CDR_GLADIATOR 135` (`src/system/drvlib.h:185`, comment
+/// "arkhata"): the disposable student opponent `fight_student`
+/// (`world::npc::area37::fiona`) spawns for Fiona's "enter" challenge, see
+/// `world::npc::area37::gladiator`'s module doc comment.
+pub const CDR_GLADIATOR: u16 = 135;
 /// C `#define CDR_LAB2HERALD 196` (`src/system/drvlib.h:222`): the lab2
 /// graveyard chapel keeper (`src/area/22/lab2.c::lab2_herald_driver`), see
 /// `world::npc::area22::lab2_herald`'s module doc comment.
@@ -878,6 +892,9 @@ pub enum CharacterDriverState {
     Nop(crate::world::npc::area37::nop::NopDriverData),
     Rammy(crate::world::npc::area37::rammy::RammyDriverData),
     Jaz(crate::world::npc::area37::jaz::JazDriverData),
+    Fiona(crate::world::npc::area37::fiona::FionaDriverData),
+    BridgeGuard(crate::world::npc::area37::bridgeguard::BridgeGuardDriverData),
+    Gladiator(crate::world::npc::area37::gladiator::GladiatorDriverData),
 }
 /// C `bank_driver_parse` from `src/module/bank.c`. The C driver defaults
 /// opening hours to 6..23 before parsing (`bank_driver` lines 304-309).
@@ -1703,7 +1720,10 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::TeufelQuest(_)
             | CharacterDriverState::Nop(_)
             | CharacterDriverState::Rammy(_)
-            | CharacterDriverState::Jaz(_),
+            | CharacterDriverState::Jaz(_)
+            | CharacterDriverState::Fiona(_)
+            | CharacterDriverState::BridgeGuard(_)
+            | CharacterDriverState::Gladiator(_),
         ) => SimpleBaddyDriverData::default(),
         None => SimpleBaddyDriverData::default(),
     };

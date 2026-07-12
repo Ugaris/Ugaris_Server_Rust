@@ -1,8 +1,9 @@
 use super::*;
 use ugaris_core::character_driver::{
     CDR_ARKHATAPRISON, CDR_ARKHATASKELLY, CDR_BOOKEATER, CDR_CENTINEL, CDR_CLANCLERK,
-    CDR_CLANMASTER, CDR_LABGNOMEDRIVER, CDR_NOP, CDR_SMUGGLELEAD, CDR_TUNNELER_GORWIN,
-    CDR_TWOGUARD, CDR_TWOROBBER, CDR_TWOSERVANT, CDR_WARPFIGHTER, CDR_WHITEROBBERBOSS,
+    CDR_CLANMASTER, CDR_GLADIATOR, CDR_LABGNOMEDRIVER, CDR_NOP, CDR_SMUGGLELEAD,
+    CDR_TUNNELER_GORWIN, CDR_TWOGUARD, CDR_TWOROBBER, CDR_TWOSERVANT, CDR_WARPFIGHTER,
+    CDR_WHITEROBBERBOSS,
 };
 use ugaris_core::world::{CS_ENEMY, CS_GUEST, LS_DEAD, LS_FINE};
 
@@ -1661,5 +1662,30 @@ pub(crate) fn apply_arkhata_immortal_death_from_hurt_event(
             "I JUST DIED! I'M SUPPOSED TO BE IMMORTAL!"
         )
     );
+    true
+}
+
+/// C `ch_died_driver`/`CDR_GLADIATOR` dispatch (`arkhata.c:4653-4655`)
+/// routes any death of a `world::npc::area37::gladiator` student to
+/// `gladiator_dead(cn, co)` (`:1176-1178`) - a plain `notify_area`
+/// broadcast reporting the killer back to any nearby Fiona, ported as
+/// `World::apply_gladiator_death` (see that method's own doc comment for
+/// why this lives outside `world_events::death_hooks`'s usual
+/// `PlayerRuntime`-touching shape).
+pub(crate) fn apply_gladiator_death_from_hurt_event(
+    world: &mut World,
+    event: LegacyHurtEvent,
+) -> bool {
+    if !event.outcome.killed {
+        return false;
+    }
+    let is_gladiator_kill = world
+        .characters
+        .get(&event.target_id)
+        .is_some_and(|target| target.driver == CDR_GLADIATOR);
+    if !is_gladiator_kill {
+        return false;
+    }
+    world.apply_gladiator_death(event.target_id, event.cause_id);
     true
 }

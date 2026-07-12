@@ -643,6 +643,11 @@ pub(crate) const IID_ARKHATA_LETTER3: u32 = make_item_id(DEV_ID_DB, 0x0000BD);
 /// `jaz_driver`'s (`world::npc::area37::jaz`) quest-66 turn-in item.
 pub(crate) const IID_ARKHATA_BRACELET: u32 = make_item_id(DEV_ID_DB, 0x0000B6);
 
+/// C `#define IID_ARKHATA_RING MAKE_ITEMID(DEV_ID_DB, 0x0000B7)`
+/// (`src/common/item_id.h:246`): Fiona's ring, `fiona_driver`'s
+/// (`world::npc::area37::fiona`) quest-67 turn-in item.
+pub(crate) const IID_ARKHATA_RING: u32 = make_item_id(DEV_ID_DB, 0x0000B7);
+
 pub const IID_AREA25_TELEKEY: u32 = make_item_id(DEV_ID_DB, 0x000090);
 
 pub const IID_AREA25_DOORKEY: u32 = make_item_id(DEV_ID_DB, 0x000091);

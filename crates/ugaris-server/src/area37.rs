@@ -13,6 +13,11 @@
 use std::collections::HashMap;
 
 use super::*;
+use ugaris_core::character_driver::{CharacterDriverState, FightDriverData, CDR_GLADIATOR};
+use ugaris_core::world::npc::area37::fiona::{
+    qlog_fiona_ring, FionaOutcomeEvent, FionaPlayerFacts,
+};
+use ugaris_core::world::npc::area37::gladiator::GladiatorDriverData;
 use ugaris_core::world::npc::area37::jaz::{qlog_jaz_bracelet, JazOutcomeEvent, JazPlayerFacts};
 use ugaris_core::world::npc::area37::rammy::{
     qlog_rammy_crown, qlog_rammy_entrance_passes, RammyOutcomeEvent, RammyPlayerFacts,
@@ -234,4 +239,176 @@ pub(crate) async fn apply_jaz_events(
         }
     }
     applied
+}
+
+pub(crate) fn fiona_player_facts(
+    runtime: &ServerRuntime,
+) -> HashMap<CharacterId, FionaPlayerFacts> {
+    runtime
+        .players
+        .values()
+        .filter_map(|player| {
+            let character_id = player.character_id?;
+            Some((
+                character_id,
+                FionaPlayerFacts {
+                    fiona_state: player.arkhata_fiona_state(),
+                },
+            ))
+        })
+        .collect()
+}
+
+/// Applies each [`FionaOutcomeEvent`] queued by `World::
+/// process_fiona_actions`.
+pub(crate) async fn apply_fiona_events(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    loader: &mut ZoneLoader,
+    events: Vec<FionaOutcomeEvent>,
+) -> usize {
+    let mut applied = 0;
+    for event in events {
+        match event {
+            FionaOutcomeEvent::UpdateFionaState {
+                player_id,
+                new_state,
+            } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.set_arkhata_fiona_state(new_state);
+                applied += 1;
+            }
+            // C `questlog_open(co, 67)` (`arkhata.c:891`).
+            FionaOutcomeEvent::QuestOpen67 { player_id } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.quest_log.open(qlog_fiona_ring());
+                let payload = legacy_questlog_payload(player);
+                for (session_id, _) in runtime.sessions_for_character(player_id) {
+                    runtime.send_to_session(session_id, payload.clone());
+                }
+                applied += 1;
+            }
+            // C `questlog_done(co, 67)` (`arkhata.c:1042`).
+            FionaOutcomeEvent::QuestDone67 { player_id } => {
+                let Some(level) = world.characters.get(&player_id).map(|c| c.level) else {
+                    continue;
+                };
+                let level_val = level_value(level);
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                if let Some(completion) =
+                    player
+                        .quest_log
+                        .complete_legacy(qlog_fiona_ring(), level, level_val)
+                {
+                    let payload = legacy_questlog_payload(player);
+                    world.give_exp(player_id, completion.granted_exp, u32::from(world.area_id));
+                    for (session_id, _) in runtime.sessions_for_character(player_id) {
+                        runtime.send_to_session(session_id, payload.clone());
+                    }
+                    applied += 1;
+                }
+            }
+            // C `fight_student(cn, co, ppd->fiona_state - 6)`
+            // (`arkhata.c:1014`).
+            FionaOutcomeEvent::FightStudent {
+                fiona_id,
+                player_id,
+                nr,
+            } => {
+                spawn_gladiator_student(world, runtime, loader, fiona_id, player_id, nr);
+                applied += 1;
+            }
+        }
+    }
+    applied
+}
+
+/// C `fight_student(cc, cn, nr)` (`arkhata.c:756-804`): `cc` (the speaking
+/// NPC) is `fiona_id` here, `cn` (the player being teleported/enrolled) is
+/// `player_id`. Needs `ZoneLoader` to instantiate `"Gladiator_<nr>"` - see
+/// `world::npc::area37::fiona`'s module doc comment.
+fn spawn_gladiator_student(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    loader: &mut ZoneLoader,
+    fiona_id: CharacterId,
+    player_id: CharacterId,
+    nr: i32,
+) {
+    // C `for (x=9;x<=24;x++) for(y=238;y<=252;y++) if
+    // ((co=map[x+y*MAXMAP].ch)) { say(cc, "The arena is busy. Please try
+    // again later."); return; }` (`arkhata.c:759-765`).
+    if world.arkhata_arena_is_busy() {
+        world.npc_say(fiona_id, "The arena is busy. Please try again later.");
+        return;
+    }
+
+    let template_key = format!("Gladiator_{nr}");
+    let character_id = runtime.allocate_character_id();
+    let Ok((mut gladiator, inventory_items)) =
+        loader.instantiate_character_template(&template_key, character_id)
+    else {
+        // C `if (!co) { say(cc, "Oops. Bug #5317a"); return; }`
+        // (`arkhata.c:772-775`).
+        world.npc_say(fiona_id, "Oops. Bug #5317a");
+        return;
+    };
+
+    // C `ch[co].driver = 135;` (`arkhata.c:788`) - the zone template's own
+    // `driver=136` (`CDR_NOP`, the background "Student") is overridden to
+    // the combat driver here.
+    gladiator.driver = CDR_GLADIATOR;
+    gladiator.driver_state = Some(CharacterDriverState::Gladiator(GladiatorDriverData {
+        last_talk: world.tick.0,
+    }));
+    gladiator.dir = Direction::RightDown as u8;
+    gladiator.rest_x = 14;
+    gladiator.rest_y = 244;
+    // C never calls `fight_driver_set_dist` for `CDR_GLADIATOR` anywhere -
+    // its `struct fight_driver_data` is entirely `set_data`'s own
+    // zero-initialize-on-first-touch auto-vivification (`fight_driver_add_
+    // enemy`'s `dat = set_data(cn, DRD_FIGHTDRIVER, ...)`), which the
+    // driver-independent `Character::fight_driver` field would only
+    // replicate implicitly via `add_simple_baddy_enemy_unchecked`'s own
+    // `get_or_insert_with` - except `World::simple_baddy_enemy_within_
+    // start_limits` (needed by the `NT_CHAR` auto-aggro path) treats a
+    // still-`None` `fight_driver` as "reject" rather than "no limits set",
+    // so it must be seeded eagerly here (same precedent as `spawns::
+    // spawn_warp_trial_fighter`'s explicit `fight_driver_set_dist`
+    // reproduction, minus the nonzero start/stop-dist values C never sets
+    // for this driver).
+    gladiator.fight_driver = Some(FightDriverData::default());
+    // C `ch[co].flags &= ~(CF_RESPAWN|CF_NOATTACK|CF_IMMORTAL);`
+    // (`arkhata.c:789`).
+    gladiator
+        .flags
+        .remove(CharacterFlags::RESPAWN | CharacterFlags::NOATTACK | CharacterFlags::IMMORTAL);
+
+    if !world.spawn_character(gladiator, 14, 244) {
+        // C `if (!drop_char(co, 14, 244, 0)) { destroy_char(co); say(cc,
+        // "Oops. Bug #5317b"); return; }` (`arkhata.c:793-797`).
+        world.npc_say(fiona_id, "Oops. Bug #5317b");
+        return;
+    }
+    for item in inventory_items {
+        world.items.insert(item.id, item);
+    }
+    world.update_character(character_id);
+    if let Some(character) = world.characters.get_mut(&character_id) {
+        character.hp = i32::from(character.values[0][CharacterValue::Hp as usize]) * POWERSCALE;
+        character.endurance =
+            i32::from(character.values[0][CharacterValue::Endurance as usize]) * POWERSCALE;
+        character.mana = i32::from(character.values[0][CharacterValue::Mana as usize]) * POWERSCALE;
+        character.lifeshield =
+            i32::from(character.values[0][CharacterValue::MagicShield as usize]) * POWERSCALE;
+    }
+
+    // C `teleport_char_driver(cn, 16, 244);` (`arkhata.c:803`).
+    world.teleport_char_driver(player_id, 16, 244);
 }
