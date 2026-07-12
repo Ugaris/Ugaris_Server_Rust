@@ -1415,9 +1415,17 @@ Ordered by player progression; the C file is the oracle.
   ported (`ugaris-server::area32::regenerate_mission_giver_special_offers`
   runs the 12h reroll before every driver call; `ShowSpecialOffer` event
   previews it; buying is fully in-`World`) - 23/24 reward-shop entries are
-  now functional. Still not ported: `CTPOT`'s multi-turn stat-potion
-  flow (needs `Item::mod_index`/`mod_value`, a deeper cross-cutting gap) -
-  see `world/npc/area32/governor.rs`'s module doc comment.
+  now functional. `CTPOT`'s multi-turn stat-potion skill-naming flow
+  (`find_skill_text`, the `mis_potionbase` finalize) is now also ported
+  (`Item::modifier_index`/`modifier_value` already existed - the "deeper
+  cross-cutting gap" the previous note described turned out to already be
+  closed by other, unrelated slices) - 23/24 reward-shop entries remain
+  the count since `CTPOT` replaces the fraction's numerator gap with
+  `RNORB`. REMAINING: `RNORB` ("Random Orb") is the only reward-shop entry
+  left unported - it needs a `create_orb()`-equivalent (the general
+  32-skill-table orb roll, `tool.c:3679-3760`; distinct from the
+  5-skill-only `handle_orb_find` already ported for Area 12 mining) that
+  does not exist anywhere in this port yet.
 - [ ] **Area 33 - `src/area/33/tunnel.c`** - long tunnel events. Also wire
   `achievement_add_tunnel_level` using the existing `award_*` helper
   pattern in `crates/ugaris-server/src/achievement.rs` (Achievements
@@ -1467,6 +1475,12 @@ Keep entries to at most three lines: date, task, one-line result.
 Anything longer belongs in `PORTING_LEDGER.md`; historical verbose
 notes live in `PROGRESS_ARCHIVE.md`.
 
+- 2026-07-12: Area 32 progress: ported `CTPOT`'s multi-turn custom-stat-
+  potion skill-naming flow (`find_skill_text`, `MissionGiveOutcomeEvent::
+  GiveCustomStatPotion`) - the pre-existing `Item::modifier_index`/`_value`
+  fields already covered the "deeper gap" the old note described; only
+  `RNORB` remains unported. 3944 core [+11] + 1203 server [+21] tests pass,
+  boot-smoke.
 - 2026-07-12: Area 32 progress: ported the rotating "special offer" gear
   purchase (qa codes 18/19, `ugaris-server::area32::
   regenerate_mission_giver_special_offers` + `MissionGiveOutcomeEvent::

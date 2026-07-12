@@ -51,22 +51,36 @@
 //! in this file (see below). The following remain **not yet ported**,
 //! tracked in `PORTING_TODO.md`:
 //! - The `CTPOT` ("Custom Stat Potion") reward's multi-turn skill-naming
-//!   flow (`ppd->statowed`/`statcnt`/`stat[]`, `find_skill_text`,
-//!   `mis_potionbase`'s `mod_index`/`mod_value` fields): no
-//!   `Item::mod_index`/`mod_value` fields exist anywhere in this port yet
-//!   (a deeper, cross-cutting gap, not specific to this NPC). `CTPOT`'s
-//!   preview text (`mission_show_reward`) is still ported faithfully
-//!   (canned description), but buying it falls through to the generic
-//!   item-template path, which reports "Oops, I've run out of stock"
-//!   (no `CTPOT` item template exists) instead of granting anything - a
-//!   safe, non-crashing, clearly worse-than-C degradation, not a silent
-//!   one. `RNORB` ("Random Orb", needs a `create_orb`-equivalent that
-//!   also does not exist in `ugaris-core` yet - see
+//!   flow is now also ported: buying it (`mission_giver_give_reward`'s
+//!   `"CTPOT"` arm) sets `ppd.statowed`/resets `statcnt`/`stat`, the
+//!   qa codes `20`/`21`/`22` ("one/two/three skill(s)") set `statcnt` and
+//!   prompt for skill name(s), and a new [`parse_stat_potion_skill_text`]
+//!   (C `find_skill_text`, `missions.c:293-443`) recognizes free-text
+//!   skill names in the `NoMatch` arm once nothing else matched,
+//!   accumulating into `ppd.stat[]` until `statcnt` names have been given.
+//!   The finalize step (`missions.c:1702-1734`: `create_item(
+//!   "mis_potionbase")` + `mod_index`/`mod_value` stamping +
+//!   `give_char_item`) is deferred to `ugaris-server` via a new
+//!   [`MissionGiveOutcomeEvent::GiveCustomStatPotion`], the same
+//!   `ZoneLoader`-needing-item-creation split as `GiveItemReward`. Once
+//!   drunk, `mis_potionbase`'s own `driver=32`/`IDR_FLASK` template (its
+//!   `arg=` bytes pre-set `shaken=1`) needs zero new code: the already-
+//!   ported generic `flask_driver`/`install_beyond_potion_spell`/
+//!   `recompute_character_values` pipeline reads any item's
+//!   `modifier_index`/`modifier_value` fields directly, which already
+//!   exist on [`crate::entity::Item`] (`Item::modifier_index`/
+//!   `modifier_value`, C's `mod_index`/`mod_value`) and are exercised by
+//!   many other already-ported systems (`world::special_item`,
+//!   `world::alchemy`, procedurally-generated equipment across several
+//!   areas) - the "deeper cross-cutting gap" this note used to describe
+//!   no longer exists. `RNORB` ("Random Orb", needs a `create_orb`-
+//!   equivalent that does not exist in `ugaris-core` yet - see
 //!   `crates/ugaris-server/src/commands_admin/grants.rs::
-//!   grant_created_orb` for the closest existing analog) degrades the
-//!   same way. Every other reward (12 rings, `MEXP1-3`, `GOLD1-4`,
-//!   `CBPOT`, `FGPOT`, `SCPOT` - 22 of the 24 table entries) is fully
-//!   functional.
+//!   grant_created_orb` for the closest existing analog) is the only
+//!   reward still degrading to the generic "Oops, I've run out of stock"
+//!   fallback. Every other reward (12 rings, `MEXP1-3`, `GOLD1-4`,
+//!   `CBPOT`, `FGPOT`, `SCPOT`, `CTPOT` - 23 of the 24 table entries) is
+//!   fully functional.
 //! - `mis_rew[]` is stored pre-sorted by `value` ascending (matching the
 //!   sorted state C's own `qsort(mis_rew, ...)`/`init_done` one-time
 //!   sort settles into on first use) rather than modeling the sort as
@@ -102,6 +116,7 @@ use crate::world::npc::area32::military::army_rank_for_points;
 use crate::world::npc::area32::mission_start::{
     mission_status_lines, MissionStartError, MISSION_FIGHTER_DATA,
 };
+use crate::world::values::full_skill_name;
 use crate::world::*;
 
 /// C `char_dist(cn, co) > 10` (`missions.c:1424`): the `NT_CHAR`
@@ -583,6 +598,96 @@ pub const MISSIONGIVE_QA: &[TextQaEntry] = &[
     },
 ];
 
+/// C `find_skill_text`'s free-text skill-name parser tail
+/// (`missions.c:316-442`) - the caller (`mission_giver_handle_text_
+/// message`'s `NoMatch` arm) already performs `find_skill_text`'s own
+/// sender/distance/line-of-sight/`CF_PLAYER` guards (`missions.c:293-314`)
+/// once for the whole message, so this pure fn only covers the text
+/// parsing itself: strip a possible leading name/colon/quote prefix
+/// (mirroring C's `isalpha`/`isspace`/`isalpha`/`:`/`isspace`/`"` skip
+/// chain digit-for-digit), require a `" skill"` substring anywhere in
+/// what's left (case-insensitive), then match the first recognized skill
+/// keyword prefix, in C's own table order. Preserves one real C quirk
+/// verbatim: the `"lightning"` check only compares 8 of its 9 characters
+/// (`strncasecmp(text, "lightning", 8)`, `missions.c:420`), so `"lightnin"`
+/// alone (or any 9th character) also matches it - hence the `"lightnin"`
+/// (not `"lightning"`) prefix below. Also preserves C mapping `"speed"` to
+/// `V_SPEED` (base movement speed, `CharacterValue::Speed`), not
+/// `V_SPEEDSKILL`/`CharacterValue::SpeedSkill` (the "Speed Skill" raisable
+/// skill) - a real, deliberate-looking C quirk since `find_skill_text` has
+/// no `"speed skill"`-specific branch at all.
+fn parse_stat_potion_skill_text(text: &str) -> Option<CharacterValue> {
+    let bytes = text.as_bytes();
+    let mut i = 0usize;
+    while i < bytes.len() && bytes[i].is_ascii_alphabetic() {
+        i += 1;
+    }
+    while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+        i += 1;
+    }
+    while i < bytes.len() && bytes[i].is_ascii_alphabetic() {
+        i += 1;
+    }
+    if i < bytes.len() && bytes[i] == b':' {
+        i += 1;
+    }
+    while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+        i += 1;
+    }
+    if i < bytes.len() && bytes[i] == b'"' {
+        i += 1;
+    }
+    // Every skipped byte above is ASCII, so `i` always lands on a char
+    // boundary.
+    let remaining = &text[i..];
+    let lower = remaining.to_ascii_lowercase();
+    if !lower.contains(" skill") {
+        return None;
+    }
+    const PREFIXES: &[(&str, CharacterValue)] = &[
+        ("pulse", CharacterValue::Pulse),
+        ("dagger", CharacterValue::Dagger),
+        ("hand", CharacterValue::Hand),
+        ("staff", CharacterValue::Staff),
+        ("sword", CharacterValue::Sword),
+        ("twohand", CharacterValue::TwoHand),
+        ("two hand", CharacterValue::TwoHand),
+        ("two-hand", CharacterValue::TwoHand),
+        ("attack", CharacterValue::Attack),
+        ("parry", CharacterValue::Parry),
+        ("warcry", CharacterValue::Warcry),
+        ("tactics", CharacterValue::Tactics),
+        ("surround", CharacterValue::Surround),
+        ("body control", CharacterValue::BodyControl),
+        ("body-control", CharacterValue::BodyControl),
+        ("bodycontrol", CharacterValue::BodyControl),
+        ("speed", CharacterValue::Speed),
+        ("barter", CharacterValue::Barter),
+        ("percept", CharacterValue::Percept),
+        ("stealth", CharacterValue::Stealth),
+        ("bless", CharacterValue::Bless),
+        ("heal", CharacterValue::Heal),
+        ("freeze", CharacterValue::Freeze),
+        ("magic shield", CharacterValue::MagicShield),
+        ("magic-shield", CharacterValue::MagicShield),
+        ("magicshield", CharacterValue::MagicShield),
+        ("flash", CharacterValue::Flash),
+        ("lightnin", CharacterValue::Flash),
+        ("fire", CharacterValue::Fireball),
+        ("regen", CharacterValue::Regenerate),
+        ("meditate", CharacterValue::Meditate),
+        ("immunity", CharacterValue::Immunity),
+        ("duration", CharacterValue::Duration),
+        ("rage", CharacterValue::Rage),
+    ];
+    for (prefix, value) in PREFIXES {
+        if lower.starts_with(prefix) {
+            return Some(*value);
+        }
+    }
+    None
+}
+
 /// Per-player facts [`World::process_mission_giver_actions`] needs from
 /// `crate::player::PlayerRuntime`, which `World` cannot see.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -637,6 +742,23 @@ pub enum MissionGiveOutcomeEvent {
     ShowSpecialOffer {
         player_id: CharacterId,
         npc_id: CharacterId,
+    },
+    /// C `find_skill_text`'s finalize branch (`missions.c:1702-1734`):
+    /// once `stat[]` holds `statcnt` chosen skills, `create_item(
+    /// "mis_potionbase")`, stamp `mod_index[0..3]`/`mod_value[0..3]` from
+    /// `stat`/`statcnt` (`50/0/0`, `30/30/0`, or `20/20/20`), and
+    /// `give_char_item`. Applied server-side since it needs a
+    /// `ZoneLoader`; on success `ppd.statowed` resets to `0` (`stat[]` is
+    /// left as-is, matching C, which never clears it on success either);
+    /// on failure the item is destroyed and `ppd.stat[]` resets to
+    /// `[0, 0, 0]` so the player can retry (`ppd.statowed` stays
+    /// untouched, same as C) - both mutate `PlayerRuntime` directly, same
+    /// precedent as `GiveItemReward`'s deferred point deduction.
+    GiveCustomStatPotion {
+        player_id: CharacterId,
+        npc_id: CharacterId,
+        stat: [i32; 3],
+        statcnt: i32,
     },
 }
 
@@ -993,6 +1115,7 @@ impl World {
         let mut give_item_reward: Option<usize> = None;
         let mut show_item_reward: Option<usize> = None;
         let mut show_special_offer = false;
+        let mut stat_potion_finalize: Option<([i32; 3], i32)> = None;
 
         match analyse_text_qa(text, giver_name, &speaker.name, MISSIONGIVE_QA) {
             TextAnalysisOutcome::Said(reply) => {
@@ -1174,14 +1297,47 @@ impl World {
                 }
                 didsay = true;
             }
-            // C `case 20-22:` (custom stat potion skill-count select),
-            // deferred - see the module doc comment. `statowed` never
-            // becomes non-zero in this port (only the also-deferred
-            // `CTPOT` give-flow would set it), so C's own `if (ppd->
-            // statowed < 1)` guard always fires here in practice.
-            TextAnalysisOutcome::Matched(20..=22) => {
+            // C `case 20/21/22:` ("one/two/three skill(s)"): pick the
+            // custom stat potion's skill count (`missions.c:1652-1681`).
+            TextAnalysisOutcome::Matched(20) => {
                 if ppd.statowed < 1 {
                     self.npc_quiet_say(giver_id, "You did not buy a stat potion.");
+                } else {
+                    ppd.statcnt = 1;
+                    self.npc_quiet_say(
+                        giver_id,
+                        &format!(
+                            "Alright, a one-stat potion it will be. Please name the skill you'd like to have (ie. {COL_STR_LIGHT_BLUE}attack skill{COL_STR_RESET}, {COL_STR_LIGHT_BLUE}immunity skill{COL_STR_RESET} etc.)."
+                        ),
+                    );
+                }
+                didsay = true;
+            }
+            TextAnalysisOutcome::Matched(21) => {
+                if ppd.statowed < 1 {
+                    self.npc_quiet_say(giver_id, "You did not buy a stat potion.");
+                } else {
+                    ppd.statcnt = 2;
+                    self.npc_quiet_say(
+                        giver_id,
+                        &format!(
+                            "Alright, a two-stat potion it will be. Please name the skills you'd like to have (ie. {COL_STR_LIGHT_BLUE}attack skill{COL_STR_RESET}, {COL_STR_LIGHT_BLUE}immunity skill{COL_STR_RESET} etc.), one skill per line."
+                        ),
+                    );
+                }
+                didsay = true;
+            }
+            TextAnalysisOutcome::Matched(22) => {
+                if ppd.statowed < 1 {
+                    self.npc_quiet_say(giver_id, "You did not buy a stat potion.");
+                } else {
+                    ppd.statcnt = 3;
+                    self.npc_quiet_say(
+                        giver_id,
+                        &format!(
+                            "Alright, a three-stat potion it will be. Please name the skills you'd like to have (ie. {COL_STR_LIGHT_BLUE}attack skill{COL_STR_RESET}, {COL_STR_LIGHT_BLUE}immunity skill{COL_STR_RESET} etc.), one skill per line."
+                        ),
+                    );
                 }
                 didsay = true;
             }
@@ -1213,6 +1369,43 @@ impl World {
                                 give_item_reward = Some(idx);
                                 didsay = true;
                             }
+                        }
+                    }
+                }
+                // C `if (!didsay && ppd->statowed && (nr = find_skill_text(
+                // ...)) && nr > 0 && nr < V_MAX)` (`missions.c:1690-1739`):
+                // the in-progress custom-stat-potion skill-naming flow.
+                // `find_skill_text`'s own sender/distance/line-of-sight/
+                // `CF_PLAYER` guards were already checked once for this
+                // whole message, above.
+                if !didsay && ppd.statowed > 0 {
+                    if let Some(skill) = parse_stat_potion_skill_text(text) {
+                        didsay = true;
+                        // C's own "first two empty slots only" scan
+                        // (`missions.c:1694-1700`): only `stat[0]`/`stat[1]`
+                        // are ever checked, so a third skill always lands
+                        // in `stat[2]` by elimination once both are full.
+                        let mut n = 0usize;
+                        while n < 2 {
+                            if ppd.stat[n] != 0 {
+                                n += 1;
+                                continue;
+                            }
+                            break;
+                        }
+                        ppd.stat[n] = skill as i32;
+                        n += 1;
+                        if n >= ppd.statcnt as usize {
+                            stat_potion_finalize = Some((ppd.stat, ppd.statcnt));
+                        } else {
+                            self.npc_quiet_say(
+                                giver_id,
+                                &format!(
+                                    "Very well, the {} skill will be {}.",
+                                    if n == 1 { "first" } else { "second" },
+                                    full_skill_name(skill)
+                                ),
+                            );
                         }
                     }
                 }
@@ -1262,6 +1455,14 @@ impl World {
             events.push(MissionGiveOutcomeEvent::ShowSpecialOffer {
                 player_id: speaker_id,
                 npc_id: giver_id,
+            });
+        }
+        if let Some((stat, statcnt)) = stat_potion_finalize {
+            events.push(MissionGiveOutcomeEvent::GiveCustomStatPotion {
+                player_id: speaker_id,
+                npc_id: giver_id,
+                stat,
+                statcnt,
             });
         }
     }
@@ -1403,9 +1604,27 @@ impl World {
                 self.queue_system_text_bytes(player_id, give_money_message(amount));
                 ppd.points -= reward.value;
             }
-            // `CTPOT`/`RNORB`: no real item template - falls through to
-            // the generic branch below, which will gracefully report
-            // "out of stock" (see the module doc comment).
+            // C `mission_give_reward`'s `"CTPOT"` branch (`missions.c:
+            // 1202-1211`): deducts points, kicks off the multi-turn
+            // custom-stat-potion skill-naming flow, and - unlike every
+            // other branch - `return`s immediately, skipping the generic
+            // "Here you go, ..." trailer below.
+            "CTPOT" => {
+                ppd.points -= reward.value;
+                ppd.statowed += 1;
+                ppd.statcnt = 0;
+                ppd.stat = [0, 0, 0];
+                self.npc_quiet_say(
+                    giver_id,
+                    &format!(
+                        "One custom stat potion coming up. Do you want it to hold {COL_STR_LIGHT_BLUE}one skill{COL_STR_RESET} or {COL_STR_LIGHT_BLUE}two skills{COL_STR_RESET} or {COL_STR_LIGHT_BLUE}three skills{COL_STR_RESET}?"
+                    ),
+                );
+                return None;
+            }
+            // `RNORB`: no `create_orb`-equivalent in this port yet - falls
+            // through to the generic branch below, which will gracefully
+            // report "out of stock" (see the module doc comment).
             _ => return Some(idx),
         }
         self.npc_quiet_say(

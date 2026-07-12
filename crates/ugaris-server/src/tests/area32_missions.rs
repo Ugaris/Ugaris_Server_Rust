@@ -31,6 +31,7 @@ const MISSION_ITM: &str = r#"
     armor_spell: name="Armor Spell" ;
     weapon_spell: name="Weapon Spell" ;
     mis_documents: name="Documents" sprite=88 flag=IF_TAKE ;
+    mis_potionbase: name="Custom Potion" sprite=10002 flag=IF_USE flag=IF_TAKE ;
 "#;
 
 fn mission_loader() -> ZoneLoader {
@@ -815,4 +816,221 @@ fn apply_show_special_offer_event_previews_item_and_price() {
     assert!(texts
         .iter()
         .any(|text| text.message.contains("buy the special offer")));
+}
+
+// ---- `GiveCustomStatPotion` (`missions.c:1702-1734`) ----
+
+fn setup_governor_and_player(
+    statowed: i32,
+) -> (World, ZoneLoader, ServerRuntime, CharacterId, CharacterId) {
+    let mut world = World::default();
+    let loader = mission_loader();
+    let mut runtime = ServerRuntime::default();
+    world.add_character(governor_npc(CharacterId(1)));
+    world.add_character(login_character(
+        CharacterId(2),
+        &login_block("Godmode"),
+        32,
+        5,
+        5,
+    ));
+    let mut player = PlayerRuntime::connected(1, 0);
+    player.character_id = Some(CharacterId(2));
+    player.governor = MissionPpd {
+        statowed,
+        ..Default::default()
+    };
+    runtime.players.insert(1, player);
+    (world, loader, runtime, CharacterId(1), CharacterId(2))
+}
+
+// C `create_item("mis_potionbase")` + `mod_index[0..3]`/`mod_value[0..3]`
+// stamping + `give_char_item` success path (`missions.c:1702-1725`).
+#[test]
+fn apply_give_custom_stat_potion_creates_item_with_modifiers_and_resets_statowed() {
+    let (mut world, mut loader, mut runtime, npc_id, player_id) = setup_governor_and_player(1);
+
+    let applied = apply_mission_giver_events(
+        &mut world,
+        &mut runtime,
+        &mut loader,
+        vec![MissionGiveOutcomeEvent::GiveCustomStatPotion {
+            player_id,
+            npc_id,
+            stat: [
+                CharacterValue::Attack as i32,
+                CharacterValue::Parry as i32,
+                0,
+            ],
+            statcnt: 2,
+        }],
+    );
+    assert_eq!(applied, 1);
+
+    let player_char = world.characters.get(&player_id).unwrap();
+    let item_id = player_char.cursor_item.expect("potion expected on cursor");
+    let item = world.items.get(&item_id).unwrap();
+    assert_eq!(item.name, "Custom Potion");
+    assert_eq!(
+        item.modifier_index[0..3],
+        [
+            CharacterValue::Attack as i16,
+            CharacterValue::Parry as i16,
+            0
+        ]
+    );
+    assert_eq!(item.modifier_value[0..3], [30, 30, 0]);
+
+    let player = runtime.player_for_character(player_id).unwrap();
+    assert_eq!(player.governor.statowed, 0);
+
+    let texts = world.drain_pending_area_texts();
+    assert!(texts
+        .iter()
+        .any(|text| text.message.contains("Very well, Godmode, here you go.")));
+}
+
+// C statcnt=1/3 stamp `mod_value` 50/0/0 and 20/20/20 respectively
+// (`missions.c:1708-1722`).
+#[test]
+fn apply_give_custom_stat_potion_uses_correct_modifier_values_per_statcnt() {
+    let (mut world, mut loader, mut runtime, npc_id, player_id) = setup_governor_and_player(1);
+    apply_mission_giver_events(
+        &mut world,
+        &mut runtime,
+        &mut loader,
+        vec![MissionGiveOutcomeEvent::GiveCustomStatPotion {
+            player_id,
+            npc_id,
+            stat: [CharacterValue::Attack as i32, 0, 0],
+            statcnt: 1,
+        }],
+    );
+    let item_id = world
+        .characters
+        .get(&player_id)
+        .unwrap()
+        .cursor_item
+        .unwrap();
+    assert_eq!(
+        world.items.get(&item_id).unwrap().modifier_value[0..3],
+        [50, 0, 0]
+    );
+
+    let (mut world, mut loader, mut runtime, npc_id, player_id) = setup_governor_and_player(1);
+    apply_mission_giver_events(
+        &mut world,
+        &mut runtime,
+        &mut loader,
+        vec![MissionGiveOutcomeEvent::GiveCustomStatPotion {
+            player_id,
+            npc_id,
+            stat: [
+                CharacterValue::Attack as i32,
+                CharacterValue::Parry as i32,
+                CharacterValue::Warcry as i32,
+            ],
+            statcnt: 3,
+        }],
+    );
+    let item_id = world
+        .characters
+        .get(&player_id)
+        .unwrap()
+        .cursor_item
+        .unwrap();
+    assert_eq!(
+        world.items.get(&item_id).unwrap().modifier_value[0..3],
+        [20, 20, 20]
+    );
+}
+
+// C `if (give_char_item(co, in)) { ... } else { quiet_say(cn,"please try
+// again"); ppd->stat[0]=ppd->stat[1]=ppd->stat[2]=0; destroy_item(in); }`
+// (`missions.c:1723-1730`).
+#[test]
+fn apply_give_custom_stat_potion_reports_no_room_and_resets_stat_but_not_statowed() {
+    let (mut world, mut loader, mut runtime, npc_id, player_id) = setup_governor_and_player(1);
+    // Fill cursor + every inventory slot so `give_char_item` fails.
+    if let Some(player_char) = world.characters.get_mut(&player_id) {
+        player_char.cursor_item = Some(ItemId(9000));
+        for slot in player_char
+            .inventory
+            .iter_mut()
+            .skip(ugaris_core::legacy::INVENTORY_START_INVENTORY)
+        {
+            *slot = Some(ItemId(9000));
+        }
+    }
+
+    let applied = apply_mission_giver_events(
+        &mut world,
+        &mut runtime,
+        &mut loader,
+        vec![MissionGiveOutcomeEvent::GiveCustomStatPotion {
+            player_id,
+            npc_id,
+            stat: [CharacterValue::Attack as i32, 0, 0],
+            statcnt: 1,
+        }],
+    );
+    assert_eq!(applied, 0);
+
+    let player = runtime.player_for_character(player_id).unwrap();
+    assert_eq!(
+        player.governor.statowed, 1,
+        "statowed is untouched on failure, matching C"
+    );
+    assert_eq!(player.governor.stat, [0, 0, 0]);
+
+    let texts = world.drain_pending_area_texts();
+    assert!(texts
+        .iter()
+        .any(|text| text.message.contains("please try again")));
+}
+
+// C `create_item` failing (missing template) reports the same "please try
+// again" + `stat[]` reset, without ever calling `give_char_item`
+// (`missions.c:1731-1734`).
+#[test]
+fn apply_give_custom_stat_potion_reports_missing_template() {
+    let mut world = World::default();
+    let mut loader = ZoneLoader::new(); // no `mis_potionbase` registered
+    let mut runtime = ServerRuntime::default();
+    world.add_character(governor_npc(CharacterId(1)));
+    world.add_character(login_character(
+        CharacterId(2),
+        &login_block("Godmode"),
+        32,
+        5,
+        5,
+    ));
+    let mut player = PlayerRuntime::connected(1, 0);
+    player.character_id = Some(CharacterId(2));
+    player.governor = MissionPpd {
+        statowed: 1,
+        ..Default::default()
+    };
+    runtime.players.insert(1, player);
+
+    let applied = apply_mission_giver_events(
+        &mut world,
+        &mut runtime,
+        &mut loader,
+        vec![MissionGiveOutcomeEvent::GiveCustomStatPotion {
+            player_id: CharacterId(2),
+            npc_id: CharacterId(1),
+            stat: [CharacterValue::Attack as i32, 0, 0],
+            statcnt: 1,
+        }],
+    );
+    assert_eq!(applied, 0);
+
+    let player = runtime.player_for_character(CharacterId(2)).unwrap();
+    assert_eq!(player.governor.statowed, 1);
+    assert_eq!(player.governor.stat, [0, 0, 0]);
+    let texts = world.drain_pending_area_texts();
+    assert!(texts
+        .iter()
+        .any(|text| text.message.contains("please try again")));
 }

@@ -30,8 +30,8 @@ pub struct SingleMission {
 /// comment on `crate::world::npc::area32::governor` for the precise gap);
 /// they exist here already, zero-initialized, so that slice can be added
 /// later as a pure additive change with no further `PlayerRuntime` field
-/// churn. `statowed`/`statcnt`/`stat` back the also-not-yet-ported custom
-/// stat potion (`CTPOT` reward) flow, for the same reason.
+/// churn. `statowed`/`statcnt`/`stat` back the now-ported custom stat
+/// potion (`CTPOT` reward) flow.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MissionPpd {
     /// C `int missiongive_state`: `0` greet, `1` about to offer jobs, `2`
@@ -74,9 +74,9 @@ pub struct MissionPpd {
     /// C `int find_item[2]` (`[done, total]`). Not yet written.
     pub find_item: [i32; 2],
     /// C `int statowed`: custom stat potions purchased but not yet
-    /// configured. Only ever incremented by the still-unported `CTPOT`
-    /// reward give-flow (see the module doc comment), so always `0` in
-    /// this port today.
+    /// configured. Incremented by the `CTPOT` reward give-flow, decremented
+    /// back to `0` once the potion is successfully handed over (see
+    /// `crate::world::npc::area32::governor`'s module doc comment).
     pub statowed: i32,
     /// C `int statcnt`: how many stats (1-3) the in-progress custom
     /// potion should hold.

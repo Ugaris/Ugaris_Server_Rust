@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use super::*;
 use crate::character_driver::{CDR_MISSIONGIVE, NT_CHAR, NT_GIVE};
+use crate::entity::CharacterValue;
 use crate::player::{MissionPpd, SingleMission};
 use crate::world::npc::area32::governor::{
     MissionGiveOutcomeEvent, MissionGivePlayerFacts, MissionGiverDriverData, MIS_REWARDS,
@@ -633,4 +634,334 @@ fn text_accept_job_alpha_starts_the_mission_and_teleports_the_player() {
     assert!(texts
         .iter()
         .any(|text| text.message == "#30Stolen Documents"));
+}
+
+// ---- `CTPOT` custom stat potion multi-turn flow (`missions.c:1202-1211,
+// 1652-1739`) ----
+
+#[test]
+fn ibuy_ctpot_deducts_points_and_starts_the_skill_naming_flow() {
+    let mut world = World::default();
+    world.map.tile_mut(12, 10).unwrap().light = 255;
+    assert!(world.spawn_character(mission_giver_npc(1), 10, 10));
+    assert!(world.spawn_character(player(2, "Godmode"), 12, 10));
+
+    let reward_index = MIS_REWARDS.iter().position(|r| r.code == "CTPOT").unwrap();
+    assert_eq!(MIS_REWARDS[reward_index].value, 250);
+
+    let ppd = MissionPpd {
+        points: 300,
+        ..MissionPpd::default()
+    };
+    if let Some(giver) = world.characters.get_mut(&CharacterId(1)) {
+        giver.push_driver_text_message(CharacterId(2), "ibuy CTPOT");
+    }
+    let events = world.process_mission_giver_actions(&facts(CharacterId(2), ppd), 32, 1000);
+    let new_ppd = find_update(&events, CharacterId(2)).unwrap();
+    assert_eq!(new_ppd.points, 50);
+    assert_eq!(new_ppd.statowed, 1);
+    assert_eq!(new_ppd.statcnt, 0);
+    assert_eq!(new_ppd.stat, [0, 0, 0]);
+    // C `mission_give_reward`'s `CTPOT` branch `return`s before the
+    // generic "Here you go, ..." trailer, and no `GiveItemReward` event
+    // is queued (unlike every other reward code).
+    assert!(!events
+        .iter()
+        .any(|event| matches!(event, MissionGiveOutcomeEvent::GiveItemReward { .. })));
+    let texts = world.drain_pending_area_texts();
+    assert!(texts.iter().any(
+        |text| text.message.contains("One custom stat potion coming up.")
+            && text.message.contains("one skill")
+            && text.message.contains("two skills")
+            && text.message.contains("three skills")
+    ));
+}
+
+#[test]
+fn ctpot_without_enough_points_reports_insufficient_points() {
+    let mut world = World::default();
+    world.map.tile_mut(12, 10).unwrap().light = 255;
+    assert!(world.spawn_character(mission_giver_npc(1), 10, 10));
+    assert!(world.spawn_character(player(2, "Godmode"), 12, 10));
+
+    let ppd = MissionPpd {
+        points: 100,
+        ..MissionPpd::default()
+    };
+    if let Some(giver) = world.characters.get_mut(&CharacterId(1)) {
+        giver.push_driver_text_message(CharacterId(2), "ibuy CTPOT");
+    }
+    let events = world.process_mission_giver_actions(&facts(CharacterId(2), ppd), 32, 1000);
+    let new_ppd = find_update(&events, CharacterId(2)).unwrap();
+    assert_eq!(new_ppd.statowed, 0, "too poor to buy - no potion owed");
+    let texts = world.drain_pending_area_texts();
+    assert!(texts.iter().any(|text| text
+        .message
+        .contains("costs 250 points, but you only have 100 points")));
+}
+
+#[test]
+fn text_one_skill_without_owed_potion_reports_error() {
+    let mut world = World::default();
+    world.map.tile_mut(12, 10).unwrap().light = 255;
+    assert!(world.spawn_character(mission_giver_npc(1), 10, 10));
+    assert!(world.spawn_character(player(2, "Godmode"), 12, 10));
+
+    if let Some(giver) = world.characters.get_mut(&CharacterId(1)) {
+        giver.push_driver_text_message(CharacterId(2), "one skill");
+    }
+    let events = world.process_mission_giver_actions(
+        &facts(CharacterId(2), MissionPpd::default()),
+        32,
+        1000,
+    );
+    let new_ppd = find_update(&events, CharacterId(2)).unwrap();
+    assert_eq!(new_ppd.statcnt, 0);
+    let texts = world.drain_pending_area_texts();
+    assert!(texts
+        .iter()
+        .any(|text| text.message.contains("You did not buy a stat potion.")));
+}
+
+#[test]
+fn text_two_skills_sets_statcnt_and_prompts_for_names() {
+    let mut world = World::default();
+    world.map.tile_mut(12, 10).unwrap().light = 255;
+    assert!(world.spawn_character(mission_giver_npc(1), 10, 10));
+    assert!(world.spawn_character(player(2, "Godmode"), 12, 10));
+
+    let ppd = MissionPpd {
+        statowed: 1,
+        ..MissionPpd::default()
+    };
+    if let Some(giver) = world.characters.get_mut(&CharacterId(1)) {
+        giver.push_driver_text_message(CharacterId(2), "two skills");
+    }
+    let events = world.process_mission_giver_actions(&facts(CharacterId(2), ppd), 32, 1000);
+    let new_ppd = find_update(&events, CharacterId(2)).unwrap();
+    assert_eq!(new_ppd.statcnt, 2);
+    let texts = world.drain_pending_area_texts();
+    assert!(texts.iter().any(|text| text
+        .message
+        .contains("Alright, a two-stat potion it will be.")
+        && text.message.contains("one skill per line")));
+}
+
+#[test]
+fn text_one_skill_name_finalizes_immediately_and_queues_give_event() {
+    let mut world = World::default();
+    world.map.tile_mut(12, 10).unwrap().light = 255;
+    assert!(world.spawn_character(mission_giver_npc(1), 10, 10));
+    assert!(world.spawn_character(player(2, "Godmode"), 12, 10));
+
+    let ppd = MissionPpd {
+        statowed: 1,
+        statcnt: 1,
+        ..MissionPpd::default()
+    };
+    if let Some(giver) = world.characters.get_mut(&CharacterId(1)) {
+        // C `find_skill_text`'s leading skip chain expects the actual
+        // upstream `"<Name> says: <text>"` NT_TEXT payload shape (same
+        // precedent as `world::strategy_worker_trim_command_prefix`'s own
+        // tests) - plain unprefixed text would have both words eaten by
+        // the skip itself.
+        giver.push_driver_text_message(CharacterId(2), "Godmode says: attack skill");
+    }
+    let events = world.process_mission_giver_actions(&facts(CharacterId(2), ppd), 32, 1000);
+    assert!(events.iter().any(|event| matches!(
+        event,
+        MissionGiveOutcomeEvent::GiveCustomStatPotion {
+            player_id,
+            stat,
+            statcnt: 1,
+            ..
+        } if *player_id == CharacterId(2) && stat[0] == CharacterValue::Attack as i32
+    )));
+}
+
+#[test]
+fn text_two_skill_names_finalize_on_the_second_and_prompt_after_the_first() {
+    let mut world = World::default();
+    world.map.tile_mut(12, 10).unwrap().light = 255;
+    assert!(world.spawn_character(mission_giver_npc(1), 10, 10));
+    assert!(world.spawn_character(player(2, "Godmode"), 12, 10));
+
+    let ppd = MissionPpd {
+        statowed: 1,
+        statcnt: 2,
+        ..MissionPpd::default()
+    };
+    if let Some(giver) = world.characters.get_mut(&CharacterId(1)) {
+        giver.push_driver_text_message(CharacterId(2), "Godmode says: attack skill");
+    }
+    let events = world.process_mission_giver_actions(&facts(CharacterId(2), ppd), 32, 1000);
+    assert!(!events
+        .iter()
+        .any(|event| matches!(event, MissionGiveOutcomeEvent::GiveCustomStatPotion { .. })));
+    let after_first = find_update(&events, CharacterId(2)).unwrap();
+    assert_eq!(after_first.stat, [CharacterValue::Attack as i32, 0, 0]);
+    let texts = world.drain_pending_area_texts();
+    assert!(texts.iter().any(|text| text
+        .message
+        .contains("Very well, the first skill will be Attack.")));
+
+    world
+        .characters
+        .get_mut(&CharacterId(1))
+        .unwrap()
+        .driver_messages
+        .clear();
+    if let Some(giver) = world.characters.get_mut(&CharacterId(1)) {
+        giver.push_driver_text_message(CharacterId(2), "Godmode says: parry skill");
+    }
+    let events = world.process_mission_giver_actions(&facts(CharacterId(2), after_first), 32, 1000);
+    assert!(events.iter().any(|event| matches!(
+        event,
+        MissionGiveOutcomeEvent::GiveCustomStatPotion {
+            stat,
+            statcnt: 2,
+            ..
+        } if stat[0] == CharacterValue::Attack as i32 && stat[1] == CharacterValue::Parry as i32
+    )));
+}
+
+#[test]
+fn unrecognized_skill_text_is_ignored_while_a_potion_is_owed() {
+    let mut world = World::default();
+    world.map.tile_mut(12, 10).unwrap().light = 255;
+    assert!(world.spawn_character(mission_giver_npc(1), 10, 10));
+    assert!(world.spawn_character(player(2, "Godmode"), 12, 10));
+
+    let ppd = MissionPpd {
+        statowed: 1,
+        statcnt: 1,
+        ..MissionPpd::default()
+    };
+    if let Some(giver) = world.characters.get_mut(&CharacterId(1)) {
+        giver.push_driver_text_message(CharacterId(2), "Godmode says: banana skill");
+    }
+    let events = world.process_mission_giver_actions(&facts(CharacterId(2), ppd), 32, 1000);
+    assert!(!events
+        .iter()
+        .any(|event| matches!(event, MissionGiveOutcomeEvent::GiveCustomStatPotion { .. })));
+    let new_ppd = find_update(&events, CharacterId(2)).unwrap();
+    assert_eq!(
+        new_ppd.stat,
+        [0, 0, 0],
+        "unrecognized skill leaves stat[] untouched"
+    );
+}
+
+#[test]
+fn skill_text_requires_the_word_skill() {
+    let mut world = World::default();
+    world.map.tile_mut(12, 10).unwrap().light = 255;
+    assert!(world.spawn_character(mission_giver_npc(1), 10, 10));
+    assert!(world.spawn_character(player(2, "Godmode"), 12, 10));
+
+    let ppd = MissionPpd {
+        statowed: 1,
+        statcnt: 1,
+        ..MissionPpd::default()
+    };
+    if let Some(giver) = world.characters.get_mut(&CharacterId(1)) {
+        // "attack" alone (no " skill" substring) must not match - C
+        // `find_skill_text` bails out before the prefix table entirely.
+        giver.push_driver_text_message(CharacterId(2), "Godmode says: attack");
+    }
+    let events = world.process_mission_giver_actions(&facts(CharacterId(2), ppd), 32, 1000);
+    assert!(!events
+        .iter()
+        .any(|event| matches!(event, MissionGiveOutcomeEvent::GiveCustomStatPotion { .. })));
+}
+
+#[test]
+fn skill_text_speed_maps_to_base_speed_not_speed_skill() {
+    let mut world = World::default();
+    world.map.tile_mut(12, 10).unwrap().light = 255;
+    assert!(world.spawn_character(mission_giver_npc(1), 10, 10));
+    assert!(world.spawn_character(player(2, "Godmode"), 12, 10));
+
+    let ppd = MissionPpd {
+        statowed: 1,
+        statcnt: 1,
+        ..MissionPpd::default()
+    };
+    if let Some(giver) = world.characters.get_mut(&CharacterId(1)) {
+        // C `find_skill_text` (`missions.c:387-389`) maps "speed" to
+        // `V_SPEED`, not `V_SPEEDSKILL` - a real, deliberate-looking quirk.
+        giver.push_driver_text_message(CharacterId(2), "Godmode says: speed skill");
+    }
+    let events = world.process_mission_giver_actions(&facts(CharacterId(2), ppd), 32, 1000);
+    assert!(events.iter().any(|event| matches!(
+        event,
+        MissionGiveOutcomeEvent::GiveCustomStatPotion { stat, .. }
+            if stat[0] == CharacterValue::Speed as i32
+    )));
+}
+
+#[test]
+fn skill_text_lightning_prefix_quirk_matches_truncated_word() {
+    let mut world = World::default();
+    world.map.tile_mut(12, 10).unwrap().light = 255;
+    assert!(world.spawn_character(mission_giver_npc(1), 10, 10));
+    assert!(world.spawn_character(player(2, "Godmode"), 12, 10));
+
+    let ppd = MissionPpd {
+        statowed: 1,
+        statcnt: 1,
+        ..MissionPpd::default()
+    };
+    if let Some(giver) = world.characters.get_mut(&CharacterId(1)) {
+        // C's `strncasecmp(text, "lightning", 8)` only checks 8 of 9
+        // characters (`missions.c:420`), so "lightninx skill" (not a real
+        // word) still matches, mapping to `V_FLASH`.
+        giver.push_driver_text_message(CharacterId(2), "Godmode says: lightninx skill");
+    }
+    let events = world.process_mission_giver_actions(&facts(CharacterId(2), ppd), 32, 1000);
+    assert!(events.iter().any(|event| matches!(
+        event,
+        MissionGiveOutcomeEvent::GiveCustomStatPotion { stat, .. }
+            if stat[0] == CharacterValue::Flash as i32
+    )));
+}
+
+#[test]
+fn skill_text_third_skill_lands_in_the_third_slot() {
+    let mut world = World::default();
+    world.map.tile_mut(12, 10).unwrap().light = 255;
+    assert!(world.spawn_character(mission_giver_npc(1), 10, 10));
+    assert!(world.spawn_character(player(2, "Godmode"), 12, 10));
+
+    let mut ppd = MissionPpd {
+        statowed: 1,
+        statcnt: 3,
+        stat: [
+            CharacterValue::Attack as i32,
+            CharacterValue::Parry as i32,
+            0,
+        ],
+        ..MissionPpd::default()
+    };
+    if let Some(giver) = world.characters.get_mut(&CharacterId(1)) {
+        giver.push_driver_text_message(CharacterId(2), "Godmode says: warcry skill");
+    }
+    let events = world.process_mission_giver_actions(&facts(CharacterId(2), ppd), 32, 1000);
+    assert!(events.iter().any(|event| matches!(
+        event,
+        MissionGiveOutcomeEvent::GiveCustomStatPotion {
+            stat,
+            statcnt: 3,
+            ..
+        } if *stat == [
+            CharacterValue::Attack as i32,
+            CharacterValue::Parry as i32,
+            CharacterValue::Warcry as i32,
+        ]
+    )));
+    // Also sanity-check the `UpdatePpd` snapshot carries the final slot
+    // before the server-side finalize event is applied.
+    ppd.stat[2] = CharacterValue::Warcry as i32;
+    let new_ppd = find_update(&events, CharacterId(2)).unwrap();
+    assert_eq!(new_ppd.stat, ppd.stat);
 }

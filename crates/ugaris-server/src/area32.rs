@@ -209,6 +209,58 @@ pub(crate) fn apply_mission_giver_events(
                 );
                 applied += 1;
             }
+            // C `find_skill_text`'s finalize branch (`missions.c:1702-
+            // 1734`): `create_item("mis_potionbase")`, stamp `mod_index`/
+            // `mod_value` from the chosen skills, `give_char_item`. On
+            // failure (missing template or no room), `quiet_say("please
+            // try again")` and reset `ppd->stat[0..2]` to `0` so the
+            // player can retry; on success, `ppd->statowed = 0` (`stat[]`
+            // is left as-is, matching C).
+            MissionGiveOutcomeEvent::GiveCustomStatPotion {
+                player_id,
+                npc_id,
+                stat,
+                statcnt,
+            } => {
+                let modifier_value: [i16; 3] = match statcnt {
+                    1 => [50, 0, 0],
+                    2 => [30, 30, 0],
+                    3 => [20, 20, 20],
+                    _ => [0, 0, 0],
+                };
+                let Ok(mut item) =
+                    loader.instantiate_item_template("mis_potionbase", Some(player_id))
+                else {
+                    world.npc_quiet_say(npc_id, "please try again");
+                    if let Some(player) = runtime.player_for_character_mut(player_id) {
+                        player.governor.stat = [0, 0, 0];
+                    }
+                    continue;
+                };
+                for n in 0..3 {
+                    item.modifier_index[n] = stat[n] as i16;
+                    item.modifier_value[n] = modifier_value[n];
+                }
+                let item_id = item.id;
+                world.add_item(item);
+                if !world.give_char_item(player_id, item_id) {
+                    world.destroy_item(item_id);
+                    world.npc_quiet_say(npc_id, "please try again");
+                    if let Some(player) = runtime.player_for_character_mut(player_id) {
+                        player.governor.stat = [0, 0, 0];
+                    }
+                    continue;
+                }
+                let Some(character) = world.characters.get(&player_id) else {
+                    continue;
+                };
+                let player_name = character.name.clone();
+                world.npc_quiet_say(npc_id, &format!("Very well, {player_name}, here you go."));
+                if let Some(player) = runtime.player_for_character_mut(player_id) {
+                    player.governor.statowed = 0;
+                }
+                applied += 1;
+            }
         }
     }
     applied
