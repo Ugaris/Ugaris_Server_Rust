@@ -721,7 +721,9 @@ impl World {
             | CharacterDriverState::BridgeGuard(_)
             | CharacterDriverState::Gladiator(_)
             | CharacterDriverState::Ramin(_)
-            | CharacterDriverState::Arkhatamonk(_) => None,
+            | CharacterDriverState::Arkhatamonk(_)
+            | CharacterDriverState::Captain(_)
+            | CharacterDriverState::Judge(_) => None,
         }
     }
 

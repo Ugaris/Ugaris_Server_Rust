@@ -912,6 +912,18 @@ pub const ARKHATA_PPD_RAMIN_STATE_OFFSET: usize = 3 * 4;
 /// ("The Missing Ring") dialogue/student-challenge/skill-raise state.
 pub const ARKHATA_PPD_FIONA_STATE_OFFSET: usize = 2 * 4;
 
+/// C `struct arkhata_ppd::captain_state` (`src/area/37/arkhata.h:11`,
+/// field index 6): `captain_driver`'s (`world::npc::area37::captain`) own
+/// dialogue state - the Fortress Captain, the first stop of the
+/// entrance-pass-system chain that continues through `judge_driver`.
+pub const ARKHATA_PPD_CAPTAIN_STATE_OFFSET: usize = 6 * 4;
+
+/// C `struct arkhata_ppd::judge_state` (`src/area/37/arkhata.h:12`, field
+/// index 7): `judge_driver`'s (`world::npc::area37::judge`) own dialogue
+/// state - reads `captain_state` to know when to start, hands out
+/// letters 2/3/4/5.
+pub const ARKHATA_PPD_JUDGE_STATE_OFFSET: usize = 7 * 4;
+
 // `struct staffer_ppd` field offsets (`src/common/staffer_ppd.h:13-` /
 // `src/system/game/ppd_structs.h:566-`), in declaration order. Only the
 // fields consumed by `questlog_init_staff` (`src/system/questlog.c:1203-

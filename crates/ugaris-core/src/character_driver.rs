@@ -270,6 +270,14 @@ pub const CDR_RAMIN: u16 = 137;
 /// sharing one dialogue state machine, quests 69/70/78, see
 /// `world::npc::area37::arkhatamonk`'s module doc comment.
 pub const CDR_ARKHATAMONK: u16 = 139;
+/// C `#define CDR_CAPTAIN 141` (`src/system/drvlib.h:191`, comment
+/// "arkhata"): the Fortress Captain, first stop of the entrance-pass-
+/// system chain, see `world::npc::area37::captain`'s module doc comment.
+pub const CDR_CAPTAIN: u16 = 141;
+/// C `#define CDR_JUDGE 142` (`src/system/drvlib.h:192`, comment
+/// "arkhata"): the fortress judge who writes the entrance-pass letters,
+/// see `world::npc::area37::judge`'s module doc comment.
+pub const CDR_JUDGE: u16 = 142;
 /// C `#define CDR_LAB2HERALD 196` (`src/system/drvlib.h:222`): the lab2
 /// graveyard chapel keeper (`src/area/22/lab2.c::lab2_herald_driver`), see
 /// `world::npc::area22::lab2_herald`'s module doc comment.
@@ -906,6 +914,8 @@ pub enum CharacterDriverState {
     Gladiator(crate::world::npc::area37::gladiator::GladiatorDriverData),
     Ramin(crate::world::npc::area37::ramin::RaminDriverData),
     Arkhatamonk(crate::world::npc::area37::arkhatamonk::ArkhatamonkDriverData),
+    Captain(crate::world::npc::area37::captain::CaptainDriverData),
+    Judge(crate::world::npc::area37::judge::JudgeDriverData),
 }
 /// C `bank_driver_parse` from `src/module/bank.c`. The C driver defaults
 /// opening hours to 6..23 before parsing (`bank_driver` lines 304-309).
@@ -1736,7 +1746,9 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::BridgeGuard(_)
             | CharacterDriverState::Gladiator(_)
             | CharacterDriverState::Ramin(_)
-            | CharacterDriverState::Arkhatamonk(_),
+            | CharacterDriverState::Arkhatamonk(_)
+            | CharacterDriverState::Captain(_)
+            | CharacterDriverState::Judge(_),
         ) => SimpleBaddyDriverData::default(),
         None => SimpleBaddyDriverData::default(),
     };

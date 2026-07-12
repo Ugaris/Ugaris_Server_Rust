@@ -1501,12 +1501,25 @@ Ordered by player progression; the C file is the oracle.
   last is a deliberate byte-for-byte alias of `IID_ARKHATA_AKEY1`,
   reproducing a genuine pre-existing C item-id collision) and
   `PlayerRuntime::arkhata_monk_bits`/`set_arkhata_monk_bits` accessors.
-  Still unported: `captain`/`judge`/`fortressguard`/`jada`/`potmaker`/
-  `hunter`/`thaipan`/`clerk`/`trainer`/`kidnappee`/`krenach` - most
-  read/write the shared `struct arkhata_ppd` quest-state blob
-  (`PlayerRuntime::arkhata_ppd`, scaffolded in `player/areas_misc.rs`; its
-  `LEGACY_ARKHATA_PPD_SIZE` had a pre-existing size bug, now fixed - see
-  ledger).
+  `captain_driver`/`judge_driver` (`CDR_CAPTAIN`/`CDR_JUDGE`,
+  `world::npc::area37::captain`/`judge`) - the entrance-pass-system chain
+  the fortress captain/judge run together - are now also ported end to
+  end: `captain`'s eleven-state dialogue (with the `judge_state`/
+  `letter_bits`-gated `rs == 4` fallthrough collapse into `rs == 5`-6) and
+  its `NT_GIVE` letter-1 (silent turn-in)/letter-4 (`quiet_say`, sets
+  `letter_bits` bit 8) handling; `judge`'s seven-state dialogue (with the
+  `captain_state`-gated `rs == 0` fallthrough into `rs == 1`-2, and
+  `rs == 5`'s conditional-dialogue-but-unconditional-state-advance quirk)
+  and its own `rs == 3`/`rs == 4` letter 2/3/4/5 hand-outs (each gated on
+  `!(letter_bits & bit) && !has_item(...)`, the latter half reusing the
+  existing `World::character_has_item_template` helper). New
+  `PlayerRuntime::arkhata_captain_state`/`arkhata_judge_state` accessors
+  and `IID_ARKHATA_LETTER4`/`IID_ARKHATA_LETTER5` item ids.
+  Still unported: `fortressguard`/`jada`/`potmaker`/`hunter`/`thaipan`/
+  `clerk`/`trainer`/`kidnappee`/`krenach` - most read/write the shared
+  `struct arkhata_ppd` quest-state blob (`PlayerRuntime::arkhata_ppd`,
+  scaffolded in `player/areas_misc.rs`; its `LEGACY_ARKHATA_PPD_SIZE` had
+  a pre-existing size bug, now fixed - see ledger).
 - [ ] **Area 38 - `src/area/38/shrike.c`** - Shrike NPCs (amulet assembly
   ported).
 - [ ] **Common NPCs - `src/common/professor.c`, `src/common/npc_states.h`,

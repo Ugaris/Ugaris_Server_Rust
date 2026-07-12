@@ -8654,8 +8654,60 @@ startup log line unchanged.
   shapes, all four `NT_GIVE` branches including the bits-completion path,
   and all three `NT_TEXT` "repeat" reset ranges). `cargo fmt --all`,
   `cargo test --workspace`: 4165 core [+21] + 81 db + 3 net + 45 protocol +
-  1213 server, all green, zero failures/warnings. `cargo build -p
-  ugaris-server` clean, boot-smoke on both default area 1 and `--area-id 37`
-  confirmed "entering Rust game loop" with no panics. `PORTING_TODO.md`
-  Area 37 stays `[~]`: `captain`/`judge`/`fortressguard`/`jada`/`potmaker`/
-  `hunter`/`thaipan`/`clerk`/`trainer`/`kidnappee`/`krenach` remain.
+   1213 server, all green, zero failures/warnings. `cargo build -p
+   ugaris-server` clean, boot-smoke on both default area 1 and `--area-id 37`
+   confirmed "entering Rust game loop" with no panics. `PORTING_TODO.md`
+   Area 37 stays `[~]`: `captain`/`judge`/`fortressguard`/`jada`/`potmaker`/
+   `hunter`/`thaipan`/`clerk`/`trainer`/`kidnappee`/`krenach` remain.
+- 2026-07-13: Area 37 (`src/area/37/arkhata.c`) progress: ported
+  `captain_driver` (`CDR_CAPTAIN = 141`, `world::npc::area37::captain`,
+  `:2087-2290`) and `judge_driver` (`CDR_JUDGE = 142`, `world::npc::
+  area37::judge`, `:2292-2497`) together, the two-NPC entrance-pass-system
+  chain the fortress Captain/judge run: `captain`'s eleven-state (`0`-`10`)
+  dialogue collapses the `rs == 4` cross-driver gate (`player.level >= 53
+  && judge_state >= 6 && letter_bits == (2|4|8)`, `judge_state` being
+  `judge`'s own progress) fallthrough into `rs == 5`'s speech/advance-to-6
+  in one arm, same "fallthrough lands on the next case's action"
+  precedent as `rammy`/`ramin`'s own collapsed arms; its `NT_GIVE` handler
+  has two special-case branches (letter-1 turn-in at `captain_state == 0`,
+  a genuinely *silent* turn-in with no `say`/`quiet_say` call at all in C
+  - reproduced verbatim - and letter-4 turn-in gated on `!(letter_bits &
+  8)`, `quiet_say`s and sets the bit). `judge`'s seven-state (`0`-`6`)
+  dialogue similarly collapses its own `rs == 0` gate (`captain_state >
+  0`) fallthrough into `rs == 1`-2, and `rs == 5`'s dialogue is
+  conditional on `letter_bits != (2|4|8)` while the state advance/`didsay`
+  fire unconditionally either way (same "conditional dialogue,
+  unconditional state advance" quirk as `ramin`'s own `rs == 10` arm).
+  `judge`'s own item-creation logic - `rs == 3`'s three independent
+  `!(letter_bits & bit) && !has_item(co, ID)`-gated `create_item("letter2"/
+  "letter3"/"letter4")` calls and `rs == 4`'s `!has_item(co,
+  IID_ARKHATA_LETTER5)`-gated `create_item("letter5")` - is split across
+  the `World`/`ugaris-server` boundary the same way `rammy`'s own
+  `GiveFortressKeyAndLetter` event is: the `has_item`/bit gates (all pure
+  `World` state) are evaluated inside `World::process_judge_actions`
+  itself (reusing the existing `World::character_has_item_template`
+  helper, not a new one) and only the resulting booleans travel out via
+  two new `JudgeOutcomeEvent::GiveEntranceLetters`/`GiveEntrancePass`
+  variants for `ugaris-server`'s `apply_judge_events` (needs `ZoneLoader`)
+  to actually instantiate. New `ARKHATA_PPD_CAPTAIN_STATE_OFFSET`/
+  `ARKHATA_PPD_JUDGE_STATE_OFFSET` (struct field indices 6/7, confirmed
+  against `arkhata.h`'s declaration order) plus `PlayerRuntime::
+  arkhata_captain_state`/`set_arkhata_captain_state`/`arkhata_judge_state`/
+  `set_arkhata_judge_state` accessors, and `IID_ARKHATA_LETTER4`/
+  `IID_ARKHATA_LETTER5` item ids (`item_id.h:253-254`). New
+  `crates/ugaris-server/src/tick_npc/area37.rs::captain_driver_175`/
+  `judge_driver_176`, registered last in `tick_npc::run_all`; `area37.rs`
+  gained `captain_player_facts`/`apply_captain_events`/`judge_player_facts`/
+  `apply_judge_events`. 23 new focused tests (10 `world::tests::captain` +
+  13 `world::tests::judge`) covering every dialogue state transition
+  (including both fallthrough collapses and all silent-wait-state shapes),
+  both drivers' `NT_GIVE` branches (including the silent letter-1 turn-in
+  and, for judge, three has_item/bit-gate combinations - bit set, item
+  already carried despite bit unset, and neither), and every `NT_TEXT`
+  "repeat" reset range. `cargo fmt --all`, `cargo test --workspace`: 4188
+  core [+23] + 81 db + 3 net + 45 protocol + 1213 server, all green, zero
+  failures/warnings. `cargo build -p ugaris-server` clean, 10s boot-smoke
+  on default area 1 confirmed "entering Rust game loop" with no panics
+  across 230+ ticks. `PORTING_TODO.md` Area 37 stays `[~]`:
+  `fortressguard`/`jada`/`potmaker`/`hunter`/`thaipan`/`clerk`/`trainer`/
+  `kidnappee`/`krenach` remain.

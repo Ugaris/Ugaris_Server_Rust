@@ -18,11 +18,13 @@ use ugaris_core::world::npc::area37::arkhatamonk::{
     qlog_monk_bookeater, qlog_monk_dictionary, qlog_monk_keyparts, ArkhatamonkOutcomeEvent,
     ArkhatamonkPlayerFacts,
 };
+use ugaris_core::world::npc::area37::captain::{CaptainOutcomeEvent, CaptainPlayerFacts};
 use ugaris_core::world::npc::area37::fiona::{
     qlog_fiona_ring, FionaOutcomeEvent, FionaPlayerFacts,
 };
 use ugaris_core::world::npc::area37::gladiator::GladiatorDriverData;
 use ugaris_core::world::npc::area37::jaz::{qlog_jaz_bracelet, JazOutcomeEvent, JazPlayerFacts};
+use ugaris_core::world::npc::area37::judge::{JudgeOutcomeEvent, JudgePlayerFacts};
 use ugaris_core::world::npc::area37::ramin::{
     qlog_ramin_shopkeeper, RaminOutcomeEvent, RaminPlayerFacts,
 };
@@ -602,6 +604,148 @@ pub(crate) async fn apply_arkhatamonk_events(
                 let payload = legacy_questlog_payload(player);
                 for (session_id, _) in runtime.sessions_for_character(player_id) {
                     runtime.send_to_session(session_id, payload.clone());
+                }
+                applied += 1;
+            }
+        }
+    }
+    applied
+}
+
+pub(crate) fn captain_player_facts(
+    runtime: &ServerRuntime,
+) -> HashMap<CharacterId, CaptainPlayerFacts> {
+    runtime
+        .players
+        .values()
+        .filter_map(|player| {
+            let character_id = player.character_id?;
+            Some((
+                character_id,
+                CaptainPlayerFacts {
+                    captain_state: player.arkhata_captain_state(),
+                    judge_state: player.arkhata_judge_state(),
+                    letter_bits: player.arkhata_letter_bits(),
+                },
+            ))
+        })
+        .collect()
+}
+
+/// Applies each [`CaptainOutcomeEvent`] queued by `World::
+/// process_captain_actions`. No variant here needs `World` or
+/// `ZoneLoader` - `captain_driver` never creates an item, only consumes
+/// ones handed to it.
+pub(crate) async fn apply_captain_events(
+    runtime: &mut ServerRuntime,
+    events: Vec<CaptainOutcomeEvent>,
+) -> usize {
+    let mut applied = 0;
+    for event in events {
+        match event {
+            CaptainOutcomeEvent::UpdateCaptainState {
+                player_id,
+                new_state,
+            } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.set_arkhata_captain_state(new_state);
+                applied += 1;
+            }
+            // C `ppd->letter_bits |= 8` (`arkhata.c:2261`).
+            CaptainOutcomeEvent::GiveLetter4Bit { player_id } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                let new_bits = player.arkhata_letter_bits() | 8;
+                player.set_arkhata_letter_bits(new_bits);
+                applied += 1;
+            }
+        }
+    }
+    applied
+}
+
+pub(crate) fn judge_player_facts(
+    runtime: &ServerRuntime,
+) -> HashMap<CharacterId, JudgePlayerFacts> {
+    runtime
+        .players
+        .values()
+        .filter_map(|player| {
+            let character_id = player.character_id?;
+            Some((
+                character_id,
+                JudgePlayerFacts {
+                    judge_state: player.arkhata_judge_state(),
+                    captain_state: player.arkhata_captain_state(),
+                    letter_bits: player.arkhata_letter_bits(),
+                },
+            ))
+        })
+        .collect()
+}
+
+/// Applies each [`JudgeOutcomeEvent`] queued by `World::
+/// process_judge_actions`. [`JudgeOutcomeEvent::GiveEntranceLetters`]/
+/// [`JudgeOutcomeEvent::GiveEntrancePass`] need `ZoneLoader` item
+/// creation, same precedent as [`RammyOutcomeEvent::
+/// GiveFortressKeyAndLetter`].
+pub(crate) async fn apply_judge_events(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    loader: &mut ZoneLoader,
+    events: Vec<JudgeOutcomeEvent>,
+) -> usize {
+    let mut applied = 0;
+    for event in events {
+        match event {
+            JudgeOutcomeEvent::UpdateJudgeState {
+                player_id,
+                new_state,
+            } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.set_arkhata_judge_state(new_state);
+                applied += 1;
+            }
+            // C `rs == 3`'s three conditional `create_item("letter2"/
+            // "letter3"/"letter4")` calls (`arkhata.c:2374-2391`).
+            JudgeOutcomeEvent::GiveEntranceLetters {
+                player_id,
+                give_letter2,
+                give_letter3,
+                give_letter4,
+            } => {
+                for (give, template) in [
+                    (give_letter2, "letter2"),
+                    (give_letter3, "letter3"),
+                    (give_letter4, "letter4"),
+                ] {
+                    if !give {
+                        continue;
+                    }
+                    if let Ok(item) = loader.instantiate_item_template(template, Some(player_id)) {
+                        let item_id = item.id;
+                        world.add_item(item);
+                        if !world.give_char_item(player_id, item_id) {
+                            world.destroy_item(item_id);
+                        }
+                    }
+                }
+                applied += 1;
+            }
+            // C `rs == 4`'s `create_item("letter5")` (`arkhata.c:2398-
+            // 2403`).
+            JudgeOutcomeEvent::GiveEntrancePass { player_id } => {
+                if let Ok(item) = loader.instantiate_item_template("letter5", Some(player_id)) {
+                    let item_id = item.id;
+                    world.add_item(item);
+                    if !world.give_char_item(player_id, item_id) {
+                        world.destroy_item(item_id);
+                    }
                 }
                 applied += 1;
             }

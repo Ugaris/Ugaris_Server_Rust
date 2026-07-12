@@ -253,3 +253,71 @@ pub(crate) async fn arkhatamonk_driver_174(
         );
     }
 }
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn captain_driver_175(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    _zone_loader: &mut ZoneLoader,
+    config: &ServerConfig,
+    _args: &Args,
+    _completed_actions: &[WorldActionCompletion],
+    _achievement_repository: &Option<ugaris_db::PgAchievementRepository>,
+    _character_repository: &Option<ugaris_db::PgCharacterRepository>,
+    _area_repository: &Option<ugaris_db::PgAreaRepository>,
+    _clan_repository: &Option<ugaris_db::PgClanRegistryRepository>,
+    _clan_log_repository: &Option<ugaris_db::PgClanLogRepository>,
+    _merchant_repository: &Option<ugaris_db::PgMerchantRepository>,
+    _military_master_storage_repository: &Option<ugaris_db::PgMilitaryMasterStorageRepository>,
+    _military_advisor_storage_repository: &Option<ugaris_db::PgMilitaryAdvisorStorageRepository>,
+    _notes_repository: &Option<ugaris_db::PgNotesRepository>,
+    _anticheat_repository: &Option<ugaris_db::PgAntiCheatRepository>,
+    _auction_repository: &Option<ugaris_db::PgAuctionRepository>,
+) {
+    // C `captain_driver`: the Fortress Captain, first stop of the
+    // entrance-pass-system chain (area 37, `src/area/37/arkhata.c`).
+    let captain_facts = captain_player_facts(runtime);
+    let captain_events = world.process_captain_actions(&captain_facts, config.area_id);
+    let captain_events_applied = apply_captain_events(runtime, captain_events).await;
+    if captain_events_applied != 0 {
+        info!(
+            captain_events_applied,
+            tick = world.tick.0,
+            "applied captain dialogue events"
+        );
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn judge_driver_176(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    zone_loader: &mut ZoneLoader,
+    config: &ServerConfig,
+    _args: &Args,
+    _completed_actions: &[WorldActionCompletion],
+    _achievement_repository: &Option<ugaris_db::PgAchievementRepository>,
+    _character_repository: &Option<ugaris_db::PgCharacterRepository>,
+    _area_repository: &Option<ugaris_db::PgAreaRepository>,
+    _clan_repository: &Option<ugaris_db::PgClanRegistryRepository>,
+    _clan_log_repository: &Option<ugaris_db::PgClanLogRepository>,
+    _merchant_repository: &Option<ugaris_db::PgMerchantRepository>,
+    _military_master_storage_repository: &Option<ugaris_db::PgMilitaryMasterStorageRepository>,
+    _military_advisor_storage_repository: &Option<ugaris_db::PgMilitaryAdvisorStorageRepository>,
+    _notes_repository: &Option<ugaris_db::PgNotesRepository>,
+    _anticheat_repository: &Option<ugaris_db::PgAntiCheatRepository>,
+    _auction_repository: &Option<ugaris_db::PgAuctionRepository>,
+) {
+    // C `judge_driver`: the fortress judge who writes the entrance-pass
+    // letters (area 37, `src/area/37/arkhata.c`).
+    let judge_facts = judge_player_facts(runtime);
+    let judge_events = world.process_judge_actions(&judge_facts, config.area_id);
+    let judge_events_applied = apply_judge_events(world, runtime, zone_loader, judge_events).await;
+    if judge_events_applied != 0 {
+        info!(
+            judge_events_applied,
+            tick = world.tick.0,
+            "applied judge dialogue events"
+        );
+    }
+}

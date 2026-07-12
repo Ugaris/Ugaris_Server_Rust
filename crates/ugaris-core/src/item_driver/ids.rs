@@ -637,12 +637,23 @@ pub(crate) const IID_ARKHATA_LETTER1: u32 = make_item_id(DEV_ID_DB, 0x0000BB);
 pub(crate) const IID_ARKHATA_LETTER2: u32 = make_item_id(DEV_ID_DB, 0x0000BC);
 
 /// C `#define IID_ARKHATA_LETTER3 MAKE_ITEMID(DEV_ID_DB, 0x0000BD)`
-/// (`src/common/item_id.h:252`): the still-unported `judge_driver`'s
-/// letter meant for Count Brannington, whose `NT_GIVE` turn-in
-/// (`world::npc::area29::countbran`) writes the cross-area
+/// (`src/common/item_id.h:252`): `judge_driver`'s (`world::npc::
+/// area37::judge`) letter meant for Count Brannington, whose `NT_GIVE`
+/// turn-in (`world::npc::area29::countbran`) writes the cross-area
 /// `arkhata_ppd.letter_bits` bit `world::npc::area37::rammy`'s quest-71
 /// completion gate reads.
 pub(crate) const IID_ARKHATA_LETTER3: u32 = make_item_id(DEV_ID_DB, 0x0000BD);
+
+/// C `#define IID_ARKHATA_LETTER4 MAKE_ITEMID(DEV_ID_DB, 0x0000BE)`
+/// (`src/common/item_id.h:253`): `judge_driver`'s letter meant for the
+/// Fortress Captain, whose `NT_GIVE` turn-in (`world::npc::area37::
+/// captain`) sets `arkhata_ppd.letter_bits` bit `8`.
+pub(crate) const IID_ARKHATA_LETTER4: u32 = make_item_id(DEV_ID_DB, 0x0000BE);
+
+/// C `#define IID_ARKHATA_LETTER5 MAKE_ITEMID(DEV_ID_DB, 0x0000BF)`
+/// (`src/common/item_id.h:254`): `judge_driver`'s entrance pass, handed
+/// straight to the player at `judge_state` 4 - no other driver reads it.
+pub(crate) const IID_ARKHATA_LETTER5: u32 = make_item_id(DEV_ID_DB, 0x0000BF);
 
 /// C `#define IID_ARKHATA_BRACELET MAKE_ITEMID(DEV_ID_DB, 0x0000B6)`
 /// (`src/common/item_id.h:245`): Jaz's insignia-of-Ishtar bracelet,

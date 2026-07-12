@@ -969,14 +969,57 @@ impl PlayerRuntime {
     }
 
     /// C `ppd->letter_bits |= bit;`/`ppd2->letter_bits |= bit;` - written
-    /// by `ramin_driver`/`captain_driver` (still unported, bits `2`/`8`)
-    /// and `count_brannington_driver`'s cross-area `IID_ARKHATA_LETTER3`
-    /// turn-in (`world::npc::area29::countbran`, bit `4`).
+    /// by `ramin_driver` (bit `2`), `captain_driver` (`world::npc::
+    /// area37::captain`, bit `8`), and `count_brannington_driver`'s
+    /// cross-area `IID_ARKHATA_LETTER3` turn-in (`world::npc::
+    /// area29::countbran`, bit `4`).
     pub fn set_arkhata_letter_bits(&mut self, bits: i32) {
         if self.arkhata_ppd.len() < LEGACY_ARKHATA_PPD_SIZE {
             self.arkhata_ppd.resize(LEGACY_ARKHATA_PPD_SIZE, 0);
         }
         write_i32(&mut self.arkhata_ppd, ARKHATA_PPD_LETTER_BITS_OFFSET, bits);
+    }
+
+    /// C `struct arkhata_ppd::captain_state` (`src/area/37/arkhata.h:11`)
+    /// - see [`ARKHATA_PPD_CAPTAIN_STATE_OFFSET`]'s doc comment.
+    pub fn arkhata_captain_state(&self) -> i32 {
+        if self.arkhata_ppd.len() < LEGACY_ARKHATA_PPD_SIZE {
+            return 0;
+        }
+        read_i32(&self.arkhata_ppd, ARKHATA_PPD_CAPTAIN_STATE_OFFSET)
+    }
+
+    /// C `struct arkhata_ppd::captain_state` write half - see
+    /// [`ARKHATA_PPD_CAPTAIN_STATE_OFFSET`]'s doc comment. `captain_driver`
+    /// (`world::npc::area37::captain`) is the only writer.
+    pub fn set_arkhata_captain_state(&mut self, state: i32) {
+        if self.arkhata_ppd.len() < LEGACY_ARKHATA_PPD_SIZE {
+            self.arkhata_ppd.resize(LEGACY_ARKHATA_PPD_SIZE, 0);
+        }
+        write_i32(
+            &mut self.arkhata_ppd,
+            ARKHATA_PPD_CAPTAIN_STATE_OFFSET,
+            state,
+        );
+    }
+
+    /// C `struct arkhata_ppd::judge_state` (`src/area/37/arkhata.h:12`) -
+    /// see [`ARKHATA_PPD_JUDGE_STATE_OFFSET`]'s doc comment.
+    pub fn arkhata_judge_state(&self) -> i32 {
+        if self.arkhata_ppd.len() < LEGACY_ARKHATA_PPD_SIZE {
+            return 0;
+        }
+        read_i32(&self.arkhata_ppd, ARKHATA_PPD_JUDGE_STATE_OFFSET)
+    }
+
+    /// C `struct arkhata_ppd::judge_state` write half - see
+    /// [`ARKHATA_PPD_JUDGE_STATE_OFFSET`]'s doc comment. `judge_driver`
+    /// (`world::npc::area37::judge`) is the only writer.
+    pub fn set_arkhata_judge_state(&mut self, state: i32) {
+        if self.arkhata_ppd.len() < LEGACY_ARKHATA_PPD_SIZE {
+            self.arkhata_ppd.resize(LEGACY_ARKHATA_PPD_SIZE, 0);
+        }
+        write_i32(&mut self.arkhata_ppd, ARKHATA_PPD_JUDGE_STATE_OFFSET, state);
     }
 
     fn ensure_caligar_ppd_sized(&mut self) {
