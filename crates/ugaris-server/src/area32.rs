@@ -12,10 +12,15 @@
 use std::collections::HashMap;
 
 use super::*;
-use ugaris_core::character_driver::{apply_simple_baddy_create_message, CDR_MISSIONFIGHT};
+use ugaris_core::character_driver::{
+    apply_simple_baddy_create_message, CDR_MISSIONFIGHT, CDR_MISSIONGIVE,
+};
+use ugaris_core::text::{COL_STR_LIGHT_BLUE, COL_STR_RESET};
 use ugaris_core::world::calc_exp;
 use ugaris_core::world::npc::area32::governor::{
-    MissionGiveOutcomeEvent, MissionGivePlayerFacts, MISSION_TEMPLATES, MIS_REWARDS,
+    special_offer_cost, special_offer_strength_base, MissionGiveOutcomeEvent,
+    MissionGivePlayerFacts, MISSION_TEMPLATES, MIS_REWARDS, SPECIAL_OFFER_PERIOD_TICKS,
+    SPECIAL_OFFER_SLOT,
 };
 use ugaris_core::world::npc::area32::mission_start::{
     build_fighter_stat_values, mission_status_lines, special_item_tier_for_level,
@@ -160,9 +165,141 @@ pub(crate) fn apply_mission_giver_events(
                 }
                 applied += 1;
             }
+            // C `case 18:`'s `look_item(co, it + ch[cn].item[30], -1)`
+            // plus its trailing "Price: ..."/"Do you want to buy..."
+            // lines (`missions.c:1627-1634`), in that exact order.
+            MissionGiveOutcomeEvent::ShowSpecialOffer { player_id, npc_id } => {
+                let Some(item_id) = world
+                    .characters
+                    .get(&npc_id)
+                    .and_then(|giver| giver.inventory.get(SPECIAL_OFFER_SLOT).copied().flatten())
+                else {
+                    continue;
+                };
+                let Some(item) = world.items.get(&item_id).cloned() else {
+                    continue;
+                };
+                let Some(viewer) = world.characters.get(&player_id).cloned() else {
+                    continue;
+                };
+                for line in legacy_item_look_text(&item, &viewer).lines() {
+                    world.queue_system_text(player_id, line.to_string());
+                }
+                let spec_cost = match world
+                    .characters
+                    .get(&npc_id)
+                    .and_then(|giver| giver.driver_state.clone())
+                {
+                    Some(CharacterDriverState::MissionGiver(data)) => data.spec_cost,
+                    _ => 0,
+                };
+                let points = runtime
+                    .player_for_character(player_id)
+                    .map(|player| player.governor.points)
+                    .unwrap_or(0);
+                world.queue_system_text(
+                    player_id,
+                    format!("Price: {spec_cost} points (you have {points} points)"),
+                );
+                world.queue_system_text(
+                    player_id,
+                    format!(
+                        "Do you want to {COL_STR_LIGHT_BLUE}buy the special offer{COL_STR_RESET} (offer guaranteed for 5 minutes, unless someone else buys it; might change anytime after that)?"
+                    ),
+                );
+                applied += 1;
+            }
         }
     }
     applied
+}
+
+/// C `mission_giver_driver`'s special-offer regen check
+/// (`missions.c:1300-1325`), run once per driver call *before*
+/// `World::process_mission_giver_actions` - the same ordering C has (both
+/// live in a single function call), since `World` alone cannot reach
+/// `ZoneLoader::instantiate_item_template`'s template lookups. Rerolls a
+/// fresh [`World::create_special_item`] into every live governor NPC's own
+/// `SPECIAL_OFFER_SLOT` inventory slot whenever its 12-hour `next_spec`
+/// timer has elapsed or the slot is empty (fresh spawn, or a player just
+/// bought the previous roll).
+pub(crate) fn regenerate_mission_giver_special_offers(world: &mut World, loader: &mut ZoneLoader) {
+    let giver_ids: Vec<CharacterId> = world
+        .characters
+        .values()
+        .filter(|character| {
+            character.driver == CDR_MISSIONGIVE
+                && character.flags.contains(CharacterFlags::USED)
+                && !character.flags.contains(CharacterFlags::DEAD)
+        })
+        .map(|character| character.id)
+        .collect();
+    for giver_id in giver_ids {
+        regenerate_special_offer_if_needed(world, loader, giver_id);
+    }
+}
+
+fn regenerate_special_offer_if_needed(
+    world: &mut World,
+    loader: &mut ZoneLoader,
+    giver_id: CharacterId,
+) {
+    let Some(CharacterDriverState::MissionGiver(mut data)) = world
+        .characters
+        .get(&giver_id)
+        .and_then(|giver| giver.driver_state.clone())
+    else {
+        return;
+    };
+    let has_item = world
+        .characters
+        .get(&giver_id)
+        .and_then(|giver| giver.inventory.get(SPECIAL_OFFER_SLOT).copied().flatten())
+        .is_some();
+    // C `if (ticker > dat->next_spec || !ch[cn].item[30])` (`missions.c:
+    // 1308`).
+    if world.tick.0 <= data.next_spec && has_item {
+        return;
+    }
+
+    // C `if ((in = ch[cn].item[30])) { remove_item_char(in); destroy_item(in); }`
+    // (`missions.c:1310-1313`) - `World::destroy_item` already clears
+    // every inventory slot (including `SPECIAL_OFFER_SLOT`) that pointed
+    // at it.
+    if let Some(old_item_id) = world
+        .characters
+        .get(&giver_id)
+        .and_then(|giver| giver.inventory.get(SPECIAL_OFFER_SLOT).copied().flatten())
+    {
+        world.destroy_item(old_item_id);
+    }
+
+    // C `lvl = RANDOM(80);` plus the strength/base bucket ladder
+    // (`missions.c:1315-1338`).
+    let lvl = world.roll_legacy_random(80) as i32;
+    let (strength, base) = special_offer_strength_base(lvl);
+    // C `in = create_special_item(str, base, 1, 50);` (`missions.c:1353`).
+    // A `None` result (should not happen given the fixed template set) is
+    // a safe no-op: the slot stays empty and the next driver call retries.
+    let Some(mut item) = world.create_special_item(loader, strength, base, 1, 50) else {
+        return;
+    };
+    // C `lvl = it[in].min_level;` plus the price ladder (`missions.c:1355-
+    // 1380`).
+    let cost = special_offer_cost(item.min_level);
+    item.carried_by = Some(giver_id);
+    let item_id = item.id;
+    world.items.insert(item_id, item);
+    if let Some(giver) = world.characters.get_mut(&giver_id) {
+        if let Some(slot) = giver.inventory.get_mut(SPECIAL_OFFER_SLOT) {
+            *slot = Some(item_id);
+        }
+    }
+    data.spec_cost = cost;
+    data.next_spec = world.tick.0 + SPECIAL_OFFER_PERIOD_TICKS;
+    if let Some(giver) = world.characters.get_mut(&giver_id) {
+        giver.driver_state = Some(CharacterDriverState::MissionGiver(data));
+    }
 }
 
 /// C `build_fighter` (`missions.c:678-865`): instantiate the fighter's

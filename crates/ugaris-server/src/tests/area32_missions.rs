@@ -1,8 +1,11 @@
 use super::*;
-use ugaris_core::character_driver::CDR_MISSIONFIGHT;
+use ugaris_core::character_driver::{CDR_MISSIONFIGHT, CDR_MISSIONGIVE};
 use ugaris_core::entity::CharacterValue;
 use ugaris_core::item_driver::IDR_MISSIONCHEST;
 use ugaris_core::player::MissionPpd;
+use ugaris_core::world::npc::area32::governor::{
+    MissionGiveOutcomeEvent, MissionGiverDriverData, SPECIAL_OFFER_PERIOD_TICKS, SPECIAL_OFFER_SLOT,
+};
 use ugaris_core::world::npc::area32::mission_start::FighterSpawnSpec;
 use ugaris_core::world::LegacyHurtOutcome;
 
@@ -606,4 +609,210 @@ fn mission_chest_open_reports_cursor_occupied_without_key_message_when_no_key_ne
         result,
         MissionChestApplyResult::CursorOccupied { key_name: None }
     );
+}
+
+// ---- special-offer regen (`regenerate_mission_giver_special_offers`) ----
+
+/// Registers every `ITEM_TYPE_TEMPLATES` family `World::create_special_item`
+/// can roll, so the regen pre-pass always succeeds regardless of which of
+/// the 21 item types/10 quality tiers the RNG picks - mirrors `ugaris-core`'s
+/// own `create_special_item`/`add_special_store` test helper (not exported
+/// across the crate boundary, hence the duplication here).
+fn special_item_loader() -> ZoneLoader {
+    let mut loader = ZoneLoader::new();
+    let mut text = String::new();
+    for family in [
+        "armor",
+        "helmet",
+        "sleeves",
+        "leggings",
+        "sword",
+        "twohanded",
+        "dagger",
+        "staff",
+    ] {
+        for tier in 1..=10 {
+            text.push_str(&format!(
+                "{family}{tier}q3:\nname=\"{family}{tier}q3\"\nsprite=1\nvalue=0\nflag=IF_TAKE\n;\n"
+            ));
+        }
+    }
+    for flat in [
+        "plain_gold_ring",
+        "green_hat",
+        "brown_hat",
+        "blue_cape",
+        "brown_cape",
+        "red_belt",
+        "amulet",
+        "boots",
+        "vest",
+        "trousers",
+        "bracelet",
+        "gloves",
+    ] {
+        text.push_str(&format!(
+            "{flat}:\nname=\"{flat}\"\nsprite=1\nvalue=0\nflag=IF_TAKE\n;\n"
+        ));
+    }
+    loader.load_item_templates_str(&text).unwrap();
+    loader
+}
+
+fn governor_npc(id: CharacterId) -> Character {
+    let mut giver = login_character(id, &login_block("Mister Jones"), 32, 10, 10);
+    giver.flags.remove(CharacterFlags::PLAYER);
+    giver.driver = CDR_MISSIONGIVE;
+    giver.driver_state = Some(CharacterDriverState::MissionGiver(
+        MissionGiverDriverData::default(),
+    ));
+    giver
+}
+
+fn governor_driver_data(world: &World, giver_id: CharacterId) -> MissionGiverDriverData {
+    match world
+        .characters
+        .get(&giver_id)
+        .and_then(|giver| giver.driver_state.clone())
+    {
+        Some(CharacterDriverState::MissionGiver(data)) => data,
+        _ => panic!("expected MissionGiver driver state"),
+    }
+}
+
+// C `if (ticker > dat->next_spec || !ch[cn].item[30])` (`missions.c:1308`):
+// a freshly spawned governor (empty slot, `next_spec` defaults to `0`)
+// always regenerates on the first call.
+#[test]
+fn regenerate_special_offers_seeds_a_fresh_governor() {
+    let mut world = World::default();
+    let mut loader = special_item_loader();
+    world.tick.0 = 1000;
+    world.add_character(governor_npc(CharacterId(1)));
+
+    regenerate_mission_giver_special_offers(&mut world, &mut loader);
+
+    let giver = world.characters.get(&CharacterId(1)).unwrap();
+    let item_id = giver.inventory[SPECIAL_OFFER_SLOT].expect("special offer item expected");
+    let item = world.items.get(&item_id).unwrap();
+    assert_eq!(item.carried_by, Some(CharacterId(1)));
+    let data = governor_driver_data(&world, CharacterId(1));
+    assert!(data.spec_cost > 0);
+    assert_eq!(data.next_spec, 1000 + SPECIAL_OFFER_PERIOD_TICKS);
+}
+
+// C: `ticker > dat->next_spec || !ch[cn].item[30]` both false - no reroll.
+#[test]
+fn regenerate_special_offers_skips_when_not_due() {
+    let mut world = World::default();
+    let mut loader = special_item_loader();
+    world.tick.0 = 1000;
+    let mut giver = governor_npc(CharacterId(1));
+    giver.inventory[SPECIAL_OFFER_SLOT] = Some(ItemId(900));
+    giver.driver_state = Some(CharacterDriverState::MissionGiver(MissionGiverDriverData {
+        spec_cost: 500,
+        next_spec: 5000,
+        ..MissionGiverDriverData::default()
+    }));
+    world.add_character(giver);
+    let mut offer_item = test_item(ItemId(900), 1, ItemFlags::empty());
+    offer_item.carried_by = Some(CharacterId(1));
+    world.add_item(offer_item);
+
+    regenerate_mission_giver_special_offers(&mut world, &mut loader);
+
+    let giver = world.characters.get(&CharacterId(1)).unwrap();
+    assert_eq!(giver.inventory[SPECIAL_OFFER_SLOT], Some(ItemId(900)));
+    let data = governor_driver_data(&world, CharacterId(1));
+    assert_eq!(data.spec_cost, 500);
+    assert_eq!(data.next_spec, 5000);
+}
+
+// C: `ticker > dat->next_spec` true, old item destroyed then replaced.
+#[test]
+fn regenerate_special_offers_rerolls_and_destroys_the_old_item_once_the_period_elapses() {
+    let mut world = World::default();
+    let mut loader = special_item_loader();
+    world.tick.0 = 10_000;
+    let mut giver = governor_npc(CharacterId(1));
+    giver.inventory[SPECIAL_OFFER_SLOT] = Some(ItemId(900));
+    giver.driver_state = Some(CharacterDriverState::MissionGiver(MissionGiverDriverData {
+        spec_cost: 500,
+        next_spec: 1000,
+        ..MissionGiverDriverData::default()
+    }));
+    world.add_character(giver);
+    let mut offer_item = test_item(ItemId(900), 1, ItemFlags::empty());
+    offer_item.carried_by = Some(CharacterId(1));
+    world.add_item(offer_item);
+
+    regenerate_mission_giver_special_offers(&mut world, &mut loader);
+
+    assert!(
+        world.items.get(&ItemId(900)).is_none(),
+        "the stale item must be destroyed"
+    );
+    let giver = world.characters.get(&CharacterId(1)).unwrap();
+    let new_item_id = giver.inventory[SPECIAL_OFFER_SLOT].expect("new item expected");
+    assert_ne!(new_item_id, ItemId(900));
+    let data = governor_driver_data(&world, CharacterId(1));
+    assert_eq!(data.next_spec, 10_000 + SPECIAL_OFFER_PERIOD_TICKS);
+}
+
+// C `case 18:`'s `look_item`/"Price: .../Do you want to buy..." lines
+// (`missions.c:1627-1634`), applied via `MissionGiveOutcomeEvent::
+// ShowSpecialOffer`.
+#[test]
+fn apply_show_special_offer_event_previews_item_and_price() {
+    let mut world = World::default();
+    let mut loader = special_item_loader();
+    let mut runtime = ServerRuntime::default();
+    let mut giver = governor_npc(CharacterId(1));
+    giver.inventory[SPECIAL_OFFER_SLOT] = Some(ItemId(900));
+    giver.driver_state = Some(CharacterDriverState::MissionGiver(MissionGiverDriverData {
+        spec_cost: 777,
+        next_spec: 5000,
+        ..MissionGiverDriverData::default()
+    }));
+    world.add_character(giver);
+    let mut offer_item = test_item(ItemId(900), 1, ItemFlags::empty());
+    offer_item.name = "Special Sword".into();
+    offer_item.carried_by = Some(CharacterId(1));
+    world.add_item(offer_item);
+    world.add_character(login_character(
+        CharacterId(2),
+        &login_block("Godmode"),
+        32,
+        5,
+        5,
+    ));
+    let mut player = PlayerRuntime::connected(1, 0);
+    player.character_id = Some(CharacterId(2));
+    player.governor = MissionPpd {
+        points: 300,
+        ..Default::default()
+    };
+    runtime.players.insert(1, player);
+
+    let applied = apply_mission_giver_events(
+        &mut world,
+        &mut runtime,
+        &mut loader,
+        vec![MissionGiveOutcomeEvent::ShowSpecialOffer {
+            player_id: CharacterId(2),
+            npc_id: CharacterId(1),
+        }],
+    );
+    assert_eq!(applied, 1);
+
+    let texts = world.drain_pending_system_texts();
+    assert!(texts
+        .iter()
+        .any(|text| text.message.contains("Special Sword")));
+    assert!(texts.iter().any(|text| text
+        .message
+        .contains("Price: 777 points (you have 300 points)")));
+    assert!(texts
+        .iter()
+        .any(|text| text.message.contains("buy the special offer")));
 }

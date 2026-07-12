@@ -5,6 +5,7 @@ use crate::character_driver::{CDR_MISSIONGIVE, NT_CHAR, NT_GIVE};
 use crate::player::{MissionPpd, SingleMission};
 use crate::world::npc::area32::governor::{
     MissionGiveOutcomeEvent, MissionGivePlayerFacts, MissionGiverDriverData, MIS_REWARDS,
+    SPECIAL_OFFER_SLOT, SPECIAL_OFFER_VIEW_EXTENSION_TICKS,
 };
 
 const BASELINE_TICK: u64 = TICKS_PER_SECOND * 1000;
@@ -315,6 +316,12 @@ fn show_offer_lists_rewards_around_current_points() {
     world.map.tile_mut(12, 10).unwrap().light = 255;
     assert!(world.spawn_character(mission_giver_npc(1), 10, 10));
     assert!(world.spawn_character(player(2, "Godmode"), 12, 10));
+    if let Some(giver) = world.characters.get_mut(&CharacterId(1)) {
+        giver.driver_state = Some(CharacterDriverState::MissionGiver(MissionGiverDriverData {
+            spec_cost: 777,
+            ..MissionGiverDriverData::default()
+        }));
+    }
 
     let ppd = MissionPpd {
         points: 300,
@@ -332,6 +339,201 @@ fn show_offer_lists_rewards_around_current_points() {
     assert!(texts
         .iter()
         .any(|text| text.message.contains("You have: 300 points.")));
+    // C `case 11:`'s trailing "I also have a special offer..." teaser
+    // (`missions.c:1588-1589`).
+    let area_texts = world.drain_pending_area_texts();
+    assert!(
+        area_texts
+            .iter()
+            .any(|text| text.message.contains("special offer")
+                && text.message.contains("777 points."))
+    );
+}
+
+#[test]
+fn special_offer_extends_visibility_and_queues_show_event() {
+    let mut world = World::default();
+    world.map.tile_mut(12, 10).unwrap().light = 255;
+    let mut giver = mission_giver_npc(1);
+    giver.inventory[SPECIAL_OFFER_SLOT] = Some(ItemId(900));
+    giver.driver_state = Some(CharacterDriverState::MissionGiver(MissionGiverDriverData {
+        spec_cost: 500,
+        next_spec: 100,
+        ..MissionGiverDriverData::default()
+    }));
+    assert!(world.spawn_character(giver, 10, 10));
+    let mut offer_item = item(900, ItemFlags::empty());
+    offer_item.name = "Special Sword".into();
+    offer_item.carried_by = Some(CharacterId(1));
+    world.add_item(offer_item);
+    assert!(world.spawn_character(player(2, "Godmode"), 12, 10));
+
+    world.tick = Tick(BASELINE_TICK);
+    if let Some(giver) = world.characters.get_mut(&CharacterId(1)) {
+        giver.push_driver_text_message(CharacterId(2), "special offer");
+    }
+    let events = world.process_mission_giver_actions(
+        &facts(CharacterId(2), MissionPpd::default()),
+        32,
+        1000,
+    );
+    assert!(events.iter().any(|event| matches!(
+        event,
+        MissionGiveOutcomeEvent::ShowSpecialOffer { player_id, npc_id }
+            if *player_id == CharacterId(2) && *npc_id == CharacterId(1)
+    )));
+    // C `dat->next_spec = max(dat->next_spec, ticker + TICKS*60*5);`
+    // (`missions.c:1634`).
+    match world
+        .characters
+        .get(&CharacterId(1))
+        .unwrap()
+        .driver_state
+        .as_ref()
+    {
+        Some(CharacterDriverState::MissionGiver(data)) => {
+            assert_eq!(
+                data.next_spec,
+                BASELINE_TICK + SPECIAL_OFFER_VIEW_EXTENSION_TICKS
+            );
+        }
+        _ => panic!("expected MissionGiver driver state"),
+    }
+    // The item still sits in the governor's own slot - only the visibility
+    // window changed.
+    let giver = world.characters.get(&CharacterId(1)).unwrap();
+    assert_eq!(giver.inventory[SPECIAL_OFFER_SLOT], Some(ItemId(900)));
+}
+
+#[test]
+fn buy_special_offer_succeeds_and_transfers_the_item() {
+    let mut world = World::default();
+    world.map.tile_mut(12, 10).unwrap().light = 255;
+    let mut giver = mission_giver_npc(1);
+    giver.inventory[SPECIAL_OFFER_SLOT] = Some(ItemId(900));
+    giver.driver_state = Some(CharacterDriverState::MissionGiver(MissionGiverDriverData {
+        spec_cost: 500,
+        next_spec: 100,
+        ..MissionGiverDriverData::default()
+    }));
+    assert!(world.spawn_character(giver, 10, 10));
+    let mut offer_item = item(900, ItemFlags::empty());
+    offer_item.name = "Special Sword".into();
+    offer_item.carried_by = Some(CharacterId(1));
+    world.add_item(offer_item);
+    assert!(world.spawn_character(player(2, "Godmode"), 12, 10));
+
+    let ppd = MissionPpd {
+        points: 600,
+        ..MissionPpd::default()
+    };
+    if let Some(giver) = world.characters.get_mut(&CharacterId(1)) {
+        giver.push_driver_text_message(CharacterId(2), "buy the special offer");
+    }
+    let events = world.process_mission_giver_actions(&facts(CharacterId(2), ppd), 32, 1000);
+    let new_ppd = find_update(&events, CharacterId(2)).unwrap();
+    // C `ppd->points -= dat->spec_cost;` (`missions.c:1647`).
+    assert_eq!(new_ppd.points, 100);
+    // C `ch[cn].item[30] = 0;` (`missions.c:1646`).
+    let giver = world.characters.get(&CharacterId(1)).unwrap();
+    assert_eq!(giver.inventory[SPECIAL_OFFER_SLOT], None);
+    // C `dat->next_spec = 0;` (`missions.c:1648`) - forces an immediate
+    // reroll on the next driver call.
+    match giver.driver_state.as_ref() {
+        Some(CharacterDriverState::MissionGiver(data)) => assert_eq!(data.next_spec, 0),
+        _ => panic!("expected MissionGiver driver state"),
+    }
+    let player = world.characters.get(&CharacterId(2)).unwrap();
+    assert_eq!(player.cursor_item, Some(ItemId(900)));
+    let item = world.items.get(&ItemId(900)).unwrap();
+    assert_eq!(item.carried_by, Some(CharacterId(2)));
+}
+
+#[test]
+fn buy_special_offer_refuses_when_too_poor() {
+    let mut world = World::default();
+    world.map.tile_mut(12, 10).unwrap().light = 255;
+    let mut giver = mission_giver_npc(1);
+    giver.inventory[SPECIAL_OFFER_SLOT] = Some(ItemId(900));
+    giver.driver_state = Some(CharacterDriverState::MissionGiver(MissionGiverDriverData {
+        spec_cost: 500,
+        next_spec: 100,
+        ..MissionGiverDriverData::default()
+    }));
+    assert!(world.spawn_character(giver, 10, 10));
+    let mut offer_item = item(900, ItemFlags::empty());
+    offer_item.carried_by = Some(CharacterId(1));
+    world.add_item(offer_item);
+    assert!(world.spawn_character(player(2, "Godmode"), 12, 10));
+
+    let ppd = MissionPpd {
+        points: 100,
+        ..MissionPpd::default()
+    };
+    if let Some(giver) = world.characters.get_mut(&CharacterId(1)) {
+        giver.push_driver_text_message(CharacterId(2), "buy the special offer");
+    }
+    let events = world.process_mission_giver_actions(&facts(CharacterId(2), ppd), 32, 1000);
+    let new_ppd = find_update(&events, CharacterId(2)).unwrap();
+    assert_eq!(
+        new_ppd.points, 100,
+        "unaffordable buy leaves points untouched"
+    );
+    let giver = world.characters.get(&CharacterId(1)).unwrap();
+    assert_eq!(
+        giver.inventory[SPECIAL_OFFER_SLOT],
+        Some(ItemId(900)),
+        "item stays with the governor"
+    );
+    let texts = world.drain_pending_area_texts();
+    assert!(texts
+        .iter()
+        .any(|text| text.message.contains("Sorry, you can't afford it.")));
+}
+
+#[test]
+fn buy_special_offer_reports_no_space_when_inventory_is_full() {
+    let mut world = World::default();
+    world.map.tile_mut(12, 10).unwrap().light = 255;
+    let mut giver = mission_giver_npc(1);
+    giver.inventory[SPECIAL_OFFER_SLOT] = Some(ItemId(900));
+    giver.driver_state = Some(CharacterDriverState::MissionGiver(MissionGiverDriverData {
+        spec_cost: 500,
+        next_spec: 100,
+        ..MissionGiverDriverData::default()
+    }));
+    assert!(world.spawn_character(giver, 10, 10));
+    let mut offer_item = item(900, ItemFlags::empty());
+    offer_item.carried_by = Some(CharacterId(1));
+    world.add_item(offer_item);
+    let mut buyer = player(2, "Godmode");
+    buyer.cursor_item = Some(ItemId(901));
+    for slot in buyer
+        .inventory
+        .iter_mut()
+        .skip(crate::legacy::INVENTORY_START_INVENTORY)
+    {
+        *slot = Some(ItemId(999));
+    }
+    assert!(world.spawn_character(buyer, 12, 10));
+    world.add_item(item(901, ItemFlags::empty()));
+
+    let ppd = MissionPpd {
+        points: 600,
+        ..MissionPpd::default()
+    };
+    if let Some(giver) = world.characters.get_mut(&CharacterId(1)) {
+        giver.push_driver_text_message(CharacterId(2), "buy the special offer");
+    }
+    let events = world.process_mission_giver_actions(&facts(CharacterId(2), ppd), 32, 1000);
+    let new_ppd = find_update(&events, CharacterId(2)).unwrap();
+    assert_eq!(new_ppd.points, 600, "failed buy leaves points untouched");
+    let giver = world.characters.get(&CharacterId(1)).unwrap();
+    assert_eq!(giver.inventory[SPECIAL_OFFER_SLOT], Some(ItemId(900)));
+    let texts = world.drain_pending_area_texts();
+    assert!(texts.iter().any(|text| text
+        .message
+        .contains("You don't have any space in your inventory, dude.")));
 }
 
 #[test]

@@ -23,14 +23,33 @@
 //! (`IDR_MISSIONCHEST`, `item_driver::area32_missions` +
 //! `ugaris-server::area32::apply_mission_chest_open`) are now also ported,
 //! so a mission's `kill_*`/`find_item` objectives actually track kills/
-//! loot and `mission_done`'s auto-solve fires for real. The following
-//! remain **not yet ported**, tracked in `PORTING_TODO.md`:
-//! - The rotating procedural "special offer" gear purchase (qa codes
-//!   18/19, `dat->next_spec`/`dat->spec_cost`/`ch[cn].item[30]`): needs
-//!   `World::create_special_item` wired through a `ZoneLoader`-backed
-//!   event, deferred with the rest of this slice. Both phrases are
-//!   recognized but produce no response, and "offer"'s trailing "I also
-//!   have a special offer..." teaser line is dropped.
+//! loot and `mission_done`'s auto-solve fires for real. The rotating
+//! procedural "special offer" gear purchase (qa codes 18/19, `dat->
+//! next_spec`/`dat->spec_cost`/`ch[cn].item[30]`) is now also ported:
+//! `ugaris-server::area32::regenerate_mission_giver_special_offers` runs
+//! once per driver call, *before* `process_mission_giver_actions`
+//! (matching C's own single-function ordering: the regen check sits at
+//! the very top of `mission_giver_driver`, ahead of the message loop),
+//! rerolling a fresh `World::create_special_item` into the governor's own
+//! `SPECIAL_OFFER_SLOT` inventory slot whenever the 12-hour timer elapses
+//! or the slot is empty. "special offer" (case 18) now shows the item
+//! (`ugaris-server`'s `legacy_item_look_text`, via the
+//! `MissionGiveOutcomeEvent::ShowSpecialOffer` event) plus its price, and
+//! extends the visibility window by 5 minutes; "buy the special offer"
+//! (case 19) transfers it via `World::give_char_item` and deducts points,
+//! entirely in `World` (no `ZoneLoader` needed to give an item that
+//! already exists). "offer"'s trailing "I also have a special offer..."
+//! teaser line is restored too. One documented timing gap: since the
+//! regen pre-pass and the message-processing pass are two separate
+//! `World`/`ugaris-server` calls (C has them as one call), a freshly
+//! spawned governor's very first tick (before the pre-pass has ever run)
+//! can see an empty `SPECIAL_OFFER_SLOT` for that one tick if a player
+//! asks for "special offer" before any tick elapses - self-heals on the
+//! very next tick and is otherwise unreachable (every later tick
+//! regenerates before messages are dispatched). `dlog`'s audit-log line on
+//! a successful buy has no reproduction, same as every other `dlog` call
+//! in this file (see below). The following remain **not yet ported**,
+//! tracked in `PORTING_TODO.md`:
 //! - The `CTPOT` ("Custom Stat Potion") reward's multi-turn skill-naming
 //!   flow (`ppd->statowed`/`statcnt`/`stat[]`, `find_skill_text`,
 //!   `mis_potionbase`'s `mod_index`/`mod_value` fields): no
@@ -102,6 +121,74 @@ const RETURN_TO_POST_TICKS: u64 = TICKS_PER_SECOND * 30;
 const LASTSEEN_RESET_SECONDS: u64 = 30;
 /// C `#define MAXDIFF 1000` (`missions.c:52`).
 pub const MAX_DIFFICULTY: i32 = 1000;
+/// C `ch[cn].item[30]` (`missions.c:1308-1380`): the governor NPC's own
+/// inventory slot holding the current rotating "special offer" item.
+pub const SPECIAL_OFFER_SLOT: usize = 30;
+/// C `TICKS * 60 * 60 * 12` (`missions.c:1381`): special-offer reroll
+/// period.
+pub const SPECIAL_OFFER_PERIOD_TICKS: u64 = TICKS_PER_SECOND * 60 * 60 * 12;
+/// C `TICKS * 60 * 5` (`missions.c:1634`): minimum extra visibility a
+/// "special offer" preview (case 18) grants before the item may reroll.
+pub const SPECIAL_OFFER_VIEW_EXTENSION_TICKS: u64 = TICKS_PER_SECOND * 60 * 5;
+
+/// C `mission_giver_driver`'s special-offer strength/base roll
+/// (`missions.c:1301-1322`): `lvl = RANDOM(80)` bucketed into 11 tiers,
+/// each an input to [`World::create_special_item`].
+pub fn special_offer_strength_base(lvl: i32) -> (i32, i32) {
+    if lvl < 10 {
+        (3, 1)
+    } else if lvl < 17 {
+        (4, 10)
+    } else if lvl < 24 {
+        (6, 20)
+    } else if lvl < 31 {
+        (7, 30)
+    } else if lvl < 38 {
+        (8, 40)
+    } else if lvl < 45 {
+        (10, 50)
+    } else if lvl < 52 {
+        (12, 60)
+    } else if lvl < 60 {
+        (14, 70)
+    } else if lvl < 66 {
+        (16, 80)
+    } else if lvl < 74 {
+        (18, 90)
+    } else {
+        (20, 90)
+    }
+}
+
+/// C `mission_giver_driver`'s special-offer price ladder
+/// (`missions.c:1323-1380`), keyed off the freshly-created item's
+/// `min_level`.
+pub fn special_offer_cost(min_level: u8) -> i32 {
+    let lvl = i32::from(min_level);
+    if lvl < 10 {
+        500
+    } else if lvl < 17 {
+        2000 / 2
+    } else if lvl < 24 {
+        4000 / 2
+    } else if lvl < 31 {
+        6000 / 2
+    } else if lvl < 38 {
+        8000 / 2
+    } else if lvl < 45 {
+        10000 / 2
+    } else if lvl < 52 {
+        12000 / 2
+    } else if lvl < 60 {
+        14000 / 2
+    } else if lvl < 66 {
+        16000 / 2
+    } else if lvl < 74 {
+        18000 / 2
+    } else {
+        20000 / 2
+    }
+}
 
 /// C `struct mission_data` (`missions.c:449-470`), trimmed to the fields
 /// [`offer_mission`]/[`offer_mission_sub`]/the `solved`-reward payout
@@ -541,6 +628,16 @@ pub enum MissionGiveOutcomeEvent {
     SpawnMissionFighters {
         fighters: Vec<crate::world::npc::area32::mission_start::FighterSpawnSpec>,
     },
+    /// C `case 18:`'s `look_item(co, it + ch[cn].item[30], -1)` plus its
+    /// trailing "Price: ..."/"Do you want to buy..." lines
+    /// (`missions.c:1627-1634`). Applied server-side since previewing an
+    /// item needs `ugaris-server`'s `legacy_item_look_text`; the
+    /// `next_spec` visibility extension (`:1634`) is not deferred (already
+    /// applied directly to `data` before this event is pushed).
+    ShowSpecialOffer {
+        player_id: CharacterId,
+        npc_id: CharacterId,
+    },
 }
 
 impl World {
@@ -895,6 +992,7 @@ impl World {
         let mut didsay = false;
         let mut give_item_reward: Option<usize> = None;
         let mut show_item_reward: Option<usize> = None;
+        let mut show_special_offer = false;
 
         match analyse_text_qa(text, giver_name, &speaker.name, MISSIONGIVE_QA) {
             TextAnalysisOutcome::Said(reply) => {
@@ -987,6 +1085,13 @@ impl World {
             // C `case 11:` ("offer").
             TextAnalysisOutcome::Matched(11) => {
                 self.mission_giver_show_reward_list(speaker_id, &ppd);
+                self.npc_quiet_say(
+                    giver_id,
+                    &format!(
+                        "I also have a {COL_STR_LIGHT_BLUE}special offer{COL_STR_RESET}, for {} points.",
+                        data.spec_cost
+                    ),
+                );
                 didsay = true;
             }
             // C `case 12:` ("increase").
@@ -1026,9 +1131,47 @@ impl World {
                 }
                 didsay = true;
             }
-            // C `case 18/19:` (special offer show/buy), deferred - see
-            // the module doc comment.
-            TextAnalysisOutcome::Matched(18..=19) => {
+            // C `case 18:` ("special offer"): preview + price, applied
+            // server-side (`ShowSpecialOffer` event) since `look_item`
+            // needs `ugaris-server`'s `legacy_item_look_text`. The
+            // visibility extension itself is *not* deferred - `data` is
+            // owned right here.
+            TextAnalysisOutcome::Matched(18) => {
+                let extend = self.tick.0 + SPECIAL_OFFER_VIEW_EXTENSION_TICKS;
+                data.next_spec = data.next_spec.max(extend);
+                show_special_offer = true;
+                didsay = true;
+            }
+            // C `case 19:` ("buy the special offer"). Fully handled here:
+            // giving an item that already exists needs no `ZoneLoader`.
+            TextAnalysisOutcome::Matched(19) => {
+                if ppd.points < data.spec_cost {
+                    self.npc_quiet_say(giver_id, "Sorry, you can't afford it.");
+                } else {
+                    let item_id = self.characters.get(&giver_id).and_then(|giver| {
+                        giver.inventory.get(SPECIAL_OFFER_SLOT).copied().flatten()
+                    });
+                    let bought =
+                        item_id.is_some_and(|item_id| self.give_char_item(speaker_id, item_id));
+                    if bought {
+                        if let Some(giver) = self.characters.get_mut(&giver_id) {
+                            if let Some(slot) = giver.inventory.get_mut(SPECIAL_OFFER_SLOT) {
+                                *slot = None;
+                            }
+                        }
+                        ppd.points -= data.spec_cost;
+                        // C `dat->next_spec = 0;` (`missions.c:1648`):
+                        // forces an immediate reroll on the next driver
+                        // call (`dlog`'s audit-log line has no
+                        // reproduction, see the module doc comment).
+                        data.next_spec = 0;
+                    } else {
+                        self.npc_quiet_say(
+                            giver_id,
+                            "You don't have any space in your inventory, dude.",
+                        );
+                    }
+                }
                 didsay = true;
             }
             // C `case 20-22:` (custom stat potion skill-count select),
@@ -1113,6 +1256,12 @@ impl World {
                 player_id: speaker_id,
                 npc_id: giver_id,
                 reward_index: idx,
+            });
+        }
+        if show_special_offer {
+            events.push(MissionGiveOutcomeEvent::ShowSpecialOffer {
+                player_id: speaker_id,
+                npc_id: giver_id,
             });
         }
     }
@@ -1336,13 +1485,20 @@ impl World {
 // ---- legacy driver registry surface (moved from character_driver.rs) ----
 
 /// C `struct mission_giver_data`, trimmed to the fields this slice needs
-/// (`missions.c:1289-1295`'s `last_talk`/`current_victim`; `amgivingback`
-/// is not needed by the simplified `NT_GIVE` handler, and `next_spec`/
-/// `spec_cost` back the still-deferred "special offer" flow - see the
-/// module doc comment).
+/// (`missions.c:1289-1295`'s `last_talk`/`current_victim`/`next_spec`/
+/// `spec_cost`; `amgivingback` is not needed by the simplified `NT_GIVE`
+/// handler).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct MissionGiverDriverData {
     #[serde(default)]
     pub last_talk: u64,
     pub current_victim: Option<CharacterId>,
+    /// C `int next_spec`: game tick after which the special-offer item may
+    /// reroll (`missions.c:1308`/`1380`/`1634`/`1648`).
+    #[serde(default)]
+    pub next_spec: u64,
+    /// C `int spec_cost`: brownie-point price of the current special-offer
+    /// item (`missions.c:1381`/`1629`/`1637`/`1647`).
+    #[serde(default)]
+    pub spec_cost: i32,
 }

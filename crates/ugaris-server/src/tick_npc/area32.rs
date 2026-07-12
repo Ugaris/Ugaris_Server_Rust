@@ -141,7 +141,10 @@ pub(crate) async fn mission_giver_driver_147(
     _auction_repository: &Option<ugaris_db::PgAuctionRepository>,
 ) {
     // C `mission_giver_driver`: "Mister Jones", the governor's job-board
-    // NPC (`src/area/32/missions.c`).
+    // NPC (`src/area/32/missions.c`). The special-offer regen check runs
+    // first, matching C's own single-function ordering - see
+    // `regenerate_mission_giver_special_offers`'s doc comment.
+    regenerate_mission_giver_special_offers(world, zone_loader);
     let mission_giver_facts = mission_giver_player_facts(runtime);
     let mission_giver_events = world.process_mission_giver_actions(
         &mission_giver_facts,

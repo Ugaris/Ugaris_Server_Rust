@@ -25,3 +25,13 @@ thiserror = "1.0"
 tokio = { version = "1.40", features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time", "io-util"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
+
+[profile.debugging]
+inherits = "dev"
+debug = true
