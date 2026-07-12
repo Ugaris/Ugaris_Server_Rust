@@ -469,6 +469,11 @@ pub const CDR_ROUVEN: u16 = 130;
 /// the engraver"): the jewelry engraver (`src/area/3/area3.c::
 /// kassim_driver`).
 pub const CDR_KASSIM: u16 = 156;
+/// C `#define CDR_TUNNELER_GORWIN 158` (`src/system/drvlib.h:210`,
+/// "Tunnel Changer NPC"): Gorwin, who runs the Long Tunnels (area 33)
+/// entrance lobby and lets players pick their tunnel difficulty level
+/// (`src/area/33/tunnel.c::gorwin_driver`).
+pub const CDR_TUNNELER_GORWIN: u16 = 158;
 /// C `#define CDR_SUPERMAX 98` (`src/system/drvlib.h:146`, "past-maxes-
 /// raiser"): the NPC who raises attributes/skills/spells past
 /// `skillmax` for a gold+exp fee (`src/area/3/area3.c::supermax_driver`).
@@ -779,6 +784,7 @@ pub enum CharacterDriverState {
     DwarfShaman(crate::world::npc::area31::dwarfshaman::DwarfShamanDriverData),
     DwarfSmith(crate::world::npc::area31::dwarfsmith::DwarfSmithDriverData),
     MissionGiver(crate::world::npc::area32::governor::MissionGiverDriverData),
+    Gorwin(crate::world::npc::area33::gorwin::GorwinDriverData),
 }
 /// C `bank_driver_parse` from `src/module/bank.c`. The C driver defaults
 /// opening hours to 6..23 before parsing (`bank_driver` lines 304-309).
@@ -1598,7 +1604,8 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::LostDwarf(_)
             | CharacterDriverState::DwarfShaman(_)
             | CharacterDriverState::DwarfSmith(_)
-            | CharacterDriverState::MissionGiver(_),
+            | CharacterDriverState::MissionGiver(_)
+            | CharacterDriverState::Gorwin(_),
         ) => SimpleBaddyDriverData::default(),
         None => SimpleBaddyDriverData::default(),
     };
@@ -4165,6 +4172,7 @@ pub use crate::world::npc::area32::military::{
     parse_military_advisor_driver_args, parse_military_master_driver_args,
     MilitaryAdvisorDriverData, MilitaryMasterDriverData, MILITARY_QA,
 };
+pub use crate::world::npc::area33::gorwin::GorwinDriverData;
 pub use crate::world::npc::area4::tester::TesterDriverData;
 pub use crate::world::npc::area8::fdemon_army::FarmyData;
 pub use crate::world::npc::arena::{

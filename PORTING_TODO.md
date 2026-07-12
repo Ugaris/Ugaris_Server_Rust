@@ -1409,10 +1409,23 @@ Ordered by player progression; the C file is the oracle.
   `loader.instantiate_item_template`, rather than adding a 5th duplicate
   orb-naming implementation. All 24/24 reward-shop entries are now
   functional. Details in PORTING_LEDGER.md.)*
-- [ ] **Area 33 - `src/area/33/tunnel.c`** - long tunnel events. Also wire
+- [~] **Area 33 - `src/area/33/tunnel.c`** - long tunnel events. Also wire
   `achievement_add_tunnel_level` using the existing `award_*` helper
   pattern in `crates/ugaris-server/src/achievement.rs` (Achievements
   task, closed iteration 84).
+  REMAINING: `gorwin_driver`/`CDR_TUNNELER_GORWIN` (the entrance-lobby
+  "Tunnel Changer" NPC: greeting sequence, `analyse_text_driver`/`qa[]`,
+  `handle_tunnel_info`, `initialize_gorwin_ppd`, `change_tunnel_level`
+  with all its fee/fudge/easter-egg branches, idle mutterings) is fully
+  ported (`world/npc/area33/gorwin.rs`). Still unported: the
+  `IDR_TUNNELDOOR`/`IDR_TUNNELDOOR2` item drivers (`tunneldoor`/
+  `mean_door`), the procedural creeper-dungeon generator (`build_fighter`/
+  `handle_block_marker`/`handle_creeper_marker`/`find_unused_sector`), and
+  `give_reward` (the actual exp/military-rank payout + the
+  `achievement_add_tunnel_level` wiring this checkbox calls out - deferred
+  to that slice since it lives in `tunneldoor`'s `DOOR_EXIT_*` branches,
+  not in Gorwin). `IID_TUNNELDOOR1/2`/`IID_TUNNELENEMY1/2/3/ALL` item-id
+  constants are already added for that follow-up.
 - [ ] **Area 34 - `src/area/34/teufel.c`** - rat/gambler NPCs, arena score
   rewards (rat nest items ported).
 - [ ] **Area 36 - `src/area/36/caligar.c`** - Caligar quest NPCs, PPD
@@ -2152,4 +2165,8 @@ notes live in `PROGRESS_ARCHIVE.md`.
   (`CDR_GRINNICH`/`CDR_SHANRA`, tower-entrance hint + basement reward/
   teleport flow, `grinnich_state`/`shanra_state` PPD fields). 3876 core
   (+23) + 1180 server tests pass, clean build/boot-smoke on area 29.
+- 2026-07-12: Area 33 started: ported `gorwin_driver`/`CDR_TUNNELER_GORWIN`
+  (`world/npc/area33/gorwin.rs`, new `CDR_TUNNELER_GORWIN`/`IID_TUNNEL*`
+  ids). Item drivers/dungeon generator remain. 3954 core (+12) + 1204
+  server tests pass, clean build/boot-smoke (areas 1 and 33).
 

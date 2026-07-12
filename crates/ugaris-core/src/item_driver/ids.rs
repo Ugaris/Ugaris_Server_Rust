@@ -1030,3 +1030,22 @@ pub const IID_MISSIONDOOR2: u32 = make_item_id(DEV_ID_DB, 0x0000A0);
 /// C `IID_MISSIONENTRY` (`src/common/item_id.h:220`): the instance's
 /// teleport-in tile, sprite hidden (`sprite = 0`) once the mission starts.
 pub const IID_MISSIONENTRY: u32 = make_item_id(DEV_ID_DB, 0x0000A1);
+/// C `IID_TUNNELDOOR1` (`src/common/item_id.h:221`): the Long Tunnels'
+/// `BLOCK_MARKER_1` template id (`ugaris_data/zones/33/tunnel.itm`'s
+/// `block_marker1`), one of the two randomly-active dead-end block
+/// markers `handle_block_marker` clears/walls per generated tunnel.
+pub const IID_TUNNELDOOR1: u32 = make_item_id(DEV_ID_DB, 0x0000A2);
+/// C `IID_TUNNELDOOR2` (`src/common/item_id.h:222`): the second Long
+/// Tunnels block-marker template id (`block_marker2`).
+pub const IID_TUNNELDOOR2: u32 = make_item_id(DEV_ID_DB, 0x0000A3);
+/// C `IID_TUNNELENEMY1` (`src/common/item_id.h:223`): the Long Tunnels'
+/// `CREEPER_MARKER_1` template id (`creeper_marker1`), one of the three
+/// randomly-chosen creeper-spawn markers `handle_creeper_marker` resolves.
+pub const IID_TUNNELENEMY1: u32 = make_item_id(DEV_ID_DB, 0x0000A4);
+/// C `IID_TUNNELENEMY2` (`src/common/item_id.h:224`): `creeper_marker2`.
+pub const IID_TUNNELENEMY2: u32 = make_item_id(DEV_ID_DB, 0x0000A5);
+/// C `IID_TUNNELENEMY3` (`src/common/item_id.h:225`): `creeper_marker3`.
+pub const IID_TUNNELENEMY3: u32 = make_item_id(DEV_ID_DB, 0x0000A6);
+/// C `IID_TUNNELENEMYALL` (`src/common/item_id.h:226`): `creeper_markerall`
+/// - always spawns a creeper regardless of the tunnel's random choice.
+pub const IID_TUNNELENEMYALL: u32 = make_item_id(DEV_ID_DB, 0x0000A7);

@@ -61,6 +61,7 @@ pub(crate) fn apply_pk_hate_from_hurt_events(
         apply_gate_fight_death_from_hurt_event(runtime, world, event, loader);
         apply_gate_welcome_death_from_hurt_event(world, event);
         apply_dungeonmaster_death_from_hurt_event(world, event);
+        apply_gorwin_death_from_hurt_event(world, event);
         apply_area1_quest_giver_death_from_hurt_event(world, event);
         apply_area3_immortal_death_from_hurt_event(world, event);
         apply_area30_clan_npc_death_from_hurt_event(world, event);

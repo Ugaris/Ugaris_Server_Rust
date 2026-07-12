@@ -56,6 +56,7 @@ mod forestbran;
 mod gate_fight;
 mod gatekeeper;
 mod golemkeyholder;
+mod gorwin;
 mod governor;
 mod greeter;
 mod grinnich;

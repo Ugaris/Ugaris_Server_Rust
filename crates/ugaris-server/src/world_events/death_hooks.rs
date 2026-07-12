@@ -1,7 +1,8 @@
 use super::*;
 use ugaris_core::character_driver::{
-    CDR_CENTINEL, CDR_CLANCLERK, CDR_CLANMASTER, CDR_LABGNOMEDRIVER, CDR_SMUGGLELEAD, CDR_TWOGUARD,
-    CDR_TWOROBBER, CDR_TWOSERVANT, CDR_WARPFIGHTER, CDR_WHITEROBBERBOSS,
+    CDR_CENTINEL, CDR_CLANCLERK, CDR_CLANMASTER, CDR_LABGNOMEDRIVER, CDR_SMUGGLELEAD,
+    CDR_TUNNELER_GORWIN, CDR_TWOGUARD, CDR_TWOROBBER, CDR_TWOSERVANT, CDR_WARPFIGHTER,
+    CDR_WHITEROBBERBOSS,
 };
 use ugaris_core::world::{CS_ENEMY, CS_GUEST, LS_DEAD, LS_FINE};
 
@@ -515,6 +516,34 @@ pub(crate) fn apply_area1_quest_giver_death_from_hurt_event(
         CDR_BRITHILDIE,
     ];
     if !GWENDYLON_DEAD_DRIVERS.contains(&target.driver) {
+        return false;
+    }
+    debug!(
+        target: "client_log",
+        "{}",
+        format_client_log_message(
+            &target.name,
+            target.id.0,
+            "I JUST DIED! I'M SUPPOSED TO BE IMMORTAL!"
+        )
+    );
+    true
+}
+
+/// C `ch_died_driver`/`CDR_TUNNELER_GORWIN` dispatch (`src/area/33/
+/// tunnel.c:1383-1391`) routes any death of Gorwin to
+/// `generic_immortal_dead(cn, co)` (`:1380-1382`), the identical
+/// `charlog`-only bug line already ported for `CDR_GATE_WELCOME` above -
+/// same text, same immortal-so-unreachable-in-practice caveat (Gorwin's
+/// template also carries `CF_IMMORTAL`).
+pub(crate) fn apply_gorwin_death_from_hurt_event(world: &World, event: LegacyHurtEvent) -> bool {
+    if !event.outcome.killed {
+        return false;
+    }
+    let Some(target) = world.characters.get(&event.target_id) else {
+        return false;
+    };
+    if target.driver != CDR_TUNNELER_GORWIN {
         return false;
     }
     debug!(

@@ -23,6 +23,7 @@ pub(crate) mod area3;
 pub(crate) mod area30;
 pub(crate) mod area31;
 pub(crate) mod area32;
+pub(crate) mod area33;
 pub(crate) mod area4;
 pub(crate) mod area8;
 pub(crate) mod arena;
@@ -2867,6 +2868,27 @@ pub(crate) async fn run_all(
     .await;
 
     area32::mission_giver_driver_147(
+        &mut *world,
+        &mut *runtime,
+        &mut *zone_loader,
+        config,
+        args,
+        completed_actions,
+        achievement_repository,
+        character_repository,
+        area_repository,
+        clan_repository,
+        clan_log_repository,
+        merchant_repository,
+        military_master_storage_repository,
+        military_advisor_storage_repository,
+        notes_repository,
+        anticheat_repository,
+        auction_repository,
+    )
+    .await;
+
+    area33::gorwin_driver_158(
         &mut *world,
         &mut *runtime,
         &mut *zone_loader,
