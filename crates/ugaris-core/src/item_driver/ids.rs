@@ -630,6 +630,12 @@ pub(crate) const IID_ARKHATA_FORTRESSKEY: u32 = make_item_id(DEV_ID_FIRENA, 0x00
 /// `captain_driver`/`judge_driver`.
 pub(crate) const IID_ARKHATA_LETTER1: u32 = make_item_id(DEV_ID_DB, 0x0000BB);
 
+/// C `#define IID_ARKHATA_LETTER2 MAKE_ITEMID(DEV_ID_DB, 0x0000BC)`
+/// (`src/common/item_id.h:251`): the trader's letter `world::npc::
+/// area37::ramin`'s own `NT_GIVE` handler accepts, setting
+/// `arkhata_ppd.letter_bits` bit `2`.
+pub(crate) const IID_ARKHATA_LETTER2: u32 = make_item_id(DEV_ID_DB, 0x0000BC);
+
 /// C `#define IID_ARKHATA_LETTER3 MAKE_ITEMID(DEV_ID_DB, 0x0000BD)`
 /// (`src/common/item_id.h:252`): the still-unported `judge_driver`'s
 /// letter meant for Count Brannington, whose `NT_GIVE` turn-in

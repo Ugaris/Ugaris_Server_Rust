@@ -2331,14 +2331,53 @@
         "test world::tests::bridgeguard::npc_message_from_a_same_group_ally_adds_the_reported_target_as_an_enemy ... FAILED",
         "test world::tests::bridgeguard::silent_guard_with_bless_flag_never_talks ... FAILED"
       ]
+    },
+    {
+      "iteration": 64,
+      "startedAt": "2026-07-12T20:28:58.372Z",
+      "endedAt": "2026-07-12T21:33:20.685Z",
+      "durationMs": 3860389,
+      "agent": "opencode",
+      "model": "anthropic/claude-sonnet-5",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "PORTING_TODO.md",
+        "crates/ugaris-core/src/character_driver.rs",
+        "crates/ugaris-core/src/item_driver/ids.rs",
+        "crates/ugaris-core/src/world/npc/area37/mod.rs",
+        "crates/ugaris-core/src/world/npc_fight.rs",
+        "crates/ugaris-core/src/world/npc_idle.rs",
+        "crates/ugaris-core/src/world/tests/mod.rs",
+        "crates/ugaris-core/src/zone.rs",
+        "crates/ugaris-server/src/area37.rs",
+        "crates/ugaris-server/src/tick_npc/area37.rs",
+        "crates/ugaris-server/src/tick_npc/mod.rs",
+        "crates/ugaris-core/src/world/npc/area37/ramin.rs",
+        "crates/ugaris-core/src/world/tests/ramin.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "Test run finished. Let's check the full summary for failures.",
+        "4144 core tests (+16, matches expectations roughly), 1213 server tests unchanged, all green, zero failures. Now let's build ugaris-server and boot-smoke it.",
+        "**Verification**: `cargo fmt --all` (clean), `cargo test --workspace` (4144 core [+16], 1213 server, 81 db, 3 net, 45 protocol — all green, zero failures), `cargo build -p ugaris-server` (clean), boot",
+        "test result: ok. 1213 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 6.55s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "132:| `src/area/37/arkhata.c` (P4 \"Area 37\", 4,764 lines, 23 character drivers) | `crates/ugaris-core/src/world/npc/area37/{mod,nop,rammy,jaz,fiona,gladiator,bridgeguard}.rs`, `crates/ugaris-core/src/",
+        "595:- Area 37 `IDR_ARKHATA` subtype `0` now ports the C `pool_driver` item path: zero-character timer calls no-op, missing cursor and wrong-cursor uses emit the legacy feedback without consuming the c",
+        "711:- Area 37 `IDR_ARKHATA` subtype `1` now ports the C `stopwatch_driver` timer path: zero-character timer calls reschedule every 10 ticks, carried stopwatch items resolve the carrying player, `DRD_A",
+        "7539:- 2026-07-07: continued the P0.5 \"Finish main() phase decomposition\" task with its thirteenth completed-action-outcome family slice: the Caligar-area (`src/area/36/caligar.c`) family - 14 `ItemDr",
+        "7540:- 2026-07-07: continued the P0.5 \"Finish main() phase decomposition\" task with its fourteenth completed-action-outcome family slice: the \"key-assembly\" family shared by several area `.c` files' t"
+      ]
     }
   ],
-  "totalDurationMs": 167224724,
+  "totalDurationMs": 171085113,
   "struggleIndicators": {
     "repeatedErrors": {
       "3375 core (+17) and 1168 server (+6) tests all pass, zero failures. Now let's build ugaris-server fo": 1,
       "- `cargo fmt --all`, `cargo test --workspace` (3375 core + 1168 server, zero failures/warnings), `ca": 1,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 63,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 64,
       "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&": 35,
       "test error::tests::error_constants_match_legacy_header ... ok": 30,
       "test error::tests::error_strings_match_legacy_table ... ok": 30,
@@ -2631,7 +2670,16 @@
       "\u001b[91m\u001b[1mError: \u001b[0mFound multiple matches for oldString. Provide more surrounding context to make t": 1,
       "error: unexpected argument 'bridgeguard::' found": 1,
       "test world::tests::bridgeguard::npc_message_from_a_same_group_ally_adds_the_reported_target_as_an_en": 1,
-      "test world::tests::bridgeguard::silent_guard_with_bless_flag_never_talks ... FAILED": 1
+      "test world::tests::bridgeguard::silent_guard_with_bless_flag_never_talks ... FAILED": 1,
+      "Test run finished. Let's check the full summary for failures.": 1,
+      "4144 core tests (+16, matches expectations roughly), 1213 server tests unchanged, all green, zero fa": 1,
+      "**Verification**: `cargo fmt --all` (clean), `cargo test --workspace` (4144 core [+16], 1213 server,": 1,
+      "test result: ok. 1213 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 6.55s": 1,
+      "132:| `src/area/37/arkhata.c` (P4 \"Area 37\", 4,764 lines, 23 character drivers) | `crates/ugaris-cor": 1,
+      "595:- Area 37 `IDR_ARKHATA` subtype `0` now ports the C `pool_driver` item path: zero-character time": 1,
+      "711:- Area 37 `IDR_ARKHATA` subtype `1` now ports the C `stopwatch_driver` timer path: zero-characte": 1,
+      "7539:- 2026-07-07: continued the P0.5 \"Finish main() phase decomposition\" task with its thirteenth c": 1,
+      "7540:- 2026-07-07: continued the P0.5 \"Finish main() phase decomposition\" task with its fourteenth c": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

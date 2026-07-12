@@ -1482,12 +1482,20 @@ Ordered by player progression; the C file is the oracle.
   which `World::simple_baddy_enemy_within_start_limits` doesn't replicate
   for a still-`None` slot) - same precedent as the `CDR_FDEMON_ARMY`
   soldier-spawning gap fixed in Area 8.
-  Still unported: `ramin`/`arkhatamonk`/`captain`/`judge`/`fortressguard`/
-  `jada`/`potmaker`/`hunter`/`thaipan`/`clerk`/`trainer`/`kidnappee`/
-  `krenach` - most read/write the shared `struct arkhata_ppd` quest-state
-  blob (`PlayerRuntime::arkhata_ppd`, scaffolded in `player/areas_misc.rs`;
-  its `LEGACY_ARKHATA_PPD_SIZE` had a pre-existing size bug, now fixed -
-  see ledger).
+  `ramin_driver` (`CDR_RAMIN`, the Arkhata civil officer who runs "A
+  Shopkeeper's Fright" quest 68, `world::npc::area37::ramin`) is now also
+  ported end to end, including the `case 0`->`1`/`case 9`->`10`/`case
+  11`->`12` fallthrough collapses, the `case 10` conditional-dialogue-but-
+  unconditional-state-advance quirk, the `NT_TEXT` "repeat" four-way
+  state-range reset, and the `NT_GIVE` letter-2 turn-in (new
+  `IID_ARKHATA_LETTER2` item id, sets `arkhata_ppd.letter_bits` bit 2,
+  consumed by `world::npc::area37::rammy`'s own `rs` `17` gate).
+  Still unported: `arkhatamonk`/`captain`/`judge`/`fortressguard`/`jada`/
+  `potmaker`/`hunter`/`thaipan`/`clerk`/`trainer`/`kidnappee`/`krenach` -
+  most read/write the shared `struct arkhata_ppd` quest-state blob
+  (`PlayerRuntime::arkhata_ppd`, scaffolded in `player/areas_misc.rs`; its
+  `LEGACY_ARKHATA_PPD_SIZE` had a pre-existing size bug, now fixed - see
+  ledger).
 - [ ] **Area 38 - `src/area/38/shrike.c`** - Shrike NPCs (amulet assembly
   ported).
 - [ ] **Common NPCs - `src/common/professor.c`, `src/common/npc_states.h`,
@@ -1527,6 +1535,9 @@ Keep entries to at most three lines: date, task, one-line result.
 Anything longer belongs in `PORTING_LEDGER.md`; historical verbose
 notes live in `PROGRESS_ARCHIVE.md`.
 
+- 2026-07-12: Area 37 CONTINUED: ported `ramin_driver` (`CDR_RAMIN`, quest
+  68 "A Shopkeeper's Fright"), plus new `IID_ARKHATA_LETTER2` item id. 4144
+  core [+16] + 1213 server tests pass, clean build/boot-smoke (area 37).
 - 2026-07-12: Area 37 CONTINUED: ported `fiona_driver`+`gladiator_driver`
   (quest 67 "The Missing Ring" + student-challenge chain) and
   `bridgeguard_driver` together. 4128 core [+30] + 1213 server tests pass,

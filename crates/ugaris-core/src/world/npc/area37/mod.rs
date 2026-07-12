@@ -2,12 +2,12 @@
 //!
 //! `src/area/37/arkhata.c` (4,764 lines, 23 character drivers) is only
 //! partially ported so far - see `PORTING_TODO.md`/`PORTING_LEDGER.md`
-//! for the remaining `ramin`/`arkhatamonk`/`captain`/`judge`/
-//! `fortressguard`/`jada`/`potmaker`/`hunter`/`thaipan`/`clerk`/
-//! `trainer`/`kidnappee`/`krenach` drivers, most of which read/write the
-//! shared `struct arkhata_ppd` quest-state blob (`PlayerRuntime::
-//! arkhata_ppd`, already scaffolded in `crate::player::areas_misc` for
-//! other areas' cross-area reads).
+//! for the remaining `arkhatamonk`/`captain`/`judge`/`fortressguard`/
+//! `jada`/`potmaker`/`hunter`/`thaipan`/`clerk`/`trainer`/`kidnappee`/
+//! `krenach` drivers, most of which read/write the shared `struct
+//! arkhata_ppd` quest-state blob (`PlayerRuntime::arkhata_ppd`, already
+//! scaffolded in `crate::player::areas_misc` for other areas' cross-area
+//! reads).
 //! `CDR_MADHERMIT` (`src/area/37/arkhata.c::madhermit_driver`, `:4494-
 //! 4552`) needs no work here at all - it is byte-for-byte identical to
 //! the already-ported Nomad Plains hermit (`world::npc::area19::
@@ -20,6 +20,7 @@ pub mod fiona;
 pub mod gladiator;
 pub mod jaz;
 pub mod nop;
+pub mod ramin;
 pub mod rammy;
 
 #[allow(unused_imports)]
@@ -32,6 +33,8 @@ pub use gladiator::*;
 pub use jaz::*;
 #[allow(unused_imports)]
 pub use nop::*;
+#[allow(unused_imports)]
+pub use ramin::*;
 #[allow(unused_imports)]
 pub use rammy::*;
 

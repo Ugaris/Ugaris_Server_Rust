@@ -131,6 +131,7 @@ mod pents;
 mod player_driver;
 mod punish;
 mod querystats;
+mod ramin;
 mod rammy;
 mod regen;
 mod rename;

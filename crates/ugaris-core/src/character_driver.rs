@@ -261,6 +261,10 @@ pub const CDR_FIONA: u16 = 134;
 /// (`world::npc::area37::fiona`) spawns for Fiona's "enter" challenge, see
 /// `world::npc::area37::gladiator`'s module doc comment.
 pub const CDR_GLADIATOR: u16 = 135;
+/// C `#define CDR_RAMIN 137` (`src/system/drvlib.h:187`, comment
+/// "arkhata"): the Arkhata civil officer who runs "A Shopkeeper's Fright"
+/// (quest 68), see `world::npc::area37::ramin`'s module doc comment.
+pub const CDR_RAMIN: u16 = 137;
 /// C `#define CDR_LAB2HERALD 196` (`src/system/drvlib.h:222`): the lab2
 /// graveyard chapel keeper (`src/area/22/lab2.c::lab2_herald_driver`), see
 /// `world::npc::area22::lab2_herald`'s module doc comment.
@@ -895,6 +899,7 @@ pub enum CharacterDriverState {
     Fiona(crate::world::npc::area37::fiona::FionaDriverData),
     BridgeGuard(crate::world::npc::area37::bridgeguard::BridgeGuardDriverData),
     Gladiator(crate::world::npc::area37::gladiator::GladiatorDriverData),
+    Ramin(crate::world::npc::area37::ramin::RaminDriverData),
 }
 /// C `bank_driver_parse` from `src/module/bank.c`. The C driver defaults
 /// opening hours to 6..23 before parsing (`bank_driver` lines 304-309).
@@ -1723,7 +1728,8 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::Jaz(_)
             | CharacterDriverState::Fiona(_)
             | CharacterDriverState::BridgeGuard(_)
-            | CharacterDriverState::Gladiator(_),
+            | CharacterDriverState::Gladiator(_)
+            | CharacterDriverState::Ramin(_),
         ) => SimpleBaddyDriverData::default(),
         None => SimpleBaddyDriverData::default(),
     };

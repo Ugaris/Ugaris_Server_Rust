@@ -719,7 +719,8 @@ impl World {
             | CharacterDriverState::Jaz(_)
             | CharacterDriverState::Fiona(_)
             | CharacterDriverState::BridgeGuard(_)
-            | CharacterDriverState::Gladiator(_) => None,
+            | CharacterDriverState::Gladiator(_)
+            | CharacterDriverState::Ramin(_) => None,
         }
     }
 

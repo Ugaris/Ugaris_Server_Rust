@@ -19,6 +19,9 @@ use ugaris_core::world::npc::area37::fiona::{
 };
 use ugaris_core::world::npc::area37::gladiator::GladiatorDriverData;
 use ugaris_core::world::npc::area37::jaz::{qlog_jaz_bracelet, JazOutcomeEvent, JazPlayerFacts};
+use ugaris_core::world::npc::area37::ramin::{
+    qlog_ramin_shopkeeper, RaminOutcomeEvent, RaminPlayerFacts,
+};
 use ugaris_core::world::npc::area37::rammy::{
     qlog_rammy_crown, qlog_rammy_entrance_passes, RammyOutcomeEvent, RammyPlayerFacts,
 };
@@ -411,4 +414,75 @@ fn spawn_gladiator_student(
 
     // C `teleport_char_driver(cn, 16, 244);` (`arkhata.c:803`).
     world.teleport_char_driver(player_id, 16, 244);
+}
+
+pub(crate) fn ramin_player_facts(
+    runtime: &ServerRuntime,
+) -> HashMap<CharacterId, RaminPlayerFacts> {
+    runtime
+        .players
+        .values()
+        .filter_map(|player| {
+            let character_id = player.character_id?;
+            Some((
+                character_id,
+                RaminPlayerFacts {
+                    ramin_state: player.arkhata_ramin_state(),
+                    fiona_state: player.arkhata_fiona_state(),
+                    monk_state: player.arkhata_monk_state(),
+                    rammy_state: player.arkhata_rammy_state(),
+                    letter_bits: player.arkhata_letter_bits(),
+                },
+            ))
+        })
+        .collect()
+}
+
+/// Applies each [`RaminOutcomeEvent`] queued by `World::
+/// process_ramin_actions`. Unlike `apply_rammy_events`/`apply_jaz_events`,
+/// no variant here needs `World` - `ramin_driver` never itself completes
+/// quest 68 (`world_events::death_hooks::
+/// apply_arkhataskelly_death_from_hurt_event` does, needing `give_exp`) or
+/// creates an item.
+pub(crate) async fn apply_ramin_events(
+    runtime: &mut ServerRuntime,
+    events: Vec<RaminOutcomeEvent>,
+) -> usize {
+    let mut applied = 0;
+    for event in events {
+        match event {
+            RaminOutcomeEvent::UpdateRaminState {
+                player_id,
+                new_state,
+            } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.set_arkhata_ramin_state(new_state);
+                applied += 1;
+            }
+            // C `questlog_open(co, 68)` (`arkhata.c:1406`).
+            RaminOutcomeEvent::QuestOpen68 { player_id } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.quest_log.open(qlog_ramin_shopkeeper());
+                let payload = legacy_questlog_payload(player);
+                for (session_id, _) in runtime.sessions_for_character(player_id) {
+                    runtime.send_to_session(session_id, payload.clone());
+                }
+                applied += 1;
+            }
+            // C `ppd->letter_bits |= 2` (`arkhata.c:1552`).
+            RaminOutcomeEvent::GiveLetter2Bit { player_id } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                let new_bits = player.arkhata_letter_bits() | 2;
+                player.set_arkhata_letter_bits(new_bits);
+                applied += 1;
+            }
+        }
+    }
+    applied
 }

@@ -184,3 +184,37 @@ pub(crate) async fn gladiator_driver_172(
     // `src/area/37/arkhata.c`).
     world.process_gladiator_actions(config.area_id);
 }
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn ramin_driver_173(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    _zone_loader: &mut ZoneLoader,
+    config: &ServerConfig,
+    _args: &Args,
+    _completed_actions: &[WorldActionCompletion],
+    _achievement_repository: &Option<ugaris_db::PgAchievementRepository>,
+    _character_repository: &Option<ugaris_db::PgCharacterRepository>,
+    _area_repository: &Option<ugaris_db::PgAreaRepository>,
+    _clan_repository: &Option<ugaris_db::PgClanRegistryRepository>,
+    _clan_log_repository: &Option<ugaris_db::PgClanLogRepository>,
+    _merchant_repository: &Option<ugaris_db::PgMerchantRepository>,
+    _military_master_storage_repository: &Option<ugaris_db::PgMilitaryMasterStorageRepository>,
+    _military_advisor_storage_repository: &Option<ugaris_db::PgMilitaryAdvisorStorageRepository>,
+    _notes_repository: &Option<ugaris_db::PgNotesRepository>,
+    _anticheat_repository: &Option<ugaris_db::PgAntiCheatRepository>,
+    _auction_repository: &Option<ugaris_db::PgAuctionRepository>,
+) {
+    // C `ramin_driver`: the Arkhata civil officer who runs "A Shopkeeper's
+    // Fright" (quest 68) (area 37, `src/area/37/arkhata.c`).
+    let ramin_facts = ramin_player_facts(runtime);
+    let ramin_events = world.process_ramin_actions(&ramin_facts, config.area_id);
+    let ramin_events_applied = apply_ramin_events(runtime, ramin_events).await;
+    if ramin_events_applied != 0 {
+        info!(
+            ramin_events_applied,
+            tick = world.tick.0,
+            "applied ramin dialogue events"
+        );
+    }
+}
