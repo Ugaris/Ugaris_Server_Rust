@@ -165,6 +165,28 @@ pub const CDR_TEUFELRAT: u16 = 117;
 /// (`src/area/36/caligar.c::guard_driver`), see
 /// `world::npc::area36::caligar_guard`'s module doc comment.
 pub const CDR_CALIGARGUARD: u16 = 118;
+/// C `#define CDR_CALIGARGLORI 119` (`src/system/drvlib.h:167`): Glori,
+/// "First in charge" of the library, who runs the quest-54-58 obelisk/
+/// key-part chain (`src/area/36/caligar.c::glori_driver`), see
+/// `world::npc::area36::glori`'s module doc comment.
+pub const CDR_CALIGARGLORI: u16 = 119;
+/// C `#define CDR_CALIGARARQUIN 120` (`src/system/drvlib.h:168`): Arquin,
+/// stationed outside the library, who explains the obelisks/dungeon key
+/// and points the player at Homden (`src/area/36/caligar.c::
+/// arquin_driver`), see `world::npc::area36::arquin`'s module doc comment.
+pub const CDR_CALIGARARQUIN: u16 = 120;
+/// C `#define CDR_CALIGARSMITH 121` (`src/system/drvlib.h:169`): the dwarf
+/// blacksmith who forges the three key parts into the underground key for
+/// 5,000 gold and later sells a translation dictionary for 10,000 gold
+/// (`src/area/36/caligar.c::smith_driver`), see
+/// `world::npc::area36::smith`'s module doc comment.
+pub const CDR_CALIGARSMITH: u16 = 121;
+/// C `#define CDR_CALIGARHOMDEN 122` (`src/system/drvlib.h:170`): Homden,
+/// the banished Carmin Clan brother who opens quest 59 (find his stolen
+/// ring) and narrates the palace/Emperor backstory
+/// (`src/area/36/caligar.c::homden_driver`), see
+/// `world::npc::area36::homden`'s module doc comment.
+pub const CDR_CALIGARHOMDEN: u16 = 122;
 /// C `#define CDR_CALIGARGUARD2 123` (`src/system/drvlib.h:171`): a
 /// combat-capable Caligar guard that taunts ("Halt! You will die where
 /// you stand!") before falling through to the plain `CDR_SIMPLEBADDY`
@@ -2460,6 +2482,10 @@ mod tests {
         assert_eq!(CDR_TEUFELQUEST, 116);
         assert_eq!(CDR_TEUFELRAT, 117);
         assert_eq!(CDR_CALIGARGUARD, 118);
+        assert_eq!(CDR_CALIGARGLORI, 119);
+        assert_eq!(CDR_CALIGARARQUIN, 120);
+        assert_eq!(CDR_CALIGARSMITH, 121);
+        assert_eq!(CDR_CALIGARHOMDEN, 122);
         assert_eq!(CDR_CALIGARGUARD2, 123);
         assert_eq!(CDR_CALIGARSKELLY, 124);
         assert_eq!(CDR_LAB2UNDEAD, 198);

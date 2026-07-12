@@ -1,12 +1,24 @@
 //! Area 36 (Caligar) NPCs, one file per NPC.
 
+pub mod arquin;
 pub mod caligar_guard;
 pub mod caligar_guard2;
+pub mod glori;
+pub mod homden;
+pub mod smith;
 
+#[allow(unused_imports)]
+pub use arquin::*;
 #[allow(unused_imports)]
 pub use caligar_guard::*;
 #[allow(unused_imports)]
 pub use caligar_guard2::*;
+#[allow(unused_imports)]
+pub use glori::*;
+#[allow(unused_imports)]
+pub use homden::*;
+#[allow(unused_imports)]
+pub use smith::*;
 
 use crate::character_driver::TextQaEntry;
 

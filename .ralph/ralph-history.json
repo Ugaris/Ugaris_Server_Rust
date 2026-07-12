@@ -2036,19 +2036,61 @@
         "test result: ok. 4017 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.29s",
         "test result: ok. 81 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
       ]
+    },
+    {
+      "iteration": 57,
+      "startedAt": "2026-07-12T10:25:09.500Z",
+      "endedAt": "2026-07-12T11:59:17.789Z",
+      "durationMs": 5646147,
+      "agent": "opencode",
+      "model": "anthropic/claude-sonnet-5",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "PORTING_TODO.md",
+        "crates/ugaris-core/src/character_driver.rs",
+        "crates/ugaris-core/src/item_driver/ids.rs",
+        "crates/ugaris-core/src/world/npc/area36/mod.rs",
+        "crates/ugaris-core/src/world/tests/mod.rs",
+        "crates/ugaris-server/src/area36.rs",
+        "crates/ugaris-server/src/tick_npc/area36.rs",
+        "crates/ugaris-server/src/tick_npc/mod.rs",
+        "crates/ugaris-core/src/world/npc/area36/arquin.rs",
+        "crates/ugaris-core/src/world/npc/area36/glori.rs",
+        "crates/ugaris-core/src/world/npc/area36/homden.rs",
+        "crates/ugaris-core/src/world/npc/area36/smith.rs",
+        "crates/ugaris-core/src/world/tests/caligar_arquin.rs",
+        "crates/ugaris-core/src/world/tests/caligar_glori.rs",
+        "crates/ugaris-core/src/world/tests/caligar_homden.rs",
+        "crates/ugaris-core/src/world/tests/caligar_smith.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "Now the smith tests (two failures):",
+        "All green: 4036 → 4057 (21 new tests added, matching my test count), zero failures. Now `cargo build -p ugaris-server`:",
+        "Verification: `cargo fmt --all` clean, `cargo test --workspace` (4057+81+3+45+1204, all green, zero failures), `cargo build -p ugaris-server`/`--workspace` clean with zero warnings, and a 12s boot-smo",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&1 | grep -E \"FAILED|error|test result\"",
+        "test error::tests::error_constants_match_legacy_header ... ok",
+        "test error::tests::error_strings_match_legacy_table ... ok",
+        "test error::tests::out_of_range_errors_use_c_fallback_string ... ok",
+        "test world::tests::dungeon_master::attack_command_failure_says_error_and_never_charges_or_queues ... ok",
+        "test result: ok. 4036 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.30s"
+      ]
     }
   ],
-  "totalDurationMs": 131115350,
+  "totalDurationMs": 136761497,
   "struggleIndicators": {
     "repeatedErrors": {
       "3375 core (+17) and 1168 server (+6) tests all pass, zero failures. Now let's build ugaris-server fo": 1,
       "- `cargo fmt --all`, `cargo test --workspace` (3375 core + 1168 server, zero failures/warnings), `ca": 1,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 56,
-      "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&": 33,
-      "test error::tests::error_constants_match_legacy_header ... ok": 28,
-      "test error::tests::error_strings_match_legacy_table ... ok": 28,
-      "test error::tests::out_of_range_errors_use_c_fallback_string ... ok": 28,
-      "test world::tests::dungeon_master::attack_command_failure_says_error_and_never_charges_or_queues ...": 15,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 57,
+      "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&": 34,
+      "test error::tests::error_constants_match_legacy_header ... ok": 29,
+      "test error::tests::error_strings_match_legacy_table ... ok": 29,
+      "test error::tests::out_of_range_errors_use_c_fallback_string ... ok": 29,
+      "test world::tests::dungeon_master::attack_command_failure_says_error_and_never_charges_or_queues ...": 16,
       "test result: ok. 3358 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.30s": 1,
       "test result: ok. 81 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 33,
       "test result: ok. 1168 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 8.03s": 1,
@@ -2299,7 +2341,11 @@
       "4009:test result: ok. 4002 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.34": 1,
       "All tests pass. Let's confirm no failures anywhere in the log and check core test count.": 1,
       "All green, zero warnings, zero failures. Let's do a final `cargo build -p ugaris-server` check with ": 1,
-      "test result: ok. 4017 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.29s": 1
+      "test result: ok. 4017 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.29s": 1,
+      "Now the smith tests (two failures):": 1,
+      "All green: 4036 → 4057 (21 new tests added, matching my test count), zero failures. Now `cargo build": 1,
+      "Verification: `cargo fmt --all` clean, `cargo test --workspace` (4057+81+3+45+1204, all green, zero ": 1,
+      "test result: ok. 4036 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.30s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

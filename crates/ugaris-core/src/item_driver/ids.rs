@@ -743,6 +743,39 @@ pub const IID_CALIGARLETTER: u32 = make_item_id(DEV_ID_DB, 0x0000AF);
 /// signature plaque area 3's `kelly_driver` (`world::kelly`) collects to
 /// complete quest 60 and award the final gold reward.
 pub const IID_CALIGARPLAQUE: u32 = make_item_id(DEV_ID_DB, 0x0000B4);
+/// C `IID_CALIGARKEYP1` (`src/common/item_id.h:235`/`239`, defined twice
+/// with the same value): one of three palace key parts `glori_driver`/
+/// `arquin_driver`/`smith_driver` (`world::npc::area36::{glori,arquin,
+/// smith}`) gate on.
+pub const IID_CALIGARKEYP1: u32 = make_item_id(DEV_ID_DB, 0x0000B0);
+/// C `IID_CALIGARKEYP2` (`src/common/item_id.h:236`/`240`).
+pub const IID_CALIGARKEYP2: u32 = make_item_id(DEV_ID_DB, 0x0000B1);
+/// C `IID_CALIGARKEYP3` (`src/common/item_id.h:237`/`241`).
+pub const IID_CALIGARKEYP3: u32 = make_item_id(DEV_ID_DB, 0x0000B2);
+/// C `IID_CALIGARHOMDENRING` (`src/common/item_id.h:238`): Homden's stolen
+/// ring, `homden_driver`'s (`world::npc::area36::homden`) quest-59 turn-in.
+/// Numerically identical to [`IID_CALIGAR_PALACE_KEY_PART`] (both
+/// `MAKE_ITEMID(DEV_ID_DB, 0x0000B3)`) - a genuine C source duplicate
+/// (`item_id.h:238` vs `:242`), reproduced verbatim: any item sharing that
+/// raw ID satisfies `homden_driver`'s `it[in].ID == IID_CALIGARHOMDENRING`
+/// check.
+pub const IID_CALIGARHOMDENRING: u32 = make_item_id(DEV_ID_DB, 0x0000B3);
+/// C `DEV_ID_VELVET` (`src/common/item_id.h:45`, "velvet vampire").
+const DEV_ID_VELVET: u32 = 0x0A;
+/// C `IID_CALIGAROBELISK1` (`src/common/item_id.h:276`): the skeleton
+/// training-facility obelisk `glori_driver` (`world::npc::area36::glori`)
+/// gates state 10 on.
+pub const IID_CALIGAROBELISK1: u32 = make_item_id(DEV_ID_VELVET, 0x000011);
+/// C `IID_CALIGAROBELISK2` (`src/common/item_id.h:277`): the zombie
+/// training-facility obelisk.
+pub const IID_CALIGAROBELISK2: u32 = make_item_id(DEV_ID_VELVET, 0x000012);
+/// C `IID_CALIGAROBELISK3` (`src/common/item_id.h:278`): the vampire
+/// training-facility obelisk.
+pub const IID_CALIGAROBELISK3: u32 = make_item_id(DEV_ID_VELVET, 0x000013);
+/// C `IID_CALIGARDUNGEONKEY` (`src/common/item_id.h:279`): the key
+/// `smith_driver` forges from the three key parts; `arquin_driver`/
+/// `homden_driver` gate on possessing it.
+pub const IID_CALIGARDUNGEONKEY: u32 = make_item_id(DEV_ID_VELVET, 0x000014);
 /// C `IID_AREA15_HEAD` (`src/common/item_id.h:151`): the Swamp Beast head
 /// area 3's `kelly_driver` (`world::kelly`) buys for a size-scaled bounty
 /// (`collect_heads`).

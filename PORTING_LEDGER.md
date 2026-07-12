@@ -8255,3 +8255,76 @@ startup log line unchanged.
   `PORTING_TODO.md` Area 36 left `[~]`: `glori_driver`/`arquin_driver`/
   `smith_driver`/`homden_driver` (the full quest-54-59 chain) remain
   unported for a future iteration.
+- 2026-07-12: closed the P4 "Area 36 - `caligar.c`" task by porting the
+  last four quest NPCs: `CDR_CALIGARGLORI` (`glori_driver`, `:519-803` -
+  "First in charge" of the library, `world/npc/area36/glori.rs`),
+  `CDR_CALIGARARQUIN` (`arquin_driver`, `:805-964` -
+  `world/npc/area36/arquin.rs`), `CDR_CALIGARSMITH` (`smith_driver`,
+  `:966-1192` - `world/npc/area36/smith.rs`), and `CDR_CALIGARHOMDEN`
+  (`homden_driver`, `:1194-1395` - `world/npc/area36/homden.rs`). Added
+  the 4 new `CDR_*` constants (119-122) to `character_driver.rs` and 8 new
+  `IID_CALIGAR*` item-template constants to `item_driver/ids.rs`
+  (`IID_CALIGARKEYP1/2/3`, `IID_CALIGARHOMDENRING`, `IID_CALIGAROBELISK1/
+  2/3`, `IID_CALIGARDUNGEONKEY` - the first two families share `DEV_ID_DB`
+  with the existing `IID_CALIGARLETTER`/`IID_CALIGARPLAQUE`, the obelisk/
+  dungeon-key family introduces `DEV_ID_VELVET = 0x0A`). Confirmed and
+  documented a genuine C source duplicate: `IID_CALIGARHOMDENRING` and
+  `IID_CALIGARPALACEKEYPART`/`IID_CALIGAR_PALACE_KEY_PART` are both
+  `MAKE_ITEMID(DEV_ID_DB, 0x0000B3)` (`item_id.h:238` vs `:242`) -
+  reproduced verbatim rather than "fixed", since `homden_driver`'s
+  `it[in].ID == IID_CALIGARHOMDENRING` check is genuinely satisfied by
+  that raw numeric ID regardless of which macro name created the item.
+  Like `guard_driver`, all four new drivers keep *no* NPC-local state at
+  all - every gate/counter lives on the player's `caligar_ppd` (already
+  staged in the prior iteration) or is resolved live via `World::
+  character_has_item_template`/`Character::gold`; the C "pause facing the
+  speaker, then resume patrol" idiom (`ch[cn].clan_serial = 10`, decremented
+  every idle tick) is reproduced by mutating `Character::clan_serial`
+  directly (it lives on `World`, not `PlayerRuntime`) - no outcome event
+  needed for it. Each driver's multi-state `switch` has 1-3 `has_item`-
+  gated fallthrough points that advance the persisted state twice in one
+  tick, speaking only the landing state's line - collapsed into single
+  match arms per state (documented per-module, same precedent as
+  `world::npc::area31::dwarfchief`'s quest-chain fallthroughs). `glori`'s
+  `quest_transition` needed a 3-way enum (`None`/`Done(q)`/
+  `DoneThenOpen(q1,q2)`, not just an `Option<(u32,u32)>` pair) since state
+  16's transition is a `questlog_done`-only call with no matching `open`.
+  `smith_driver` is the only one of the four whose actual "forge the key"/
+  "sell the dictionary" transactions live entirely in `NT_TEXT`'s "yes
+  okay"/"pay 10000g" answer codes, gated on live `has_item`/`gold` checks
+  *independent* of `smith_state` - reproduced verbatim (a player who never
+  spoke to Smith at all can still forge a key by walking up and saying
+  "yes okay" while holding the parts and gold). Money/item creation
+  follows the established `world::npc::area19::nomad`
+  `BuyItemWithSalt`-style split: `World` resolves the has_item/gold
+  pre-checks and speaks the failure lines synchronously, then pushes a
+  bare `{smith_id, player_id}` event; `ugaris-server::area36::
+  apply_caligar_smith_events` (the only one of the four `apply_*` fns
+  that needs `ZoneLoader`) creates the item via `instantiate_item_template`,
+  and only deducts gold/destroys the consumed items *after* `give_char_item`
+  succeeds, matching C's exact ordering (a full inventory leaves gold/parts
+  untouched, matching `caligar.c:1135-1141`/`:1165-1169`). Also confirmed
+  no `zone.rs`/`npc_fight.rs`/`npc_idle.rs` changes were needed for any of
+  the four (pure stationary dialogue NPCs, same "no gate-widening" shape
+  as `CDR_CALIGARGUARD` - only `CDR_CALIGARGUARD2`/`CDR_CALIGARSKELLY`
+  needed the `CDR_SIMPLEBADDY` AI-gate treatment in the prior iteration).
+  21 new focused tests across 4 new `world/tests/caligar_{glori,arquin,
+  smith,homden}.rs` files (state-0/state-N `has_item`/exact-equality
+  gates and their fallthrough landing lines, the `quest_transition`
+  done-only vs done-then-open shapes, `NT_GIVE` hint/ring-turn-in/give-
+  back paths, `NT_TEXT` "repeat" mini-block resets, the gold/monk-state
+  gated forge/dictionary purchases). Debugged and fixed a real test
+  authoring pitfall along the way (not a product bug): a test that drives
+  the same NPC through two `process_*_actions` calls in one test must
+  re-push a fresh driver message before *each* call (the per-tick
+  `std::mem::take` drain empties the queue exactly once), and must set the
+  NPC's `rest_x`/`rest_y` to match its spawn position, or the unconditional
+  "return to post" `secure_move_driver` fallback (which runs every tick
+  when `clan_serial == 0`) teleports the NPC away between calls and breaks
+  the second call's distance/visibility checks. `cargo fmt --all`,
+  `cargo test --workspace`: 4057 core [+21] + 81 db + 3 net + 45 protocol
+  + 1204 server, all green, zero failures/warnings. `cargo build
+  -p ugaris-server`/`--workspace` clean, zero warnings. 12s boot-smoke
+  confirmed "entering Rust game loop" plus hundreds of clean ticks with
+  NPC-driver logging, no panic. `PORTING_TODO.md` Area 36 now `[x]` -
+  every driver in `caligar.c` (character and item) is ported.
