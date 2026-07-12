@@ -806,7 +806,38 @@ pub(crate) const NOMAD_PPD_OPEN_BET_OFFSET: usize = NOMAD_PPD_OPEN_ROLL1_OFFSET 
 
 pub(crate) const NOMAD_PPD_TRIBE_MEMBER_OFFSET: usize = NOMAD_PPD_OPEN_ROLL1_OFFSET + 16;
 
+// `struct caligar_ppd` field offsets (`src/area/36/caligar.c:216-232`),
+// in declaration order: `guard_state`/`guard_last_talk`/`glori_state`/
+// `glori_last_talk`/`watch_flag`/`obelisk_flag`/`arquin_state`/
+// `arquin_last_talk`/`smith_state`/`smith_last_talk`/`homden_state`/
+// `homden_last_talk`/`amazon_flag`/`guard2_last_talk`/`door_flag[4]`.
+// `obelisk_flag`/`amazon_flag` are declared in C but never read or
+// written by any driver in `caligar.c` (confirmed via full-source grep) -
+// no accessor exists for them, their bytes are still preserved verbatim
+// by the raw blob round-trip.
+pub(crate) const CALIGAR_PPD_GUARD_STATE_OFFSET: usize = 0 * 4;
+
+pub(crate) const CALIGAR_PPD_GUARD_LAST_TALK_OFFSET: usize = 1 * 4;
+
+pub(crate) const CALIGAR_PPD_GLORI_STATE_OFFSET: usize = 2 * 4;
+
+pub(crate) const CALIGAR_PPD_GLORI_LAST_TALK_OFFSET: usize = 3 * 4;
+
 pub(crate) const CALIGAR_PPD_WATCH_FLAG_OFFSET: usize = 4 * 4;
+
+pub(crate) const CALIGAR_PPD_ARQUIN_STATE_OFFSET: usize = 6 * 4;
+
+pub(crate) const CALIGAR_PPD_ARQUIN_LAST_TALK_OFFSET: usize = 7 * 4;
+
+pub(crate) const CALIGAR_PPD_SMITH_STATE_OFFSET: usize = 8 * 4;
+
+pub(crate) const CALIGAR_PPD_SMITH_LAST_TALK_OFFSET: usize = 9 * 4;
+
+pub(crate) const CALIGAR_PPD_HOMDEN_STATE_OFFSET: usize = 10 * 4;
+
+pub(crate) const CALIGAR_PPD_HOMDEN_LAST_TALK_OFFSET: usize = 11 * 4;
+
+pub(crate) const CALIGAR_PPD_GUARD2_LAST_TALK_OFFSET: usize = 13 * 4;
 
 pub(crate) const CALIGAR_PPD_DOOR_FLAG_OFFSET: usize = 14 * 4;
 
@@ -825,6 +856,15 @@ pub const ARKHATA_PPD_CLERK_TIME_OFFSET: usize = 17 * 4;
 /// area's unported driver" precedent as `PlayerRuntime::
 /// staffer_broklin_state`/`staffer_carlos2_state`.
 pub const ARKHATA_PPD_RAMMY_STATE_OFFSET: usize = 0 * 4;
+
+/// C `struct arkhata_ppd::monk_state` (`src/area/37/arkhata.h:9`, field
+/// index 4): the still-unported `arkhata.c` monk driver's own dialogue
+/// state. Read-only here - only `smith_driver`'s (`world::npc::area36::
+/// smith`) "did you talk to the wise monk yet" gate (`caligar.c:1032-
+/// 1037`, `appd->monk_state > 20`) needs it, same "read state owned by
+/// another area's unported driver" precedent as `ARKHATA_PPD_RAMMY_STATE_
+/// OFFSET` itself.
+pub const ARKHATA_PPD_MONK_STATE_OFFSET: usize = 4 * 4;
 
 // `struct staffer_ppd` field offsets (`src/common/staffer_ppd.h:13-` /
 // `src/system/game/ppd_structs.h:566-`), in declaration order. Only the

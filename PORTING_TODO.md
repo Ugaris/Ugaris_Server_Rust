@@ -1420,8 +1420,30 @@ Ordered by player progression; the C file is the oracle.
   tail call, gate-widened in `world/npc_fight.rs`/`world/npc_idle.rs` +
   `zone.rs`; death-scoring was already ported) are all now ported.
   *(done - details in PORTING_LEDGER.md)*
-- [ ] **Area 36 - `src/area/36/caligar.c`** - Caligar quest NPCs, PPD
+- [~] **Area 36 - `src/area/36/caligar.c`** - Caligar quest NPCs, PPD
   quest state beyond skelly doors.
+  REMAINING: the entrance-guard duo (`CDR_CALIGARGUARD` "Eulc"/"Margana",
+  `guard_driver`, the "backwards is the key to entry" riddle banter) is
+  now ported (`world/npc/area36/caligar_guard.rs`, new shared `AREA36_QA`
+  table in `world/npc/area36/mod.rs`), along with the interior taunting
+  guard (`CDR_CALIGARGUARD2`, `guard2_driver` - `world/npc/area36/
+  caligar_guard2.rs` plus the usual `CDR_SIMPLEBADDY` AI gate-widening in
+  `npc_fight.rs`/`npc_idle.rs`/`zone.rs`, same precedent as
+  `CDR_TEUFELRAT`). `CDR_CALIGARSKELLY` (`skelly_driver`) is now also
+  gate-widened the same way, closing the last gap in that driver - its own
+  `skelly_dead_driver` door-unlock reward was already ported earlier. New
+  `struct caligar_ppd` field offsets/accessors added for
+  `guard_state`/`guard_last_talk`/`guard2_last_talk` (`player/misc.rs`+
+  `areas_misc.rs`), plus `glori_state`/`arquin_state`/`smith_state`/
+  `homden_state` (+ their `_last_talk` pairs) staged ahead of time for the
+  four still-unported quest NPCs, and a read-only `arkhata_monk_state`
+  accessor (`smith_driver`'s own gate on the still-unported Area 37 monk).
+  Still unported: `glori_driver`/`arquin_driver`/`smith_driver`/
+  `homden_driver` - the full quest-54-59 chain (retrieve three training-
+  facility obelisks, find three palace key parts, forge the underground
+  key, find Homden's stolen ring). All four `PlayerRuntime` accessor sets
+  and the C dialogue text/state machine have already been read in full and
+  the shared `AREA36_QA` table is ready for them to use.
 - [ ] **Area 37 - `src/area/37/arkhata.c` (4,764 lines)** - Arkhata clerk/
   quest NPC chain (pool/stopwatch/key items ported).
 - [ ] **Area 38 - `src/area/38/shrike.c`** - Shrike NPCs (amulet assembly
@@ -1463,6 +1485,10 @@ Keep entries to at most three lines: date, task, one-line result.
 Anything longer belongs in `PORTING_LEDGER.md`; historical verbose
 notes live in `PROGRESS_ARCHIVE.md`.
 
+- 2026-07-12: Area 36 STARTED: ported the three non-quest-chain drivers -
+  `CDR_CALIGARGUARD` (Eulc/Margana riddle guards), `CDR_CALIGARGUARD2`
+  (taunting sentry), `CDR_CALIGARSKELLY` AI gate-widening. 4036 core [+19]
+  + 1204 server tests pass, clean build/boot-smoke (area 36, no panics).
 - 2026-07-12: Area 34 CLOSED: ported `CDR_TEUFELGAMBLER` (3 chip-tier dice
   game + `give_reward`/`2`/`3` tables, `world/npc/area34/teufelgambler.rs`)
   and `CDR_TEUFELRAT` (pure `CDR_SIMPLEBADDY` tail-call gate widening).

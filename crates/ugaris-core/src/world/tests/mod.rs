@@ -20,6 +20,8 @@ mod bones;
 mod brennethbran;
 mod brithildie;
 mod broklin;
+mod caligar_guard;
+mod caligar_guard2;
 mod camhermit;
 mod carlos;
 mod character_values;

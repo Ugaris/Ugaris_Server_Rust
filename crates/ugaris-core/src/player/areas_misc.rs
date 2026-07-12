@@ -854,6 +854,275 @@ impl PlayerRuntime {
         );
     }
 
+    /// C `struct arkhata_ppd::monk_state` (`src/area/37/arkhata.h:9`),
+    /// read-only - see [`ARKHATA_PPD_MONK_STATE_OFFSET`]'s doc comment.
+    pub fn arkhata_monk_state(&self) -> i32 {
+        if self.arkhata_ppd.len() < LEGACY_ARKHATA_PPD_SIZE {
+            return 0;
+        }
+        read_i32(&self.arkhata_ppd, ARKHATA_PPD_MONK_STATE_OFFSET)
+    }
+
+    fn ensure_caligar_ppd_sized(&mut self) {
+        if self.caligar_ppd.len() < LEGACY_CALIGAR_PPD_SIZE {
+            self.caligar_ppd.resize(LEGACY_CALIGAR_PPD_SIZE, 0);
+        }
+    }
+
+    /// C `struct caligar_ppd::guard_state` (`caligar.c:217`).
+    pub fn caligar_guard_state(&self) -> i32 {
+        if self.caligar_ppd.len() < LEGACY_CALIGAR_PPD_SIZE {
+            return 0;
+        }
+        read_i32(&self.caligar_ppd, CALIGAR_PPD_GUARD_STATE_OFFSET)
+    }
+
+    /// C `struct caligar_ppd::guard_last_talk` (`caligar.c:218`).
+    pub fn caligar_guard_last_talk(&self) -> i32 {
+        if self.caligar_ppd.len() < LEGACY_CALIGAR_PPD_SIZE {
+            return 0;
+        }
+        read_i32(&self.caligar_ppd, CALIGAR_PPD_GUARD_LAST_TALK_OFFSET)
+    }
+
+    /// C `ppd->guard_state++; ppd->guard_last_talk = realtime;`
+    /// (`guard_driver`, `caligar.c:294-334`).
+    pub fn set_caligar_guard_talk(&mut self, state: i32, realtime_seconds: i32) {
+        self.ensure_caligar_ppd_sized();
+        write_i32(&mut self.caligar_ppd, CALIGAR_PPD_GUARD_STATE_OFFSET, state);
+        write_i32(
+            &mut self.caligar_ppd,
+            CALIGAR_PPD_GUARD_LAST_TALK_OFFSET,
+            realtime_seconds,
+        );
+    }
+
+    /// C `case 2:` (`analyse_text_driver` code `2`, "repeat"/"restart"):
+    /// `ppd->guard_state == 3` resets back to `0` (`caligar.c:372-378`).
+    pub fn reset_caligar_guard_if_state_three(&mut self) {
+        if self.caligar_guard_state() != 3 {
+            return;
+        }
+        self.set_caligar_guard_talk(0, 0);
+    }
+
+    /// C `case 5: if (realtime - ppd->guard_last_talk > 600)
+    /// ppd->guard_state = 0;` (`caligar.c:336-338`) - only `guard_state`
+    /// is written, `guard_last_talk` is left untouched.
+    pub fn reset_caligar_guard_state_timeout(&mut self) {
+        self.ensure_caligar_ppd_sized();
+        write_i32(&mut self.caligar_ppd, CALIGAR_PPD_GUARD_STATE_OFFSET, 0);
+    }
+
+    /// C `struct caligar_ppd::guard2_last_talk` (`caligar.c:230`).
+    pub fn caligar_guard2_last_talk(&self) -> i32 {
+        if self.caligar_ppd.len() < LEGACY_CALIGAR_PPD_SIZE {
+            return 0;
+        }
+        read_i32(&self.caligar_ppd, CALIGAR_PPD_GUARD2_LAST_TALK_OFFSET)
+    }
+
+    /// C `ppd->guard2_last_talk = realtime;` (`guard2_driver`,
+    /// `caligar.c:438`).
+    pub fn set_caligar_guard2_last_talk(&mut self, realtime_seconds: i32) {
+        self.ensure_caligar_ppd_sized();
+        write_i32(
+            &mut self.caligar_ppd,
+            CALIGAR_PPD_GUARD2_LAST_TALK_OFFSET,
+            realtime_seconds,
+        );
+    }
+
+    /// C `struct caligar_ppd::glori_state` (`caligar.c:219`).
+    pub fn caligar_glori_state(&self) -> i32 {
+        if self.caligar_ppd.len() < LEGACY_CALIGAR_PPD_SIZE {
+            return 0;
+        }
+        read_i32(&self.caligar_ppd, CALIGAR_PPD_GLORI_STATE_OFFSET)
+    }
+
+    /// C `struct caligar_ppd::glori_last_talk` (`caligar.c:220`).
+    pub fn caligar_glori_last_talk(&self) -> i32 {
+        if self.caligar_ppd.len() < LEGACY_CALIGAR_PPD_SIZE {
+            return 0;
+        }
+        read_i32(&self.caligar_ppd, CALIGAR_PPD_GLORI_LAST_TALK_OFFSET)
+    }
+
+    /// C `ppd->glori_state++; ppd->glori_last_talk = realtime;`
+    /// (`glori_driver`, `caligar.c:567-709`).
+    pub fn set_caligar_glori_talk(&mut self, state: i32, realtime_seconds: i32) {
+        self.ensure_caligar_ppd_sized();
+        write_i32(&mut self.caligar_ppd, CALIGAR_PPD_GLORI_STATE_OFFSET, state);
+        write_i32(
+            &mut self.caligar_ppd,
+            CALIGAR_PPD_GLORI_LAST_TALK_OFFSET,
+            realtime_seconds,
+        );
+    }
+
+    /// C `ppd->watch_flag` read for `glori_driver`'s `case 5:` gate
+    /// (`caligar.c:605`, `ppd->watch_flag < (1|2|4)`).
+    pub fn caligar_watch_flag(&self) -> i32 {
+        if self.caligar_ppd.len() < LEGACY_CALIGAR_PPD_SIZE {
+            return 0;
+        }
+        read_i32(&self.caligar_ppd, CALIGAR_PPD_WATCH_FLAG_OFFSET)
+    }
+
+    /// C `analyse_text_driver` code `2` resetting `glori_state` back to
+    /// the start of whichever mini-block is in progress (`caligar.c:759-
+    /// 782`): `1..=5 -> 1`, `8..=10 -> 8`, `11..=12 -> 11`, `14..=16 ->
+    /// 14`, `17..=18 -> 17`.
+    pub fn reset_caligar_glori_to_mini_block_start(&mut self) {
+        let state = self.caligar_glori_state();
+        let reset_to = match state {
+            1..=5 => Some(1),
+            8..=10 => Some(8),
+            11..=12 => Some(11),
+            14..=16 => Some(14),
+            17..=18 => Some(17),
+            _ => None,
+        };
+        if let Some(reset_to) = reset_to {
+            self.set_caligar_glori_talk(reset_to, 0);
+        }
+    }
+
+    /// C `struct caligar_ppd::arquin_state` (`caligar.c:223`).
+    pub fn caligar_arquin_state(&self) -> i32 {
+        if self.caligar_ppd.len() < LEGACY_CALIGAR_PPD_SIZE {
+            return 0;
+        }
+        read_i32(&self.caligar_ppd, CALIGAR_PPD_ARQUIN_STATE_OFFSET)
+    }
+
+    /// C `struct caligar_ppd::arquin_last_talk` (`caligar.c:224`).
+    pub fn caligar_arquin_last_talk(&self) -> i32 {
+        if self.caligar_ppd.len() < LEGACY_CALIGAR_PPD_SIZE {
+            return 0;
+        }
+        read_i32(&self.caligar_ppd, CALIGAR_PPD_ARQUIN_LAST_TALK_OFFSET)
+    }
+
+    /// C `ppd->arquin_state++; ppd->arquin_last_talk = realtime;`
+    /// (`arquin_driver`, `caligar.c:853-897`).
+    pub fn set_caligar_arquin_talk(&mut self, state: i32, realtime_seconds: i32) {
+        self.ensure_caligar_ppd_sized();
+        write_i32(
+            &mut self.caligar_ppd,
+            CALIGAR_PPD_ARQUIN_STATE_OFFSET,
+            state,
+        );
+        write_i32(
+            &mut self.caligar_ppd,
+            CALIGAR_PPD_ARQUIN_LAST_TALK_OFFSET,
+            realtime_seconds,
+        );
+    }
+
+    /// C `analyse_text_driver` code `2` resetting `arquin_state`
+    /// (`caligar.c:935-942`): `1..=3 -> 1`, `4..=6 -> 4`.
+    pub fn reset_caligar_arquin_to_mini_block_start(&mut self) {
+        let state = self.caligar_arquin_state();
+        let reset_to = match state {
+            1..=3 => Some(1),
+            4..=6 => Some(4),
+            _ => None,
+        };
+        if let Some(reset_to) = reset_to {
+            self.set_caligar_arquin_talk(reset_to, 0);
+        }
+    }
+
+    /// C `struct caligar_ppd::smith_state` (`caligar.c:225`).
+    pub fn caligar_smith_state(&self) -> i32 {
+        if self.caligar_ppd.len() < LEGACY_CALIGAR_PPD_SIZE {
+            return 0;
+        }
+        read_i32(&self.caligar_ppd, CALIGAR_PPD_SMITH_STATE_OFFSET)
+    }
+
+    /// C `struct caligar_ppd::smith_last_talk` (`caligar.c:226`).
+    pub fn caligar_smith_last_talk(&self) -> i32 {
+        if self.caligar_ppd.len() < LEGACY_CALIGAR_PPD_SIZE {
+            return 0;
+        }
+        read_i32(&self.caligar_ppd, CALIGAR_PPD_SMITH_LAST_TALK_OFFSET)
+    }
+
+    /// C `ppd->smith_state++; ppd->smith_last_talk = realtime;`
+    /// (`smith_driver`, `caligar.c:1015-1076`).
+    pub fn set_caligar_smith_talk(&mut self, state: i32, realtime_seconds: i32) {
+        self.ensure_caligar_ppd_sized();
+        write_i32(&mut self.caligar_ppd, CALIGAR_PPD_SMITH_STATE_OFFSET, state);
+        write_i32(
+            &mut self.caligar_ppd,
+            CALIGAR_PPD_SMITH_LAST_TALK_OFFSET,
+            realtime_seconds,
+        );
+    }
+
+    /// C `analyse_text_driver` code `2` resetting `smith_state`
+    /// (`caligar.c:1114-1121`): `1..=2 -> 1`, `3..=8 -> 3`.
+    pub fn reset_caligar_smith_to_mini_block_start(&mut self) {
+        let state = self.caligar_smith_state();
+        let reset_to = match state {
+            1..=2 => Some(1),
+            3..=8 => Some(3),
+            _ => None,
+        };
+        if let Some(reset_to) = reset_to {
+            self.set_caligar_smith_talk(reset_to, 0);
+        }
+    }
+
+    /// C `struct caligar_ppd::homden_state` (`caligar.c:227`).
+    pub fn caligar_homden_state(&self) -> i32 {
+        if self.caligar_ppd.len() < LEGACY_CALIGAR_PPD_SIZE {
+            return 0;
+        }
+        read_i32(&self.caligar_ppd, CALIGAR_PPD_HOMDEN_STATE_OFFSET)
+    }
+
+    /// C `struct caligar_ppd::homden_last_talk` (`caligar.c:228`).
+    pub fn caligar_homden_last_talk(&self) -> i32 {
+        if self.caligar_ppd.len() < LEGACY_CALIGAR_PPD_SIZE {
+            return 0;
+        }
+        read_i32(&self.caligar_ppd, CALIGAR_PPD_HOMDEN_LAST_TALK_OFFSET)
+    }
+
+    /// C `ppd->homden_state++; ppd->homden_last_talk = realtime;`
+    /// (`homden_driver`, `caligar.c:1242-1319`).
+    pub fn set_caligar_homden_talk(&mut self, state: i32, realtime_seconds: i32) {
+        self.ensure_caligar_ppd_sized();
+        write_i32(
+            &mut self.caligar_ppd,
+            CALIGAR_PPD_HOMDEN_STATE_OFFSET,
+            state,
+        );
+        write_i32(
+            &mut self.caligar_ppd,
+            CALIGAR_PPD_HOMDEN_LAST_TALK_OFFSET,
+            realtime_seconds,
+        );
+    }
+
+    /// C `analyse_text_driver` code `2` resetting `homden_state`
+    /// (`caligar.c:1366-1373`): `2..=4 -> 2`, `6..=11 -> 6`.
+    pub fn reset_caligar_homden_to_mini_block_start(&mut self) {
+        let state = self.caligar_homden_state();
+        let reset_to = match state {
+            2..=4 => Some(2),
+            6..=11 => Some(6),
+            _ => None,
+        };
+        if let Some(reset_to) = reset_to {
+            self.set_caligar_homden_talk(reset_to, 0);
+        }
+    }
+
     pub fn observe_caligar_training(&mut self, lesson: u8) -> Option<bool> {
         let bit = match lesson {
             1 => 1,

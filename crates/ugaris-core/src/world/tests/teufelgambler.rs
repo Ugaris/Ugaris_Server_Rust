@@ -2,8 +2,6 @@ use super::*;
 use crate::character_driver::{CDR_TEUFELGAMBLER, NT_CHAR};
 use crate::world::npc::area34::teufelgambler::{IID_BRONZECHIP, IID_GOLDCHIP, IID_SILVERCHIP};
 
-const AREA_ID: u16 = 34;
-
 fn teufelgambler_npc(id: u32, nr: i32) -> Character {
     let mut gambler = character(id);
     gambler.name = "Demon Gambler".into();

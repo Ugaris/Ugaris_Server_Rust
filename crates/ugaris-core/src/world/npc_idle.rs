@@ -90,7 +90,9 @@ impl World {
             && character.driver != CDR_CENTINEL
             && character.driver != CDR_MISSIONFIGHT
             && character.driver != CDR_TEUFELDEMON
-            && character.driver != CDR_TEUFELRAT)
+            && character.driver != CDR_TEUFELRAT
+            && character.driver != CDR_CALIGARGUARD2
+            && character.driver != CDR_CALIGARSKELLY)
             || character.action != 0
             || character.flags.contains(CharacterFlags::DEAD)
         {
@@ -347,7 +349,9 @@ impl World {
                     || character.driver == CDR_CENTINEL
                     || character.driver == CDR_MISSIONFIGHT
                     || character.driver == CDR_TEUFELDEMON
-                    || character.driver == CDR_TEUFELRAT)
+                    || character.driver == CDR_TEUFELRAT
+                    || character.driver == CDR_CALIGARGUARD2
+                    || character.driver == CDR_CALIGARSKELLY)
                     && matches!(
                         character.driver_state,
                         Some(CharacterDriverState::SimpleBaddy(_))

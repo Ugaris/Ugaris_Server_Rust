@@ -27,21 +27,21 @@ use crate::{
         TwoAlchemistDriverData, TwoBarkeeperDriverData, TwoSanwynDriverData, TwoSkellyDriverData,
         TwoThiefGuardDriverData, TwoThiefMasterDriverData, YoakinDriverData, YoatinDriverData,
         ARENA_FIGHTER_REST_POS, CDR_ARENAFIGHTER, CDR_ARENAMANAGER, CDR_ARENAMASTER,
-        CDR_ARISTOCRAT, CDR_ASTRO2, CDR_BRENNETHBRAN, CDR_BRITHILDIE, CDR_BROKLIN, CDR_CAMHERMIT,
-        CDR_CARLOS, CDR_CENTINEL, CDR_CLANCLERK, CDR_CLANMASTER, CDR_CLUBMASTER, CDR_COUNTBRAN,
-        CDR_COUNTESSABRAN, CDR_DAUGHTERBRAN, CDR_DUNGEONMASTER, CDR_DWARFCHIEF, CDR_DWARFSHAMAN,
-        CDR_DWARFSMITH, CDR_FORESTBRAN, CDR_FORESTHERMIT, CDR_FORESTIMP, CDR_FORESTMONSTER,
-        CDR_FORESTWILLIAM, CDR_FOREST_RANGER, CDR_GATE_FIGHT, CDR_GATE_WELCOME, CDR_GOLEMKEYHOLDER,
-        CDR_GREETER, CDR_GRINNICH, CDR_GUARDBRAN, CDR_GWENDYLON, CDR_JANITOR, CDR_JESSICA, CDR_JIU,
-        CDR_KASSIM, CDR_KELLY, CDR_LAB2HERALD, CDR_LAB2UNDEAD, CDR_LAB4GNALB, CDR_LAB4SEYAN,
-        CDR_LAB5DAEMON, CDR_LAB5MAGE, CDR_LAB5SEYAN, CDR_LABGNOMEDRIVER, CDR_LOSTDWARF,
-        CDR_MISSIONGIVE, CDR_NOOK, CDR_RESKIN, CDR_ROUVEN, CDR_SEYMOUR, CDR_SHANRA,
-        CDR_SIMPLEBADDY, CDR_SIRJONES, CDR_SMUGGLECOM, CDR_SPIRITBRAN, CDR_SUPERIOR, CDR_SUPERMAX,
-        CDR_SWAMPCLARA, CDR_TERION, CDR_TEUFELDEMON, CDR_TEUFELGAMBLER, CDR_TEUFELQUEST,
-        CDR_TEUFELRAT, CDR_THOMAS, CDR_TRADER, CDR_TUNNELER_GORWIN, CDR_TWOALCHEMIST,
-        CDR_TWOBARKEEPER, CDR_TWOGUARD, CDR_TWOSANWYN, CDR_TWOSERVANT, CDR_TWOSKELLY,
-        CDR_TWOTHIEFGUARD, CDR_TWOTHIEFMASTER, CDR_WHITEROBBERBOSS, CDR_YOAKIN, CDR_YOATIN,
-        NT_CREATE,
+        CDR_ARISTOCRAT, CDR_ASTRO2, CDR_BRENNETHBRAN, CDR_BRITHILDIE, CDR_BROKLIN,
+        CDR_CALIGARGUARD2, CDR_CALIGARSKELLY, CDR_CAMHERMIT, CDR_CARLOS, CDR_CENTINEL,
+        CDR_CLANCLERK, CDR_CLANMASTER, CDR_CLUBMASTER, CDR_COUNTBRAN, CDR_COUNTESSABRAN,
+        CDR_DAUGHTERBRAN, CDR_DUNGEONMASTER, CDR_DWARFCHIEF, CDR_DWARFSHAMAN, CDR_DWARFSMITH,
+        CDR_FORESTBRAN, CDR_FORESTHERMIT, CDR_FORESTIMP, CDR_FORESTMONSTER, CDR_FORESTWILLIAM,
+        CDR_FOREST_RANGER, CDR_GATE_FIGHT, CDR_GATE_WELCOME, CDR_GOLEMKEYHOLDER, CDR_GREETER,
+        CDR_GRINNICH, CDR_GUARDBRAN, CDR_GWENDYLON, CDR_JANITOR, CDR_JESSICA, CDR_JIU, CDR_KASSIM,
+        CDR_KELLY, CDR_LAB2HERALD, CDR_LAB2UNDEAD, CDR_LAB4GNALB, CDR_LAB4SEYAN, CDR_LAB5DAEMON,
+        CDR_LAB5MAGE, CDR_LAB5SEYAN, CDR_LABGNOMEDRIVER, CDR_LOSTDWARF, CDR_MISSIONGIVE, CDR_NOOK,
+        CDR_RESKIN, CDR_ROUVEN, CDR_SEYMOUR, CDR_SHANRA, CDR_SIMPLEBADDY, CDR_SIRJONES,
+        CDR_SMUGGLECOM, CDR_SPIRITBRAN, CDR_SUPERIOR, CDR_SUPERMAX, CDR_SWAMPCLARA, CDR_TERION,
+        CDR_TEUFELDEMON, CDR_TEUFELGAMBLER, CDR_TEUFELQUEST, CDR_TEUFELRAT, CDR_THOMAS, CDR_TRADER,
+        CDR_TUNNELER_GORWIN, CDR_TWOALCHEMIST, CDR_TWOBARKEEPER, CDR_TWOGUARD, CDR_TWOSANWYN,
+        CDR_TWOSERVANT, CDR_TWOSKELLY, CDR_TWOTHIEFGUARD, CDR_TWOTHIEFMASTER, CDR_WHITEROBBERBOSS,
+        CDR_YOAKIN, CDR_YOATIN, NT_CREATE,
     },
     entity::{
         Character, CharacterFlags, Item, ItemFlags, CHARACTER_VALUE_COUNT, INVENTORY_SIZE,
@@ -692,6 +692,37 @@ impl ZoneLoader {
             // `arg="aggressive=1;helper=1;scavenger=10;startdist=15;
             // chardist=0;stopdist=40;"` shape SimpleBaddy's own
             // `NT_CREATE` handler parses.
+            character.push_driver_message(NT_CREATE, 0, 0, 0);
+            apply_simple_baddy_create_message(&mut character, Some(&template.args), 0);
+        }
+        if template.driver == CDR_CALIGARGUARD2 {
+            // C `ch_driver`'s `CDR_CALIGARGUARD2` dispatch
+            // (`caligar.c:395-442`): `guard2_driver`'s own `NT_CHAR` loop
+            // (ported as `World::process_caligar_guard2_actions`, see
+            // `world::npc::area36::caligar_guard2`'s module doc comment) is
+            // followed by an unconditional every-tick tail call to
+            // `char_driver(CDR_SIMPLEBADDY, CDT_DRIVER, cn, ret,
+            // lastact)`, reusing the SimpleBaddy driver's full idle-
+            // wander/auto-attack AI wholesale - same precedent as
+            // `CDR_PENTER`/`CDR_TEUFELRAT` above. The `Caligar_City.chr`
+            // template carries no `arg=` line, same "nothing to parse"
+            // precedent as `CDR_CALIGARSKELLY` below.
+            character.push_driver_message(NT_CREATE, 0, 0, 0);
+            apply_simple_baddy_create_message(&mut character, Some(&template.args), 0);
+        }
+        if template.driver == CDR_CALIGARSKELLY {
+            // C `ch_driver`'s `CDR_CALIGARSKELLY` dispatch
+            // (`caligar.c:444-446`): `skelly_driver`'s entire body is an
+            // unconditional tail call to `char_driver(CDR_SIMPLEBADDY,
+            // CDT_DRIVER, cn, ret, lastact)`, reusing the SimpleBaddy
+            // driver's full idle-wander/auto-attack AI wholesale - same
+            // precedent as `CDR_PENTER`/`CDR_TEUFELRAT` above
+            // (`skelly_dead_driver`'s own rune-door-unlock reward, ported
+            // separately as `PlayerRuntime::mark_caligar_skelly_death`/
+            // `world_events::death_hooks::
+            // apply_caligar_skelly_death_from_hurt_event`, is the only
+            // other C-visible behavior this driver has). The
+            // `Caligar_Palace.chr` templates carry no `arg=` line either.
             character.push_driver_message(NT_CREATE, 0, 0, 0);
             apply_simple_baddy_create_message(&mut character, Some(&template.args), 0);
         }

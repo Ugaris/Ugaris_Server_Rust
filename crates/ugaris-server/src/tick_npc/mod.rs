@@ -25,6 +25,7 @@ pub(crate) mod area31;
 pub(crate) mod area32;
 pub(crate) mod area33;
 pub(crate) mod area34;
+pub(crate) mod area36;
 pub(crate) mod area4;
 pub(crate) mod area8;
 pub(crate) mod arena;
@@ -2932,6 +2933,48 @@ pub(crate) async fn run_all(
     .await;
 
     area34::teufelgambler_driver_160(
+        &mut *world,
+        &mut *runtime,
+        &mut *zone_loader,
+        config,
+        args,
+        completed_actions,
+        achievement_repository,
+        character_repository,
+        area_repository,
+        clan_repository,
+        clan_log_repository,
+        merchant_repository,
+        military_master_storage_repository,
+        military_advisor_storage_repository,
+        notes_repository,
+        anticheat_repository,
+        auction_repository,
+    )
+    .await;
+
+    area36::caligar_guard_driver_161(
+        &mut *world,
+        &mut *runtime,
+        &mut *zone_loader,
+        config,
+        args,
+        completed_actions,
+        achievement_repository,
+        character_repository,
+        area_repository,
+        clan_repository,
+        clan_log_repository,
+        merchant_repository,
+        military_master_storage_repository,
+        military_advisor_storage_repository,
+        notes_repository,
+        anticheat_repository,
+        auction_repository,
+    )
+    .await;
+
+    area36::caligar_guard2_driver_162(
         &mut *world,
         &mut *runtime,
         &mut *zone_loader,

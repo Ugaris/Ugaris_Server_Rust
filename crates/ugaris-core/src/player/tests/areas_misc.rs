@@ -867,6 +867,126 @@ fn caligar_ppd_blob_replaces_and_appends_legacy_block() {
 }
 
 #[test]
+fn caligar_ppd_guard_talk_state_round_trips() {
+    let mut player = PlayerRuntime::connected(1, 0);
+    assert_eq!(player.caligar_guard_state(), 0);
+    assert_eq!(player.caligar_guard_last_talk(), 0);
+
+    player.set_caligar_guard_talk(2, 555);
+    assert_eq!(player.caligar_guard_state(), 2);
+    assert_eq!(player.caligar_guard_last_talk(), 555);
+
+    // C `case 5: ppd->guard_state = 0;` leaves `guard_last_talk` untouched.
+    player.reset_caligar_guard_state_timeout();
+    assert_eq!(player.caligar_guard_state(), 0);
+    assert_eq!(player.caligar_guard_last_talk(), 555);
+}
+
+#[test]
+fn caligar_ppd_guard_reset_if_state_three_only_fires_at_state_three() {
+    let mut player = PlayerRuntime::connected(1, 0);
+    player.set_caligar_guard_talk(2, 100);
+    player.reset_caligar_guard_if_state_three();
+    assert_eq!(player.caligar_guard_state(), 2);
+
+    player.set_caligar_guard_talk(3, 100);
+    player.reset_caligar_guard_if_state_three();
+    assert_eq!(player.caligar_guard_state(), 0);
+    assert_eq!(player.caligar_guard_last_talk(), 0);
+}
+
+#[test]
+fn caligar_ppd_guard2_last_talk_round_trips() {
+    let mut player = PlayerRuntime::connected(1, 0);
+    assert_eq!(player.caligar_guard2_last_talk(), 0);
+    player.set_caligar_guard2_last_talk(321);
+    assert_eq!(player.caligar_guard2_last_talk(), 321);
+}
+
+#[test]
+fn caligar_ppd_glori_talk_state_and_mini_block_reset_round_trip() {
+    let mut player = PlayerRuntime::connected(1, 0);
+    player.set_caligar_glori_talk(4, 42);
+    assert_eq!(player.caligar_glori_state(), 4);
+    assert_eq!(player.caligar_glori_last_talk(), 42);
+
+    // C `analyse_text_driver` code 2: `1..=5 -> 1`.
+    player.reset_caligar_glori_to_mini_block_start();
+    assert_eq!(player.caligar_glori_state(), 1);
+    assert_eq!(player.caligar_glori_last_talk(), 0);
+
+    player.set_caligar_glori_talk(9, 42);
+    player.reset_caligar_glori_to_mini_block_start();
+    assert_eq!(player.caligar_glori_state(), 8);
+
+    player.set_caligar_glori_talk(19, 42);
+    player.reset_caligar_glori_to_mini_block_start();
+    // state 19 is out of every reset window - unchanged.
+    assert_eq!(player.caligar_glori_state(), 19);
+}
+
+#[test]
+fn caligar_ppd_arquin_talk_state_and_mini_block_reset_round_trip() {
+    let mut player = PlayerRuntime::connected(1, 0);
+    player.set_caligar_arquin_talk(2, 42);
+    player.reset_caligar_arquin_to_mini_block_start();
+    assert_eq!(player.caligar_arquin_state(), 1);
+
+    player.set_caligar_arquin_talk(5, 42);
+    player.reset_caligar_arquin_to_mini_block_start();
+    assert_eq!(player.caligar_arquin_state(), 4);
+}
+
+#[test]
+fn caligar_ppd_smith_talk_state_and_mini_block_reset_round_trip() {
+    let mut player = PlayerRuntime::connected(1, 0);
+    player.set_caligar_smith_talk(2, 42);
+    player.reset_caligar_smith_to_mini_block_start();
+    assert_eq!(player.caligar_smith_state(), 1);
+
+    player.set_caligar_smith_talk(6, 42);
+    player.reset_caligar_smith_to_mini_block_start();
+    assert_eq!(player.caligar_smith_state(), 3);
+}
+
+#[test]
+fn caligar_ppd_homden_talk_state_and_mini_block_reset_round_trip() {
+    let mut player = PlayerRuntime::connected(1, 0);
+    player.set_caligar_homden_talk(3, 42);
+    player.reset_caligar_homden_to_mini_block_start();
+    assert_eq!(player.caligar_homden_state(), 2);
+
+    player.set_caligar_homden_talk(10, 42);
+    player.reset_caligar_homden_to_mini_block_start();
+    assert_eq!(player.caligar_homden_state(), 6);
+
+    player.set_caligar_homden_talk(5, 42);
+    player.reset_caligar_homden_to_mini_block_start();
+    // state 5 is outside both reset windows - unchanged.
+    assert_eq!(player.caligar_homden_state(), 5);
+}
+
+#[test]
+fn caligar_ppd_watch_flag_reads_the_shared_offset_with_training() {
+    let mut player = PlayerRuntime::connected(1, 0);
+    assert_eq!(player.caligar_watch_flag(), 0);
+    player.observe_caligar_training(1);
+    player.observe_caligar_training(2);
+    assert_eq!(player.caligar_watch_flag(), 1 | 4);
+}
+
+#[test]
+fn arkhata_ppd_monk_state_is_read_only_here() {
+    let mut player = PlayerRuntime::connected(1, 0);
+    assert_eq!(player.arkhata_monk_state(), 0);
+
+    let mut bytes = vec![0u8; LEGACY_ARKHATA_PPD_SIZE];
+    write_i32(&mut bytes, ARKHATA_PPD_MONK_STATE_OFFSET, 25);
+    assert!(player.decode_legacy_arkhata_ppd(&bytes));
+    assert_eq!(player.arkhata_monk_state(), 25);
+}
+
+#[test]
 fn got_hit_fightback_obeys_legacy_no_fight_and_distance_gates() {
     let mut player = PlayerRuntime::connected(1, 0);
     player.driver_stop(TICKS_PER_SECOND * 10, true);

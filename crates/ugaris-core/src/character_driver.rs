@@ -158,6 +158,19 @@ pub const CDR_TEUFELDEMON: u16 = 114;
 pub const CDR_TEUFELGAMBLER: u16 = 115;
 pub const CDR_TEUFELQUEST: u16 = 116;
 pub const CDR_TEUFELRAT: u16 = 117;
+/// C `#define CDR_CALIGARGUARD 118` (`src/system/drvlib.h:166`): the two
+/// entrance guards (Eulc/Margana) whose alternating "Human entry is not
+/// permitted!"/"He let the bed in!" banter walks a player through the
+/// "backwards is the key to entry" riddle
+/// (`src/area/36/caligar.c::guard_driver`), see
+/// `world::npc::area36::caligar_guard`'s module doc comment.
+pub const CDR_CALIGARGUARD: u16 = 118;
+/// C `#define CDR_CALIGARGUARD2 123` (`src/system/drvlib.h:171`): a
+/// combat-capable Caligar guard that taunts ("Halt! You will die where
+/// you stand!") before falling through to the plain `CDR_SIMPLEBADDY`
+/// self-defense/idle AI (`src/area/36/caligar.c::guard2_driver`), see
+/// `world::npc::area36::caligar_guard2`'s module doc comment.
+pub const CDR_CALIGARGUARD2: u16 = 123;
 pub const CDR_CALIGARSKELLY: u16 = 124;
 /// C `#define CDR_LAB2HERALD 196` (`src/system/drvlib.h:222`): the lab2
 /// graveyard chapel keeper (`src/area/22/lab2.c::lab2_herald_driver`), see
@@ -2446,6 +2459,8 @@ mod tests {
         assert_eq!(CDR_TEUFELGAMBLER, 115);
         assert_eq!(CDR_TEUFELQUEST, 116);
         assert_eq!(CDR_TEUFELRAT, 117);
+        assert_eq!(CDR_CALIGARGUARD, 118);
+        assert_eq!(CDR_CALIGARGUARD2, 123);
         assert_eq!(CDR_CALIGARSKELLY, 124);
         assert_eq!(CDR_LAB2UNDEAD, 198);
         assert_eq!(DRD_SIMPLEBADDYDRIVER, 0x0100_0013);

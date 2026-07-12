@@ -8194,3 +8194,64 @@ startup log line unchanged.
   loop" plus hundreds of clean ticks with NPC-driver logging, no panic.
   `PORTING_TODO.md` Area 34 now `[x]` - every driver in `teufel.c` is
   ported.
+- 2026-07-12: started the P4 "Area 36 - `caligar.c`" task (item drivers
+  were already fully ported; the character drivers were not). Ported the
+  three non-quest-chain drivers: `CDR_CALIGARGUARD` (`guard_driver`,
+  `:234-393` - Eulc/Margana, the "backwards is the key to entry" riddle
+  duo, `world/npc/area36/caligar_guard.rs`, new shared `AREA36_QA` table
+  in `world/npc/area36/mod.rs`), `CDR_CALIGARGUARD2` (`guard2_driver`,
+  `:395-442` - a combat-capable sentry that taunts before falling through
+  to plain `CDR_SIMPLEBADDY` AI, `world/npc/area36/caligar_guard2.rs`),
+  and `CDR_CALIGARSKELLY` (`skelly_driver`, `:444-446` - a pure
+  unconditional tail call to `char_driver(CDR_SIMPLEBADDY, ...)`, same
+  shape as `CDR_TEUFELRAT`/`CDR_TWOROBBER` - no dedicated `world/npc/*.rs`
+  file needed; its own `skelly_dead_driver` door-unlock reward was
+  already ported in an earlier iteration). Unlike every other dialogue
+  driver in this codebase, `guard_driver` keeps *no* NPC-local state at
+  all - C's `struct caligar_ppd` fields it touches (`guard_state`/
+  `guard_last_talk`) are keyed entirely by the *player* being spoken to,
+  shared between both guard NPCs, so which guard's turn it is falls out
+  automatically from state parity plus a live `!strcmp(name, "Eulc")`
+  check - no `CharacterDriverState` variant exists for either
+  `CDR_CALIGARGUARD` or `CDR_CALIGARGUARD2`. `CDR_CALIGARGUARD2`/
+  `CDR_CALIGARSKELLY`'s `CDR_SIMPLEBADDY` AI reuse follows the exact
+  `CDR_TEUFELRAT` precedent: widened the same 4 fight/idle gate sites
+  (`world/npc_fight.rs`'s two lists, `world/npc_idle.rs`'s two lists,
+  re-exported through `world/mod.rs`) plus two new `zone.rs` `NT_CREATE`+
+  `apply_simple_baddy_create_message` seed blocks (both templates carry
+  no `arg=` line, same "nothing to parse" precedent as `CDR_FORESTIMP`).
+  New `struct caligar_ppd` field offsets/accessors added to `player/
+  misc.rs`+`areas_misc.rs` for all 15 non-dead fields at once (matching
+  the struct's real declaration order end to end, confirmed byte-for-
+  byte against `caligar.c:216-232`): `guard_state`/`guard_last_talk`/
+  `guard2_last_talk` are consumed by this iteration's two drivers;
+  `glori_state`/`arquin_state`/`smith_state`/`homden_state` (+ their
+  `_last_talk` pairs, plus their C `analyse_text_driver`-code-2 mini-
+  block-reset helpers) are staged ahead of time for the four still-
+  unported quest NPCs since the whole struct's layout had to be worked
+  out anyway. `obelisk_flag`/`amazon_flag` are declared in C but
+  confirmed dead (never read or written by any driver in `caligar.c`) -
+  no accessor exists for them, their bytes still round-trip verbatim via
+  the raw blob. Also added a read-only `arkhata_monk_state` accessor
+  (`ARKHATA_PPD_MONK_STATE_OFFSET = 4*4`, `struct arkhata_ppd::
+  monk_state`) for `smith_driver`'s own "did you talk to the wise monk
+  yet" gate on the still-entirely-unported Area 37 - same "read state
+  owned by another area's unported driver" precedent as the pre-existing
+  `arkhata_rammy_state`. 19 new focused tests: 7 in a new `world/tests/
+  caligar_guard.rs` (state-0 turn-taking between the two guards, the 3
+  second talk cooldown, the 600 second state-5 timeout reset, the
+  `y > 106` fence check, the `NT_TEXT` "repeat" state-3 reset, and a
+  canned-reply "hello" line), 3 in a new `world/tests/caligar_guard2.rs`
+  (taunt + cooldown update, the 15 second cooldown gate, the distance-10
+  cutoff), and 9 in `player/tests/areas_misc.rs` (round-trips and mini-
+  block resets for all four staged quest-NPC state pairs plus guard/
+  guard2, the shared `watch_flag` offset, and the read-only
+  `arkhata_monk_state`). `cargo fmt --all`, `cargo test --workspace`:
+  4036 core [+19] + 81 db + 3 net + 45 protocol + 1204 server, all green,
+  zero failures/warnings. `cargo build -p ugaris-server`/`--workspace`
+  clean. 12s boot-smoke against `--area-id 36` confirmed "loaded area
+  zone map" (`character_templates=132`, `placed_characters=263`) and
+  "entering Rust game loop" plus hundreds of clean ticks, no panic.
+  `PORTING_TODO.md` Area 36 left `[~]`: `glori_driver`/`arquin_driver`/
+  `smith_driver`/`homden_driver` (the full quest-54-59 chain) remain
+  unported for a future iteration.
