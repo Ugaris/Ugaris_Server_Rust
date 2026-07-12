@@ -109,7 +109,12 @@ pub(crate) fn apply_mission_giver_events(
             // C `mission_give_reward`'s generic branch (`missions.c:1212-
             // 1237`): `create_item`, `IF_BONDTAKE` owner stamping,
             // `give_char_item`, and only on success the point deduction +
-            // "here you go" line.
+            // "here you go" line. `"RNORB"` is `create_orb()`
+            // (`missions.c:1213-1214`) instead of `create_item`: a random
+            // one of the 32 `V_*` skills at value 1, via the same
+            // `legacy_orb_value_from_seed`/`instantiate_orb_with_modifier`
+            // pair `area_apply::grant_orb_spawn_item`/`grant_created_orb`
+            // already use for `create_orb()`'s other C call sites.
             MissionGiveOutcomeEvent::GiveItemReward {
                 player_id,
                 npc_id,
@@ -118,8 +123,16 @@ pub(crate) fn apply_mission_giver_events(
                 let Some(reward) = MIS_REWARDS.get(reward_index) else {
                     continue;
                 };
-                let Ok(mut item) = loader.instantiate_item_template(reward.itmtmp, Some(player_id))
-                else {
+                let orb_item = if reward.itmtmp == "RNORB" {
+                    let seed = u64::from(world.roll_legacy_random(32));
+                    let skill = legacy_orb_value_from_seed(seed);
+                    instantiate_orb_with_modifier(loader, player_id, skill as i16)
+                } else {
+                    loader
+                        .instantiate_item_template(reward.itmtmp, Some(player_id))
+                        .ok()
+                };
+                let Some(mut item) = orb_item else {
                     world.npc_quiet_say(
                         npc_id,
                         "Oops. I've run out of stock. Please choose something else.",

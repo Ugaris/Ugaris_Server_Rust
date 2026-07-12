@@ -32,6 +32,7 @@ const MISSION_ITM: &str = r#"
     weapon_spell: name="Weapon Spell" ;
     mis_documents: name="Documents" sprite=88 flag=IF_TAKE ;
     mis_potionbase: name="Custom Potion" sprite=10002 flag=IF_USE flag=IF_TAKE ;
+    empty_orb: name="Orb of Nothing" sprite=51086 flag=IF_TAKE flag=IF_USE ;
 "#;
 
 fn mission_loader() -> ZoneLoader {
@@ -1033,4 +1034,59 @@ fn apply_give_custom_stat_potion_reports_missing_template() {
     assert!(texts
         .iter()
         .any(|text| text.message.contains("please try again")));
+}
+
+// C `mission_give_reward`'s generic branch calling `create_orb()` instead
+// of `create_item(itmtmp)` for `"RNORB"` (`missions.c:1213-1214`):
+// `ugaris-server::area32::apply_mission_giver_events` special-cases
+// `reward.itmtmp == "RNORB"` (`MIS_REWARDS[15]`) to build a random-skill
+// orb via `legacy_orb_value_from_seed`/`instantiate_orb_with_modifier`
+// rather than instantiating a literal (nonexistent) `"RNORB"` item
+// template.
+#[test]
+fn apply_give_item_reward_rnorb_creates_a_random_orb_and_deducts_points() {
+    let (mut world, mut loader, mut runtime, npc_id, player_id) = setup_governor_and_player(0);
+    runtime
+        .player_for_character_mut(player_id)
+        .unwrap()
+        .governor
+        .points = 400;
+
+    let reward_index = ugaris_core::world::npc::area32::governor::MIS_REWARDS
+        .iter()
+        .position(|reward| reward.code == "RNORB")
+        .expect("RNORB reward entry must exist");
+
+    let applied = apply_mission_giver_events(
+        &mut world,
+        &mut runtime,
+        &mut loader,
+        vec![MissionGiveOutcomeEvent::GiveItemReward {
+            player_id,
+            npc_id,
+            reward_index,
+        }],
+    );
+    assert_eq!(applied, 1);
+
+    let player_char = world.characters.get(&player_id).unwrap();
+    let item_id = player_char
+        .cursor_item
+        .expect("orb expected on cursor (give_char_item's empty-cursor path)");
+    let item = world.items.get(&item_id).unwrap();
+    assert!(
+        item.name.starts_with("Orb of "),
+        "unexpected orb name: {}",
+        item.name
+    );
+    assert_ne!(item.name, "Orb of Nothing");
+    assert_eq!(item.driver_data[1], 1, "create_orb() always stamps value 1");
+
+    let player = runtime.player_for_character(player_id).unwrap();
+    assert_eq!(player.governor.points, 0);
+
+    let texts = world.drain_pending_area_texts();
+    assert!(texts.iter().any(|text| text
+        .message
+        .contains("one RNORB (Random Orb) for 400 points. You now have 0 points left.")));
 }

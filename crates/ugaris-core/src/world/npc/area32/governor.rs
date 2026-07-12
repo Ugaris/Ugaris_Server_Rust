@@ -73,14 +73,17 @@
 //!   many other already-ported systems (`world::special_item`,
 //!   `world::alchemy`, procedurally-generated equipment across several
 //!   areas) - the "deeper cross-cutting gap" this note used to describe
-//!   no longer exists. `RNORB` ("Random Orb", needs a `create_orb`-
-//!   equivalent that does not exist in `ugaris-core` yet - see
-//!   `crates/ugaris-server/src/commands_admin/grants.rs::
-//!   grant_created_orb` for the closest existing analog) is the only
-//!   reward still degrading to the generic "Oops, I've run out of stock"
-//!   fallback. Every other reward (12 rings, `MEXP1-3`, `GOLD1-4`,
-//!   `CBPOT`, `FGPOT`, `SCPOT`, `CTPOT` - 23 of the 24 table entries) is
-//!   fully functional.
+//!   no longer exists. `RNORB` ("Random Orb", C's `create_orb()`,
+//!   `tool.c:3678-3778`: a random one of the 32 `V_*` skills at value 1)
+//!   is now also ported - `mission_giver_give_reward` still falls through
+//!   to the generic `GiveItemReward` event for it (same event carries the
+//!   `reward_index`), but `ugaris-server::area32::apply_mission_giver_events`
+//!   special-cases `reward.itmtmp == "RNORB"` to roll a skill via
+//!   `world.roll_legacy_random(32)`/`area_apply::legacy_orb_value_from_seed`
+//!   and build the item with `area_apply::instantiate_orb_with_modifier`
+//!   instead of `loader.instantiate_item_template`. All 24/24 reward-shop
+//!   entries (12 rings, `MEXP1-3`, `GOLD1-4`, `CBPOT`, `FGPOT`, `SCPOT`,
+//!   `CTPOT`, `RNORB`) are now fully functional.
 //! - `mis_rew[]` is stored pre-sorted by `value` ascending (matching the
 //!   sorted state C's own `qsort(mis_rew, ...)`/`init_done` one-time
 //!   sort settles into on first use) rather than modeling the sort as
@@ -1622,9 +1625,12 @@ impl World {
                 );
                 return None;
             }
-            // `RNORB`: no `create_orb`-equivalent in this port yet - falls
-            // through to the generic branch below, which will gracefully
-            // report "out of stock" (see the module doc comment).
+            // `RNORB` (C `create_orb()`, `tool.c:3678-3778`) falls through
+            // to the generic `GiveItemReward` event like every other
+            // non-special-cased reward - `ugaris-server::area32::
+            // apply_mission_giver_events` recognizes `itmtmp == "RNORB"`
+            // and builds a random orb instead of instantiating a literal
+            // `"RNORB"` item template (see the module doc comment).
             _ => return Some(idx),
         }
         self.npc_quiet_say(

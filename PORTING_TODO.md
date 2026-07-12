@@ -1393,39 +1393,22 @@ Ordered by player progression; the C file is the oracle.
   `dwarfshaman_driver`/`dwarfsmith_driver` - ported in
   `world/npc/area31/{dwarfchief,lostdwarf,dwarfshaman,dwarfsmith}.rs`;
   item drivers were already done. Details in PORTING_LEDGER.md.)*
-- [~] **Area 32 - `src/area/32/missions.c`** - governor mission NPCs
-  (needs P3 military). REMAINING: `CDR_MISSIONGIVE` ("Mister Jones")
-  dialogue/reward-shop is fully live (22/24 rewards fully functional);
-  `start_mission`/`build_fighter` (the 41x41 instance-dungeon spawn) is
-  ported (`world/npc/area32/mission_start.rs` + `ugaris-server/
-  src/area32.rs::spawn_mission_fighter`) - "accept job Alpha/Beta/Gamma"
-  now actually builds the instance and spawns fighters (as `CDR_
-  MISSIONFIGHT`, reusing `CDR_SIMPLEBADDY` AI wholesale), wires
-  door/chest keys, and teleports the player in. `mission_fighter_dead`'s
-  kill-counter hook is now also ported (`world_events::death_hooks::
-  apply_mission_fighter_death_from_hurt_event`) - killing a mission
-  fighter now bumps the matching kill counter, re-prints the job's HUD
-  status lines, and auto-solves the job once every objective is done.
-  `missionchest_driver`/`mission_done` (`IDR_MISSIONCHEST`) is now also
-  ported (`item_driver::area32_missions` + `ugaris-server::area32::
-  apply_mission_chest_open`) - the reward chest can now actually be
-  opened, `find_item` tracks correctly, and `mission_done`'s auto-solve
-  fires for real when the chest is the last remaining objective. The
-  rotating "special offer" gear purchase (qa codes 18/19) is now also
-  ported (`ugaris-server::area32::regenerate_mission_giver_special_offers`
-  runs the 12h reroll before every driver call; `ShowSpecialOffer` event
-  previews it; buying is fully in-`World`) - 23/24 reward-shop entries are
-  now functional. `CTPOT`'s multi-turn stat-potion skill-naming flow
-  (`find_skill_text`, the `mis_potionbase` finalize) is now also ported
-  (`Item::modifier_index`/`modifier_value` already existed - the "deeper
-  cross-cutting gap" the previous note described turned out to already be
-  closed by other, unrelated slices) - 23/24 reward-shop entries remain
-  the count since `CTPOT` replaces the fraction's numerator gap with
-  `RNORB`. REMAINING: `RNORB` ("Random Orb") is the only reward-shop entry
-  left unported - it needs a `create_orb()`-equivalent (the general
-  32-skill-table orb roll, `tool.c:3679-3760`; distinct from the
-  5-skill-only `handle_orb_find` already ported for Area 12 mining) that
-  does not exist anywhere in this port yet.
+- [x] **Area 32 - `src/area/32/missions.c`** - governor mission NPCs
+  (needs P3 military). *(done - `CDR_MISSIONGIVE` ("Mister Jones")
+  dialogue/reward-shop, `start_mission`/`build_fighter` instance-dungeon
+  spawn, `mission_fighter_dead` kill-counter hook, `missionchest_driver`/
+  `mission_done`, the rotating "special offer" purchase, and `CTPOT`'s
+  multi-turn stat-potion flow were all ported in earlier iterations.
+  `RNORB` ("Random Orb", C's `create_orb()`, `tool.c:3678-3778`) was the
+  last of the 24 reward-shop entries left unported - closed by having
+  `ugaris-server::area32::apply_mission_giver_events`'s `GiveItemReward`
+  handler special-case `itmtmp == "RNORB"` to roll one of the 32 `V_*`
+  skills via `world.roll_legacy_random(32)`/`area_apply::
+  legacy_orb_value_from_seed` and build the item with the already-existing
+  `area_apply::instantiate_orb_with_modifier` instead of
+  `loader.instantiate_item_template`, rather than adding a 5th duplicate
+  orb-naming implementation. All 24/24 reward-shop entries are now
+  functional. Details in PORTING_LEDGER.md.)*
 - [ ] **Area 33 - `src/area/33/tunnel.c`** - long tunnel events. Also wire
   `achievement_add_tunnel_level` using the existing `award_*` helper
   pattern in `crates/ugaris-server/src/achievement.rs` (Achievements
@@ -1475,6 +1458,9 @@ Keep entries to at most three lines: date, task, one-line result.
 Anything longer belongs in `PORTING_LEDGER.md`; historical verbose
 notes live in `PROGRESS_ARCHIVE.md`.
 
+- 2026-07-12: Area 32 - ported `RNORB` (`create_orb()`), the last reward-
+  shop gap, via existing `area_apply` orb helpers. 24/24 rewards now
+  functional; task closed [x]. 3944 core + 1204 server [+1] tests, boot-smoke.
 - 2026-07-12: Area 32 progress: ported `CTPOT`'s multi-turn custom-stat-
   potion skill-naming flow (`find_skill_text`, `MissionGiveOutcomeEvent::
   GiveCustomStatPotion`) - the pre-existing `Item::modifier_index`/`_value`
