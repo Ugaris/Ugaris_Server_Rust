@@ -654,6 +654,31 @@ pub(crate) const IID_ARKHATA_BRACELET: u32 = make_item_id(DEV_ID_DB, 0x0000B6);
 /// (`world::npc::area37::fiona`) quest-67 turn-in item.
 pub(crate) const IID_ARKHATA_RING: u32 = make_item_id(DEV_ID_DB, 0x0000B7);
 
+/// C `#define IID_ARKHATA_MONKPART1 MAKE_ITEMID(DEV_ID_DB, 0x0000B8)`
+/// (`src/common/item_id.h:247`): Gregor's key-part, `arkhatamonk_driver`'s
+/// (`world::npc::area37::arkhatamonk`) quest-69 turn-in item.
+pub(crate) const IID_ARKHATA_MONKPART1: u32 = make_item_id(DEV_ID_DB, 0x0000B8);
+
+/// C `#define IID_ARKHATA_MONKPART2 MAKE_ITEMID(DEV_ID_DB, 0x0000B9)`
+/// (`src/common/item_id.h:248`): Johan's key-part, `arkhatamonk_driver`'s
+/// quest-69 turn-in item.
+pub(crate) const IID_ARKHATA_MONKPART2: u32 = make_item_id(DEV_ID_DB, 0x0000B9);
+
+/// C `#define IID_ARKHATA_MONKPART3 MAKE_ITEMID(DEV_ID_DB, 0x0000BA)`
+/// (`src/common/item_id.h:249`): Johnatan's key-part, `arkhatamonk_driver`'s
+/// quest-69 turn-in item.
+pub(crate) const IID_ARKHATA_MONKPART3: u32 = make_item_id(DEV_ID_DB, 0x0000BA);
+
+/// C `#define IID_ARKHATA_DICTIONARY MAKE_ITEMID(DEV_ID_DB, 0x0000CA)`
+/// (`src/common/item_id.h:265`): the Frawd dictionary, `arkhatamonk_
+/// driver`'s quest-78 turn-in item. Genuine pre-existing C item-id
+/// collision (not a porting mistake): `src/common/item_id.h:267` defines
+/// `IID_ARKHATA_AKEY1` as the exact same `MAKE_ITEMID(DEV_ID_DB,
+/// 0x0000CA)` value - reproduced verbatim as a direct alias so any future
+/// comparison against either name matches identically to C's own
+/// `it[in].ID ==` checks.
+pub(crate) const IID_ARKHATA_DICTIONARY: u32 = IID_ARKHATA_AKEY1;
+
 pub const IID_AREA25_TELEKEY: u32 = make_item_id(DEV_ID_DB, 0x000090);
 
 pub const IID_AREA25_DOORKEY: u32 = make_item_id(DEV_ID_DB, 0x000091);

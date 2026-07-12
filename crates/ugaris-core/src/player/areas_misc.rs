@@ -864,13 +864,32 @@ impl PlayerRuntime {
     }
 
     /// C `ppd->monk_state = 20;` (`bookeater_dead`, `src/area/37/
-    /// arkhata.c:4350`): the only writer of this field ported so far -
-    /// see [`ARKHATA_PPD_MONK_STATE_OFFSET`]'s doc comment.
+    /// arkhata.c:4350`) plus `arkhatamonk_driver`'s own writes - see
+    /// [`ARKHATA_PPD_MONK_STATE_OFFSET`]'s doc comment.
     pub fn set_arkhata_monk_state(&mut self, state: i32) {
         if self.arkhata_ppd.len() < LEGACY_ARKHATA_PPD_SIZE {
             self.arkhata_ppd.resize(LEGACY_ARKHATA_PPD_SIZE, 0);
         }
         write_i32(&mut self.arkhata_ppd, ARKHATA_PPD_MONK_STATE_OFFSET, state);
+    }
+
+    /// C `struct arkhata_ppd::monk_bits` (`src/area/37/arkhata.h:10`) -
+    /// see [`ARKHATA_PPD_MONK_BITS_OFFSET`]'s doc comment.
+    pub fn arkhata_monk_bits(&self) -> i32 {
+        if self.arkhata_ppd.len() < LEGACY_ARKHATA_PPD_SIZE {
+            return 0;
+        }
+        read_i32(&self.arkhata_ppd, ARKHATA_PPD_MONK_BITS_OFFSET)
+    }
+
+    /// C `ppd->monk_bits |= N;` (`arkhatamonk_driver`, `src/area/37/
+    /// arkhata.c:1995,2007,2020`) - see [`ARKHATA_PPD_MONK_BITS_OFFSET`]'s
+    /// doc comment.
+    pub fn set_arkhata_monk_bits(&mut self, bits: i32) {
+        if self.arkhata_ppd.len() < LEGACY_ARKHATA_PPD_SIZE {
+            self.arkhata_ppd.resize(LEGACY_ARKHATA_PPD_SIZE, 0);
+        }
+        write_i32(&mut self.arkhata_ppd, ARKHATA_PPD_MONK_BITS_OFFSET, bits);
     }
 
     /// C `struct arkhata_ppd::ramin_state` (`src/area/37/arkhata.h:7`) -

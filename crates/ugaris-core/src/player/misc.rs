@@ -882,15 +882,21 @@ pub const ARKHATA_PPD_JAZ_STATE_OFFSET: usize = 1 * 4;
 pub const ARKHATA_PPD_LETTER_BITS_OFFSET: usize = 8 * 4;
 
 /// C `struct arkhata_ppd::monk_state` (`src/area/37/arkhata.h:9`, field
-/// index 4): the still-unported `arkhata.c` monk driver's own dialogue
-/// state. `smith_driver`'s (`world::npc::area36::smith`) "did you talk to
-/// the wise monk yet" gate (`caligar.c:1032-1037`, `appd->monk_state >
-/// 20`) reads it, same "read state owned by another area's unported
-/// driver" precedent as `ARKHATA_PPD_RAMMY_STATE_OFFSET` itself. The one
-/// writer ported so far is `bookeater_dead`'s `ppd->monk_state = 20`
-/// (`arkhata.c:4350`, gated on the prior value being exactly `19`) - see
+/// index 4): `arkhatamonk_driver`'s (`world::npc::area37::arkhatamonk`)
+/// own dialogue state. `smith_driver`'s (`world::npc::area36::smith`)
+/// "did you talk to the wise monk yet" gate (`caligar.c:1032-1037`,
+/// `appd->monk_state > 20`) also reads it, same "read state owned by
+/// another area's driver" precedent as `ARKHATA_PPD_RAMMY_STATE_OFFSET`
+/// itself. `bookeater_dead`'s `ppd->monk_state = 20` (`arkhata.c:4350`,
+/// gated on the prior value being exactly `19`) is the other writer - see
 /// `PlayerRuntime::set_arkhata_monk_state`.
 pub const ARKHATA_PPD_MONK_STATE_OFFSET: usize = 4 * 4;
+
+/// C `struct arkhata_ppd::monk_bits` (`src/area/37/arkhata.h:10`, field
+/// index 5): the per-persona key-part turn-in bitmask (`1`=Gregor,
+/// `2`=Johan, `4`=Johnatan) `arkhatamonk_driver`'s own `NT_GIVE` handler
+/// maintains; `== 7` triggers quest 69's completion.
+pub const ARKHATA_PPD_MONK_BITS_OFFSET: usize = 5 * 4;
 
 /// C `struct arkhata_ppd::ramin_state` (`src/area/37/arkhata.h:7`, field
 /// index 3): the still-unported `ramin_driver`'s own dialogue state.

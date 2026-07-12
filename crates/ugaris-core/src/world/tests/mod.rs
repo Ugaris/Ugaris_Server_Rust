@@ -9,6 +9,7 @@ mod anticheat;
 mod area_mech;
 mod arena;
 mod aristocrat;
+mod arkhatamonk;
 mod assembly;
 mod astro1;
 mod astro2;

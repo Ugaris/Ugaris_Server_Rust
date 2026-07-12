@@ -2,12 +2,11 @@
 //!
 //! `src/area/37/arkhata.c` (4,764 lines, 23 character drivers) is only
 //! partially ported so far - see `PORTING_TODO.md`/`PORTING_LEDGER.md`
-//! for the remaining `arkhatamonk`/`captain`/`judge`/`fortressguard`/
-//! `jada`/`potmaker`/`hunter`/`thaipan`/`clerk`/`trainer`/`kidnappee`/
-//! `krenach` drivers, most of which read/write the shared `struct
-//! arkhata_ppd` quest-state blob (`PlayerRuntime::arkhata_ppd`, already
-//! scaffolded in `crate::player::areas_misc` for other areas' cross-area
-//! reads).
+//! for the remaining `captain`/`judge`/`fortressguard`/`jada`/`potmaker`/
+//! `hunter`/`thaipan`/`clerk`/`trainer`/`kidnappee`/`krenach` drivers,
+//! most of which read/write the shared `struct arkhata_ppd` quest-state
+//! blob (`PlayerRuntime::arkhata_ppd`, already scaffolded in
+//! `crate::player::areas_misc` for other areas' cross-area reads).
 //! `CDR_MADHERMIT` (`src/area/37/arkhata.c::madhermit_driver`, `:4494-
 //! 4552`) needs no work here at all - it is byte-for-byte identical to
 //! the already-ported Nomad Plains hermit (`world::npc::area19::
@@ -15,6 +14,7 @@
 //! driver id, so `World::process_madhermit_actions` already covers any
 //! `CDR_MADHERMIT` character regardless of which area loaded it.
 
+pub mod arkhatamonk;
 pub mod bridgeguard;
 pub mod fiona;
 pub mod gladiator;
@@ -23,6 +23,8 @@ pub mod nop;
 pub mod ramin;
 pub mod rammy;
 
+#[allow(unused_imports)]
+pub use arkhatamonk::*;
 #[allow(unused_imports)]
 pub use bridgeguard::*;
 #[allow(unused_imports)]

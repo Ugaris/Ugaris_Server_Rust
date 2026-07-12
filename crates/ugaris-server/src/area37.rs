@@ -14,6 +14,10 @@ use std::collections::HashMap;
 
 use super::*;
 use ugaris_core::character_driver::{CharacterDriverState, FightDriverData, CDR_GLADIATOR};
+use ugaris_core::world::npc::area37::arkhatamonk::{
+    qlog_monk_bookeater, qlog_monk_dictionary, qlog_monk_keyparts, ArkhatamonkOutcomeEvent,
+    ArkhatamonkPlayerFacts,
+};
 use ugaris_core::world::npc::area37::fiona::{
     qlog_fiona_ring, FionaOutcomeEvent, FionaPlayerFacts,
 };
@@ -480,6 +484,125 @@ pub(crate) async fn apply_ramin_events(
                 };
                 let new_bits = player.arkhata_letter_bits() | 2;
                 player.set_arkhata_letter_bits(new_bits);
+                applied += 1;
+            }
+        }
+    }
+    applied
+}
+
+pub(crate) fn arkhatamonk_player_facts(
+    runtime: &ServerRuntime,
+) -> HashMap<CharacterId, ArkhatamonkPlayerFacts> {
+    runtime
+        .players
+        .values()
+        .filter_map(|player| {
+            let character_id = player.character_id?;
+            Some((
+                character_id,
+                ArkhatamonkPlayerFacts {
+                    monk_state: player.arkhata_monk_state(),
+                    monk_bits: player.arkhata_monk_bits(),
+                    ramin_state: player.arkhata_ramin_state(),
+                },
+            ))
+        })
+        .collect()
+}
+
+/// Applies each [`ArkhatamonkOutcomeEvent`] queued by `World::
+/// process_arkhatamonk_actions`.
+pub(crate) async fn apply_arkhatamonk_events(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    events: Vec<ArkhatamonkOutcomeEvent>,
+) -> usize {
+    let mut applied = 0;
+    for event in events {
+        match event {
+            ArkhatamonkOutcomeEvent::UpdateMonkState {
+                player_id,
+                new_state,
+            } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.set_arkhata_monk_state(new_state);
+                applied += 1;
+            }
+            ArkhatamonkOutcomeEvent::UpdateMonkBits {
+                player_id,
+                new_bits,
+            } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.set_arkhata_monk_bits(new_bits);
+                applied += 1;
+            }
+            // C `questlog_open(co, 69)` (`arkhata.c:1784`).
+            ArkhatamonkOutcomeEvent::QuestOpen69 { player_id } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.quest_log.open(qlog_monk_keyparts());
+                let payload = legacy_questlog_payload(player);
+                for (session_id, _) in runtime.sessions_for_character(player_id) {
+                    runtime.send_to_session(session_id, payload.clone());
+                }
+                applied += 1;
+            }
+            // C `questlog_done(co, 69)` (`arkhata.c:1998,2011,2023`).
+            ArkhatamonkOutcomeEvent::QuestDone69 { player_id } => {
+                let Some(level) = world.characters.get(&player_id).map(|c| c.level) else {
+                    continue;
+                };
+                let level_val = level_value(level);
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                if let Some(completion) =
+                    player
+                        .quest_log
+                        .complete_legacy(qlog_monk_keyparts(), level, level_val)
+                {
+                    let payload = legacy_questlog_payload(player);
+                    world.give_exp(player_id, completion.granted_exp, u32::from(world.area_id));
+                    for (session_id, _) in runtime.sessions_for_character(player_id) {
+                        runtime.send_to_session(session_id, payload.clone());
+                    }
+                    applied += 1;
+                }
+            }
+            // C `questlog_open(co, 70)` (`arkhata.c:1835`). Completion
+            // (`questlog_done(co, 70)`) lives in `world_events::
+            // death_hooks::apply_arkhata_bookeater_death_from_hurt_event`,
+            // not here - `qlog_monk_bookeater` is only referenced here to
+            // document that connection.
+            ArkhatamonkOutcomeEvent::QuestOpen70 { player_id } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.quest_log.open(qlog_monk_bookeater());
+                let payload = legacy_questlog_payload(player);
+                for (session_id, _) in runtime.sessions_for_character(player_id) {
+                    runtime.send_to_session(session_id, payload.clone());
+                }
+                applied += 1;
+            }
+            // C `questlog_open(co, 78)` (`arkhata.c:1879`). Completion
+            // (`questlog_done(co, 78)`) lives in the still-unported
+            // `kidnappee_driver` (`arkhata.c:4269`).
+            ArkhatamonkOutcomeEvent::QuestOpen78 { player_id } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.quest_log.open(qlog_monk_dictionary());
+                let payload = legacy_questlog_payload(player);
+                for (session_id, _) in runtime.sessions_for_character(player_id) {
+                    runtime.send_to_session(session_id, payload.clone());
+                }
                 applied += 1;
             }
         }

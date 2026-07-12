@@ -1490,9 +1490,20 @@ Ordered by player progression; the C file is the oracle.
   state-range reset, and the `NT_GIVE` letter-2 turn-in (new
   `IID_ARKHATA_LETTER2` item id, sets `arkhata_ppd.letter_bits` bit 2,
   consumed by `world::npc::area37::rammy`'s own `rs` `17` gate).
-  Still unported: `arkhatamonk`/`captain`/`judge`/`fortressguard`/`jada`/
-  `potmaker`/`hunter`/`thaipan`/`clerk`/`trainer`/`kidnappee`/`krenach` -
-  most read/write the shared `struct arkhata_ppd` quest-state blob
+  `arkhatamonk_driver` (`CDR_ARKHATAMONK`, the four monk personas Gregor/
+  Johan/Johnatan/Tracy sharing one dialogue state machine, quests 69/70/78,
+  `world::npc::area37::arkhatamonk`) is now also ported end to end,
+  including the `case 0`->`1` fallthrough collapse, the `NT_TEXT` "repeat"
+  three-way state-range reset, and the `NT_GIVE` three-key-part turn-in
+  (`monk_bits` completion triggers quest 69) plus the dictionary turn-in
+  (quest 78, completion deferred to the still-unported `kidnappee_driver`).
+  New `IID_ARKHATA_MONKPART1/2/3`/`IID_ARKHATA_DICTIONARY` item ids (the
+  last is a deliberate byte-for-byte alias of `IID_ARKHATA_AKEY1`,
+  reproducing a genuine pre-existing C item-id collision) and
+  `PlayerRuntime::arkhata_monk_bits`/`set_arkhata_monk_bits` accessors.
+  Still unported: `captain`/`judge`/`fortressguard`/`jada`/`potmaker`/
+  `hunter`/`thaipan`/`clerk`/`trainer`/`kidnappee`/`krenach` - most
+  read/write the shared `struct arkhata_ppd` quest-state blob
   (`PlayerRuntime::arkhata_ppd`, scaffolded in `player/areas_misc.rs`; its
   `LEGACY_ARKHATA_PPD_SIZE` had a pre-existing size bug, now fixed - see
   ledger).
@@ -1535,6 +1546,10 @@ Keep entries to at most three lines: date, task, one-line result.
 Anything longer belongs in `PORTING_LEDGER.md`; historical verbose
 notes live in `PROGRESS_ARCHIVE.md`.
 
+- 2026-07-13: Area 37 CONTINUED: ported `arkhatamonk_driver` (`CDR_
+  ARKHATAMONK`, the 4 monk personas, quests 69/70/78) plus new
+  `IID_ARKHATA_MONKPART1/2/3`/`IID_ARKHATA_DICTIONARY` item ids. 4165
+  core [+21] + 1213 server tests pass, clean build/boot-smoke (area 37).
 - 2026-07-12: Area 37 CONTINUED: ported `ramin_driver` (`CDR_RAMIN`, quest
   68 "A Shopkeeper's Fright"), plus new `IID_ARKHATA_LETTER2` item id. 4144
   core [+16] + 1213 server tests pass, clean build/boot-smoke (area 37).

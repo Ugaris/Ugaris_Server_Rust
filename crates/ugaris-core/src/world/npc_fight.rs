@@ -720,7 +720,8 @@ impl World {
             | CharacterDriverState::Fiona(_)
             | CharacterDriverState::BridgeGuard(_)
             | CharacterDriverState::Gladiator(_)
-            | CharacterDriverState::Ramin(_) => None,
+            | CharacterDriverState::Ramin(_)
+            | CharacterDriverState::Arkhatamonk(_) => None,
         }
     }
 

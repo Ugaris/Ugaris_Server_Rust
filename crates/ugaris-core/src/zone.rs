@@ -809,6 +809,15 @@ impl ZoneLoader {
                 crate::world::npc::area37::ramin::RaminDriverData::default(),
             ));
         }
+        if template.driver == crate::character_driver::CDR_ARKHATAMONK {
+            // C never parses zone-file args into `struct
+            // std_npc_driver_data` (`set_data` zero-initializes it) - no
+            // args to read here, same as `CDR_RAMMY`/`CDR_JAZ`/`CDR_RAMIN`
+            // above.
+            character.driver_state = Some(CharacterDriverState::Arkhatamonk(
+                crate::world::npc::area37::arkhatamonk::ArkhatamonkDriverData::default(),
+            ));
+        }
         if template.driver == CDR_CALIGARGUARD2 {
             // C `ch_driver`'s `CDR_CALIGARGUARD2` dispatch
             // (`caligar.c:395-442`): `guard2_driver`'s own `NT_CHAR` loop
