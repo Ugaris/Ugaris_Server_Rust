@@ -153,6 +153,7 @@ mod teleport;
 mod terion;
 mod tester;
 mod teufeldemon;
+mod teufelgambler;
 mod teufelquest;
 mod text;
 mod thiefguard;

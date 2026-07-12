@@ -141,6 +141,10 @@ impl World {
         // (`teufel.c:373-394`) is the same tail call too, though it also
         // needs its own extra `NT_CHAR` handling - see
         // `world::npc::area34::teufeldemon`'s module doc comment.
+        // `CDR_TEUFELRAT`'s `teufelrat_driver` (`teufel.c:1610-1626`) is
+        // a pure tail call too - its own `NT_CHAR` case body is empty
+        // (commented out in C), so unlike `CDR_TEUFELDEMON` it needs no
+        // extra per-tick logic of its own at all.
         if (attacker.driver != CDR_SIMPLEBADDY
             && attacker.driver != CDR_DUNGEONFIGHTER
             && attacker.driver != CDR_PENTER
@@ -151,7 +155,8 @@ impl World {
             && attacker.driver != CDR_WHITEROBBERBOSS
             && attacker.driver != CDR_CENTINEL
             && attacker.driver != CDR_MISSIONFIGHT
-            && attacker.driver != CDR_TEUFELDEMON)
+            && attacker.driver != CDR_TEUFELDEMON
+            && attacker.driver != CDR_TEUFELRAT)
             || attacker.action != 0
             || attacker.flags.contains(CharacterFlags::DEAD)
         {
@@ -697,6 +702,7 @@ impl World {
             | CharacterDriverState::DwarfSmith(_)
             | CharacterDriverState::MissionGiver(_)
             | CharacterDriverState::Gorwin(_)
+            | CharacterDriverState::TeufelGambler(_)
             | CharacterDriverState::TeufelQuest(_) => None,
         }
     }
@@ -2660,7 +2666,8 @@ impl World {
                     || character.driver == CDR_WHITEROBBERBOSS
                     || character.driver == CDR_CENTINEL
                     || character.driver == CDR_MISSIONFIGHT
-                    || character.driver == CDR_TEUFELDEMON)
+                    || character.driver == CDR_TEUFELDEMON
+                    || character.driver == CDR_TEUFELRAT)
                     && matches!(
                         character.driver_state,
                         Some(CharacterDriverState::SimpleBaddy(_))

@@ -785,6 +785,7 @@ pub enum CharacterDriverState {
     DwarfSmith(crate::world::npc::area31::dwarfsmith::DwarfSmithDriverData),
     MissionGiver(crate::world::npc::area32::governor::MissionGiverDriverData),
     Gorwin(crate::world::npc::area33::gorwin::GorwinDriverData),
+    TeufelGambler(crate::world::npc::area34::teufelgambler::TeufelGambleDriverData),
     TeufelQuest(crate::world::npc::area34::teufelquest::TeufelQuestDriverData),
 }
 /// C `bank_driver_parse` from `src/module/bank.c`. The C driver defaults
@@ -1607,6 +1608,7 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::DwarfSmith(_)
             | CharacterDriverState::MissionGiver(_)
             | CharacterDriverState::Gorwin(_)
+            | CharacterDriverState::TeufelGambler(_)
             | CharacterDriverState::TeufelQuest(_),
         ) => SimpleBaddyDriverData::default(),
         None => SimpleBaddyDriverData::default(),
@@ -4175,6 +4177,7 @@ pub use crate::world::npc::area32::military::{
     MilitaryAdvisorDriverData, MilitaryMasterDriverData, MILITARY_QA,
 };
 pub use crate::world::npc::area33::gorwin::GorwinDriverData;
+pub use crate::world::npc::area34::teufelgambler::TeufelGambleDriverData;
 pub use crate::world::npc::area34::teufelquest::TeufelQuestDriverData;
 pub use crate::world::npc::area4::tester::TesterDriverData;
 pub use crate::world::npc::area8::fdemon_army::FarmyData;

@@ -4,15 +4,18 @@
 //! and one `analyse_text_driver` (`:248-363`) across both
 //! `teufelgambler_driver` and `teufelquest_driver` - [`TEUFEL_QA`] and
 //! [`teufel_analyse_text`] below are the equivalent shared surface, kept
-//! here (rather than duplicated per-NPC-file) so a future Teufel Gambler
-//! port can reuse them, matching the `AREA3_QA`/`TWOCITY_QA` precedent
-//! from `world::npc::area3`/`world::npc::area17`.
+//! here (rather than duplicated per-NPC-file) so both `teufelgambler`
+//! and `teufelquest` can reuse them, matching the `AREA3_QA`/
+//! `TWOCITY_QA` precedent from `world::npc::area3`/`world::npc::area17`.
 
 pub mod teufeldemon;
+pub mod teufelgambler;
 pub mod teufelquest;
 
 #[allow(unused_imports)]
 pub use teufeldemon::*;
+#[allow(unused_imports)]
+pub use teufelgambler::*;
 #[allow(unused_imports)]
 pub use teufelquest::*;
 
@@ -31,8 +34,8 @@ pub(crate) fn is_demon(sprite: i32) -> bool {
 /// `1` = "what's your name" family (handled inline by
 /// [`teufel_analyse_text`], matching C's own `case 1:` inside
 /// `analyse_text_driver` rather than propagating to the caller);
-/// `2`/`3`/`4` = "bet one/two/five" (Gambler only, not yet wired to any
-/// live driver); `5`/`6`/`7`/`8` = "give experience/military/money/godly"
+/// `2`/`3`/`4` = "bet one/two/five" (Gambler only, wired in
+/// [`teufelgambler`]); `5`/`6`/`7`/`8` = "give experience/military/money/godly"
 /// (Quest driver, wired in [`teufelquest`]).
 pub(crate) const TEUFEL_QA: &[TextQaEntry] = &[
     TextQaEntry {

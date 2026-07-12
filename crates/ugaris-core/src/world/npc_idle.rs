@@ -75,7 +75,11 @@ impl World {
         // (`missions.c:1849-1851`). `CDR_TEUFELDEMON`'s (`teufel.c:373-
         // 394`) is the same tail call too, though it also needs its own
         // extra `NT_CHAR` handling - see `world::npc::area34::
-        // teufeldemon`'s module doc comment.
+        // teufeldemon`'s module doc comment. `CDR_TEUFELRAT`'s
+        // `teufelrat_driver` (`teufel.c:1610-1626`) is a pure tail call
+        // too - its own `NT_CHAR` case body is empty (commented out in
+        // C), so unlike `CDR_TEUFELDEMON` it needs no extra per-tick
+        // logic of its own at all.
         if (character.driver != CDR_SIMPLEBADDY
             && character.driver != CDR_DUNGEONFIGHTER
             && character.driver != CDR_PENTER
@@ -85,7 +89,8 @@ impl World {
             && character.driver != CDR_SMUGGLELEAD
             && character.driver != CDR_CENTINEL
             && character.driver != CDR_MISSIONFIGHT
-            && character.driver != CDR_TEUFELDEMON)
+            && character.driver != CDR_TEUFELDEMON
+            && character.driver != CDR_TEUFELRAT)
             || character.action != 0
             || character.flags.contains(CharacterFlags::DEAD)
         {
@@ -341,7 +346,8 @@ impl World {
                     || character.driver == CDR_SMUGGLELEAD
                     || character.driver == CDR_CENTINEL
                     || character.driver == CDR_MISSIONFIGHT
-                    || character.driver == CDR_TEUFELDEMON)
+                    || character.driver == CDR_TEUFELDEMON
+                    || character.driver == CDR_TEUFELRAT)
                     && matches!(
                         character.driver_state,
                         Some(CharacterDriverState::SimpleBaddy(_))
@@ -595,6 +601,7 @@ impl World {
                 | CharacterDriverState::DwarfSmith(_)
                 | CharacterDriverState::MissionGiver(_)
                 | CharacterDriverState::Gorwin(_)
+                | CharacterDriverState::TeufelGambler(_)
                 | CharacterDriverState::TeufelQuest(_) => None,
             });
         let Some(target_id) = target_id else {

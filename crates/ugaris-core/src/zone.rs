@@ -23,24 +23,25 @@ use crate::{
         MissionGiverDriverData, NookDriverData, ReskinDriverData, RouvenDriverData,
         SeymourDriverData, ShanraDriverData, SirJonesDriverData, SmuggleComDriverData,
         SpiritBranDriverData, SuperiorDriverData, SupermaxDriverData, TerionDriverData,
-        TeufelQuestDriverData, ThomasDriverData, TraderDriverData, TwoAlchemistDriverData,
-        TwoBarkeeperDriverData, TwoSanwynDriverData, TwoSkellyDriverData, TwoThiefGuardDriverData,
-        TwoThiefMasterDriverData, YoakinDriverData, YoatinDriverData, ARENA_FIGHTER_REST_POS,
-        CDR_ARENAFIGHTER, CDR_ARENAMANAGER, CDR_ARENAMASTER, CDR_ARISTOCRAT, CDR_ASTRO2,
-        CDR_BRENNETHBRAN, CDR_BRITHILDIE, CDR_BROKLIN, CDR_CAMHERMIT, CDR_CARLOS, CDR_CENTINEL,
-        CDR_CLANCLERK, CDR_CLANMASTER, CDR_CLUBMASTER, CDR_COUNTBRAN, CDR_COUNTESSABRAN,
-        CDR_DAUGHTERBRAN, CDR_DUNGEONMASTER, CDR_DWARFCHIEF, CDR_DWARFSHAMAN, CDR_DWARFSMITH,
-        CDR_FORESTBRAN, CDR_FORESTHERMIT, CDR_FORESTIMP, CDR_FORESTMONSTER, CDR_FORESTWILLIAM,
-        CDR_FOREST_RANGER, CDR_GATE_FIGHT, CDR_GATE_WELCOME, CDR_GOLEMKEYHOLDER, CDR_GREETER,
-        CDR_GRINNICH, CDR_GUARDBRAN, CDR_GWENDYLON, CDR_JANITOR, CDR_JESSICA, CDR_JIU, CDR_KASSIM,
-        CDR_KELLY, CDR_LAB2HERALD, CDR_LAB2UNDEAD, CDR_LAB4GNALB, CDR_LAB4SEYAN, CDR_LAB5DAEMON,
-        CDR_LAB5MAGE, CDR_LAB5SEYAN, CDR_LABGNOMEDRIVER, CDR_LOSTDWARF, CDR_MISSIONGIVE, CDR_NOOK,
-        CDR_RESKIN, CDR_ROUVEN, CDR_SEYMOUR, CDR_SHANRA, CDR_SIMPLEBADDY, CDR_SIRJONES,
-        CDR_SMUGGLECOM, CDR_SPIRITBRAN, CDR_SUPERIOR, CDR_SUPERMAX, CDR_SWAMPCLARA, CDR_TERION,
-        CDR_TEUFELDEMON, CDR_TEUFELQUEST, CDR_THOMAS, CDR_TRADER, CDR_TUNNELER_GORWIN,
-        CDR_TWOALCHEMIST, CDR_TWOBARKEEPER, CDR_TWOGUARD, CDR_TWOSANWYN, CDR_TWOSERVANT,
-        CDR_TWOSKELLY, CDR_TWOTHIEFGUARD, CDR_TWOTHIEFMASTER, CDR_WHITEROBBERBOSS, CDR_YOAKIN,
-        CDR_YOATIN, NT_CREATE,
+        TeufelGambleDriverData, TeufelQuestDriverData, ThomasDriverData, TraderDriverData,
+        TwoAlchemistDriverData, TwoBarkeeperDriverData, TwoSanwynDriverData, TwoSkellyDriverData,
+        TwoThiefGuardDriverData, TwoThiefMasterDriverData, YoakinDriverData, YoatinDriverData,
+        ARENA_FIGHTER_REST_POS, CDR_ARENAFIGHTER, CDR_ARENAMANAGER, CDR_ARENAMASTER,
+        CDR_ARISTOCRAT, CDR_ASTRO2, CDR_BRENNETHBRAN, CDR_BRITHILDIE, CDR_BROKLIN, CDR_CAMHERMIT,
+        CDR_CARLOS, CDR_CENTINEL, CDR_CLANCLERK, CDR_CLANMASTER, CDR_CLUBMASTER, CDR_COUNTBRAN,
+        CDR_COUNTESSABRAN, CDR_DAUGHTERBRAN, CDR_DUNGEONMASTER, CDR_DWARFCHIEF, CDR_DWARFSHAMAN,
+        CDR_DWARFSMITH, CDR_FORESTBRAN, CDR_FORESTHERMIT, CDR_FORESTIMP, CDR_FORESTMONSTER,
+        CDR_FORESTWILLIAM, CDR_FOREST_RANGER, CDR_GATE_FIGHT, CDR_GATE_WELCOME, CDR_GOLEMKEYHOLDER,
+        CDR_GREETER, CDR_GRINNICH, CDR_GUARDBRAN, CDR_GWENDYLON, CDR_JANITOR, CDR_JESSICA, CDR_JIU,
+        CDR_KASSIM, CDR_KELLY, CDR_LAB2HERALD, CDR_LAB2UNDEAD, CDR_LAB4GNALB, CDR_LAB4SEYAN,
+        CDR_LAB5DAEMON, CDR_LAB5MAGE, CDR_LAB5SEYAN, CDR_LABGNOMEDRIVER, CDR_LOSTDWARF,
+        CDR_MISSIONGIVE, CDR_NOOK, CDR_RESKIN, CDR_ROUVEN, CDR_SEYMOUR, CDR_SHANRA,
+        CDR_SIMPLEBADDY, CDR_SIRJONES, CDR_SMUGGLECOM, CDR_SPIRITBRAN, CDR_SUPERIOR, CDR_SUPERMAX,
+        CDR_SWAMPCLARA, CDR_TERION, CDR_TEUFELDEMON, CDR_TEUFELGAMBLER, CDR_TEUFELQUEST,
+        CDR_TEUFELRAT, CDR_THOMAS, CDR_TRADER, CDR_TUNNELER_GORWIN, CDR_TWOALCHEMIST,
+        CDR_TWOBARKEEPER, CDR_TWOGUARD, CDR_TWOSANWYN, CDR_TWOSERVANT, CDR_TWOSKELLY,
+        CDR_TWOTHIEFGUARD, CDR_TWOTHIEFMASTER, CDR_WHITEROBBERBOSS, CDR_YOAKIN, CDR_YOATIN,
+        NT_CREATE,
     },
     entity::{
         Character, CharacterFlags, Item, ItemFlags, CHARACTER_VALUE_COUNT, INVENTORY_SIZE,
@@ -673,6 +674,27 @@ impl ZoneLoader {
             character.push_driver_message(NT_CREATE, 0, 0, 0);
             apply_simple_baddy_create_message(&mut character, Some(&template.args), 0);
         }
+        if template.driver == CDR_TEUFELRAT {
+            // C `ch_driver`'s `CDR_TEUFELRAT` dispatch (`teufel.c:1610-
+            // 1626`): `teufelrat_driver`'s own `NT_CHAR` case body is
+            // empty (commented out in C - `// co = msg->dat1;`), so this
+            // is effectively a pure unconditional every-tick tail call to
+            // `char_driver(CDR_SIMPLEBADDY, CDT_DRIVER, cn, ret,
+            // lastact)`, reusing the SimpleBaddy driver's full idle-
+            // wander/auto-attack AI wholesale - same precedent as
+            // `CDR_PENTER`/`CDR_SWAMPMONSTER`/`CDR_FORESTMONSTER`/
+            // `CDR_TWOROBBER`/`CDR_TEUFELDEMON` above (`teufelrat_dead`'s
+            // own kill-scoring, ported separately as `PlayerRuntime::
+            // add_teufel_rat_kill`/`world_events::death_hooks::
+            // apply_teufel_rat_death_from_hurt_event`, is the only other
+            // C-visible behavior this driver has). The `rat70`-`rat94b`
+            // templates (`zones/34/teufel.chr`) carry the same
+            // `arg="aggressive=1;helper=1;scavenger=10;startdist=15;
+            // chardist=0;stopdist=40;"` shape SimpleBaddy's own
+            // `NT_CREATE` handler parses.
+            character.push_driver_message(NT_CREATE, 0, 0, 0);
+            apply_simple_baddy_create_message(&mut character, Some(&template.args), 0);
+        }
         if template.driver == CDR_FORESTIMP {
             // C never parses zone-file args into `struct
             // imp_driver_data` (`set_data` zero-initializes it) - no
@@ -1193,6 +1215,22 @@ impl ZoneLoader {
             // `teufelgambler_driver`'s `NT_CREATE` handler, not this one.
             character.driver_state = Some(CharacterDriverState::TeufelQuest(
                 TeufelQuestDriverData::default(),
+            ));
+        }
+        if template.driver == CDR_TEUFELGAMBLER {
+            // C `teufelgambler_driver`'s `NT_CREATE` handler
+            // (`teufel.c:1248-1251`): `dat->nr = atoi(ch[cn].arg);` -
+            // parsed here at spawn time instead, same precedent as
+            // `CDR_LOSTDWARF` above (see `world::npc::area34::
+            // teufelgambler`'s module doc comment). The `gambler`/
+            // `gambler2`/`gambler3` templates (`zones/34/teufel.chr:750-
+            // 946`) carry `arg="1"`/`"2"`/`"3"`.
+            let nr = template.args.trim().parse::<i32>().unwrap_or(0);
+            character.driver_state = Some(CharacterDriverState::TeufelGambler(
+                TeufelGambleDriverData {
+                    nr,
+                    ..Default::default()
+                },
             ));
         }
         if template.driver == CDR_WHITEROBBERBOSS {
@@ -2621,5 +2659,71 @@ mod tests {
         let carried_item = world.items.get(&carried_id).expect("item exists");
         assert_eq!(carried_item.name, "Bronze Chip");
         assert_eq!(carried_item.carried_by, Some(CharacterId(1)));
+    }
+
+    #[test]
+    fn teufelgambler_template_parses_nr_from_zone_arg() {
+        // Mirrors `zones/34/teufel.chr`'s real `gambler`/`gambler2`/
+        // `gambler3` entries (`:750-946`): `driver=115`
+        // (`CDR_TEUFELGAMBLER`) with `arg="1"`/`"2"`/`"3"` parsed into
+        // `dat->nr` at spawn time (`teufel.c:1248-1251`).
+        let chars = r#"
+            gambler2:
+              name="Demon Gambler"
+              driver=115
+              arg="2"
+              V_HP=120
+            ;
+        "#;
+
+        let mut loader = ZoneLoader::new();
+        loader.load_character_templates_str(chars).unwrap();
+
+        let (character, _inventory_items) = loader
+            .instantiate_character_template("gambler2", CharacterId(9))
+            .unwrap();
+
+        assert_eq!(character.driver, crate::character_driver::CDR_TEUFELGAMBLER);
+        let Some(CharacterDriverState::TeufelGambler(data)) = &character.driver_state else {
+            panic!("teufel gambler state missing");
+        };
+        assert_eq!(data.nr, 2);
+        assert_eq!(data.memcleartimer, 0);
+    }
+
+    #[test]
+    fn teufelrat_template_installs_simple_baddy_state_from_arg() {
+        // Mirrors `zones/34/teufel.chr`'s real `rat80`/`rat90`/`rat70`
+        // family (`driver=117`, `CDR_TEUFELRAT`): `teufelrat_driver`'s
+        // own `NT_CHAR` case is an empty no-op, so this is a pure
+        // unconditional tail call to `char_driver(CDR_SIMPLEBADDY, ...)`
+        // (`teufel.c:1610-1626`) - same precedent as `CDR_TEUFELDEMON`/
+        // `CDR_TWOROBBER` above.
+        let chars = r#"
+            rat80:
+              name="Baby Ice Rat"
+              driver=117
+              arg="aggressive=1;helper=1;scavenger=10;startdist=15;chardist=0;stopdist=40;"
+              V_HP=60
+            ;
+        "#;
+
+        let mut loader = ZoneLoader::new();
+        loader.load_character_templates_str(chars).unwrap();
+
+        let (character, _inventory_items) = loader
+            .instantiate_character_template("rat80", CharacterId(9))
+            .unwrap();
+
+        assert_eq!(character.driver, crate::character_driver::CDR_TEUFELRAT);
+        assert!(character.driver_messages.is_empty());
+        let Some(CharacterDriverState::SimpleBaddy(data)) = &character.driver_state else {
+            panic!("simple baddy state missing");
+        };
+        assert_eq!(data.aggressive, 1);
+        assert_eq!(data.helper, 1);
+        assert_eq!(data.scavenger, 10);
+        assert_eq!(data.startdist, 15);
+        assert_eq!(data.stopdist, 40);
     }
 }

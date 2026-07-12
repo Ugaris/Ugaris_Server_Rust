@@ -4,6 +4,31 @@
 use super::*;
 
 #[allow(clippy::too_many_arguments)]
+pub(crate) async fn teufelgambler_driver_160(
+    world: &mut World,
+    _runtime: &mut ServerRuntime,
+    zone_loader: &mut ZoneLoader,
+    _config: &ServerConfig,
+    _args: &Args,
+    _completed_actions: &[WorldActionCompletion],
+    _achievement_repository: &Option<ugaris_db::PgAchievementRepository>,
+    _character_repository: &Option<ugaris_db::PgCharacterRepository>,
+    _area_repository: &Option<ugaris_db::PgAreaRepository>,
+    _clan_repository: &Option<ugaris_db::PgClanRegistryRepository>,
+    _clan_log_repository: &Option<ugaris_db::PgClanLogRepository>,
+    _merchant_repository: &Option<ugaris_db::PgMerchantRepository>,
+    _military_master_storage_repository: &Option<ugaris_db::PgMilitaryMasterStorageRepository>,
+    _military_advisor_storage_repository: &Option<ugaris_db::PgMilitaryAdvisorStorageRepository>,
+    _notes_repository: &Option<ugaris_db::PgNotesRepository>,
+    _anticheat_repository: &Option<ugaris_db::PgAntiCheatRepository>,
+    _auction_repository: &Option<ugaris_db::PgAuctionRepository>,
+) {
+    // C `teufelgambler_driver`: the three-tier dice-and-chips gambler NPC
+    // in Teufelheim (area 34, `src/area/34/teufel.c`).
+    world.process_teufelgambler_actions(zone_loader);
+}
+
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn teufelquest_driver_159(
     world: &mut World,
     runtime: &mut ServerRuntime,

@@ -8122,3 +8122,75 @@ startup log line unchanged.
   `CDR_SIMPLEBADDY` fight/idle gates the way `CDR_TEUFELDEMON` now is, so
   spawned rat-nest rats still don't wander/fight). `PORTING_TODO.md` Area
   34 left at `[~]` with an updated REMAINING note.
+- Area 34 (`src/area/34/teufel.c`) CLOSED. Ported the last two remaining
+  drivers: `CDR_TEUFELGAMBLER` (`teufelgambler_driver`, `:1233-1435`,
+  plus its three `give_rewardN` tables `:635-1204` and `set_chip_data`,
+  `:1211-1231`) as a new `crates/ugaris-core/src/world/npc/area34/
+  teufelgambler.rs` - the three-tier ("bronze"/"silver"/"gold" chip)
+  dice-betting NPC, spawn-time `nr` parsed from `arg="1"/"2"/"3"` in
+  `zone.rs` (same `CDR_LOSTDWARF` precedent as the sibling
+  `teufelquest.rs`), reusing the shared `TEUFEL_QA` table's previously-
+  unwired `2`/`3`/`4` ("bet one/two/five") answer codes. All 3 reward
+  tables (60 total roll-outcome cases across the three tiers, symmetric
+  low/high dice-sum ranges 3-20/43-60) transcribed as literal `match`
+  tables rather than a shared formula, since the three tiers genuinely
+  diverge in *kind* (not just multiplier) for several roll values (e.g.
+  roll 7/56 is a goldchip item in tables 1-2 but a money grant in table
+  3) - verified case-by-case against the C source rather than assumed
+  symmetric. Chip-stack consumption (`it[in].drdata+0` count, `set_chip_
+  data`'s sprite/description update) reimplements the same byte layout
+  `ugaris-server::stacks::stack_count`/`set_stack_count` already use for
+  `StackKind::BronzeChip`/`SilverChip`/`GoldChip`, independently (crate
+  boundary - `ugaris-core` cannot see `ugaris-server`'s `stacks.rs`). The
+  `(CF_GOD) && strstr(msg->dat2, "reward: ")` debug/cheat branch is
+  ported verbatim, including firing independently of whether the QA table
+  matched anything that tick (a sibling `if`, not `else if`, in C) and
+  including the `Bug #1778`/`Bug #1779` fallback text for a cheat roll
+  that doesn't land on any table case (reusing `crate::world::npc::
+  area30::clanclerk::parse_int_atoi` for the `atoi` call instead of a new
+  copy). `CDR_TEUFELRAT` (`teufelrat_driver`, `:1610-1626`) turned out to
+  need no new NPC file at all: its own `NT_CHAR` case body is empty
+  (commented out in C - `// co = msg->dat1;`), making it a *pure*
+  unconditional tail call to `char_driver(CDR_SIMPLEBADDY, ...)` - the
+  exact same shape as `CDR_PENTER`/`CDR_FORESTMONSTER`/`CDR_TWOROBBER`
+  (no dedicated `world/npc/*.rs` file either), unlike its sibling
+  `CDR_TEUFELDEMON` (which needed one for its own extra `NT_CHAR` hook).
+  Closed by widening the same 4 `CDR_SIMPLEBADDY` fight/idle gate sites
+  `CDR_TEUFELDEMON` already widened (`world/npc_fight.rs`'s two lists,
+  `world/npc_idle.rs`'s two lists) to also include `CDR_TEUFELRAT`, plus
+  a new `zone.rs` spawn-time block seeding `NT_CREATE` + `apply_simple_
+  baddy_create_message` from the real `rat70`-`rat94b` templates' own
+  `arg="aggressive=1;helper=1;scavenger=10;startdist=15;chardist=0;
+  stopdist=40;"` string (death-scoring was already ported in an earlier
+  iteration - `PlayerRuntime::add_teufel_rat_kill`/`world_events::
+  death_hooks::apply_teufel_rat_death_from_hurt_event` - this closes the
+  other half, the live wander/attack AI). New `CharacterDriverState::
+  TeufelGambler(TeufelGambleDriverData)` variant added 3 exhaustive-match
+  arms the compiler forced (`character_driver.rs`'s `apply_simple_baddy_
+  create_message` fallback, `npc_fight.rs`/`npc_idle.rs`'s "no driver-
+  specific enemy tracking" fallbacks) - `CDR_TEUFELRAT` needed none of
+  these since it has no dedicated `CharacterDriverState` variant at all.
+  New tick pass `crates/ugaris-server/src/tick_npc/area34.rs::
+  teufelgambler_driver_160` (registered in `tick_npc::run_all` right
+  after the existing `teufelquest_driver_159`) calls a pure `World::
+  process_teufelgambler_actions(&mut ZoneLoader)` with no `PlayerRuntime`
+  facts/events plumbing at all (unlike `teufelquest`'s `PlayerFacts`/
+  `OutcomeEvent` split) - gold/inventory are both directly mutable
+  through `World` alone. 17 new focused tests: 12 in a new `world/tests/
+  teufelgambler.rs` (tier-specific greeting dialogue, "no chips, no game"
+  when the stack is missing/wrong-color, partial vs. full chip-stack
+  consumption on a bet regardless of the RNG-dependent win/lose roll, the
+  god-only "reward: N" cheat granting money and its `Bug #1778` fallback
+  for an off-table roll, non-god cheat rejection, greet-once memory,
+  "who are you" self-reply, and the 3 `IID_*CHIP` constants against the C
+  header), 1 in `world/tests/npc_fight.rs` (the `CDR_TEUFELRAT` gate
+  widening, mirroring the existing `CDR_TWOROBBER` test), and 2 in
+  `zone.rs`'s own test module (`arg="2"` -> `TeufelGambleDriverData.nr`
+  spawn parsing; the `rat80` template's SimpleBaddy-state seeding from
+  its zone-file `arg=`). `cargo fmt --all`, `cargo test --workspace`:
+  4017 core [+15] + 81 db + 3 net + 45 protocol + 1204 server, all green,
+  zero failures/warnings. `cargo build -p ugaris-server`/`--workspace`
+  clean, zero warnings. 12s boot-smoke confirmed "entering Rust game
+  loop" plus hundreds of clean ticks with NPC-driver logging, no panic.
+  `PORTING_TODO.md` Area 34 now `[x]` - every driver in `teufel.c` is
+  ported.

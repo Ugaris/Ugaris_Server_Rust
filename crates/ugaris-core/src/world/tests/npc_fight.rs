@@ -2669,3 +2669,57 @@ fn two_robber_npc_attacks_visible_enemy_via_reused_simple_baddy_dispatch() {
     let attacks = world.process_simple_baddy_attack_actions_with_random(1, |_| 0);
     assert_eq!(attacks, 1);
 }
+
+#[test]
+fn teufelrat_npc_attacks_visible_enemy_via_reused_simple_baddy_dispatch() {
+    // C's `ch_driver`'s `CDR_TEUFELRAT` dispatch (`teufel.c:1610-1626`) is
+    // effectively a pure unconditional tail call to
+    // `char_driver(CDR_SIMPLEBADDY, ...)` (its own `NT_CHAR` case body is
+    // empty), so `process_simple_baddy_attack_action`'s driver gate must
+    // accept `CDR_TEUFELRAT` too - same precedent as `CDR_TEUFELDEMON`/
+    // `CDR_TWOROBBER` above.
+    let mut world = World::default();
+    let mut rat = character(1);
+    rat.driver = crate::character_driver::CDR_TEUFELRAT;
+    rat.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+        enemies: vec![SimpleBaddyEnemy {
+            target_id: CharacterId(2),
+            priority: 1,
+            last_seen_tick: 0,
+            visible: true,
+            last_x: 15,
+            last_y: 10,
+        }],
+        ..SimpleBaddyDriverData::default()
+    }));
+    let target = character(2);
+    assert!(world.spawn_character(rat, 10, 10));
+    assert!(world.spawn_character(target, 15, 10));
+    world.map.tile_mut(15, 10).unwrap().light = 255;
+
+    assert!(world.process_simple_baddy_attack_action(CharacterId(1), 1));
+    let npc = world.characters.get(&CharacterId(1)).unwrap();
+    assert_ne!(npc.action, 0);
+
+    // The aggregate dispatch must also pick up `CDR_TEUFELRAT` characters.
+    let mut world = World::default();
+    let mut rat = character(1);
+    rat.driver = crate::character_driver::CDR_TEUFELRAT;
+    rat.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+        enemies: vec![SimpleBaddyEnemy {
+            target_id: CharacterId(2),
+            priority: 1,
+            last_seen_tick: 0,
+            visible: true,
+            last_x: 15,
+            last_y: 10,
+        }],
+        ..SimpleBaddyDriverData::default()
+    }));
+    let target = character(2);
+    assert!(world.spawn_character(rat, 10, 10));
+    assert!(world.spawn_character(target, 15, 10));
+    world.map.tile_mut(15, 10).unwrap().light = 255;
+    let attacks = world.process_simple_baddy_attack_actions_with_random(1, |_| 0);
+    assert_eq!(attacks, 1);
+}

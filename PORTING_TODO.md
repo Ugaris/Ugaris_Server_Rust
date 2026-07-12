@@ -1413,23 +1413,13 @@ Ordered by player progression; the C file is the oracle.
   `achievement_add_tunnel_level` using the existing `award_*` helper
   pattern in `crates/ugaris-server/src/achievement.rs` (Achievements
   task, closed iteration 84). *(done - details in PORTING_LEDGER.md)*
-- [~] **Area 34 - `src/area/34/teufel.c`** - rat/gambler NPCs, arena score
-  rewards (rat nest items ported).
-  REMAINING: `CDR_TEUFELQUEST` (the rat-hunt reward NPC: greeting,
-  `give experience`/`give military`/`give money`/`give godly` dialogue,
-  `special_rat_reward`'s 7-tier item ladder) is now ported
-  (`world/npc/area34/teufelquest.rs` + shared `TEUFEL_QA`/
-  `teufel_analyse_text` in `world/npc/area34/mod.rs`). `teufeldemon_driver`
-  (the `NT_CHAR` self-defense hook + `CDR_SIMPLEBADDY` tail call) is now
-  also ported (`world/npc/area34/teufeldemon.rs` +
-  `CDR_SIMPLEBADDY`-gate widening in `world/npc_fight.rs`/
-  `world/npc_idle.rs`, plus a hook into `world/npc_messages.rs`'s generic
-  message drain - see the module's own doc comment for why it can't be a
-  normal `tick_npc` pass). Still unported: `teufelgambler_driver` (the 3
-  chip-tier dice game, shares `TEUFEL_QA`) and `teufelrat_driver`'s own
-  tick body (death-scoring already ported; the live wander/attack AI is
-  not - needs the same `CDR_SIMPLEBADDY`-gate widening `CDR_TEUFELDEMON`
-  just got).
+- [x] **Area 34 - `src/area/34/teufel.c`** - rat/gambler NPCs, arena score
+  rewards. `CDR_TEUFELQUEST`, `CDR_TEUFELDEMON`, `CDR_TEUFELGAMBLER` (the
+  3 chip-tier dice game plus its 3 `give_rewardN` tables, `world/npc/
+  area34/teufelgambler.rs`), and `CDR_TEUFELRAT` (pure `CDR_SIMPLEBADDY`
+  tail call, gate-widened in `world/npc_fight.rs`/`world/npc_idle.rs` +
+  `zone.rs`; death-scoring was already ported) are all now ported.
+  *(done - details in PORTING_LEDGER.md)*
 - [ ] **Area 36 - `src/area/36/caligar.c`** - Caligar quest NPCs, PPD
   quest state beyond skelly doors.
 - [ ] **Area 37 - `src/area/37/arkhata.c` (4,764 lines)** - Arkhata clerk/
@@ -1473,6 +1463,10 @@ Keep entries to at most three lines: date, task, one-line result.
 Anything longer belongs in `PORTING_LEDGER.md`; historical verbose
 notes live in `PROGRESS_ARCHIVE.md`.
 
+- 2026-07-12: Area 34 CLOSED: ported `CDR_TEUFELGAMBLER` (3 chip-tier dice
+  game + `give_reward`/`2`/`3` tables, `world/npc/area34/teufelgambler.rs`)
+  and `CDR_TEUFELRAT` (pure `CDR_SIMPLEBADDY` tail-call gate widening).
+  4017 core [+15] + 1204 server tests pass, clean build, boot-smoke.
 - 2026-07-12: Area 34 STARTED: ported `CDR_TEUFELQUEST` (rat-hunt reward
   NPC: greeting, give experience/military/money/godly, `special_rat_reward`
   ladder) + shared `TEUFEL_QA`/`teufel_analyse_text`. 3998 core [+13] +
