@@ -870,11 +870,13 @@ pub const ARKHATA_PPD_RAMMY_STATE_OFFSET: usize = 0 * 4;
 
 /// C `struct arkhata_ppd::monk_state` (`src/area/37/arkhata.h:9`, field
 /// index 4): the still-unported `arkhata.c` monk driver's own dialogue
-/// state. Read-only here - only `smith_driver`'s (`world::npc::area36::
-/// smith`) "did you talk to the wise monk yet" gate (`caligar.c:1032-
-/// 1037`, `appd->monk_state > 20`) needs it, same "read state owned by
-/// another area's unported driver" precedent as `ARKHATA_PPD_RAMMY_STATE_
-/// OFFSET` itself.
+/// state. `smith_driver`'s (`world::npc::area36::smith`) "did you talk to
+/// the wise monk yet" gate (`caligar.c:1032-1037`, `appd->monk_state >
+/// 20`) reads it, same "read state owned by another area's unported
+/// driver" precedent as `ARKHATA_PPD_RAMMY_STATE_OFFSET` itself. The one
+/// writer ported so far is `bookeater_dead`'s `ppd->monk_state = 20`
+/// (`arkhata.c:4350`, gated on the prior value being exactly `19`) - see
+/// `PlayerRuntime::set_arkhata_monk_state`.
 pub const ARKHATA_PPD_MONK_STATE_OFFSET: usize = 4 * 4;
 
 // `struct staffer_ppd` field offsets (`src/common/staffer_ppd.h:13-` /

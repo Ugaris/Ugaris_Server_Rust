@@ -994,7 +994,7 @@ fn caligar_ppd_watch_flag_reads_the_shared_offset_with_training() {
 }
 
 #[test]
-fn arkhata_ppd_monk_state_is_read_only_here() {
+fn arkhata_ppd_monk_state_reads_from_the_decoded_legacy_blob() {
     let mut player = PlayerRuntime::connected(1, 0);
     assert_eq!(player.arkhata_monk_state(), 0);
 
@@ -1002,6 +1002,17 @@ fn arkhata_ppd_monk_state_is_read_only_here() {
     write_i32(&mut bytes, ARKHATA_PPD_MONK_STATE_OFFSET, 25);
     assert!(player.decode_legacy_arkhata_ppd(&bytes));
     assert_eq!(player.arkhata_monk_state(), 25);
+}
+
+#[test]
+fn set_arkhata_monk_state_writes_and_resizes_an_empty_blob() {
+    let mut player = PlayerRuntime::connected(1, 0);
+    assert!(player.arkhata_ppd.is_empty());
+
+    player.set_arkhata_monk_state(20);
+
+    assert_eq!(player.arkhata_ppd.len(), LEGACY_ARKHATA_PPD_SIZE);
+    assert_eq!(player.arkhata_monk_state(), 20);
 }
 
 #[test]

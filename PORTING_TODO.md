@@ -1429,11 +1429,14 @@ Ordered by player progression; the C file is the oracle.
 - [~] **Area 37 - `src/area/37/arkhata.c` (4,764 lines, 23 character
   drivers)** - Arkhata clerk/quest NPC chain (pool/stopwatch/key items
   ported). REMAINING: `CDR_NOP` (Fighting School "Student" background
-  NPC, `world::npc::area37::nop`) and `CDR_ARKHATAPRISON` (Fortress
-  prisoner, pure `CDR_SIMPLEBADDY` tail call) are done; `CDR_MADHERMIT`
-  needs no work (shared driver, already covered by
+  NPC, `world::npc::area37::nop`), `CDR_ARKHATAPRISON` (Fortress
+  prisoner, pure `CDR_SIMPLEBADDY` tail call), and `CDR_BOOKEATER` ("The
+  Book Eater" monster, pure `CDR_SIMPLEBADDY` tail call + a
+  `bookeater_dead` quest-70-completion death hook,
+  `apply_arkhata_bookeater_death_from_hurt_event`) are done;
+  `CDR_MADHERMIT` needs no work (shared driver, already covered by
   `world::npc::area19::madhermit`). Still unported: `rammy`/`jaz`/
-  `fiona`/`ramin`/`arkhataskelly`/`arkhatamonk`/`bookeater`/`captain`/
+  `fiona`/`ramin`/`arkhataskelly`/`arkhatamonk`/`captain`/
   `judge`/`fortressguard`/`jada`/`potmaker`/`hunter`/`thaipan`/`clerk`/
   `trainer`/`kidnappee`/`krenach` - most read/write the shared
   `struct arkhata_ppd` quest-state blob (`PlayerRuntime::arkhata_ppd`,
@@ -1478,6 +1481,11 @@ Keep entries to at most three lines: date, task, one-line result.
 Anything longer belongs in `PORTING_LEDGER.md`; historical verbose
 notes live in `PROGRESS_ARCHIVE.md`.
 
+- 2026-07-12: Area 37 CONTINUED: ported `CDR_BOOKEATER` ("The Book Eater"
+  monster, pure `CDR_SIMPLEBADDY` tail call + `bookeater_dead`'s quest-70
+  completion death hook, `apply_arkhata_bookeater_death_from_hurt_event`);
+  added `PlayerRuntime::set_arkhata_monk_state`. 4065 core [+1] + 1210
+  server tests [+2] pass, clean build/boot-smoke (area 37, no panics).
 - 2026-07-12: Area 37 STARTED: ported `CDR_NOP` (Fighting School "Student"
   background NPC) and `CDR_ARKHATAPRISON` (pure `CDR_SIMPLEBADDY` tail
   call); fixed a `LEGACY_ARKHATA_PPD_SIZE` size bug (25*4 -> 21*4). 4064

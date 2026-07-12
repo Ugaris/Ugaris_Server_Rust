@@ -1,8 +1,8 @@
 use super::*;
 use ugaris_core::character_driver::{
     ArenaFighterDriverData, ArenaMasterDriverData, CDR_ARENAFIGHTER, CDR_ARENAMASTER,
-    CDR_ARKHATAPRISON, CDR_CENTINEL, CDR_CLANCLERK, CDR_CLANMASTER, CDR_LAMPGHOST, CDR_NOP,
-    CDR_WARPFIGHTER, MS_FIGHT,
+    CDR_ARKHATAPRISON, CDR_BOOKEATER, CDR_CENTINEL, CDR_CLANCLERK, CDR_CLANMASTER, CDR_LAMPGHOST,
+    CDR_NOP, CDR_WARPFIGHTER, MS_FIGHT,
 };
 use ugaris_core::world::npc::area25::WarpFighterDriverData;
 use ugaris_core::world::LegacyHurtOutcome;
@@ -1512,6 +1512,110 @@ fn arkhata_prisoner_death_handler_ignores_non_matching_driver_and_non_lethal_hit
     assert!(!apply_arkhata_prisoner_death_from_hurt_event(
         &mut world2,
         lethal_wrong_driver
+    ));
+}
+
+#[test]
+fn arkhata_bookeater_death_completes_quest_70_when_monk_state_is_19() {
+    // C `ch_died_driver`/`CDR_BOOKEATER` -> `bookeater_dead` (`arkhata.c:
+    // 4333-4351`): killer must be a player with `monk_state == 19`;
+    // completes quest 70 and advances `monk_state` to `20`.
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let mut player = PlayerRuntime::connected(1, 0);
+    player.character_id = Some(CharacterId(2));
+    player.set_arkhata_monk_state(19);
+    runtime.players.insert(1, player);
+
+    let mut bookeater_npc =
+        login_character(CharacterId(1), &login_block("The Book Eater"), 37, 10, 10);
+    bookeater_npc.flags.remove(CharacterFlags::PLAYER);
+    bookeater_npc.driver = CDR_BOOKEATER;
+    world.add_character(bookeater_npc);
+    world.add_character(login_character(
+        CharacterId(2),
+        &login_block("Godmode"),
+        37,
+        10,
+        11,
+    ));
+
+    let event = LegacyHurtEvent {
+        target_id: CharacterId(1),
+        cause_id: CharacterId(2),
+        outcome: LegacyHurtOutcome {
+            killed: true,
+            ..Default::default()
+        },
+    };
+
+    assert!(apply_arkhata_bookeater_death_from_hurt_event(
+        &mut runtime,
+        &mut world,
+        event
+    ));
+
+    let player = runtime.player_for_character(CharacterId(2)).unwrap();
+    assert_eq!(player.arkhata_monk_state(), 20);
+    assert!(player.quest_log.is_done(70));
+    let texts = world.drain_pending_system_texts();
+    assert!(texts
+        .iter()
+        .any(|text| text.message
+            == "Well done, you've solved Tracy's quest. Now report back to her."));
+}
+
+#[test]
+fn arkhata_bookeater_death_ignores_wrong_monk_state_and_non_player_killer() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let mut player = PlayerRuntime::connected(1, 0);
+    player.character_id = Some(CharacterId(2));
+    player.set_arkhata_monk_state(5); // not 19
+    runtime.players.insert(1, player);
+
+    let mut bookeater_npc =
+        login_character(CharacterId(1), &login_block("The Book Eater"), 37, 10, 10);
+    bookeater_npc.flags.remove(CharacterFlags::PLAYER);
+    bookeater_npc.driver = CDR_BOOKEATER;
+    world.add_character(bookeater_npc);
+    world.add_character(login_character(
+        CharacterId(2),
+        &login_block("Godmode"),
+        37,
+        10,
+        11,
+    ));
+
+    let event = LegacyHurtEvent {
+        target_id: CharacterId(1),
+        cause_id: CharacterId(2),
+        outcome: LegacyHurtOutcome {
+            killed: true,
+            ..Default::default()
+        },
+    };
+    assert!(!apply_arkhata_bookeater_death_from_hurt_event(
+        &mut runtime,
+        &mut world,
+        event
+    ));
+
+    // Non-lethal hit never dispatches, even with a matching driver/state.
+    let player2 = runtime.player_for_character_mut(CharacterId(2)).unwrap();
+    player2.set_arkhata_monk_state(19);
+    let non_lethal = LegacyHurtEvent {
+        target_id: CharacterId(1),
+        cause_id: CharacterId(2),
+        outcome: LegacyHurtOutcome {
+            killed: false,
+            ..Default::default()
+        },
+    };
+    assert!(!apply_arkhata_bookeater_death_from_hurt_event(
+        &mut runtime,
+        &mut world,
+        non_lethal
     ));
 }
 

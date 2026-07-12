@@ -199,6 +199,17 @@ pub const CDR_CALIGARSKELLY: u16 = 124;
 /// (`src/area/37/arkhata.c::nop_driver`), see `world::npc::area37::nop`'s
 /// module doc comment.
 pub const CDR_NOP: u16 = 136;
+/// C `#define CDR_BOOKEATER 140` (`src/system/drvlib.h:190`, comment
+/// "arkhata"): "The Book Eater" monster, quest 70's target. C's own
+/// `ch_driver` dispatch (`arkhata.c:4583-4585`) is an unconditional tail
+/// call to `char_driver(CDR_SIMPLEBADDY, CDT_DRIVER, cn, ret, lastact)`
+/// (`bookeater_driver`, `arkhata.c:2083-2085`), reusing the SimpleBaddy
+/// driver's full idle-wander/auto-attack AI wholesale - same precedent as
+/// `CDR_ARKHATAPRISON` below (`bookeater_dead`'s own quest-70 completion
+/// check, ported separately as `ugaris-server::world_events::
+/// death_hooks::apply_arkhata_bookeater_death_from_hurt_event`, is the
+/// only other C-visible behavior this driver has).
+pub const CDR_BOOKEATER: u16 = 140;
 /// C `#define CDR_ARKHATAPRISON 151` (`src/system/drvlib.h:200`, comment
 /// "arkhata"): the Fortress prisoner NPC. C's own `ch_driver` dispatch
 /// (`arkhata.c:4616-4618`) is an unconditional tail call to

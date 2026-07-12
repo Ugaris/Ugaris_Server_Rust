@@ -854,13 +854,23 @@ impl PlayerRuntime {
         );
     }
 
-    /// C `struct arkhata_ppd::monk_state` (`src/area/37/arkhata.h:9`),
-    /// read-only - see [`ARKHATA_PPD_MONK_STATE_OFFSET`]'s doc comment.
+    /// C `struct arkhata_ppd::monk_state` (`src/area/37/arkhata.h:9`) -
+    /// see [`ARKHATA_PPD_MONK_STATE_OFFSET`]'s doc comment.
     pub fn arkhata_monk_state(&self) -> i32 {
         if self.arkhata_ppd.len() < LEGACY_ARKHATA_PPD_SIZE {
             return 0;
         }
         read_i32(&self.arkhata_ppd, ARKHATA_PPD_MONK_STATE_OFFSET)
+    }
+
+    /// C `ppd->monk_state = 20;` (`bookeater_dead`, `src/area/37/
+    /// arkhata.c:4350`): the only writer of this field ported so far -
+    /// see [`ARKHATA_PPD_MONK_STATE_OFFSET`]'s doc comment.
+    pub fn set_arkhata_monk_state(&mut self, state: i32) {
+        if self.arkhata_ppd.len() < LEGACY_ARKHATA_PPD_SIZE {
+            self.arkhata_ppd.resize(LEGACY_ARKHATA_PPD_SIZE, 0);
+        }
+        write_i32(&mut self.arkhata_ppd, ARKHATA_PPD_MONK_STATE_OFFSET, state);
     }
 
     fn ensure_caligar_ppd_sized(&mut self) {

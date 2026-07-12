@@ -1,8 +1,8 @@
 use super::*;
 use ugaris_core::character_driver::{
-    CDR_ARKHATAPRISON, CDR_CENTINEL, CDR_CLANCLERK, CDR_CLANMASTER, CDR_LABGNOMEDRIVER, CDR_NOP,
-    CDR_SMUGGLELEAD, CDR_TUNNELER_GORWIN, CDR_TWOGUARD, CDR_TWOROBBER, CDR_TWOSERVANT,
-    CDR_WARPFIGHTER, CDR_WHITEROBBERBOSS,
+    CDR_ARKHATAPRISON, CDR_BOOKEATER, CDR_CENTINEL, CDR_CLANCLERK, CDR_CLANMASTER,
+    CDR_LABGNOMEDRIVER, CDR_NOP, CDR_SMUGGLELEAD, CDR_TUNNELER_GORWIN, CDR_TWOGUARD, CDR_TWOROBBER,
+    CDR_TWOSERVANT, CDR_WARPFIGHTER, CDR_WHITEROBBERBOSS,
 };
 use ugaris_core::world::{CS_ENEMY, CS_GUEST, LS_DEAD, LS_FINE};
 
@@ -1471,6 +1471,63 @@ pub(crate) fn apply_arkhata_prisoner_death_from_hurt_event(
         return false;
     }
     world.npc_say(event.target_id, "I know the secret, it's right here!");
+    true
+}
+
+/// C `ch_died_driver`/`CDR_BOOKEATER` dispatch (`arkhata.c:4666-4668`)
+/// routes any death of "The Book Eater" monster to `bookeater_dead(cn,
+/// co)` (`:4333-4351`): killer must be a player (`co`/`CF_PLAYER` check),
+/// must have `arkhata_ppd.monk_state == 19` (i.e. already sent by Tracy
+/// to slay it - the still-unported `arkhatamonk_driver`'s own dialogue
+/// state machine, see `PlayerRuntime::arkhata_monk_state`'s doc comment),
+/// then completes quest 70 ("The Book Eater") and advances `monk_state`
+/// to `20` so the killer can report back to Tracy.
+pub(crate) fn apply_arkhata_bookeater_death_from_hurt_event(
+    runtime: &mut ServerRuntime,
+    world: &mut World,
+    event: LegacyHurtEvent,
+) -> bool {
+    if !event.outcome.killed {
+        return false;
+    }
+    let is_bookeater_kill = world
+        .characters
+        .get(&event.target_id)
+        .zip(world.characters.get(&event.cause_id))
+        .is_some_and(|(target, killer)| {
+            target.driver == CDR_BOOKEATER && killer.flags.contains(CharacterFlags::PLAYER)
+        });
+    if !is_bookeater_kill {
+        return false;
+    }
+    let Some(level) = world.characters.get(&event.cause_id).map(|c| c.level) else {
+        return false;
+    };
+    let level_val = level_value(level);
+    let Some(player) = runtime.player_for_character_mut(event.cause_id) else {
+        return false;
+    };
+    if player.arkhata_monk_state() != 19 {
+        return false;
+    }
+    if let Some(completion) = player.quest_log.complete_legacy(70, level, level_val) {
+        let payload = legacy_questlog_payload(player);
+        world.give_exp(
+            event.cause_id,
+            completion.granted_exp,
+            u32::from(world.area_id),
+        );
+        for (session_id, _) in runtime.sessions_for_character(event.cause_id) {
+            runtime.send_to_session(session_id, payload.clone());
+        }
+    }
+    if let Some(player) = runtime.player_for_character_mut(event.cause_id) {
+        player.set_arkhata_monk_state(20);
+    }
+    world.queue_system_text(
+        event.cause_id,
+        "Well done, you've solved Tracy's quest. Now report back to her.",
+    );
     true
 }
 

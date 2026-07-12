@@ -93,7 +93,8 @@ impl World {
             && character.driver != CDR_TEUFELRAT
             && character.driver != CDR_CALIGARGUARD2
             && character.driver != CDR_CALIGARSKELLY
-            && character.driver != CDR_ARKHATAPRISON)
+            && character.driver != CDR_ARKHATAPRISON
+            && character.driver != CDR_BOOKEATER)
             || character.action != 0
             || character.flags.contains(CharacterFlags::DEAD)
         {
@@ -353,7 +354,8 @@ impl World {
                     || character.driver == CDR_TEUFELRAT
                     || character.driver == CDR_CALIGARGUARD2
                     || character.driver == CDR_CALIGARSKELLY
-                    || character.driver == CDR_ARKHATAPRISON)
+                    || character.driver == CDR_ARKHATAPRISON
+                    || character.driver == CDR_BOOKEATER)
                     && matches!(
                         character.driver_state,
                         Some(CharacterDriverState::SimpleBaddy(_))

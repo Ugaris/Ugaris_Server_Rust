@@ -169,7 +169,7 @@ use crate::{
         process_simple_baddy_messages,
         remove_simple_baddy_enemy as remove_simple_baddy_enemy_state, CharacterDriverMessage,
         CharacterDriverOutcome, CharacterDriverState, FightDriverData, SimpleBaddyEnemy,
-        SimpleBaddyMessageOutcome, CDR_ACLERK, CDR_ARKHATAPRISON, CDR_CALIGARGUARD2,
+        SimpleBaddyMessageOutcome, CDR_ACLERK, CDR_ARKHATAPRISON, CDR_BOOKEATER, CDR_CALIGARGUARD2,
         CDR_CALIGARSKELLY, CDR_CAMERON_FORESTMONSTER, CDR_CENTINEL, CDR_DUNGEONFIGHTER,
         CDR_FORESTMONSTER, CDR_GATE_WELCOME, CDR_LOSTCON, CDR_MERCHANT, CDR_MISSIONFIGHT,
         CDR_PENTER, CDR_SIMPLEBADDY, CDR_SMUGGLELEAD, CDR_SWAMPMONSTER, CDR_TEUFELDEMON,

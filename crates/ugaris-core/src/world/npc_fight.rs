@@ -145,8 +145,9 @@ impl World {
         // a pure tail call too - its own `NT_CHAR` case body is empty
         // (commented out in C), so unlike `CDR_TEUFELDEMON` it needs no
         // extra per-tick logic of its own at all. `CDR_ARKHATAPRISON`'s
-        // `prisoner_driver` (`arkhata.c:4329-4331`) is the same pure tail
-        // call - see `CDR_ARKHATAPRISON`'s own doc comment.
+        // `prisoner_driver` (`arkhata.c:4329-4331`) and `CDR_BOOKEATER`'s
+        // `bookeater_driver` (`arkhata.c:2083-2085`) are the same pure
+        // tail call - see their own doc comments.
         if (attacker.driver != CDR_SIMPLEBADDY
             && attacker.driver != CDR_DUNGEONFIGHTER
             && attacker.driver != CDR_PENTER
@@ -161,7 +162,8 @@ impl World {
             && attacker.driver != CDR_TEUFELRAT
             && attacker.driver != CDR_CALIGARGUARD2
             && attacker.driver != CDR_CALIGARSKELLY
-            && attacker.driver != CDR_ARKHATAPRISON)
+            && attacker.driver != CDR_ARKHATAPRISON
+            && attacker.driver != CDR_BOOKEATER)
             || attacker.action != 0
             || attacker.flags.contains(CharacterFlags::DEAD)
         {
@@ -2676,7 +2678,8 @@ impl World {
                     || character.driver == CDR_TEUFELRAT
                     || character.driver == CDR_CALIGARGUARD2
                     || character.driver == CDR_CALIGARSKELLY
-                    || character.driver == CDR_ARKHATAPRISON)
+                    || character.driver == CDR_ARKHATAPRISON
+                    || character.driver == CDR_BOOKEATER)
                     && matches!(
                         character.driver_state,
                         Some(CharacterDriverState::SimpleBaddy(_))
