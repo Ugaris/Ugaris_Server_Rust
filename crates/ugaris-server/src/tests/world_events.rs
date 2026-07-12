@@ -1,7 +1,8 @@
 use super::*;
 use ugaris_core::character_driver::{
-    ArenaFighterDriverData, ArenaMasterDriverData, CDR_ARENAFIGHTER, CDR_ARENAMASTER, CDR_CENTINEL,
-    CDR_CLANCLERK, CDR_CLANMASTER, CDR_LAMPGHOST, CDR_WARPFIGHTER, MS_FIGHT,
+    ArenaFighterDriverData, ArenaMasterDriverData, CDR_ARENAFIGHTER, CDR_ARENAMASTER,
+    CDR_ARKHATAPRISON, CDR_CENTINEL, CDR_CLANCLERK, CDR_CLANMASTER, CDR_LAMPGHOST, CDR_NOP,
+    CDR_WARPFIGHTER, MS_FIGHT,
 };
 use ugaris_core::world::npc::area25::WarpFighterDriverData;
 use ugaris_core::world::LegacyHurtOutcome;
@@ -1443,6 +1444,141 @@ fn gate_welcome_death_handler_ignores_non_matching_driver_and_non_lethal_hits() 
         },
     };
     assert!(!apply_gate_welcome_death_from_hurt_event(
+        &world2,
+        lethal_wrong_driver
+    ));
+}
+
+#[test]
+fn arkhata_prisoner_death_says_the_secret_line() {
+    // C `ch_died_driver`/`CDR_ARKHATAPRISON` -> `prisoner_dead` (`arkhata.
+    // c:4490-4492`): a plain unconditional `say`, no `co`/killer checks.
+    let mut world = World::default();
+    let mut prisoner_npc = login_character(CharacterId(1), &login_block("Prisoner"), 1, 190, 200);
+    prisoner_npc.flags.remove(CharacterFlags::PLAYER);
+    prisoner_npc.driver = CDR_ARKHATAPRISON;
+
+    let event = LegacyHurtEvent {
+        target_id: CharacterId(1),
+        cause_id: CharacterId(2),
+        outcome: LegacyHurtOutcome {
+            killed: true,
+            ..Default::default()
+        },
+    };
+    world.add_character(prisoner_npc);
+
+    assert!(apply_arkhata_prisoner_death_from_hurt_event(
+        &mut world, event
+    ));
+    let texts = world.drain_pending_area_texts();
+    assert!(texts
+        .iter()
+        .any(|text| text.message.contains("I know the secret, it's right here!")));
+}
+
+#[test]
+fn arkhata_prisoner_death_handler_ignores_non_matching_driver_and_non_lethal_hits() {
+    let mut world = World::default();
+    let mut other_npc = login_character(CharacterId(1), &login_block("Other"), 1, 190, 200);
+    other_npc.flags.remove(CharacterFlags::PLAYER);
+    world.add_character(other_npc);
+
+    let non_lethal = LegacyHurtEvent {
+        target_id: CharacterId(1),
+        cause_id: CharacterId(2),
+        outcome: LegacyHurtOutcome {
+            killed: false,
+            ..Default::default()
+        },
+    };
+    assert!(!apply_arkhata_prisoner_death_from_hurt_event(
+        &mut world, non_lethal
+    ));
+
+    let mut world2 = World::default();
+    let mut wrong_driver_npc = login_character(CharacterId(1), &login_block("Other"), 1, 190, 200);
+    wrong_driver_npc.flags.remove(CharacterFlags::PLAYER);
+    wrong_driver_npc.driver = CDR_NOP; // not CDR_ARKHATAPRISON
+    world2.add_character(wrong_driver_npc);
+    let lethal_wrong_driver = LegacyHurtEvent {
+        target_id: CharacterId(1),
+        cause_id: CharacterId(2),
+        outcome: LegacyHurtOutcome {
+            killed: true,
+            ..Default::default()
+        },
+    };
+    assert!(!apply_arkhata_prisoner_death_from_hurt_event(
+        &mut world2,
+        lethal_wrong_driver
+    ));
+}
+
+#[test]
+fn arkhata_nop_death_is_handled_but_sends_no_client_message() {
+    // C `ch_died_driver`/`CDR_NOP` -> `immortal_dead` (`arkhata.c:4486-
+    // 4488,4657-4659`): same `charlog`-only bug line as `CDR_GATE_WELCOME`
+    // above - no client message.
+    let mut world = World::default();
+    let mut student_npc = login_character(CharacterId(1), &login_block("Student"), 1, 190, 200);
+    student_npc.flags.remove(CharacterFlags::PLAYER);
+    student_npc.driver = CDR_NOP;
+    student_npc.hp = POWERSCALE;
+    let killer = login_character(CharacterId(2), &login_block("Godmode"), 1, 191, 200);
+    world.add_character(student_npc);
+    world.add_character(killer);
+
+    let mut runtime = ServerRuntime::default();
+
+    world.apply_legacy_hurt(
+        CharacterId(1),
+        Some(CharacterId(2)),
+        POWERSCALE * 2,
+        1,
+        0,
+        0,
+    );
+    apply_pk_hate_from_hurt_events(&mut runtime, &mut world, 0, &ZoneLoader::new());
+
+    let texts = world.drain_pending_system_texts();
+    assert!(!texts.iter().any(|text| text.message.contains("IMMORTAL")));
+}
+
+#[test]
+fn arkhata_nop_death_handler_ignores_non_matching_driver_and_non_lethal_hits() {
+    let mut world = World::default();
+    let mut other_npc = login_character(CharacterId(1), &login_block("Other"), 1, 190, 200);
+    other_npc.flags.remove(CharacterFlags::PLAYER);
+    other_npc.hp = POWERSCALE * 5;
+    world.add_character(other_npc);
+
+    let non_lethal = LegacyHurtEvent {
+        target_id: CharacterId(1),
+        cause_id: CharacterId(2),
+        outcome: LegacyHurtOutcome {
+            killed: false,
+            ..Default::default()
+        },
+    };
+    assert!(!apply_arkhata_immortal_death_from_hurt_event(
+        &world, non_lethal
+    ));
+
+    let mut world2 = World::default();
+    let mut wrong_driver_npc = login_character(CharacterId(1), &login_block("Other"), 1, 190, 200);
+    wrong_driver_npc.flags.remove(CharacterFlags::PLAYER);
+    wrong_driver_npc.driver = CDR_ARKHATAPRISON; // not CDR_NOP
+    world2.add_character(wrong_driver_npc);
+    let lethal_wrong_driver = LegacyHurtEvent {
+        target_id: CharacterId(1),
+        cause_id: CharacterId(2),
+        outcome: LegacyHurtOutcome {
+            killed: true,
+            ..Default::default()
+        },
+    };
+    assert!(!apply_arkhata_immortal_death_from_hurt_event(
         &world2,
         lethal_wrong_driver
     ));

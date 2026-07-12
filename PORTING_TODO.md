@@ -1426,8 +1426,19 @@ Ordered by player progression; the C file is the oracle.
   quest-54-59 obelisk/key-part/dungeon-key/ring chain) are now ported in
   `world/npc/area36/{glori,arquin,smith,homden}.rs`; details in
   PORTING_LEDGER.md)*
-- [ ] **Area 37 - `src/area/37/arkhata.c` (4,764 lines)** - Arkhata clerk/
-  quest NPC chain (pool/stopwatch/key items ported).
+- [~] **Area 37 - `src/area/37/arkhata.c` (4,764 lines, 23 character
+  drivers)** - Arkhata clerk/quest NPC chain (pool/stopwatch/key items
+  ported). REMAINING: `CDR_NOP` (Fighting School "Student" background
+  NPC, `world::npc::area37::nop`) and `CDR_ARKHATAPRISON` (Fortress
+  prisoner, pure `CDR_SIMPLEBADDY` tail call) are done; `CDR_MADHERMIT`
+  needs no work (shared driver, already covered by
+  `world::npc::area19::madhermit`). Still unported: `rammy`/`jaz`/
+  `fiona`/`ramin`/`arkhataskelly`/`arkhatamonk`/`bookeater`/`captain`/
+  `judge`/`fortressguard`/`jada`/`potmaker`/`hunter`/`thaipan`/`clerk`/
+  `trainer`/`kidnappee`/`krenach` - most read/write the shared
+  `struct arkhata_ppd` quest-state blob (`PlayerRuntime::arkhata_ppd`,
+  scaffolded in `player/areas_misc.rs`; its `LEGACY_ARKHATA_PPD_SIZE` had
+  a pre-existing size bug, now fixed - see ledger).
 - [ ] **Area 38 - `src/area/38/shrike.c`** - Shrike NPCs (amulet assembly
   ported).
 - [ ] **Common NPCs - `src/common/professor.c`, `src/common/npc_states.h`,
@@ -1467,6 +1478,10 @@ Keep entries to at most three lines: date, task, one-line result.
 Anything longer belongs in `PORTING_LEDGER.md`; historical verbose
 notes live in `PROGRESS_ARCHIVE.md`.
 
+- 2026-07-12: Area 37 STARTED: ported `CDR_NOP` (Fighting School "Student"
+  background NPC) and `CDR_ARKHATAPRISON` (pure `CDR_SIMPLEBADDY` tail
+  call); fixed a `LEGACY_ARKHATA_PPD_SIZE` size bug (25*4 -> 21*4). 4064
+  core [+7] + 1208 server tests [+4] pass, clean build/boot-smoke (area 37).
 - 2026-07-12: Area 36 CLOSED: ported the last four quest NPCs -
   `glori_driver`/`arquin_driver`/`smith_driver`/`homden_driver` (quest
   54-59 obelisk/key-part/dungeon-key/ring chain). 4057 core [+21] + 1204

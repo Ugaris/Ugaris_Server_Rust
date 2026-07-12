@@ -144,7 +144,9 @@ impl World {
         // `CDR_TEUFELRAT`'s `teufelrat_driver` (`teufel.c:1610-1626`) is
         // a pure tail call too - its own `NT_CHAR` case body is empty
         // (commented out in C), so unlike `CDR_TEUFELDEMON` it needs no
-        // extra per-tick logic of its own at all.
+        // extra per-tick logic of its own at all. `CDR_ARKHATAPRISON`'s
+        // `prisoner_driver` (`arkhata.c:4329-4331`) is the same pure tail
+        // call - see `CDR_ARKHATAPRISON`'s own doc comment.
         if (attacker.driver != CDR_SIMPLEBADDY
             && attacker.driver != CDR_DUNGEONFIGHTER
             && attacker.driver != CDR_PENTER
@@ -158,7 +160,8 @@ impl World {
             && attacker.driver != CDR_TEUFELDEMON
             && attacker.driver != CDR_TEUFELRAT
             && attacker.driver != CDR_CALIGARGUARD2
-            && attacker.driver != CDR_CALIGARSKELLY)
+            && attacker.driver != CDR_CALIGARSKELLY
+            && attacker.driver != CDR_ARKHATAPRISON)
             || attacker.action != 0
             || attacker.flags.contains(CharacterFlags::DEAD)
         {
@@ -705,7 +708,8 @@ impl World {
             | CharacterDriverState::MissionGiver(_)
             | CharacterDriverState::Gorwin(_)
             | CharacterDriverState::TeufelGambler(_)
-            | CharacterDriverState::TeufelQuest(_) => None,
+            | CharacterDriverState::TeufelQuest(_)
+            | CharacterDriverState::Nop(_) => None,
         }
     }
 
@@ -2671,7 +2675,8 @@ impl World {
                     || character.driver == CDR_TEUFELDEMON
                     || character.driver == CDR_TEUFELRAT
                     || character.driver == CDR_CALIGARGUARD2
-                    || character.driver == CDR_CALIGARSKELLY)
+                    || character.driver == CDR_CALIGARSKELLY
+                    || character.driver == CDR_ARKHATAPRISON)
                     && matches!(
                         character.driver_state,
                         Some(CharacterDriverState::SimpleBaddy(_))

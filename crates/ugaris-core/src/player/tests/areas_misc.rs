@@ -771,6 +771,24 @@ fn arkhata_ppd_exposes_rammy_state_read_only_independently_of_clerk_state() {
 }
 
 #[test]
+fn arkhata_ppd_size_matches_the_real_21_field_c_struct() {
+    // C `struct arkhata_ppd` (`src/area/37/arkhata.h:4-26`) has exactly
+    // 21 `int` fields (84 bytes) - `LEGACY_ARKHATA_PPD_SIZE` was
+    // previously `25 * 4` (100 bytes, copy-pasted from `struct
+    // nomad_ppd`'s own field count), which made
+    // `decode_legacy_arkhata_ppd` reject every genuine pre-migration
+    // `DRD_ARKHATA_PPD` blob (only 84 bytes on disk) as too short. A
+    // real, C-sized 84-byte legacy blob must decode successfully now.
+    assert_eq!(LEGACY_ARKHATA_PPD_SIZE, 21 * 4);
+
+    let mut real_c_sized_blob = vec![0u8; 21 * 4];
+    write_i32(&mut real_c_sized_blob, ARKHATA_PPD_MONK_STATE_OFFSET, 7);
+    let mut player = PlayerRuntime::connected(1, 0);
+    assert!(player.decode_legacy_arkhata_ppd(&real_c_sized_blob));
+    assert_eq!(player.arkhata_monk_state(), 7);
+}
+
+#[test]
 fn caligar_ppd_checks_skelly_door_unlock_flags() {
     let mut player = PlayerRuntime::connected(1, 0);
     assert!(!player.caligar_skelly_door_unlocked(0));

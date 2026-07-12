@@ -92,7 +92,8 @@ impl World {
             && character.driver != CDR_TEUFELDEMON
             && character.driver != CDR_TEUFELRAT
             && character.driver != CDR_CALIGARGUARD2
-            && character.driver != CDR_CALIGARSKELLY)
+            && character.driver != CDR_CALIGARSKELLY
+            && character.driver != CDR_ARKHATAPRISON)
             || character.action != 0
             || character.flags.contains(CharacterFlags::DEAD)
         {
@@ -351,7 +352,8 @@ impl World {
                     || character.driver == CDR_TEUFELDEMON
                     || character.driver == CDR_TEUFELRAT
                     || character.driver == CDR_CALIGARGUARD2
-                    || character.driver == CDR_CALIGARSKELLY)
+                    || character.driver == CDR_CALIGARSKELLY
+                    || character.driver == CDR_ARKHATAPRISON)
                     && matches!(
                         character.driver_state,
                         Some(CharacterDriverState::SimpleBaddy(_))
@@ -606,7 +608,8 @@ impl World {
                 | CharacterDriverState::MissionGiver(_)
                 | CharacterDriverState::Gorwin(_)
                 | CharacterDriverState::TeufelGambler(_)
-                | CharacterDriverState::TeufelQuest(_) => None,
+                | CharacterDriverState::TeufelQuest(_)
+                | CharacterDriverState::Nop(_) => None,
             });
         let Some(target_id) = target_id else {
             return false;

@@ -118,6 +118,7 @@ mod mission_start;
 mod moonie;
 mod nomad;
 mod nook;
+mod nop;
 mod npc_fight;
 mod npc_idle;
 mod npc_messages;

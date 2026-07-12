@@ -10,16 +10,16 @@ use crate::{
         apply_lab5_seyan_create_message, apply_labgnome_create_message,
         apply_simple_baddy_create_message, parse_arena_manager_driver_args,
         parse_clanclerk_driver_args, parse_clanmaster_driver_args, parse_clubmaster_driver_args,
-        ArenaFighterDriverData, ArenaMasterDriverData, AristocratDriverData, Astro2DriverData,
-        BrennethBranDriverData, BrithildieDriverData, BroklinDriverData, CamhermitDriverData,
-        CarlosDriverData, CharacterDriverState, ClaraDriverData, CountBranDriverData,
-        CountessaBranDriverData, DaughterBranDriverData, DungeonmasterDriverData,
-        DwarfChiefDriverData, DwarfShamanDriverData, DwarfSmithDriverData, FightDriverData,
-        ForestBranDriverData, ForestHermitDriverData, ForestImpDriverData, ForestRangerDriverData,
-        ForestWilliamDriverData, GateFightDriverData, GateWelcomeDriverData,
-        GolemKeyholdDriverData, GorwinDriverData, GreeterDriverData, GrinnichDriverData,
-        GuardBranDriverData, GwendylonDriverData, JanitorDriverData, JessicaDriverData,
-        JiuDriverData, KassimDriverData, KellyDriverData, LostDwarfDriverData,
+        parse_nop_driver_args, ArenaFighterDriverData, ArenaMasterDriverData, AristocratDriverData,
+        Astro2DriverData, BrennethBranDriverData, BrithildieDriverData, BroklinDriverData,
+        CamhermitDriverData, CarlosDriverData, CharacterDriverState, ClaraDriverData,
+        CountBranDriverData, CountessaBranDriverData, DaughterBranDriverData,
+        DungeonmasterDriverData, DwarfChiefDriverData, DwarfShamanDriverData, DwarfSmithDriverData,
+        FightDriverData, ForestBranDriverData, ForestHermitDriverData, ForestImpDriverData,
+        ForestRangerDriverData, ForestWilliamDriverData, GateFightDriverData,
+        GateWelcomeDriverData, GolemKeyholdDriverData, GorwinDriverData, GreeterDriverData,
+        GrinnichDriverData, GuardBranDriverData, GwendylonDriverData, JanitorDriverData,
+        JessicaDriverData, JiuDriverData, KassimDriverData, KellyDriverData, LostDwarfDriverData,
         MissionGiverDriverData, NookDriverData, ReskinDriverData, RouvenDriverData,
         SeymourDriverData, ShanraDriverData, SirJonesDriverData, SmuggleComDriverData,
         SpiritBranDriverData, SuperiorDriverData, SupermaxDriverData, TerionDriverData,
@@ -27,8 +27,8 @@ use crate::{
         TwoAlchemistDriverData, TwoBarkeeperDriverData, TwoSanwynDriverData, TwoSkellyDriverData,
         TwoThiefGuardDriverData, TwoThiefMasterDriverData, YoakinDriverData, YoatinDriverData,
         ARENA_FIGHTER_REST_POS, CDR_ARENAFIGHTER, CDR_ARENAMANAGER, CDR_ARENAMASTER,
-        CDR_ARISTOCRAT, CDR_ASTRO2, CDR_BRENNETHBRAN, CDR_BRITHILDIE, CDR_BROKLIN,
-        CDR_CALIGARGUARD2, CDR_CALIGARSKELLY, CDR_CAMHERMIT, CDR_CARLOS, CDR_CENTINEL,
+        CDR_ARISTOCRAT, CDR_ARKHATAPRISON, CDR_ASTRO2, CDR_BRENNETHBRAN, CDR_BRITHILDIE,
+        CDR_BROKLIN, CDR_CALIGARGUARD2, CDR_CALIGARSKELLY, CDR_CAMHERMIT, CDR_CARLOS, CDR_CENTINEL,
         CDR_CLANCLERK, CDR_CLANMASTER, CDR_CLUBMASTER, CDR_COUNTBRAN, CDR_COUNTESSABRAN,
         CDR_DAUGHTERBRAN, CDR_DUNGEONMASTER, CDR_DWARFCHIEF, CDR_DWARFSHAMAN, CDR_DWARFSMITH,
         CDR_FORESTBRAN, CDR_FORESTHERMIT, CDR_FORESTIMP, CDR_FORESTMONSTER, CDR_FORESTWILLIAM,
@@ -36,7 +36,7 @@ use crate::{
         CDR_GRINNICH, CDR_GUARDBRAN, CDR_GWENDYLON, CDR_JANITOR, CDR_JESSICA, CDR_JIU, CDR_KASSIM,
         CDR_KELLY, CDR_LAB2HERALD, CDR_LAB2UNDEAD, CDR_LAB4GNALB, CDR_LAB4SEYAN, CDR_LAB5DAEMON,
         CDR_LAB5MAGE, CDR_LAB5SEYAN, CDR_LABGNOMEDRIVER, CDR_LOSTDWARF, CDR_MISSIONGIVE, CDR_NOOK,
-        CDR_RESKIN, CDR_ROUVEN, CDR_SEYMOUR, CDR_SHANRA, CDR_SIMPLEBADDY, CDR_SIRJONES,
+        CDR_NOP, CDR_RESKIN, CDR_ROUVEN, CDR_SEYMOUR, CDR_SHANRA, CDR_SIMPLEBADDY, CDR_SIRJONES,
         CDR_SMUGGLECOM, CDR_SPIRITBRAN, CDR_SUPERIOR, CDR_SUPERMAX, CDR_SWAMPCLARA, CDR_TERION,
         CDR_TEUFELDEMON, CDR_TEUFELGAMBLER, CDR_TEUFELQUEST, CDR_TEUFELRAT, CDR_THOMAS, CDR_TRADER,
         CDR_TUNNELER_GORWIN, CDR_TWOALCHEMIST, CDR_TWOBARKEEPER, CDR_TWOGUARD, CDR_TWOSANWYN,
@@ -694,6 +694,34 @@ impl ZoneLoader {
             // `NT_CREATE` handler parses.
             character.push_driver_message(NT_CREATE, 0, 0, 0);
             apply_simple_baddy_create_message(&mut character, Some(&template.args), 0);
+        }
+        if template.driver == CDR_ARKHATAPRISON {
+            // C `ch_driver`'s `CDR_ARKHATAPRISON` dispatch (`arkhata.c:
+            // 4616-4618`): `prisoner_driver`'s entire body is an
+            // unconditional tail call to `char_driver(CDR_SIMPLEBADDY,
+            // CDT_DRIVER, cn, ret, lastact)`, reusing the SimpleBaddy
+            // driver's full idle-wander/auto-attack AI wholesale - same
+            // precedent as `CDR_TEUFELRAT`/`CDR_CALIGARSKELLY` above
+            // (`prisoner_dead`'s own "I know the secret, it's right
+            // here!" line, ported separately as `ugaris-server::
+            // world_events::death_hooks::
+            // apply_arkhata_prisoner_death_from_hurt_event`, is the only
+            // other C-visible behavior this driver has). The
+            // `Fortress_Enemies_and_Guard.chr` template carries no
+            // `arg=` line either.
+            character.push_driver_message(NT_CREATE, 0, 0, 0);
+            apply_simple_baddy_create_message(&mut character, Some(&template.args), 0);
+        }
+        if template.driver == CDR_NOP {
+            // C `nop_driver`'s `dir=` zone-file arg is parsed at
+            // `set_data`-creation time in C (the driver-data struct is
+            // per-character transient state, not re-parsed every tick) -
+            // ported here at spawn time instead of through the per-tick
+            // message loop, same precedent as `CDR_TWOGUARD` above. See
+            // `world::npc::area37::nop`'s module doc comment.
+            character.driver_state = Some(CharacterDriverState::Nop(parse_nop_driver_args(
+                &template.args,
+            )));
         }
         if template.driver == CDR_CALIGARGUARD2 {
             // C `ch_driver`'s `CDR_CALIGARGUARD2` dispatch

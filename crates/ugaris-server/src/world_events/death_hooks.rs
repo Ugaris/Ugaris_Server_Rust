@@ -1,8 +1,8 @@
 use super::*;
 use ugaris_core::character_driver::{
-    CDR_CENTINEL, CDR_CLANCLERK, CDR_CLANMASTER, CDR_LABGNOMEDRIVER, CDR_SMUGGLELEAD,
-    CDR_TUNNELER_GORWIN, CDR_TWOGUARD, CDR_TWOROBBER, CDR_TWOSERVANT, CDR_WARPFIGHTER,
-    CDR_WHITEROBBERBOSS,
+    CDR_ARKHATAPRISON, CDR_CENTINEL, CDR_CLANCLERK, CDR_CLANMASTER, CDR_LABGNOMEDRIVER, CDR_NOP,
+    CDR_SMUGGLELEAD, CDR_TUNNELER_GORWIN, CDR_TWOGUARD, CDR_TWOROBBER, CDR_TWOSERVANT,
+    CDR_WARPFIGHTER, CDR_WHITEROBBERBOSS,
 };
 use ugaris_core::world::{CS_ENEMY, CS_GUEST, LS_DEAD, LS_FINE};
 
@@ -1448,5 +1448,67 @@ pub(crate) fn apply_mission_fighter_death_from_hurt_event(
             ),
         );
     }
+    true
+}
+
+/// C `ch_died_driver`/`CDR_ARKHATAPRISON` dispatch (`arkhata.c:4698-
+/// 4700`) routes any death of the Fortress prisoner to `prisoner_dead(cn,
+/// co)` (`:4490-4492`), a plain unconditional `say(cn, "I know the
+/// secret, it's right here!")` - no `co`/killer checks at all, unlike the
+/// `immortal_dead` family above.
+pub(crate) fn apply_arkhata_prisoner_death_from_hurt_event(
+    world: &mut World,
+    event: LegacyHurtEvent,
+) -> bool {
+    if !event.outcome.killed {
+        return false;
+    }
+    let is_prisoner_kill = world
+        .characters
+        .get(&event.target_id)
+        .is_some_and(|target| target.driver == CDR_ARKHATAPRISON);
+    if !is_prisoner_kill {
+        return false;
+    }
+    world.npc_say(event.target_id, "I know the secret, it's right here!");
+    true
+}
+
+/// C `ch_died_driver`/`CDR_NOP` dispatch (`arkhata.c:4657-4659`) routes
+/// any death of a Fighting School "Student" NPC to `immortal_dead(cn,
+/// co)` (`:4486-4488`), the identical `charlog`-only bug line already
+/// ported for `CDR_GATE_WELCOME` above - same text. Unlike most of that
+/// family, the `Student` template (`zones/37/Fighting_School.chr`)
+/// carries no `CF_IMMORTAL` flag, so this path is genuinely reachable in
+/// practice, not just fidelity-for-dead-code. Most of `arkhata.c`'s
+/// other drivers (`rammy`/`jaz`/`fiona`/`arkhatamonk`/`captain`/`judge`/
+/// `jada`/`potmaker`/`hunter`/`thaipan`/`trainer`/`kidnappee`/`clerk`/
+/// `krenach`) route to this same `immortal_dead` function too
+/// (`arkhata.c:4643-4703`) - extend this driver list as each one is
+/// ported, same "grow the array" precedent as
+/// `apply_area1_quest_giver_death_from_hurt_event`'s
+/// `GWENDYLON_DEAD_DRIVERS`.
+pub(crate) fn apply_arkhata_immortal_death_from_hurt_event(
+    world: &World,
+    event: LegacyHurtEvent,
+) -> bool {
+    if !event.outcome.killed {
+        return false;
+    }
+    let Some(target) = world.characters.get(&event.target_id) else {
+        return false;
+    };
+    if target.driver != CDR_NOP {
+        return false;
+    }
+    debug!(
+        target: "client_log",
+        "{}",
+        format_client_log_message(
+            &target.name,
+            target.id.0,
+            "I JUST DIED! I'M SUPPOSED TO BE IMMORTAL!"
+        )
+    );
     true
 }

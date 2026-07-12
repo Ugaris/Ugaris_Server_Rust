@@ -214,7 +214,18 @@ pub const NOMAD_PPD_MAXNOMAD: usize = 10;
 
 pub const LEGACY_CALIGAR_PPD_SIZE: usize = 14 * 4 + 4;
 
-pub const LEGACY_ARKHATA_PPD_SIZE: usize = 25 * 4;
+/// C `struct arkhata_ppd` (`src/area/37/arkhata.h:4-26`): 21 `int` fields.
+/// Was previously `25 * 4` (a copy-paste-from-`LEGACY_NOMAD_PPD_SIZE`
+/// size bug - `struct arkhata_ppd` has no relation to `struct
+/// nomad_ppd`'s field count at all); fixed while porting `CDR_NOP`/
+/// `CDR_ARKHATAPRISON` (`world::npc::area37`). All three existing
+/// accessors' offsets (`ARKHATA_PPD_CLERK_STATE_OFFSET` at field 16,
+/// `ARKHATA_PPD_MONK_STATE_OFFSET` at field 4) stay within the corrected
+/// 21-field bound, so this only shrinks the size by the 4 unused trailing
+/// `int`s (16 bytes) that were never actually part of the C struct and
+/// were making legacy-blob decode reject genuine pre-migration
+/// `DRD_ARKHATA_PPD` rows (only 84 bytes on disk) as too short.
+pub const LEGACY_ARKHATA_PPD_SIZE: usize = 21 * 4;
 
 pub const LEGACY_STAFFER_PPD_SIZE: usize = 25 * 4;
 

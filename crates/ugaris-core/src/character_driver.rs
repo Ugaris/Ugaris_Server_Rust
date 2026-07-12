@@ -194,6 +194,23 @@ pub const CDR_CALIGARHOMDEN: u16 = 122;
 /// `world::npc::area36::caligar_guard2`'s module doc comment.
 pub const CDR_CALIGARGUARD2: u16 = 123;
 pub const CDR_CALIGARSKELLY: u16 = 124;
+/// C `#define CDR_NOP 136` (`src/system/drvlib.h:186`, comment "arkhata"):
+/// the Fighting School's stationary background "Student" NPCs
+/// (`src/area/37/arkhata.c::nop_driver`), see `world::npc::area37::nop`'s
+/// module doc comment.
+pub const CDR_NOP: u16 = 136;
+/// C `#define CDR_ARKHATAPRISON 151` (`src/system/drvlib.h:200`, comment
+/// "arkhata"): the Fortress prisoner NPC. C's own `ch_driver` dispatch
+/// (`arkhata.c:4616-4618`) is an unconditional tail call to
+/// `char_driver(CDR_SIMPLEBADDY, CDT_DRIVER, cn, ret, lastact)`
+/// (`prisoner_driver`, `arkhata.c:4329-4331`), reusing the SimpleBaddy
+/// driver's full idle-wander/auto-attack AI wholesale - same precedent as
+/// `CDR_TEUFELRAT`/`CDR_CALIGARSKELLY` above (`prisoner_dead`'s own
+/// "I know the secret, it's right here!" line, ported separately as
+/// `ugaris-server::world_events::death_hooks::
+/// apply_arkhata_prisoner_death_from_hurt_event`, is the only other
+/// C-visible behavior this driver has).
+pub const CDR_ARKHATAPRISON: u16 = 151;
 /// C `#define CDR_LAB2HERALD 196` (`src/system/drvlib.h:222`): the lab2
 /// graveyard chapel keeper (`src/area/22/lab2.c::lab2_herald_driver`), see
 /// `world::npc::area22::lab2_herald`'s module doc comment.
@@ -822,6 +839,7 @@ pub enum CharacterDriverState {
     Gorwin(crate::world::npc::area33::gorwin::GorwinDriverData),
     TeufelGambler(crate::world::npc::area34::teufelgambler::TeufelGambleDriverData),
     TeufelQuest(crate::world::npc::area34::teufelquest::TeufelQuestDriverData),
+    Nop(crate::world::npc::area37::nop::NopDriverData),
 }
 /// C `bank_driver_parse` from `src/module/bank.c`. The C driver defaults
 /// opening hours to 6..23 before parsing (`bank_driver` lines 304-309).
@@ -1644,7 +1662,8 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::MissionGiver(_)
             | CharacterDriverState::Gorwin(_)
             | CharacterDriverState::TeufelGambler(_)
-            | CharacterDriverState::TeufelQuest(_),
+            | CharacterDriverState::TeufelQuest(_)
+            | CharacterDriverState::Nop(_),
         ) => SimpleBaddyDriverData::default(),
         None => SimpleBaddyDriverData::default(),
     };
@@ -4220,6 +4239,7 @@ pub use crate::world::npc::area32::military::{
 pub use crate::world::npc::area33::gorwin::GorwinDriverData;
 pub use crate::world::npc::area34::teufelgambler::TeufelGambleDriverData;
 pub use crate::world::npc::area34::teufelquest::TeufelQuestDriverData;
+pub use crate::world::npc::area37::nop::{parse_nop_driver_args, NopDriverData};
 pub use crate::world::npc::area4::tester::TesterDriverData;
 pub use crate::world::npc::area8::fdemon_army::FarmyData;
 pub use crate::world::npc::arena::{
