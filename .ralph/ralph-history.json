@@ -1811,14 +1811,46 @@
         "test result: ok. 81 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 0 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 0.00s"
       ]
+    },
+    {
+      "iteration": 51,
+      "startedAt": "2026-07-12T04:28:47.152Z",
+      "endedAt": "2026-07-12T05:04:44.875Z",
+      "durationMs": 2156119,
+      "agent": "opencode",
+      "model": "anthropic/claude-sonnet-5",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "PORTING_TODO.md",
+        "crates/ugaris-core/src/item_driver/tests/area33_tunnel.rs",
+        "crates/ugaris-core/src/world/item_outcomes.rs",
+        "crates/ugaris-core/src/world/mod.rs",
+        "crates/ugaris-core/src/world/tests/tunnel.rs",
+        "crates/ugaris-server/src/tick_item_use_completion.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "All tests pass. Let's check the whole output for failures across all crates (not just the last one) and run cargo fmt.",
+        "All green, no warnings, no failures (matched \"warning\"/\"error\"/\"FAILED\" in test names, all \"ok\"). Let's now commit this work.",
+        "3. **Verified everything green**: `cargo fmt --all`, `cargo test --workspace` (3973 core [+9] / 81 db / 3 net / 45 protocol / 1204 server, all passing, zero failures/warnings), `cargo build -p ugaris-",
+        "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 1 previous error",
+        "test result: ok. 1204 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 6.46s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "\u001b[0m$ \u001b[0mcargo test --workspace 2>&1 | grep -iE \"FAILED|error\\[|warning:|test result\"",
+        "test item_driver::tests::alchemy::flask_driver_ports_failed_shake_reset_to_empty_bottle ... ok",
+        "test item_driver::tests::area34_teufel::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok",
+        "test world::tests::military::military_master_repeat_failed_hear_and_reroll_keywords_queue_matching_events ... ok"
+      ]
     }
   ],
-  "totalDurationMs": 109819302,
+  "totalDurationMs": 111975421,
   "struggleIndicators": {
     "repeatedErrors": {
       "3375 core (+17) and 1168 server (+6) tests all pass, zero failures. Now let's build ugaris-server fo": 1,
       "- `cargo fmt --all`, `cargo test --workspace` (3375 core + 1168 server, zero failures/warnings), `ca": 1,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 50,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 51,
       "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&": 29,
       "test error::tests::error_constants_match_legacy_header ... ok": 24,
       "test error::tests::error_strings_match_legacy_table ... ok": 24,
@@ -2043,13 +2075,21 @@
       "test world::tests::gorwin::gorwin_level_command_maxed_level_auto_promotes_without_charging ... FAILE": 1,
       "test world::tests::gorwin::gorwin_level_command_free_default_reset ... FAILED": 1,
       "All green: workspace tests pass (3964 core + 1204 server, zero failures), server builds clean, boot-": 1,
-      "test result: ok. 1204 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 6.46s": 1,
+      "test result: ok. 1204 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 6.46s": 2,
       "pub const COL_ERROR: &[u8] = COL_LIGHT_RED;": 1,
       "pub const COL_STR_ERROR: &str = COL_STR_LIGHT_RED;": 1,
       "52-    failed: &mut i32,": 1,
       "error: could not compile `ugaris-core` (lib test) due to 1 previous error": 1,
       "Good, tests pass. Let me check for any actual failures by looking at the full output and then read P": 1,
-      "test result: ok. 3964 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.28s": 1
+      "test result: ok. 3964 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.28s": 1,
+      "All tests pass. Let's check the whole output for failures across all crates (not just the last one) ": 1,
+      "All green, no warnings, no failures (matched \"warning\"/\"error\"/\"FAILED\" in test names, all \"ok\"). Le": 1,
+      "3. **Verified everything green**: `cargo fmt --all`, `cargo test --workspace` (3973 core [+9] / 81 d": 1,
+      "error: could not compile `ugaris-server` (bin \"ugaris-server\" test) due to 1 previous error": 1,
+      "\u001b[0m$ \u001b[0mcargo test --workspace 2>&1 | grep -iE \"FAILED|error\\[|warning:|test result\"": 1,
+      "test item_driver::tests::alchemy::flask_driver_ports_failed_shake_reset_to_empty_bottle ... ok": 1,
+      "test item_driver::tests::area34_teufel::beyond_potion_blocks_failed_requirements_and_teufelheim_aren": 1,
+      "test world::tests::military::military_master_repeat_failed_hear_and_reroll_keywords_queue_matching_e": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0
