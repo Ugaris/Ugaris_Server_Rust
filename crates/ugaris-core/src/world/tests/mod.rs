@@ -157,6 +157,7 @@ mod thiefguard;
 mod thiefmaster;
 mod thomas;
 mod trader;
+mod tunnel;
 mod turn_seyan;
 mod tutorial;
 mod two_skelly;

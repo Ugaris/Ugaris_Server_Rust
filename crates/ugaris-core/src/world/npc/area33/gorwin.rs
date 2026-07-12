@@ -300,13 +300,14 @@ pub enum GorwinOutcomeEvent {
 
 /// C `find_next_available_level` (`tunnel.c:516-525`): pure, so it takes
 /// the already-snapshotted [`GorwinPlayerFacts`] instead of `World`.
+/// Delegates to the shared [`crate::player::find_next_available_tunnel_level`]
+/// (also used by `world::tunnel`'s `IDR_TUNNELDOOR` `give_reward` port).
 fn find_next_available_level(
     facts: &GorwinPlayerFacts,
     start_level: i32,
     max_level: i32,
 ) -> Option<i32> {
-    let upper = MAX_TUNNEL_LEVEL.min(max_level);
-    ((start_level + 1)..=upper).find(|&level| facts.used_at(level) < MAX_TUNNEL_USES)
+    crate::player::find_next_available_tunnel_level(&facts.tunnel_used, start_level, max_level)
 }
 
 /// C `is_player_in_tunnel` (`tunnel.c:774-792`), narrowed to the pure

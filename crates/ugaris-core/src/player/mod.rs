@@ -34,6 +34,7 @@ pub use labs::{lab4_seyan_state_from_got, lab5_seyan_state_from_got};
 pub use misc::*;
 pub use settings::*;
 pub use strategy::StrategyPpd;
+pub use tunnel::find_next_available_tunnel_level;
 
 #[cfg(test)]
 mod tests;

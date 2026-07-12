@@ -1220,6 +1220,21 @@ pub(crate) async fn process_completed_action_outcomes(
                                 )
                                 .await;
                             }
+                            outcome @ ugaris_core::item_driver::ItemDriverOutcome::TunnelDoorExitReward {
+                                ..
+                            } => {
+                                tick_item_use_tunnel::dispatch_tunnel_outcome(
+                                    &mut world,
+                                    &mut runtime,
+                                    &achievement_repository,
+                                    config.area_id,
+                                    outcome,
+                                    &mut feedback,
+                                    &mut executed,
+                                    &mut blocked,
+                                )
+                                .await;
+                            }
                             ugaris_core::item_driver::ItemDriverOutcome::IdentityTag { .. } => {
                                 executed += 1;
                             }

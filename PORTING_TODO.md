@@ -1417,14 +1417,21 @@ Ordered by player progression; the C file is the oracle.
   "Tunnel Changer" NPC: greeting sequence, `analyse_text_driver`/`qa[]`,
   `handle_tunnel_info`, `initialize_gorwin_ppd`, `change_tunnel_level`
   with all its fee/fudge/easter-egg branches, idle mutterings) is fully
-  ported (`world/npc/area33/gorwin.rs`). Still unported: the
-  `IDR_TUNNELDOOR`/`IDR_TUNNELDOOR2` item drivers (`tunneldoor`/
-  `mean_door`), the procedural creeper-dungeon generator (`build_fighter`/
-  `handle_block_marker`/`handle_creeper_marker`/`find_unused_sector`), and
-  `give_reward` (the actual exp/military-rank payout + the
-  `achievement_add_tunnel_level` wiring this checkbox calls out - deferred
-  to that slice since it lives in `tunneldoor`'s `DOOR_EXIT_*` branches,
-  not in Gorwin). `IID_TUNNELDOOR1/2`/`IID_TUNNELENEMY1/2/3/ALL` item-id
+  ported (`world/npc/area33/gorwin.rs`). `IDR_TUNNELDOOR`'s
+  `DOOR_EXIT_EXP`/`DOOR_EXIT_MILITARY` reward-pillar branches plus
+  `give_reward` (the full exp/military-rank payout, auto-promote-on-
+  mastery ladder, and the `achievement_add_tunnel_level` wiring this
+  checkbox called out) are now also ported
+  (`item_driver::area33_tunnel::tunneldoor_driver` +
+  `world::tunnel::apply_tunnel_reward`, dispatched via
+  `tick_item_use_tunnel.rs`; a new shared
+  `player::find_next_available_tunnel_level` factors the promote-search
+  logic out of `gorwin.rs`'s own copy). Still unported: `tunneldoor`'s
+  `DOOR_ENTRY`/`DOOR_CONTINUE` branches (the procedural creeper-dungeon
+  generator: `build_fighter`/`handle_block_marker`/`handle_creeper_marker`/
+  `find_unused_sector`) and `IDR_TUNNELDOOR2` (`mean_door`) - until the
+  former lands, a player has no live-gameplay way to actually reach an
+  exit pillar. `IID_TUNNELDOOR1/2`/`IID_TUNNELENEMY1/2/3/ALL` item-id
   constants are already added for that follow-up.
 - [ ] **Area 34 - `src/area/34/teufel.c`** - rat/gambler NPCs, arena score
   rewards (rat nest items ported).
@@ -1471,6 +1478,11 @@ Keep entries to at most three lines: date, task, one-line result.
 Anything longer belongs in `PORTING_LEDGER.md`; historical verbose
 notes live in `PROGRESS_ARCHIVE.md`.
 
+- 2026-07-12: Area 33 progress: ported `IDR_TUNNELDOOR`'s exp/military
+  exit-pillar branches + `give_reward` (auto-promote ladder,
+  `achievement_add_tunnel_level` wiring). `DOOR_ENTRY`/`DOOR_CONTINUE`
+  maze generator + `IDR_TUNNELDOOR2` still unported. 3964 core [+17] +
+  1204 server tests, boot-smoke.
 - 2026-07-12: Area 32 - ported `RNORB` (`create_orb()`), the last reward-
   shop gap, via existing `area_apply` orb helpers. 24/24 rewards now
   functional; task closed [x]. 3944 core + 1204 server [+1] tests, boot-smoke.

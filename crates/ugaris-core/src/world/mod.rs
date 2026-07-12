@@ -74,6 +74,7 @@ mod strategy_worker;
 mod teleport;
 mod text;
 mod traps_hazards;
+mod tunnel;
 mod turn_seyan;
 mod tutorial;
 mod values;
@@ -144,6 +145,7 @@ pub(crate) use teleport::*;
 pub use text::*;
 #[allow(unused_imports)]
 pub(crate) use traps_hazards::*;
+pub use tunnel::*;
 pub use tutorial::*;
 pub use values::*;
 

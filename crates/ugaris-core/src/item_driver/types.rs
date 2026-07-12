@@ -2365,6 +2365,17 @@ pub enum ItemDriverOutcome {
         item_id: ItemId,
         schedule_after_ticks: u32,
     },
+    /// C `tunneldoor`'s `DOOR_EXIT_EXP`/`DOOR_EXIT_MILITARY` branches
+    /// (`src/area/33/tunnel.c:630-636`): a player stepped on one of the
+    /// two exp/military-rank reward pillars. `door_type` is the raw
+    /// `it[in].drdata[0]` (`enum TunnelDoorType`, `2` or `3` here - the
+    /// `DOOR_ENTRY`/`DOOR_CONTINUE` maze-generator branches are a
+    /// separate, not-yet-ported slice and never produce this variant).
+    TunnelDoorExitReward {
+        item_id: ItemId,
+        character_id: CharacterId,
+        door_type: u8,
+    },
     AccountDepotOpened {
         item_id: ItemId,
         character_id: CharacterId,

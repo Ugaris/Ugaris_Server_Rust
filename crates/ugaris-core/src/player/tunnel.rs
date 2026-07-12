@@ -101,3 +101,23 @@ impl PlayerRuntime {
         write_i32(&mut self.gorwin_ppd, 0, value);
     }
 }
+
+/// C `find_next_available_level` (`src/area/33/tunnel.c:516-525`): pure
+/// scan for the next tunnel level above `start_level` (up to
+/// `min(MAX_TUNNEL_LEVEL, max_level)`) with `used[level] < MAX_TUNNEL_USES`
+/// completions recorded. `tunnel_used` is a `PlayerRuntime::tunnel_used`
+/// snapshot indexed by level directly (`tunnel_ppd::used[204]`), the same
+/// shape both call sites already needed to pre-fetch since neither has a
+/// live `&PlayerRuntime` at hand: `world::npc::area33::gorwin`'s
+/// character-driver tick (`GorwinPlayerFacts::tunnel_used`) and
+/// `world::tunnel`'s `IDR_TUNNELDOOR` `give_reward` port
+/// (`TunnelRewardFacts::tunnel_used`).
+pub fn find_next_available_tunnel_level(
+    tunnel_used: &[u8],
+    start_level: i32,
+    max_level: i32,
+) -> Option<i32> {
+    let upper = MAX_TUNNEL_LEVEL.min(max_level);
+    ((start_level + 1)..=upper)
+        .find(|&level| tunnel_used.get(level as usize).copied().unwrap_or(0) < MAX_TUNNEL_USES)
+}

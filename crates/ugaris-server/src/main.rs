@@ -85,6 +85,7 @@ mod tick_item_use_skelraise;
 mod tick_item_use_strategy;
 mod tick_item_use_teufel;
 mod tick_item_use_transport;
+mod tick_item_use_tunnel;
 mod tick_item_use_warp;
 mod tick_item_use_xmas_swamp;
 mod tick_npc;
@@ -258,9 +259,10 @@ use ugaris_core::{
         BankEvent, ClanclerkEvent, ClanmasterEvent, ClubmasterEvent, DungeonRaidBuildRequest,
         FirstKillCheck, GateWelcomeOutcomeEvent, GateWelcomePlayerFacts, LegacyHurtEvent,
         LookMapRequest, LootKiller, LootRegistry, MerchantTradeResult, PendingDeathLootRoll,
-        PunishmentNote, RaiseSkillOutcome, StealOutcome, StoreWare, TraderEvent, TutorialHintKind,
-        TutorialOutcome, TutorialPlayerFacts, WorldActionCompletion, AC_STATUS_FLAGGED,
-        AC_STATUS_SUSPICIOUS, AC_STATUS_VERIFIED, MERCHANT_STORE_SIZE, PUNISHMENT_NOTE_KIND,
+        PunishmentNote, RaiseSkillOutcome, StealOutcome, StoreWare, TraderEvent, TunnelRewardFacts,
+        TutorialHintKind, TutorialOutcome, TutorialPlayerFacts, WorldActionCompletion,
+        AC_STATUS_FLAGGED, AC_STATUS_SUSPICIOUS, AC_STATUS_VERIFIED, MERCHANT_STORE_SIZE,
+        PUNISHMENT_NOTE_KIND,
     },
     zone::ZoneLoader,
     ServerConfig, TickRate, World,
