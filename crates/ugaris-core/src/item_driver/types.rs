@@ -142,6 +142,12 @@ pub struct ItemDriverContext {
     /// (`staffer.c:339`). `None` when the item isn't `IDR_STAFFER`
     /// `drdata[0]==4`.
     pub rouven_state: Option<i32>,
+    /// C `check_area_clear(in)` (`src/area/33/tunnel.c:750-762`), read
+    /// before `mean_door`'s `cn == 0` automatic-call branch decides
+    /// whether to `open_door`. Only computed for `IDR_TUNNELDOOR2` timer
+    /// calls (`None` is treated as "not clear", never opening the door by
+    /// mistake) - see `World::tunnel_mean_door_area_clear`.
+    pub tunnel_door_area_clear: Option<bool>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -2375,6 +2381,30 @@ pub enum ItemDriverOutcome {
         item_id: ItemId,
         character_id: CharacterId,
         door_type: u8,
+    },
+    /// C `mean_door`'s `cn == 0` automatic-call branch (`src/area/33/
+    /// tunnel.c:736-748`, `IDR_TUNNELDOOR2`): the periodic self-
+    /// reschedule (`call_item(it[in].driver, in, 0, ticker +
+    /// DOOR_CHECK_INTERVAL)`, unconditional every call) plus
+    /// `check_area_clear`'s decision on whether to `open_door` this time.
+    /// `x`/`y` are the door item's own position, needed by
+    /// `World::apply_item_driver_outcome` to mutate the map cell after
+    /// the mutable `Item`/`Character` borrows used to build this outcome
+    /// are already released.
+    TunnelDoorAreaCheck {
+        item_id: ItemId,
+        x: u16,
+        y: u16,
+        opened: bool,
+        schedule_after_ticks: u64,
+    },
+    /// C `mean_door`'s player-interaction branch (`tunnel.c:744-747`,
+    /// literally commented `// Player interaction (not implemented in the
+    /// original code)`) - the door only ever reacts to its own periodic
+    /// timer, never to a player touching it.
+    TunnelDoorFlavor {
+        item_id: ItemId,
+        character_id: CharacterId,
     },
     AccountDepotOpened {
         item_id: ItemId,

@@ -321,6 +321,7 @@ pub fn execute_item_driver_with_context(
                 IDR_CALIGAR => caligar_driver(character, item, context),
                 IDR_ARKHATA => arkhata_driver(character, item, context),
                 IDR_TUNNELDOOR => tunneldoor_driver(character, item),
+                IDR_TUNNELDOOR2 => mean_door_driver(character, item, context),
                 IDR_TEUFELDOOR => teufel_door_driver(character, item),
                 IDR_TEUFELARENA => teufel_arena_driver(character, item, context),
                 IDR_TEUFELRATNEST => teufel_ratnest_driver(character, item, context),

@@ -23,6 +23,13 @@ use crate::player::{find_next_available_tunnel_level, MAX_TUNNEL_USES};
 /// two bytes isn't worth it).
 const DOOR_EXIT_EXP: u8 = 2;
 
+/// C `DOOR_RANGE`/`DOOR_DEPTH` (`src/area/33/tunnel.h:31-32`), duplicated
+/// from `item_driver::area33_tunnel` for the same reason as
+/// [`DOOR_EXIT_EXP`] - `check_area_clear` needs `self.map`/
+/// `self.characters`, which only `World` (this module) has access to.
+const DOOR_RANGE: u16 = 4;
+const DOOR_DEPTH: u16 = 20;
+
 /// Snapshot of the `PlayerRuntime` fields C `give_reward` reads, matching
 /// `world::npc::area33::gorwin::GorwinPlayerFacts`'s shape.
 #[derive(Debug, Clone)]
@@ -167,5 +174,36 @@ impl World {
         }
 
         outcome
+    }
+
+    /// C `check_area_clear(in)` (`src/area/33/tunnel.c:750-762`): scans the
+    /// `DOOR_RANGE`-wide, `DOOR_DEPTH`-deep rectangle in front of a
+    /// `IDR_TUNNELDOOR2` "mean door" (`x` ± `DOOR_RANGE`, `y+1` through
+    /// `y+DOOR_DEPTH-1`) for any non-player character. Out-of-bounds tiles
+    /// are skipped (C's raw `map[x+y*MAXMAP]` indexing has no such bounds
+    /// check, but every real door placement keeps this rectangle on-map).
+    pub(crate) fn tunnel_mean_door_area_clear(&self, x: u16, y: u16) -> bool {
+        let x_start = x.saturating_sub(DOOR_RANGE);
+        let x_end = x.saturating_add(DOOR_RANGE);
+        let y_start = y.saturating_add(1);
+        let y_end = y.saturating_add(DOOR_DEPTH);
+        for ty in y_start..y_end {
+            for tx in x_start..=x_end {
+                let Some(tile) = self.map.tile(usize::from(tx), usize::from(ty)) else {
+                    continue;
+                };
+                if tile.character == 0 {
+                    continue;
+                }
+                let occupant_is_player = self
+                    .characters
+                    .get(&CharacterId(u32::from(tile.character)))
+                    .is_some_and(|character| character.flags.contains(CharacterFlags::PLAYER));
+                if !occupant_is_player {
+                    return false;
+                }
+            }
+        }
+        true
     }
 }

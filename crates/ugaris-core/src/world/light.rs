@@ -205,6 +205,13 @@ impl World {
                 IDR_LAB5_ITEM if matches!(item.driver_data.first().copied(), Some(2 | 13)) => {
                     Some(item_id)
                 }
+                // C `mean_door`'s own unconditional self-reschedule
+                // (`src/area/33/tunnel.c:739`, already ported as
+                // `World::apply_item_driver_outcome`'s
+                // `TunnelDoorAreaCheck` arm) - same "always-on ambient
+                // `cn == 0` driver needs its first timer call primed"
+                // class as every other entry in this match.
+                IDR_TUNNELDOOR2 => Some(item_id),
                 _ => None,
             })
             .collect();

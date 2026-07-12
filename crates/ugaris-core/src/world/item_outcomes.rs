@@ -414,6 +414,12 @@ impl World {
             effective_context.fdemon_loader_power =
                 fdemon_loader_power_for_light(&self.items, item_id);
         }
+        if driver == IDR_TUNNELDOOR2 && effective_context.tunnel_door_area_clear.is_none() {
+            if let Some((x, y)) = self.items.get(&item_id).map(|item| (item.x, item.y)) {
+                effective_context.tunnel_door_area_clear =
+                    Some(self.tunnel_mean_door_area_clear(x, y));
+            }
+        }
 
         let Some(item) = self.items.get_mut(&item_id) else {
             return ItemDriverOutcome::Noop;
@@ -1920,6 +1926,34 @@ impl World {
                 outcome
             }
             ItemDriverOutcome::PalaceDoorKeyRequired { .. } => outcome,
+            ItemDriverOutcome::TunnelDoorAreaCheck {
+                item_id,
+                x,
+                y,
+                opened,
+                schedule_after_ticks,
+            } => {
+                // C `mean_door`'s unconditional `call_item(...)`
+                // reschedule (`tunnel.c:739`) runs before the
+                // `check_area_clear` check, regardless of its result.
+                self.schedule_item_driver_timer(item_id, CharacterId(0), schedule_after_ticks);
+                if opened {
+                    // C `open_door` (`tunnel.c:764-772`).
+                    if let Some(tile) = self.map.tile_mut(usize::from(x), usize::from(y)) {
+                        tile.foreground_sprite = 0;
+                        tile.flags.remove(MapFlags::TMOVEBLOCK | MapFlags::TSIGHTBLOCK);
+                    }
+                    self.mark_dirty_sector(usize::from(x), usize::from(y));
+                    self.pending_area_texts.push(WorldAreaText {
+                        x,
+                        y,
+                        max_distance: 10,
+                        message: "The door opens mysteriously.".to_string(),
+                    });
+                }
+                outcome
+            }
+            ItemDriverOutcome::TunnelDoorFlavor { .. } => outcome,
             ItemDriverOutcome::TorchExtinguishedUnderwater {
                 item_id,
                 character_id,
