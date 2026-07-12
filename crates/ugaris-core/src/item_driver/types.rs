@@ -2375,9 +2375,23 @@ pub enum ItemDriverOutcome {
     /// (`src/area/33/tunnel.c:630-636`): a player stepped on one of the
     /// two exp/military-rank reward pillars. `door_type` is the raw
     /// `it[in].drdata[0]` (`enum TunnelDoorType`, `2` or `3` here - the
-    /// `DOOR_ENTRY`/`DOOR_CONTINUE` maze-generator branches are a
-    /// separate, not-yet-ported slice and never produce this variant).
+    /// `DOOR_ENTRY`/`DOOR_CONTINUE` branches produce
+    /// [`ItemDriverOutcome::TunnelDoorEnter`] instead).
     TunnelDoorExitReward {
+        item_id: ItemId,
+        character_id: CharacterId,
+        door_type: u8,
+    },
+    /// C `tunneldoor`'s `DOOR_ENTRY`/`DOOR_CONTINUE` branches
+    /// (`src/area/33/tunnel.c:638-734`): a player stepped on the lobby
+    /// entrance column (`door_type == 0`) or a "door to next level"
+    /// column inside an active tunnel (`door_type == 1`). `door_type` is
+    /// the raw `it[in].drdata[0]` (`enum TunnelDoorType`). Both branches
+    /// need `PlayerRuntime` (`gorwin_ppd`/`tunnel_ppd`) to compute the
+    /// target level before `World::plan_tunnel_entry` can run the actual
+    /// map-scan/creeper-spawn logic - see `ugaris-server`'s
+    /// `dispatch_tunnel_enter_outcome`.
+    TunnelDoorEnter {
         item_id: ItemId,
         character_id: CharacterId,
         door_type: u8,

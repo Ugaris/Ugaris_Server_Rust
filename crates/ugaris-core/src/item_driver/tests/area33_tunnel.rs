@@ -61,20 +61,21 @@ fn tunneldoor_driver_exit_pillars_produce_reward_outcome() {
     }
 }
 
-// `DOOR_ENTRY`/`DOOR_CONTINUE` (the not-yet-ported creeper-dungeon
-// generator) fall through to `Unsupported` - a documented gap, not a
-// regression (this driver was entirely undispatched before this port).
+// `DOOR_ENTRY`/`DOOR_CONTINUE` (the entrance column and an in-tunnel
+// "door to next level" column) dispatch to `TunnelDoorEnter` - the actual
+// map-scan/creeper-spawn logic needs `PlayerRuntime`, so it lives in
+// `ugaris-server`'s `dispatch_tunnel_enter_outcome`.
 #[test]
-fn tunneldoor_driver_entry_and_continue_are_unsupported() {
+fn tunneldoor_driver_entry_and_continue_produce_enter_outcome() {
     let mut character = character(1);
     for door_type in [0u8, 1u8] {
         let mut door = tunnel_door(1, door_type);
         assert_eq!(
             execute_item_driver(&mut character, &mut door, request(1, 1), 33, false),
-            ItemDriverOutcome::Unsupported {
-                driver: IDR_TUNNELDOOR,
+            ItemDriverOutcome::TunnelDoorEnter {
                 item_id: ItemId(1),
                 character_id: CharacterId(1),
+                door_type,
             }
         );
     }

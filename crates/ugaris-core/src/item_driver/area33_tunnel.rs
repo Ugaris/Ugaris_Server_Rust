@@ -6,18 +6,20 @@
 //! here - see [`ItemDriverOutcome::TunnelDoorExitReward`] and its
 //! reward-math counterpart, `World::apply_tunnel_reward`
 //! (`crate::world::tunnel`). `mean_door` (`:736-748`, `IDR_TUNNELDOOR2`) is
-//! also ported - see [`mean_door_driver`]. The `DOOR_ENTRY`/`DOOR_CONTINUE`
-//! branches of `tunneldoor` itself (the procedural creeper-dungeon
-//! generator: `build_fighter`/`handle_block_marker`/`handle_creeper_marker`/
-//! `find_unused_sector`) are a separate, not-yet-ported slice - see
-//! `PORTING_TODO.md`'s Area 33 entry. Until that lands, a player has no
-//! live-gameplay way to reach either of these doors; this slice ports
-//! `give_reward`'s full reward/promotion math and `mean_door`'s periodic
-//! area-clear/open-door logic ahead of that wiring, tested directly.
+//! also ported - see [`mean_door_driver`]. `tunneldoor`'s `DOOR_ENTRY`/
+//! `DOOR_CONTINUE` branches (`:638-734`, the creeper-dungeon instance
+//! scan/spawn) dispatch to [`ItemDriverOutcome::TunnelDoorEnter`] here -
+//! both need `PlayerRuntime` (`gorwin_ppd`/`tunnel_ppd`) to compute the
+//! target level before the actual map scan can run, so the map-mutation/
+//! creeper-spawn-planning logic itself lives in `World::
+//! plan_tunnel_entry` (`crate::world::tunnel`), driven from
+//! `ugaris-server`'s `dispatch_tunnel_enter_outcome`.
 
 use super::*;
 
 /// C `enum TunnelDoorType` (`src/area/33/tunnel.h:16`).
+const DOOR_ENTRY: u8 = 0;
+const DOOR_CONTINUE: u8 = 1;
 const DOOR_EXIT_EXP: u8 = 2;
 const DOOR_EXIT_MILITARY: u8 = 3;
 
@@ -25,11 +27,9 @@ const DOOR_EXIT_MILITARY: u8 = 3;
 /// second).
 const DOOR_CHECK_INTERVAL: u64 = TICKS_PER_SECOND;
 
-/// C `tunneldoor` (`src/area/33/tunnel.c:603-734`), narrowed to the
-/// `DOOR_EXIT_EXP`/`DOOR_EXIT_MILITARY` branches (`:630-636`). The
-/// `DOOR_ENTRY`/`DOOR_CONTINUE` branches fall through to `Unsupported`
-/// (documented gap, not a regression - this driver was entirely
-/// undispatched before this port).
+/// C `tunneldoor` (`src/area/33/tunnel.c:603-734`)'s dispatch: which
+/// `enum TunnelDoorType` this particular door column is (`it[in].
+/// drdata[0]`) decides which outcome variant to hand back.
 pub(crate) fn tunneldoor_driver(character: &Character, item: &Item) -> ItemDriverOutcome {
     // C `if (!cn) return; // automatic call` (`:608-610`).
     if character.id.0 == 0 {
@@ -38,6 +38,11 @@ pub(crate) fn tunneldoor_driver(character: &Character, item: &Item) -> ItemDrive
 
     let door_type = drdata(item, 0);
     match door_type {
+        DOOR_ENTRY | DOOR_CONTINUE => ItemDriverOutcome::TunnelDoorEnter {
+            item_id: item.id,
+            character_id: character.id,
+            door_type,
+        },
         DOOR_EXIT_EXP | DOOR_EXIT_MILITARY => ItemDriverOutcome::TunnelDoorExitReward {
             item_id: item.id,
             character_id: character.id,

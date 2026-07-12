@@ -1843,18 +1843,52 @@
         "test item_driver::tests::area34_teufel::beyond_potion_blocks_failed_requirements_and_teufelheim_arena ... ok",
         "test world::tests::military::military_master_repeat_failed_hear_and_reroll_keywords_queue_matching_events ... ok"
       ]
+    },
+    {
+      "iteration": 52,
+      "startedAt": "2026-07-12T05:04:51.100Z",
+      "endedAt": "2026-07-12T06:13:58.593Z",
+      "durationMs": 4145955,
+      "agent": "opencode",
+      "model": "anthropic/claude-sonnet-5",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "PORTING_TODO.md",
+        "crates/ugaris-core/src/item_driver/area33_tunnel.rs",
+        "crates/ugaris-core/src/item_driver/tests/area33_tunnel.rs",
+        "crates/ugaris-core/src/item_driver/types.rs",
+        "crates/ugaris-core/src/world/tests/tunnel.rs",
+        "crates/ugaris-core/src/world/tunnel.rs",
+        "crates/ugaris-server/src/tick_item_use_completion.rs",
+        "crates/ugaris-server/src/tick_item_use_tunnel.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "Good, no actual failures - those are just test names containing \"error\"/\"warning\". Health check is clean. Now let's read PORTING_TODO.md.",
+        "No warnings, zero failures. Now let's boot-smoke test since this touches map sync / runtime loop.",
+        "All verification passed: `cargo fmt --all` clean, `cargo test --workspace` (3985+81+3+45+1204, all green, zero failures), `cargo build -p ugaris-server` clean with zero warnings, and boot-smoke confir",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&1 | grep -E \"FAILED|error|warning\" | head -30",
+        "test error::tests::error_constants_match_legacy_header ... ok",
+        "test error::tests::error_strings_match_legacy_table ... ok",
+        "test error::tests::out_of_range_errors_use_c_fallback_string ... ok",
+        "test macro_daemon::tests::first_failure_is_a_gentle_warning_with_ten_to_twenty_minute_reschedule ... ok",
+        "test macro_daemon::tests::second_failure_is_a_sterner_warning ... ok"
+      ]
     }
   ],
-  "totalDurationMs": 111975421,
+  "totalDurationMs": 116121376,
   "struggleIndicators": {
     "repeatedErrors": {
       "3375 core (+17) and 1168 server (+6) tests all pass, zero failures. Now let's build ugaris-server fo": 1,
       "- `cargo fmt --all`, `cargo test --workspace` (3375 core + 1168 server, zero failures/warnings), `ca": 1,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 51,
-      "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&": 29,
-      "test error::tests::error_constants_match_legacy_header ... ok": 24,
-      "test error::tests::error_strings_match_legacy_table ... ok": 24,
-      "test error::tests::out_of_range_errors_use_c_fallback_string ... ok": 24,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 52,
+      "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&": 30,
+      "test error::tests::error_constants_match_legacy_header ... ok": 25,
+      "test error::tests::error_strings_match_legacy_table ... ok": 25,
+      "test error::tests::out_of_range_errors_use_c_fallback_string ... ok": 25,
       "test world::tests::dungeon_master::attack_command_failure_says_error_and_never_charges_or_queues ...": 14,
       "test result: ok. 3358 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.30s": 1,
       "test result: ok. 81 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 31,
@@ -1934,8 +1968,8 @@
       "Health check passes. Let's read the full test output for failures and check PORTING_TODO.md.": 1,
       "Clean rebuild with zero warnings. Everything is green: `cargo fmt --all` (no diff), `cargo test --wo": 1,
       "**Verification:** `cargo fmt --all` clean, `cargo test --workspace` all green (3601 core [+11] / 81 ": 1,
-      "test macro_daemon::tests::first_failure_is_a_gentle_warning_with_ten_to_twenty_minute_reschedule ...": 4,
-      "test macro_daemon::tests::second_failure_is_a_sterner_warning ... ok": 4,
+      "test macro_daemon::tests::first_failure_is_a_gentle_warning_with_ten_to_twenty_minute_reschedule ...": 5,
+      "test macro_daemon::tests::second_failure_is_a_sterner_warning ... ok": 5,
       "**Health check**: Workspace was green (3601 core + 1168 server tests, zero failures) at the start.": 1,
       "**Verification**: `cargo fmt --all` (clean), `cargo test --workspace` (3616 core [+15], 1168 server,": 1,
       "\u001b[0m$ \u001b[0mcargo test --workspace 2>&1 | grep -E \"FAILED|error\\[|error:|test result\"": 2,
@@ -2089,7 +2123,10 @@
       "\u001b[0m$ \u001b[0mcargo test --workspace 2>&1 | grep -iE \"FAILED|error\\[|warning:|test result\"": 1,
       "test item_driver::tests::alchemy::flask_driver_ports_failed_shake_reset_to_empty_bottle ... ok": 1,
       "test item_driver::tests::area34_teufel::beyond_potion_blocks_failed_requirements_and_teufelheim_aren": 1,
-      "test world::tests::military::military_master_repeat_failed_hear_and_reroll_keywords_queue_matching_e": 1
+      "test world::tests::military::military_master_repeat_failed_hear_and_reroll_keywords_queue_matching_e": 1,
+      "Good, no actual failures - those are just test names containing \"error\"/\"warning\". Health check is c": 1,
+      "No warnings, zero failures. Now let's boot-smoke test since this touches map sync / runtime loop.": 1,
+      "All verification passed: `cargo fmt --all` clean, `cargo test --workspace` (3985+81+3+45+1204, all g": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

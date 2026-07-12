@@ -1235,6 +1235,19 @@ pub(crate) async fn process_completed_action_outcomes(
                                 )
                                 .await;
                             }
+                            outcome @ ugaris_core::item_driver::ItemDriverOutcome::TunnelDoorEnter {
+                                ..
+                            } => {
+                                tick_item_use_tunnel::dispatch_tunnel_enter_outcome(
+                                    &mut world,
+                                    &mut zone_loader,
+                                    &mut runtime,
+                                    outcome,
+                                    &mut feedback,
+                                    &mut executed,
+                                    &mut blocked,
+                                );
+                            }
                             ugaris_core::item_driver::ItemDriverOutcome::TunnelDoorAreaCheck {
                                 ..
                             }

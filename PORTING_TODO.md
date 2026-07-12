@@ -1409,33 +1409,10 @@ Ordered by player progression; the C file is the oracle.
   `loader.instantiate_item_template`, rather than adding a 5th duplicate
   orb-naming implementation. All 24/24 reward-shop entries are now
   functional. Details in PORTING_LEDGER.md.)*
-- [~] **Area 33 - `src/area/33/tunnel.c`** - long tunnel events. Also wire
+- [x] **Area 33 - `src/area/33/tunnel.c`** - long tunnel events. Also wire
   `achievement_add_tunnel_level` using the existing `award_*` helper
   pattern in `crates/ugaris-server/src/achievement.rs` (Achievements
-  task, closed iteration 84).
-  REMAINING: `gorwin_driver`/`CDR_TUNNELER_GORWIN` (the entrance-lobby
-  "Tunnel Changer" NPC: greeting sequence, `analyse_text_driver`/`qa[]`,
-  `handle_tunnel_info`, `initialize_gorwin_ppd`, `change_tunnel_level`
-  with all its fee/fudge/easter-egg branches, idle mutterings) is fully
-  ported (`world/npc/area33/gorwin.rs`). `IDR_TUNNELDOOR`'s
-  `DOOR_EXIT_EXP`/`DOOR_EXIT_MILITARY` reward-pillar branches plus
-  `give_reward` (the full exp/military-rank payout, auto-promote-on-
-  mastery ladder, and the `achievement_add_tunnel_level` wiring this
-  checkbox called out) are now also ported
-  (`item_driver::area33_tunnel::tunneldoor_driver` +
-  `world::tunnel::apply_tunnel_reward`, dispatched via
-  `tick_item_use_tunnel.rs`; a new shared
-  `player::find_next_available_tunnel_level` factors the promote-search
-  logic out of `gorwin.rs`'s own copy). `IDR_TUNNELDOOR2` (`mean_door`) is
-  now also ported (`item_driver::area33_tunnel::mean_door_driver` +
-  `World::tunnel_mean_door_area_clear`/`apply_item_driver_outcome`'s
-  `TunnelDoorAreaCheck`/`TunnelDoorFlavor` arms). Still unported:
-  `tunneldoor`'s `DOOR_ENTRY`/`DOOR_CONTINUE` branches (the procedural
-  creeper-dungeon generator: `build_fighter`/`handle_block_marker`/
-  `handle_creeper_marker`/`find_unused_sector`) - until that lands, a
-  player has no live-gameplay way to actually reach an exit pillar or a
-  mean door. `IID_TUNNELDOOR1/2`/`IID_TUNNELENEMY1/2/3/ALL` item-id
-  constants are already added for that follow-up.
+  task, closed iteration 84). *(done - details in PORTING_LEDGER.md)*
 - [ ] **Area 34 - `src/area/34/teufel.c`** - rat/gambler NPCs, arena score
   rewards (rat nest items ported).
 - [ ] **Area 36 - `src/area/36/caligar.c`** - Caligar quest NPCs, PPD
@@ -2189,4 +2166,9 @@ notes live in `PROGRESS_ARCHIVE.md`.
   (`world/npc/area33/gorwin.rs`, new `CDR_TUNNELER_GORWIN`/`IID_TUNNEL*`
   ids). Item drivers/dungeon generator remain. 3954 core (+12) + 1204
   server tests pass, clean build/boot-smoke (areas 1 and 33).
+- 2026-07-12: Area 33 closed: ported `tunneldoor`'s `DOOR_ENTRY`/
+  `DOOR_CONTINUE` creeper-dungeon instance scan (`World::
+  plan_tunnel_entry`, `find_unused_sector`/`build_fighter`/marker
+  handlers) plus its `ugaris-server` creeper-spawn wiring. 3985 core
+  (+31) + 1204 server tests pass, clean build/boot-smoke (areas 1, 33).
 
