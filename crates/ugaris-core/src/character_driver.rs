@@ -243,6 +243,10 @@ pub const CDR_ARKHATAPRISON: u16 = 151;
 /// 71 ("Entrance Passes") giver, see `world::npc::area37::rammy`'s module
 /// doc comment.
 pub const CDR_RAMMY: u16 = 131;
+/// C `#define CDR_JAZ 132` (`src/system/drvlib.h:182`, comment "arkhata"):
+/// the Arkhata townsman who runs "Ishtar's Bracelet" (quest 66), see
+/// `world::npc::area37::jaz`'s module doc comment.
+pub const CDR_JAZ: u16 = 132;
 /// C `#define CDR_LAB2HERALD 196` (`src/system/drvlib.h:222`): the lab2
 /// graveyard chapel keeper (`src/area/22/lab2.c::lab2_herald_driver`), see
 /// `world::npc::area22::lab2_herald`'s module doc comment.
@@ -873,6 +877,7 @@ pub enum CharacterDriverState {
     TeufelQuest(crate::world::npc::area34::teufelquest::TeufelQuestDriverData),
     Nop(crate::world::npc::area37::nop::NopDriverData),
     Rammy(crate::world::npc::area37::rammy::RammyDriverData),
+    Jaz(crate::world::npc::area37::jaz::JazDriverData),
 }
 /// C `bank_driver_parse` from `src/module/bank.c`. The C driver defaults
 /// opening hours to 6..23 before parsing (`bank_driver` lines 304-309).
@@ -1697,7 +1702,8 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::TeufelGambler(_)
             | CharacterDriverState::TeufelQuest(_)
             | CharacterDriverState::Nop(_)
-            | CharacterDriverState::Rammy(_),
+            | CharacterDriverState::Rammy(_)
+            | CharacterDriverState::Jaz(_),
         ) => SimpleBaddyDriverData::default(),
         None => SimpleBaddyDriverData::default(),
     };
@@ -4273,6 +4279,7 @@ pub use crate::world::npc::area32::military::{
 pub use crate::world::npc::area33::gorwin::GorwinDriverData;
 pub use crate::world::npc::area34::teufelgambler::TeufelGambleDriverData;
 pub use crate::world::npc::area34::teufelquest::TeufelQuestDriverData;
+pub use crate::world::npc::area37::jaz::JazDriverData;
 pub use crate::world::npc::area37::nop::{parse_nop_driver_args, NopDriverData};
 pub use crate::world::npc::area37::rammy::RammyDriverData;
 pub use crate::world::npc::area4::tester::TesterDriverData;

@@ -65,3 +65,37 @@ pub(crate) async fn rammy_driver_168(
         );
     }
 }
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn jaz_driver_169(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    _zone_loader: &mut ZoneLoader,
+    config: &ServerConfig,
+    _args: &Args,
+    _completed_actions: &[WorldActionCompletion],
+    _achievement_repository: &Option<ugaris_db::PgAchievementRepository>,
+    _character_repository: &Option<ugaris_db::PgCharacterRepository>,
+    _area_repository: &Option<ugaris_db::PgAreaRepository>,
+    _clan_repository: &Option<ugaris_db::PgClanRegistryRepository>,
+    _clan_log_repository: &Option<ugaris_db::PgClanLogRepository>,
+    _merchant_repository: &Option<ugaris_db::PgMerchantRepository>,
+    _military_master_storage_repository: &Option<ugaris_db::PgMilitaryMasterStorageRepository>,
+    _military_advisor_storage_repository: &Option<ugaris_db::PgMilitaryAdvisorStorageRepository>,
+    _notes_repository: &Option<ugaris_db::PgNotesRepository>,
+    _anticheat_repository: &Option<ugaris_db::PgAntiCheatRepository>,
+    _auction_repository: &Option<ugaris_db::PgAuctionRepository>,
+) {
+    // C `jaz_driver`: the Arkhata townsman who runs "Ishtar's Bracelet"
+    // (quest 66) (area 37, `src/area/37/arkhata.c`).
+    let jaz_facts = jaz_player_facts(runtime);
+    let jaz_events = world.process_jaz_actions(&jaz_facts, config.area_id);
+    let jaz_events_applied = apply_jaz_events(world, runtime, jaz_events).await;
+    if jaz_events_applied != 0 {
+        info!(
+            jaz_events_applied,
+            tick = world.tick.0,
+            "applied jaz dialogue events"
+        );
+    }
+}

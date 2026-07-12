@@ -1453,12 +1453,22 @@ Ordered by player progression; the C file is the oracle.
   (`world::npc::area29::countbran`, `brannington.c:814-818`, previously a
   documented gap) is now also ported, since it writes the same
   `arkhata_ppd.letter_bits` field rammy's quest-71 completion gate reads.
-  Still unported: `jaz`/`fiona`/`ramin`/`arkhatamonk`/`captain`/`judge`/
-  `fortressguard`/`jada`/`potmaker`/`hunter`/`thaipan`/`clerk`/`trainer`/
-  `kidnappee`/`krenach` - most read/write the shared `struct arkhata_ppd`
-  quest-state blob (`PlayerRuntime::arkhata_ppd`, scaffolded in
-  `player/areas_misc.rs`; its `LEGACY_ARKHATA_PPD_SIZE` had a
-  pre-existing size bug, now fixed - see ledger).
+  `jaz_driver` (`CDR_JAZ`, the townsman who runs "Ishtar's Bracelet" quest
+  66, `world::npc::area37::jaz`) is now also ported end to end, including
+  the `case 0`->`1` fallthrough collapse and the `NT_TEXT` "repeat"
+  two-way state-range reset; new `PlayerRuntime::arkhata_jaz_state`
+  accessor and `IID_ARKHATA_BRACELET` item id.
+  Still unported: `fiona`/`ramin`/`gladiator`/`bridgeguard`/`arkhatamonk`/
+  `captain`/`judge`/`fortressguard`/`jada`/`potmaker`/`hunter`/`thaipan`/
+  `clerk`/`trainer`/`kidnappee`/`krenach` - most read/write the shared
+  `struct arkhata_ppd` quest-state blob (`PlayerRuntime::arkhata_ppd`,
+  scaffolded in `player/areas_misc.rs`; its `LEGACY_ARKHATA_PPD_SIZE` had a
+  pre-existing size bug, now fixed - see ledger). Note: `gladiator`/
+  `bridgeguard` (`CDR_GLADIATOR`/`CDR_BRIDGEGUARD`) were missing from this
+  file's own previous "still unported" list - confirmed via a fresh
+  `ch_driver` dispatch-table cross-check against the C source; `fiona`
+  spawns `gladiator` instances via `fight_student`, so both remain
+  unported together as one future slice.
 - [ ] **Area 38 - `src/area/38/shrike.c`** - Shrike NPCs (amulet assembly
   ported).
 - [ ] **Common NPCs - `src/common/professor.c`, `src/common/npc_states.h`,
@@ -1498,6 +1508,10 @@ Keep entries to at most three lines: date, task, one-line result.
 Anything longer belongs in `PORTING_LEDGER.md`; historical verbose
 notes live in `PROGRESS_ARCHIVE.md`.
 
+- 2026-07-12: Area 37 CONTINUED: ported `jaz_driver` (`CDR_JAZ`, quest 66
+  "Ishtar's Bracelet"); also found `gladiator`/`bridgeguard` were missing
+  from the file's own "still unported" list. 4098 core [+11] + 1213
+  server tests pass, clean build/boot-smoke (area 37, no panics).
 - 2026-07-12: Area 37 CONTINUED: ported `rammy_driver` (`CDR_RAMMY`, quests
   65/71) plus the cross-area `IID_ARKHATA_LETTER3` gap in
   `count_brannington_driver` it depends on. 4090 core [+23] + 1213 server

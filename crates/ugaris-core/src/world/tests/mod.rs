@@ -77,6 +77,7 @@ mod items;
 mod jail;
 mod james;
 mod janitor;
+mod jaz;
 mod jessica;
 mod jiu;
 mod kassim;

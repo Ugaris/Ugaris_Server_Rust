@@ -638,6 +638,11 @@ pub(crate) const IID_ARKHATA_LETTER1: u32 = make_item_id(DEV_ID_DB, 0x0000BB);
 /// completion gate reads.
 pub(crate) const IID_ARKHATA_LETTER3: u32 = make_item_id(DEV_ID_DB, 0x0000BD);
 
+/// C `#define IID_ARKHATA_BRACELET MAKE_ITEMID(DEV_ID_DB, 0x0000B6)`
+/// (`src/common/item_id.h:245`): Jaz's insignia-of-Ishtar bracelet,
+/// `jaz_driver`'s (`world::npc::area37::jaz`) quest-66 turn-in item.
+pub(crate) const IID_ARKHATA_BRACELET: u32 = make_item_id(DEV_ID_DB, 0x0000B6);
+
 pub const IID_AREA25_TELEKEY: u32 = make_item_id(DEV_ID_DB, 0x000090);
 
 pub const IID_AREA25_DOORKEY: u32 = make_item_id(DEV_ID_DB, 0x000091);

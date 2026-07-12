@@ -614,7 +614,8 @@ impl World {
                 | CharacterDriverState::TeufelGambler(_)
                 | CharacterDriverState::TeufelQuest(_)
                 | CharacterDriverState::Nop(_)
-                | CharacterDriverState::Rammy(_) => None,
+                | CharacterDriverState::Rammy(_)
+                | CharacterDriverState::Jaz(_) => None,
             });
         let Some(target_id) = target_id else {
             return false;

@@ -868,6 +868,11 @@ pub const ARKHATA_PPD_CLERK_TIME_OFFSET: usize = 17 * 4;
 /// `staffer_carlos2_state`.
 pub const ARKHATA_PPD_RAMMY_STATE_OFFSET: usize = 0 * 4;
 
+/// C `struct arkhata_ppd::jaz_state` (`src/area/37/arkhata.h:6`, field
+/// index 1): `jaz_driver`'s (`world::npc::area37::jaz`) own quest-66
+/// ("Ishtar's Bracelet") dialogue state.
+pub const ARKHATA_PPD_JAZ_STATE_OFFSET: usize = 1 * 4;
+
 /// C `struct arkhata_ppd::letter_bits` (`src/area/37/arkhata.h:13`, field
 /// index 8): the introduction-letter turn-in bitmask (`2`=`captain_state`
 /// wrote it, `4`=`judge_state` wrote it, `8`=... - all three still-

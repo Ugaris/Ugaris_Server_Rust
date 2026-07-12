@@ -2,9 +2,9 @@
 //!
 //! `src/area/37/arkhata.c` (4,764 lines, 23 character drivers) is only
 //! partially ported so far - see `PORTING_TODO.md`/`PORTING_LEDGER.md`
-//! for the remaining `jaz`/`fiona`/`ramin`/`arkhataskelly`/
-//! `arkhatamonk`/`bookeater`/`captain`/`judge`/`fortressguard`/`jada`/
-//! `potmaker`/`hunter`/`thaipan`/`clerk`/`trainer`/`kidnappee`/`krenach`
+//! for the remaining `fiona`/`ramin`/`gladiator`/`bridgeguard`/
+//! `arkhatamonk`/`captain`/`judge`/`fortressguard`/`jada`/`potmaker`/
+//! `hunter`/`thaipan`/`clerk`/`trainer`/`kidnappee`/`krenach`
 //! drivers, most of which read/write the shared `struct arkhata_ppd`
 //! quest-state blob (`PlayerRuntime::arkhata_ppd`, already scaffolded in
 //! `crate::player::areas_misc` for other areas' cross-area reads).
@@ -15,9 +15,12 @@
 //! driver id, so `World::process_madhermit_actions` already covers any
 //! `CDR_MADHERMIT` character regardless of which area loaded it.
 
+pub mod jaz;
 pub mod nop;
 pub mod rammy;
 
+#[allow(unused_imports)]
+pub use jaz::*;
 #[allow(unused_imports)]
 pub use nop::*;
 #[allow(unused_imports)]
