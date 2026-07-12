@@ -1016,6 +1016,33 @@ fn set_arkhata_monk_state_writes_and_resizes_an_empty_blob() {
 }
 
 #[test]
+fn arkhata_ppd_ramin_state_reads_from_the_decoded_legacy_blob() {
+    let mut player = PlayerRuntime::connected(1, 0);
+    assert_eq!(player.arkhata_ramin_state(), 0);
+
+    let mut bytes = vec![0u8; LEGACY_ARKHATA_PPD_SIZE];
+    write_i32(&mut bytes, ARKHATA_PPD_RAMIN_STATE_OFFSET, 6);
+    assert!(player.decode_legacy_arkhata_ppd(&bytes));
+    assert_eq!(player.arkhata_ramin_state(), 6);
+}
+
+#[test]
+fn set_arkhata_ramin_state_writes_resizes_and_stays_independent_of_monk_state() {
+    let mut player = PlayerRuntime::connected(1, 0);
+    assert!(player.arkhata_ppd.is_empty());
+
+    player.set_arkhata_ramin_state(7);
+
+    assert_eq!(player.arkhata_ppd.len(), LEGACY_ARKHATA_PPD_SIZE);
+    assert_eq!(player.arkhata_ramin_state(), 7);
+    assert_eq!(player.arkhata_monk_state(), 0);
+
+    player.set_arkhata_monk_state(19);
+    assert_eq!(player.arkhata_ramin_state(), 7);
+    assert_eq!(player.arkhata_monk_state(), 19);
+}
+
+#[test]
 fn got_hit_fightback_obeys_legacy_no_fight_and_distance_gates() {
     let mut player = PlayerRuntime::connected(1, 0);
     player.driver_stop(TICKS_PER_SECOND * 10, true);

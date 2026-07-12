@@ -1,8 +1,8 @@
 use super::*;
 use ugaris_core::character_driver::{
     ArenaFighterDriverData, ArenaMasterDriverData, CDR_ARENAFIGHTER, CDR_ARENAMASTER,
-    CDR_ARKHATAPRISON, CDR_BOOKEATER, CDR_CENTINEL, CDR_CLANCLERK, CDR_CLANMASTER, CDR_LAMPGHOST,
-    CDR_NOP, CDR_WARPFIGHTER, MS_FIGHT,
+    CDR_ARKHATAPRISON, CDR_ARKHATASKELLY, CDR_BOOKEATER, CDR_CENTINEL, CDR_CLANCLERK,
+    CDR_CLANMASTER, CDR_LAMPGHOST, CDR_NOP, CDR_WARPFIGHTER, MS_FIGHT,
 };
 use ugaris_core::world::npc::area25::WarpFighterDriverData;
 use ugaris_core::world::LegacyHurtOutcome;
@@ -1613,6 +1613,190 @@ fn arkhata_bookeater_death_ignores_wrong_monk_state_and_non_player_killer() {
         },
     };
     assert!(!apply_arkhata_bookeater_death_from_hurt_event(
+        &mut runtime,
+        &mut world,
+        non_lethal
+    ));
+}
+
+#[test]
+fn arkhataskelly_death_completes_quest_68_once_all_are_dead() {
+    // C `ch_died_driver`/`CDR_ARKHATASKELLY` -> `arkhataskelly_dead`
+    // (`arkhata.c:1612-1646`): killer must be a player with
+    // `ramin_state == 6`; with no other living skellies left, completes
+    // quest 68 and advances `ramin_state` to `7`.
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let mut player = PlayerRuntime::connected(1, 0);
+    player.character_id = Some(CharacterId(2));
+    player.set_arkhata_ramin_state(6);
+    runtime.players.insert(1, player);
+
+    let mut skelly_npc = login_character(CharacterId(1), &login_block("Skeleton"), 37, 10, 10);
+    skelly_npc.flags.remove(CharacterFlags::PLAYER);
+    skelly_npc.driver = CDR_ARKHATASKELLY;
+    world.add_character(skelly_npc);
+    world.add_character(login_character(
+        CharacterId(2),
+        &login_block("Godmode"),
+        37,
+        10,
+        11,
+    ));
+
+    let event = LegacyHurtEvent {
+        target_id: CharacterId(1),
+        cause_id: CharacterId(2),
+        outcome: LegacyHurtOutcome {
+            killed: true,
+            ..Default::default()
+        },
+    };
+
+    assert!(apply_arkhataskelly_death_from_hurt_event(
+        &mut runtime,
+        &mut world,
+        event
+    ));
+
+    let player = runtime.player_for_character(CharacterId(2)).unwrap();
+    assert_eq!(player.arkhata_ramin_state(), 7);
+    assert!(player.quest_log.is_done(68));
+    let texts = world.drain_pending_system_texts();
+    assert!(texts
+        .iter()
+        .any(|text| text.message
+            == "Well done, you've solved Ramin's quest. Now report back to him."));
+}
+
+#[test]
+fn arkhataskelly_death_reports_progress_while_others_remain() {
+    // Other living `CDR_ARKHATASKELLY` characters (excluding the one that
+    // just died) keep the quest open; a progress message is shown only
+    // when `undead % 5 == 0 || undead < 10` - 9 remaining skellies (< 10)
+    // triggers the message, quest 68 stays undone.
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let mut player = PlayerRuntime::connected(1, 0);
+    player.character_id = Some(CharacterId(2));
+    player.set_arkhata_ramin_state(6);
+    runtime.players.insert(1, player);
+
+    let mut dying_skelly = login_character(CharacterId(1), &login_block("Skeleton"), 37, 10, 10);
+    dying_skelly.flags.remove(CharacterFlags::PLAYER);
+    dying_skelly.driver = CDR_ARKHATASKELLY;
+    world.add_character(dying_skelly);
+    for n in 0..9 {
+        let mut other = login_character(
+            CharacterId(100 + n),
+            &login_block("Skeleton"),
+            37,
+            10 + n as usize,
+            10,
+        );
+        other.flags.remove(CharacterFlags::PLAYER);
+        other.driver = CDR_ARKHATASKELLY;
+        world.add_character(other);
+    }
+    world.add_character(login_character(
+        CharacterId(2),
+        &login_block("Godmode"),
+        37,
+        10,
+        11,
+    ));
+
+    let event = LegacyHurtEvent {
+        target_id: CharacterId(1),
+        cause_id: CharacterId(2),
+        outcome: LegacyHurtOutcome {
+            killed: true,
+            ..Default::default()
+        },
+    };
+
+    assert!(apply_arkhataskelly_death_from_hurt_event(
+        &mut runtime,
+        &mut world,
+        event
+    ));
+
+    let player = runtime.player_for_character(CharacterId(2)).unwrap();
+    assert_eq!(player.arkhata_ramin_state(), 6); // unchanged
+    assert!(!player.quest_log.is_done(68));
+    let texts = world.drain_pending_system_texts();
+    assert!(texts
+        .iter()
+        .any(|text| text.message == "71 down, 9 to go. Beware of respawns!"));
+}
+
+#[test]
+fn arkhataskelly_death_handler_ignores_wrong_ramin_state_and_non_player_killer() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let mut player = PlayerRuntime::connected(1, 0);
+    player.character_id = Some(CharacterId(2));
+    player.set_arkhata_ramin_state(3); // not 6
+    runtime.players.insert(1, player);
+
+    let mut skelly_npc = login_character(CharacterId(1), &login_block("Skeleton"), 37, 10, 10);
+    skelly_npc.flags.remove(CharacterFlags::PLAYER);
+    skelly_npc.driver = CDR_ARKHATASKELLY;
+    world.add_character(skelly_npc);
+    world.add_character(login_character(
+        CharacterId(2),
+        &login_block("Godmode"),
+        37,
+        10,
+        11,
+    ));
+
+    let event = LegacyHurtEvent {
+        target_id: CharacterId(1),
+        cause_id: CharacterId(2),
+        outcome: LegacyHurtOutcome {
+            killed: true,
+            ..Default::default()
+        },
+    };
+    assert!(!apply_arkhataskelly_death_from_hurt_event(
+        &mut runtime,
+        &mut world,
+        event
+    ));
+
+    // Non-matching driver never dispatches either, even with the right
+    // ramin_state and a lethal hit.
+    let player2 = runtime.player_for_character_mut(CharacterId(2)).unwrap();
+    player2.set_arkhata_ramin_state(6);
+    let wrong_driver_npc = world.characters.get_mut(&CharacterId(1)).unwrap();
+    wrong_driver_npc.driver = CDR_NOP; // not CDR_ARKHATASKELLY
+    let wrong_driver_event = LegacyHurtEvent {
+        target_id: CharacterId(1),
+        cause_id: CharacterId(2),
+        outcome: LegacyHurtOutcome {
+            killed: true,
+            ..Default::default()
+        },
+    };
+    assert!(!apply_arkhataskelly_death_from_hurt_event(
+        &mut runtime,
+        &mut world,
+        wrong_driver_event
+    ));
+
+    // Non-lethal hit never dispatches, even with a matching driver/state.
+    let right_driver_npc = world.characters.get_mut(&CharacterId(1)).unwrap();
+    right_driver_npc.driver = CDR_ARKHATASKELLY;
+    let non_lethal = LegacyHurtEvent {
+        target_id: CharacterId(1),
+        cause_id: CharacterId(2),
+        outcome: LegacyHurtOutcome {
+            killed: false,
+            ..Default::default()
+        },
+    };
+    assert!(!apply_arkhataskelly_death_from_hurt_event(
         &mut runtime,
         &mut world,
         non_lethal

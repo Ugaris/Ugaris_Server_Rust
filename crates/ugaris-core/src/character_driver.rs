@@ -210,6 +210,22 @@ pub const CDR_NOP: u16 = 136;
 /// death_hooks::apply_arkhata_bookeater_death_from_hurt_event`, is the
 /// only other C-visible behavior this driver has).
 pub const CDR_BOOKEATER: u16 = 140;
+/// C `#define CDR_ARKHATASKELLY 138` (`src/system/drvlib.h:188`, comment
+/// "arkhata"): the Fighting School's respawning skeleton monsters
+/// (`Skeleton_for_final_area`, `zones/37/Vamp_Skele_Zombie.chr`). C's own
+/// `ch_driver` dispatch (`arkhata.c:4620-4622`) is an unconditional tail
+/// call to `char_driver(CDR_SIMPLEBADDY, CDT_DRIVER, cn, ret, lastact)`
+/// (`arkhataskelly_driver`, `arkhata.c:1587-1609`), reusing the
+/// SimpleBaddy driver's full idle-wander/auto-attack AI wholesale - same
+/// precedent as `CDR_BOOKEATER` above. The driver's only other behavior
+/// is a purely internal idle-tick position-hash bookkeeping array used
+/// solely to count still-alive arkhataskellies inside its own
+/// `arkhataskelly_dead` (`:1612-1646`, ported as `ugaris-server::
+/// world_events::death_hooks::
+/// apply_arkhataskelly_death_from_hurt_event`, which counts living
+/// `CDR_ARKHATASKELLY` characters directly instead - behaviorally
+/// equivalent, not observable to players).
+pub const CDR_ARKHATASKELLY: u16 = 138;
 /// C `#define CDR_ARKHATAPRISON 151` (`src/system/drvlib.h:200`, comment
 /// "arkhata"): the Fortress prisoner NPC. C's own `ch_driver` dispatch
 /// (`arkhata.c:4616-4618`) is an unconditional tail call to

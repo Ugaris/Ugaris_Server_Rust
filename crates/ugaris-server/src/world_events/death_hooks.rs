@@ -1,8 +1,8 @@
 use super::*;
 use ugaris_core::character_driver::{
-    CDR_ARKHATAPRISON, CDR_BOOKEATER, CDR_CENTINEL, CDR_CLANCLERK, CDR_CLANMASTER,
-    CDR_LABGNOMEDRIVER, CDR_NOP, CDR_SMUGGLELEAD, CDR_TUNNELER_GORWIN, CDR_TWOGUARD, CDR_TWOROBBER,
-    CDR_TWOSERVANT, CDR_WARPFIGHTER, CDR_WHITEROBBERBOSS,
+    CDR_ARKHATAPRISON, CDR_ARKHATASKELLY, CDR_BOOKEATER, CDR_CENTINEL, CDR_CLANCLERK,
+    CDR_CLANMASTER, CDR_LABGNOMEDRIVER, CDR_NOP, CDR_SMUGGLELEAD, CDR_TUNNELER_GORWIN,
+    CDR_TWOGUARD, CDR_TWOROBBER, CDR_TWOSERVANT, CDR_WARPFIGHTER, CDR_WHITEROBBERBOSS,
 };
 use ugaris_core::world::{CS_ENEMY, CS_GUEST, LS_DEAD, LS_FINE};
 
@@ -1527,6 +1527,100 @@ pub(crate) fn apply_arkhata_bookeater_death_from_hurt_event(
     world.queue_system_text(
         event.cause_id,
         "Well done, you've solved Tracy's quest. Now report back to her.",
+    );
+    true
+}
+
+/// C `ch_died_driver`/`CDR_ARKHATASKELLY` dispatch (`arkhata.c:4620-
+/// 4622`) routes any death of a Fighting School skeleton
+/// (`Skeleton_for_final_area`) to `arkhataskelly_dead(cn, co)`
+/// (`:1612-1646`): silently no-ops (leaving the generic respawn timer
+/// alone) unless the killer is a player with `arkhata_ppd.ramin_state ==
+/// 6` (i.e. Ramin already sent them to clear out the infestation - the
+/// still-unported `ramin_driver`'s own dialogue state, see
+/// `PlayerRuntime::arkhata_ramin_state`'s doc comment). Once that gate
+/// passes, C counts every other still-alive `CDR_ARKHATASKELLY`
+/// character via a purely internal idle-tick bookkeeping array
+/// (`skelly_cn[]`, not ported - see `CDR_ARKHATASKELLY`'s own doc
+/// comment) - ported here as a direct count over `world.characters`
+/// (behaviorally equivalent, no `arg=`/position hashing needed). While
+/// any remain, a progress message is shown only every 5th kill or once
+/// fewer than 10 remain (`(undead % 5) == 0 || undead < 10`); once none
+/// remain, quest 68 ("A Shopkeeper's Fright") completes via the standard
+/// `questlog_done` exp path and `ramin_state` advances to `7` so the
+/// killer can report back to Ramin.
+pub(crate) fn apply_arkhataskelly_death_from_hurt_event(
+    runtime: &mut ServerRuntime,
+    world: &mut World,
+    event: LegacyHurtEvent,
+) -> bool {
+    if !event.outcome.killed {
+        return false;
+    }
+    let is_skelly_kill = world
+        .characters
+        .get(&event.target_id)
+        .zip(world.characters.get(&event.cause_id))
+        .is_some_and(|(target, killer)| {
+            target.driver == CDR_ARKHATASKELLY && killer.flags.contains(CharacterFlags::PLAYER)
+        });
+    if !is_skelly_kill {
+        return false;
+    }
+    let Some(level) = world.characters.get(&event.cause_id).map(|c| c.level) else {
+        return false;
+    };
+    let level_val = level_value(level);
+    let Some(player) = runtime.player_for_character_mut(event.cause_id) else {
+        return false;
+    };
+    if player.arkhata_ramin_state() != 6 {
+        return false;
+    }
+
+    // C's `ch[cc].flags` truthy check (`arkhata.c:1633`) is C's "is this
+    // array slot still occupied" test; in this codebase `world.characters`
+    // only ever holds occupied slots, so no separate flags check is
+    // needed here - `character_id != event.target_id` alone matches C's
+    // `cc != cn` exclusion of the character that just died.
+    let undead = world
+        .characters
+        .iter()
+        .filter(|(&character_id, character)| {
+            character_id != event.target_id && character.driver == CDR_ARKHATASKELLY
+        })
+        .count();
+
+    if undead > 0 {
+        if undead % 5 == 0 || undead < 10 {
+            world.queue_system_text(
+                event.cause_id,
+                format!("{} down, {undead} to go. Beware of respawns!", 80 - undead),
+            );
+        }
+        return true;
+    }
+
+    let Some(player) = runtime.player_for_character_mut(event.cause_id) else {
+        return true;
+    };
+    if let Some(completion) = player.quest_log.complete_legacy(68, level, level_val) {
+        let payload = legacy_questlog_payload(player);
+        world.give_exp(
+            event.cause_id,
+            completion.granted_exp,
+            u32::from(world.area_id),
+        );
+        for (session_id, _) in runtime.sessions_for_character(event.cause_id) {
+            runtime.send_to_session(session_id, payload.clone());
+        }
+    }
+    if let Some(player) = runtime.player_for_character_mut(event.cause_id) {
+        player.set_arkhata_ramin_state(7);
+    }
+    world.queue_system_text(
+        event.cause_id,
+        "Well done, you've solved Ramin's quest. Now report back to him.",
     );
     true
 }

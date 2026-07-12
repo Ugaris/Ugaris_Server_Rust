@@ -1433,10 +1433,19 @@ Ordered by player progression; the C file is the oracle.
   prisoner, pure `CDR_SIMPLEBADDY` tail call), and `CDR_BOOKEATER` ("The
   Book Eater" monster, pure `CDR_SIMPLEBADDY` tail call + a
   `bookeater_dead` quest-70-completion death hook,
-  `apply_arkhata_bookeater_death_from_hurt_event`) are done;
+  `apply_arkhata_bookeater_death_from_hurt_event`), and `CDR_ARKHATASKELLY`
+  (Fighting School skeleton monster, pure `CDR_SIMPLEBADDY` tail call + an
+  `arkhataskelly_dead` quest-68-completion death hook,
+  `apply_arkhataskelly_death_from_hurt_event`) are done;
   `CDR_MADHERMIT` needs no work (shared driver, already covered by
-  `world::npc::area19::madhermit`). Still unported: `rammy`/`jaz`/
-  `fiona`/`ramin`/`arkhataskelly`/`arkhatamonk`/`captain`/
+  `world::npc::area19::madhermit`). Also fixed a real pre-existing gap
+  while porting `CDR_ARKHATASKELLY`: `CDR_BOOKEATER`'s own zone.rs
+  spawn-time `apply_simple_baddy_create_message` hookup was missing
+  entirely, so Book Eater characters never actually got a
+  `CharacterDriverState::SimpleBaddy` and could never fight back or
+  idle-wander despite the driver-id gates already listing them - fixed
+  alongside this slice. Still unported: `rammy`/`jaz`/
+  `fiona`/`ramin`/`arkhatamonk`/`captain`/
   `judge`/`fortressguard`/`jada`/`potmaker`/`hunter`/`thaipan`/`clerk`/
   `trainer`/`kidnappee`/`krenach` - most read/write the shared
   `struct arkhata_ppd` quest-state blob (`PlayerRuntime::arkhata_ppd`,

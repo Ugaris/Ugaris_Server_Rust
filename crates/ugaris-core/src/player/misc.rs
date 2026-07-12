@@ -879,6 +879,15 @@ pub const ARKHATA_PPD_RAMMY_STATE_OFFSET: usize = 0 * 4;
 /// `PlayerRuntime::set_arkhata_monk_state`.
 pub const ARKHATA_PPD_MONK_STATE_OFFSET: usize = 4 * 4;
 
+/// C `struct arkhata_ppd::ramin_state` (`src/area/37/arkhata.h:7`, field
+/// index 3): the still-unported `ramin_driver`'s own dialogue state.
+/// `arkhataskelly_dead` (`arkhata.c:1612-1646`) reads it (must be exactly
+/// `6`, i.e. Ramin already sent the killer to clear the Fighting School's
+/// skeleton infestation) and, once every arkhataskelly is dead, writes it
+/// to `7` so the killer can report back - see
+/// `PlayerRuntime::set_arkhata_ramin_state`.
+pub const ARKHATA_PPD_RAMIN_STATE_OFFSET: usize = 3 * 4;
+
 // `struct staffer_ppd` field offsets (`src/common/staffer_ppd.h:13-` /
 // `src/system/game/ppd_structs.h:566-`), in declaration order. Only the
 // fields consumed by `questlog_init_staff` (`src/system/questlog.c:1203-

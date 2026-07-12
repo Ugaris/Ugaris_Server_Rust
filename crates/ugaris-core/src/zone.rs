@@ -712,6 +712,55 @@ impl ZoneLoader {
             character.push_driver_message(NT_CREATE, 0, 0, 0);
             apply_simple_baddy_create_message(&mut character, Some(&template.args), 0);
         }
+        if template.driver == crate::character_driver::CDR_BOOKEATER {
+            // C `ch_driver`'s `CDR_BOOKEATER` dispatch (`arkhata.c:2083-
+            // 2085`): `bookeater_driver`'s entire body is an
+            // unconditional tail call to `char_driver(CDR_SIMPLEBADDY,
+            // CDT_DRIVER, cn, ret, lastact)`, reusing the SimpleBaddy
+            // driver's full idle-wander/auto-attack AI wholesale - same
+            // precedent as `CDR_ARKHATAPRISON` above (`bookeater_dead`'s
+            // own quest-70 completion, ported separately as `ugaris-
+            // server::world_events::death_hooks::
+            // apply_arkhata_bookeater_death_from_hurt_event`, is the
+            // only other C-visible behavior this driver has). Unlike
+            // `CDR_ARKHATAPRISON`, "The Book Eater"'s own
+            // `Knogers_Creeper.chr` template *does* carry an `arg=
+            // "aggressive=1;helper=1;scavenger=0;startdist=20;
+            // chardist=0;stopdist=30;"` line - this spawn-time hookup
+            // was missing until now (a real pre-existing gap: without
+            // it `character.driver_state` stayed `None`, so every
+            // `matches!(character.driver_state,
+            // Some(CharacterDriverState::SimpleBaddy(_)))` gate in
+            // `npc_fight.rs`/`npc_idle.rs` silently skipped every Book
+            // Eater character - it could never fight back or idle-wander
+            // even though the driver-id gates already listed it).
+            character.push_driver_message(NT_CREATE, 0, 0, 0);
+            apply_simple_baddy_create_message(&mut character, Some(&template.args), 0);
+        }
+        if template.driver == crate::character_driver::CDR_ARKHATASKELLY {
+            // C `ch_driver`'s `CDR_ARKHATASKELLY` dispatch (`arkhata.c:
+            // 4620-4622`): `arkhataskelly_driver`'s only other behavior
+            // is a purely internal idle-tick position-hash bookkeeping
+            // array (`skelly_ID`/`skelly_cn`, `:1587-1608`) used solely
+            // to count still-alive arkhataskellies inside
+            // `arkhataskelly_dead` - not ported since it has no
+            // externally-visible effect (`World::
+            // apply_arkhataskelly_death_from_hurt_event` counts living
+            // `CDR_ARKHATASKELLY` characters directly from `self.
+            // characters` instead, which is behaviorally equivalent);
+            // the driver body itself is an unconditional tail call to
+            // `char_driver(CDR_SIMPLEBADDY, CDT_DRIVER, cn, ret,
+            // lastact)`, reusing the SimpleBaddy driver's full idle-
+            // wander/auto-attack AI wholesale - same precedent as
+            // `CDR_ARKHATAPRISON`/`CDR_BOOKEATER` above. The
+            // `Skeleton_for_final_area` template
+            // (`zones/37/Vamp_Skele_Zombie.chr`) carries the same
+            // `arg="aggressive=1;helper=1;scavenger=0;startdist=40;
+            // chardist=0;stopdist=60;"` shape SimpleBaddy's own
+            // `NT_CREATE` handler parses.
+            character.push_driver_message(NT_CREATE, 0, 0, 0);
+            apply_simple_baddy_create_message(&mut character, Some(&template.args), 0);
+        }
         if template.driver == CDR_NOP {
             // C `nop_driver`'s `dir=` zone-file arg is parsed at
             // `set_data`-creation time in C (the driver-data struct is
