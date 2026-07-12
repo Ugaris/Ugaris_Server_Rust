@@ -1413,8 +1413,17 @@ Ordered by player progression; the C file is the oracle.
   `achievement_add_tunnel_level` using the existing `award_*` helper
   pattern in `crates/ugaris-server/src/achievement.rs` (Achievements
   task, closed iteration 84). *(done - details in PORTING_LEDGER.md)*
-- [ ] **Area 34 - `src/area/34/teufel.c`** - rat/gambler NPCs, arena score
+- [~] **Area 34 - `src/area/34/teufel.c`** - rat/gambler NPCs, arena score
   rewards (rat nest items ported).
+  REMAINING: `CDR_TEUFELQUEST` (the rat-hunt reward NPC: greeting,
+  `give experience`/`give military`/`give money`/`give godly` dialogue,
+  `special_rat_reward`'s 7-tier item ladder) is now ported
+  (`world/npc/area34/teufelquest.rs` + shared `TEUFEL_QA`/
+  `teufel_analyse_text` in `world/npc/area34/mod.rs`). Still unported:
+  `teufeldemon_driver` (self-defense sighting hook + `CDR_SIMPLEBADDY`
+  tail call), `teufelgambler_driver` (the 3 chip-tier dice game, shares
+  `TEUFEL_QA`), and `teufelrat_driver`'s own tick body (death-scoring
+  already ported; the live wander/attack AI is not).
 - [ ] **Area 36 - `src/area/36/caligar.c`** - Caligar quest NPCs, PPD
   quest state beyond skelly doors.
 - [ ] **Area 37 - `src/area/37/arkhata.c` (4,764 lines)** - Arkhata clerk/
@@ -1458,6 +1467,10 @@ Keep entries to at most three lines: date, task, one-line result.
 Anything longer belongs in `PORTING_LEDGER.md`; historical verbose
 notes live in `PROGRESS_ARCHIVE.md`.
 
+- 2026-07-12: Area 34 STARTED: ported `CDR_TEUFELQUEST` (rat-hunt reward
+  NPC: greeting, give experience/military/money/godly, `special_rat_reward`
+  ladder) + shared `TEUFEL_QA`/`teufel_analyse_text`. 3998 core [+13] +
+  1204 server tests pass, clean build, boot-smoke (area 34, no panic).
 - 2026-07-12: fixed a broken build left by iteration 50 (unhandled
   `TunnelDoorAreaCheck`/`TunnelDoorFlavor` match arms in
   `tick_item_use_completion.rs`) and added the missing tests for

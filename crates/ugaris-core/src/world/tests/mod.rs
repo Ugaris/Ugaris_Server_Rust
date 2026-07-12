@@ -152,6 +152,7 @@ mod supermax;
 mod teleport;
 mod terion;
 mod tester;
+mod teufelquest;
 mod text;
 mod thiefguard;
 mod thiefmaster;

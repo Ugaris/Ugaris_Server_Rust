@@ -23,8 +23,8 @@ use crate::{
         MissionGiverDriverData, NookDriverData, ReskinDriverData, RouvenDriverData,
         SeymourDriverData, ShanraDriverData, SirJonesDriverData, SmuggleComDriverData,
         SpiritBranDriverData, SuperiorDriverData, SupermaxDriverData, TerionDriverData,
-        ThomasDriverData, TraderDriverData, TwoAlchemistDriverData, TwoBarkeeperDriverData,
-        TwoSanwynDriverData, TwoSkellyDriverData, TwoThiefGuardDriverData,
+        TeufelQuestDriverData, ThomasDriverData, TraderDriverData, TwoAlchemistDriverData,
+        TwoBarkeeperDriverData, TwoSanwynDriverData, TwoSkellyDriverData, TwoThiefGuardDriverData,
         TwoThiefMasterDriverData, YoakinDriverData, YoatinDriverData, ARENA_FIGHTER_REST_POS,
         CDR_ARENAFIGHTER, CDR_ARENAMANAGER, CDR_ARENAMASTER, CDR_ARISTOCRAT, CDR_ASTRO2,
         CDR_BRENNETHBRAN, CDR_BRITHILDIE, CDR_BROKLIN, CDR_CAMHERMIT, CDR_CARLOS, CDR_CENTINEL,
@@ -37,9 +37,10 @@ use crate::{
         CDR_LAB5MAGE, CDR_LAB5SEYAN, CDR_LABGNOMEDRIVER, CDR_LOSTDWARF, CDR_MISSIONGIVE, CDR_NOOK,
         CDR_RESKIN, CDR_ROUVEN, CDR_SEYMOUR, CDR_SHANRA, CDR_SIMPLEBADDY, CDR_SIRJONES,
         CDR_SMUGGLECOM, CDR_SPIRITBRAN, CDR_SUPERIOR, CDR_SUPERMAX, CDR_SWAMPCLARA, CDR_TERION,
-        CDR_THOMAS, CDR_TRADER, CDR_TUNNELER_GORWIN, CDR_TWOALCHEMIST, CDR_TWOBARKEEPER,
-        CDR_TWOGUARD, CDR_TWOSANWYN, CDR_TWOSERVANT, CDR_TWOSKELLY, CDR_TWOTHIEFGUARD,
-        CDR_TWOTHIEFMASTER, CDR_WHITEROBBERBOSS, CDR_YOAKIN, CDR_YOATIN, NT_CREATE,
+        CDR_TEUFELQUEST, CDR_THOMAS, CDR_TRADER, CDR_TUNNELER_GORWIN, CDR_TWOALCHEMIST,
+        CDR_TWOBARKEEPER, CDR_TWOGUARD, CDR_TWOSANWYN, CDR_TWOSERVANT, CDR_TWOSKELLY,
+        CDR_TWOTHIEFGUARD, CDR_TWOTHIEFMASTER, CDR_WHITEROBBERBOSS, CDR_YOAKIN, CDR_YOATIN,
+        NT_CREATE,
     },
     entity::{
         Character, CharacterFlags, Item, ItemFlags, CHARACTER_VALUE_COUNT, INVENTORY_SIZE,
@@ -1165,6 +1166,16 @@ impl ZoneLoader {
             // no `arg=` line at all).
             character.driver_state =
                 Some(CharacterDriverState::Gorwin(GorwinDriverData::default()));
+        }
+        if template.driver == CDR_TEUFELQUEST {
+            // C never parses zone-file args into `struct gamble_data`
+            // for `teufelquest_driver` (`set_data` zero-initializes it) -
+            // `ugaris_data/zones/34/teufel.chr`'s `arg="3"` on these
+            // templates is only ever read by the sibling
+            // `teufelgambler_driver`'s `NT_CREATE` handler, not this one.
+            character.driver_state = Some(CharacterDriverState::TeufelQuest(
+                TeufelQuestDriverData::default(),
+            ));
         }
         if template.driver == CDR_WHITEROBBERBOSS {
             // C `ch_driver`'s `CDR_WHITEROBBERBOSS` dispatch

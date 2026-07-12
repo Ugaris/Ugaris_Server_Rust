@@ -8002,3 +8002,72 @@ startup log line unchanged.
   `cargo build -p ugaris-server` clean, boot-smoke on areas 1 and 33
   confirmed "entering Rust game loop", no panics. `PORTING_TODO.md` Area
   33 marked `[x]`.
+- Area 34 (`src/area/34/teufel.c`) STARTED: ported `CDR_TEUFELQUEST`, the
+  rat-hunt-reward NPC's full per-tick body (`teufelquest_driver`,
+  `teufel.c:1476-1608`) plus `special_rat_reward` (`:1442-1474`) - the
+  first character driver in this file to get a live tick pass (the item
+  drivers `IDR_TEUFELDOOR`/`IDR_TEUFELARENA`/`IDR_TEUFELARENAEXIT`/
+  `IDR_TEUFELRATNEST` and the `CDR_TEUFELRAT` death-scoring hook were
+  already ported in earlier iterations). New `crates/ugaris-core/src/
+  world/npc/area34/{mod.rs,teufelquest.rs}`: `mod.rs` carries the shared
+  `is_demon` sprite helper, the full 34-row `struct qa qa[]` table
+  (`teufel.c:138-239`, transcribed verbatim as `TEUFEL_QA` even though
+  the "play"/"bet"/"prizes" rows only matter once a future
+  `teufelgambler_driver` port exists, since C shares one `qa[]`/
+  `analyse_text_driver` across both NPCs), and `teufel_analyse_text` - a
+  bespoke wrapper (not the plain `analyse_text_qa` call every other NPC
+  file uses) documenting a real, verified-from-source C quirk this file's
+  own `analyse_text_driver` has that no other ported NPC's copy does: it
+  *always* returns a truthy "recognized" value once its guard clauses
+  pass (own-name match, a real code-2..8 match, or no match at all - even
+  an empty word list - all fall through to the same trailing
+  `return 1;`), so the caller's `talkdir`-facing side effect fires
+  regardless of whether anything was actually said. `teufelquest.rs`
+  ports the `NT_CHAR` greeting (is_demon-gated pitch text, 16-tile
+  `char_dist`, `mem_check_driver`/`mem_add_driver` slot-7 greet-once,
+  12-hour `memcleartimer` erase cadence - the shared `struct gamble_data`
+  narrowed to just the one field this driver reads/writes, since `nr` is
+  gambler-only), the `NT_TEXT` "give experience"/"give
+  military"/"give money"/"give godly" reward dispatch (reusing the
+  already-ported `World::give_exp`/`give_military_pts`/
+  `PlayerRuntime::teufel_rat_kills`/`teufel_rat_score` from the
+  `teufelrat_dead` death-scoring slice, plus a new file-local
+  `teufelquest_give_money` mirroring `countbran_give_money`'s no-
+  achievement-ladder shape), and `special_rat_reward`'s 7-tier reward
+  ladder (`create_special_item`/`healing_potion{1,2,3}`, the latter via
+  `loader.instantiate_item_template`). Unlike most NPC ports,
+  `World::process_teufelquest_actions` takes `&mut ZoneLoader` directly
+  (not a deferred outcome event) since the top 4 reward tiers need
+  `create_special_item`'s template access - same precedent as
+  `world::npc::area1::robber`. New `CharacterDriverState::TeufelQuest`
+  variant (`character_driver.rs`, plus the usual exhaustive-match
+  additions in `npc_fight.rs`/`npc_idle.rs`) and `zone.rs` spawn wiring;
+  server-side `crates/ugaris-server/src/{area34.rs,tick_npc/area34.rs}`
+  mirror the `area33`/Gorwin precedent exactly (a `TeufelQuestPlayerFacts`
+  snapshot + `TeufelQuestOutcomeEvent::SetRatKillsScore` apply function,
+  no `ZoneLoader`-dependent server-side glue needed beyond passing it
+  through). 13 new focused tests (`world/tests/teufelquest.rs`) covering
+  both greeting branches, greet-once memory, the 12/16-tile distance
+  gates (NT_CHAR's own 16-tile gate vs `analyse_text_driver`'s internal
+  12-tile gate), all three cash-out rewards, the god-only "give godly"
+  debug set, the "who are you" name-question reply, and the below-1000
+  no-reward-item floor. Still unported in this file: `teufeldemon_driver`
+  (a custom `is_demon`-filtered `NT_CHAR` self-defense hook feeding an
+  otherwise-unconditional `CDR_SIMPLEBADDY` tail call - this NPC's own
+  zone template is `aggressive=0`, so the generic SimpleBaddy sighting
+  path won't add enemies on its own; needs a bespoke sighting hook plus
+  either widening the `CDR_SIMPLEBADDY` fight/idle gates or a direct
+  `fdemon_demon`-style dispatch), `teufelgambler_driver` (the 3 chip-tier
+  dice-betting NPC, sharing `TEUFEL_QA`'s "play"/"bet"/"prizes" rows and
+  needing new `IID_BRONZECHIP`/`IID_SILVERCHIP`/`IID_GOLDCHIP` item-id
+  constants plus a `chip_stack`-consumption helper distinct from the
+  already-ported `nomad_stack_driver` splitting logic), and
+  `teufelrat_driver`'s own live tick body (the death-scoring hook exists,
+  but nothing yet widens `CDR_TEUFELRAT` into the `CDR_SIMPLEBADDY`
+  fight/idle gates the way `CDR_PENTER`/`CDR_FORESTMONSTER` were, so
+  spawned rat-nest rats don't actually wander/fight yet). `cargo fmt
+  --all`, `cargo test --workspace`: 3998 core [+13] + 81 db + 3 net + 45
+  protocol + 1204 server, all green, zero failures/warnings. `cargo build
+  -p ugaris-server` clean, 8s boot-smoke on area 34 confirmed "entering
+  Rust game loop" `area_id=34`, no panics. `PORTING_TODO.md` Area 34
+  marked `[~]` with the above REMAINING note.

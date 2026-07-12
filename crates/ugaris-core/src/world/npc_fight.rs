@@ -692,7 +692,8 @@ impl World {
             | CharacterDriverState::DwarfShaman(_)
             | CharacterDriverState::DwarfSmith(_)
             | CharacterDriverState::MissionGiver(_)
-            | CharacterDriverState::Gorwin(_) => None,
+            | CharacterDriverState::Gorwin(_)
+            | CharacterDriverState::TeufelQuest(_) => None,
         }
     }
 
