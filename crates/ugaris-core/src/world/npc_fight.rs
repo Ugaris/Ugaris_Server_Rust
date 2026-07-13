@@ -732,7 +732,8 @@ impl World {
             | CharacterDriverState::Judge(_)
             | CharacterDriverState::Jada(_)
             | CharacterDriverState::Potmaker(_)
-            | CharacterDriverState::Hunter(_) => None,
+            | CharacterDriverState::Hunter(_)
+            | CharacterDriverState::Thaipan(_) => None,
         }
     }
 

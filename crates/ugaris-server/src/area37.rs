@@ -38,6 +38,9 @@ use ugaris_core::world::npc::area37::ramin::{
 use ugaris_core::world::npc::area37::rammy::{
     qlog_rammy_crown, qlog_rammy_entrance_passes, RammyOutcomeEvent, RammyPlayerFacts,
 };
+use ugaris_core::world::npc::area37::thaipan::{
+    qlog_thaipan_scroll, ThaipanOutcomeEvent, ThaipanPlayerFacts,
+};
 
 pub(crate) fn rammy_player_facts(
     runtime: &ServerRuntime,
@@ -1001,6 +1004,96 @@ pub(crate) async fn apply_hunter_events(
                     }
                     applied += 1;
                 }
+            }
+        }
+    }
+    applied
+}
+
+pub(crate) fn thaipan_player_facts(
+    runtime: &ServerRuntime,
+) -> HashMap<CharacterId, ThaipanPlayerFacts> {
+    runtime
+        .players
+        .values()
+        .filter_map(|player| {
+            let character_id = player.character_id?;
+            Some((
+                character_id,
+                ThaipanPlayerFacts {
+                    thai_state: player.arkhata_thai_state(),
+                    pot_state: player.arkhata_pot_state(),
+                    last_budda: player.arkhata_last_budda(),
+                },
+            ))
+        })
+        .collect()
+}
+
+/// Applies each [`ThaipanOutcomeEvent`] queued by `World::
+/// process_thaipan_actions`.
+pub(crate) async fn apply_thaipan_events(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    events: Vec<ThaipanOutcomeEvent>,
+) -> usize {
+    let mut applied = 0;
+    for event in events {
+        match event {
+            ThaipanOutcomeEvent::UpdateThaiState {
+                player_id,
+                new_state,
+            } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.set_arkhata_thai_state(new_state);
+                applied += 1;
+            }
+            // C `questlog_open(co, 74)` (`arkhata.c:3439`).
+            ThaipanOutcomeEvent::QuestOpen74 { player_id } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.quest_log.open(qlog_thaipan_scroll());
+                let payload = legacy_questlog_payload(player);
+                for (session_id, _) in runtime.sessions_for_character(player_id) {
+                    runtime.send_to_session(session_id, payload.clone());
+                }
+                applied += 1;
+            }
+            // C `questlog_done(co, 74)` (`arkhata.c:3526`).
+            ThaipanOutcomeEvent::QuestDone74 { player_id } => {
+                let Some(level) = world.characters.get(&player_id).map(|c| c.level) else {
+                    continue;
+                };
+                let level_val = level_value(level);
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                if let Some(completion) =
+                    player
+                        .quest_log
+                        .complete_legacy(qlog_thaipan_scroll(), level, level_val)
+                {
+                    let payload = legacy_questlog_payload(player);
+                    world.give_exp(player_id, completion.granted_exp, u32::from(world.area_id));
+                    for (session_id, _) in runtime.sessions_for_character(player_id) {
+                        runtime.send_to_session(session_id, payload.clone());
+                    }
+                    applied += 1;
+                }
+            }
+            // C `ppd->last_budda = realtime;` (`arkhata.c:3540`).
+            ThaipanOutcomeEvent::UpdateLastBudda {
+                player_id,
+                realtime_seconds,
+            } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.set_arkhata_last_budda(realtime_seconds);
+                applied += 1;
             }
         }
     }

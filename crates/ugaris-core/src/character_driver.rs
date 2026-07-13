@@ -315,6 +315,11 @@ pub const CDR_POTMAKER: u16 = 145;
 /// "arkhata"): the Arkhata hunter who runs "The Blue Harpy" (quest 77),
 /// see `world::npc::area37::hunter`'s module doc comment.
 pub const CDR_HUNTER: u16 = 146;
+/// C `#define CDR_THAIPAN 147` (`src/system/drvlib.h:197`, comment
+/// "arkhata"): the Arkhata monk who runs "The Ancient Scroll" (quest 74)
+/// and the repeatable Buddah Statue hand-in, see `world::npc::area37::
+/// thaipan`'s module doc comment.
+pub const CDR_THAIPAN: u16 = 147;
 /// C `#define CDR_LAB2HERALD 196` (`src/system/drvlib.h:222`): the lab2
 /// graveyard chapel keeper (`src/area/22/lab2.c::lab2_herald_driver`), see
 /// `world::npc::area22::lab2_herald`'s module doc comment.
@@ -956,6 +961,7 @@ pub enum CharacterDriverState {
     Jada(crate::world::npc::area37::jada::JadaDriverData),
     Potmaker(crate::world::npc::area37::potmaker::PotmakerDriverData),
     Hunter(crate::world::npc::area37::hunter::HunterDriverData),
+    Thaipan(crate::world::npc::area37::thaipan::ThaipanDriverData),
 }
 /// C `bank_driver_parse` from `src/module/bank.c`. The C driver defaults
 /// opening hours to 6..23 before parsing (`bank_driver` lines 304-309).
@@ -1791,7 +1797,8 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::Judge(_)
             | CharacterDriverState::Jada(_)
             | CharacterDriverState::Potmaker(_)
-            | CharacterDriverState::Hunter(_),
+            | CharacterDriverState::Hunter(_)
+            | CharacterDriverState::Thaipan(_),
         ) => SimpleBaddyDriverData::default(),
         None => SimpleBaddyDriverData::default(),
     };

@@ -175,6 +175,7 @@ mod teufeldemon;
 mod teufelgambler;
 mod teufelquest;
 mod text;
+mod thaipan;
 mod thiefguard;
 mod thiefmaster;
 mod thomas;

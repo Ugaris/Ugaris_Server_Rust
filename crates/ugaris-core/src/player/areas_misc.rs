@@ -1083,6 +1083,47 @@ impl PlayerRuntime {
         );
     }
 
+    /// C `struct arkhata_ppd::thai_state` (`src/area/37/arkhata.h:17`) -
+    /// see [`ARKHATA_PPD_THAI_STATE_OFFSET`]'s doc comment.
+    pub fn arkhata_thai_state(&self) -> i32 {
+        if self.arkhata_ppd.len() < LEGACY_ARKHATA_PPD_SIZE {
+            return 0;
+        }
+        read_i32(&self.arkhata_ppd, ARKHATA_PPD_THAI_STATE_OFFSET)
+    }
+
+    /// C `struct arkhata_ppd::thai_state` write half - see
+    /// [`ARKHATA_PPD_THAI_STATE_OFFSET`]'s doc comment. `thaipan_driver`
+    /// (`world::npc::area37::thaipan`) is the only writer.
+    pub fn set_arkhata_thai_state(&mut self, state: i32) {
+        if self.arkhata_ppd.len() < LEGACY_ARKHATA_PPD_SIZE {
+            self.arkhata_ppd.resize(LEGACY_ARKHATA_PPD_SIZE, 0);
+        }
+        write_i32(&mut self.arkhata_ppd, ARKHATA_PPD_THAI_STATE_OFFSET, state);
+    }
+
+    /// C `struct arkhata_ppd::last_budda` (`src/area/37/arkhata.h:18`) -
+    /// see [`ARKHATA_PPD_LAST_BUDDA_OFFSET`]'s doc comment.
+    pub fn arkhata_last_budda(&self) -> i32 {
+        if self.arkhata_ppd.len() < LEGACY_ARKHATA_PPD_SIZE {
+            return 0;
+        }
+        read_i32(&self.arkhata_ppd, ARKHATA_PPD_LAST_BUDDA_OFFSET)
+    }
+
+    /// C `ppd->last_budda = realtime;` (`thaipan_driver`, `arkhata.c:
+    /// 3546`) - see [`ARKHATA_PPD_LAST_BUDDA_OFFSET`]'s doc comment.
+    pub fn set_arkhata_last_budda(&mut self, realtime_seconds: i32) {
+        if self.arkhata_ppd.len() < LEGACY_ARKHATA_PPD_SIZE {
+            self.arkhata_ppd.resize(LEGACY_ARKHATA_PPD_SIZE, 0);
+        }
+        write_i32(
+            &mut self.arkhata_ppd,
+            ARKHATA_PPD_LAST_BUDDA_OFFSET,
+            realtime_seconds,
+        );
+    }
+
     fn ensure_caligar_ppd_sized(&mut self) {
         if self.caligar_ppd.len() < LEGACY_CALIGAR_PPD_SIZE {
             self.caligar_ppd.resize(LEGACY_CALIGAR_PPD_SIZE, 0);

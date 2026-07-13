@@ -712,6 +712,22 @@ pub(crate) const IID_ARKHATA_IRONPOT: u32 = make_item_id(DEV_ID_DB, 0x0000C1);
 /// not driver-created" precedent as `IID_ARKHATA_RING`.
 pub(crate) const IID_ARKHATA_HARPY: u32 = make_item_id(DEV_ID_DB, 0x0000C9);
 
+/// C `#define IID_ARKHATA_SCROLL2 MAKE_ITEMID(DEV_ID_DB, 0x0000C3)`
+/// (`src/common/item_id.h:258`): the "Red Scroll" `thaipan_driver`'s
+/// (`world::npc::area37::thaipan`) quest-74 ("The Ancient Scroll")
+/// turn-in item, statically placed by `zones/37/Zombie_Pool.itm` - same
+/// "static zone placement, not runtime creation" precedent as
+/// `IID_ARKHATA_SCROLL1`.
+pub(crate) const IID_ARKHATA_SCROLL2: u32 = make_item_id(DEV_ID_DB, 0x0000C3);
+
+/// C `#define IID_ARKHATA_BUDDA MAKE_ITEMID(DEV_ID_DB, 0x0000C4)`
+/// (`src/common/item_id.h:259`): the "Buddah Statue" `thaipan_driver`'s
+/// (`world::npc::area37::thaipan`) repeatable once-per-24h "recover
+/// negative experience" hand-in item, statically placed by `zones/37/
+/// Zombie_Pool.itm` - same "static loot drop, not driver-created"
+/// precedent as `IID_ARKHATA_HARPY`.
+pub(crate) const IID_ARKHATA_BUDDA: u32 = make_item_id(DEV_ID_DB, 0x0000C4);
+
 pub const IID_AREA25_TELEKEY: u32 = make_item_id(DEV_ID_DB, 0x000090);
 
 pub const IID_AREA25_DOORKEY: u32 = make_item_id(DEV_ID_DB, 0x000091);

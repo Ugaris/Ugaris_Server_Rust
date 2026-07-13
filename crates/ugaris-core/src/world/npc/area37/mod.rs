@@ -2,9 +2,9 @@
 //!
 //! `src/area/37/arkhata.c` (4,764 lines, 23 character drivers) is only
 //! partially ported so far - see `PORTING_TODO.md`/`PORTING_LEDGER.md`
-//! for the remaining `thaipan`/`clerk`/`trainer`/`kidnappee`/`krenach`
-//! drivers, most of which read/write the shared `struct arkhata_ppd`
-//! quest-state blob (`PlayerRuntime::arkhata_ppd`, already scaffolded in
+//! for the remaining `clerk`/`trainer`/`kidnappee`/`krenach` drivers,
+//! most of which read/write the shared `struct arkhata_ppd` quest-state
+//! blob (`PlayerRuntime::arkhata_ppd`, already scaffolded in
 //! `crate::player::areas_misc` for other areas' cross-area reads).
 //! `CDR_MADHERMIT` (`src/area/37/arkhata.c::madhermit_driver`, `:4494-
 //! 4552`) needs no work here at all - it is byte-for-byte identical to
@@ -26,6 +26,7 @@ pub mod nop;
 pub mod potmaker;
 pub mod ramin;
 pub mod rammy;
+pub mod thaipan;
 
 #[allow(unused_imports)]
 pub use arkhatamonk::*;
@@ -53,6 +54,8 @@ pub use potmaker::*;
 pub use ramin::*;
 #[allow(unused_imports)]
 pub use rammy::*;
+#[allow(unused_imports)]
+pub use thaipan::*;
 
 use crate::character_driver::TextQaEntry;
 

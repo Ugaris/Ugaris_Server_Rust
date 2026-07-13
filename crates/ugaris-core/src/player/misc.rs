@@ -941,6 +941,18 @@ pub const ARKHATA_PPD_POT_STATE_OFFSET: usize = 10 * 4;
 /// (`world::npc::area37::potmaker`'s own progress) to start.
 pub const ARKHATA_PPD_HUNTER_STATE_OFFSET: usize = 11 * 4;
 
+/// C `struct arkhata_ppd::thai_state` (`src/area/37/arkhata.h:17`, field
+/// index 12): `thaipan_driver`'s (`world::npc::area37::thaipan`) own
+/// quest-74 ("The Ancient Scroll") dialogue state - gated on
+/// `ch[co].level >= 49` to start.
+pub const ARKHATA_PPD_THAI_STATE_OFFSET: usize = 12 * 4;
+
+/// C `struct arkhata_ppd::last_budda` (`src/area/37/arkhata.h:18`, field
+/// index 13): wall-clock `realtime` seconds of the last successful
+/// `IID_ARKHATA_BUDDA` "recover negative experience" hand-in, gating the
+/// once-per-24h cooldown at `thaipan_driver` (`arkhata.c:3533-3552`).
+pub const ARKHATA_PPD_LAST_BUDDA_OFFSET: usize = 13 * 4;
+
 // `struct staffer_ppd` field offsets (`src/common/staffer_ppd.h:13-` /
 // `src/system/game/ppd_structs.h:566-`), in declaration order. Only the
 // fields consumed by `questlog_init_staff` (`src/system/questlog.c:1203-

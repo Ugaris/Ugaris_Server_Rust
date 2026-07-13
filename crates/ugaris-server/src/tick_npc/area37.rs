@@ -424,3 +424,39 @@ pub(crate) async fn hunter_driver_179(
         );
     }
 }
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn thaipan_driver_180(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    _zone_loader: &mut ZoneLoader,
+    config: &ServerConfig,
+    _args: &Args,
+    _completed_actions: &[WorldActionCompletion],
+    _achievement_repository: &Option<ugaris_db::PgAchievementRepository>,
+    _character_repository: &Option<ugaris_db::PgCharacterRepository>,
+    _area_repository: &Option<ugaris_db::PgAreaRepository>,
+    _clan_repository: &Option<ugaris_db::PgClanRegistryRepository>,
+    _clan_log_repository: &Option<ugaris_db::PgClanLogRepository>,
+    _merchant_repository: &Option<ugaris_db::PgMerchantRepository>,
+    _military_master_storage_repository: &Option<ugaris_db::PgMilitaryMasterStorageRepository>,
+    _military_advisor_storage_repository: &Option<ugaris_db::PgMilitaryAdvisorStorageRepository>,
+    _notes_repository: &Option<ugaris_db::PgNotesRepository>,
+    _anticheat_repository: &Option<ugaris_db::PgAntiCheatRepository>,
+    _auction_repository: &Option<ugaris_db::PgAuctionRepository>,
+) {
+    // C `thaipan_driver`: the Arkhata monk who runs "The Ancient Scroll"
+    // (quest 74) and the repeatable Buddah Statue hand-in (area 37,
+    // `src/area/37/arkhata.c`).
+    let thaipan_facts = thaipan_player_facts(runtime);
+    let thaipan_events =
+        world.process_thaipan_actions(&thaipan_facts, current_unix_time() as i32, config.area_id);
+    let thaipan_events_applied = apply_thaipan_events(world, runtime, thaipan_events).await;
+    if thaipan_events_applied != 0 {
+        info!(
+            thaipan_events_applied,
+            tick = world.tick.0,
+            "applied thaipan dialogue events"
+        );
+    }
+}
