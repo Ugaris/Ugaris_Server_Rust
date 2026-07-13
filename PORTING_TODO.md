@@ -1526,11 +1526,16 @@ Ordered by player progression; the C file is the oracle.
   including the `case 0`->`1` fallthrough collapse and the `NT_TEXT`
   "repeat" single-target state reset; new `PlayerRuntime::
   arkhata_jada_state` accessor and `IID_ARKHATA_BLADE` item id.
-  Still unported: `potmaker`/`hunter`/`thaipan`/`clerk`/`trainer`/
-  `kidnappee`/`krenach` - most read/write the shared `struct arkhata_ppd`
-  quest-state blob (`PlayerRuntime::arkhata_ppd`, scaffolded in
-  `player/areas_misc.rs`; its `LEGACY_ARKHATA_PPD_SIZE` had a pre-existing
-  size bug, now fixed - see ledger).
+  `potmaker_driver` (`CDR_POTMAKER`, the Arkhata craftsman who runs "A
+  Special Pot" quest 73, `world::npc::area37::potmaker`) is now also
+  ported end to end, including the `case 0`->`1` fallthrough collapse and
+  the `NT_TEXT` "repeat" single-target state reset; new `PlayerRuntime::
+  arkhata_pot_state` accessor and `IID_ARKHATA_IRONPOT` item id.
+  Still unported: `hunter`/`thaipan`/`clerk`/`trainer`/`kidnappee`/
+  `krenach` - most read/write the shared `struct arkhata_ppd` quest-state
+  blob (`PlayerRuntime::arkhata_ppd`, scaffolded in `player/areas_misc.rs`;
+  its `LEGACY_ARKHATA_PPD_SIZE` had a pre-existing size bug, now fixed -
+  see ledger).
 - [ ] **Area 38 - `src/area/38/shrike.c`** - Shrike NPCs (amulet assembly
   ported).
 - [ ] **Common NPCs - `src/common/professor.c`, `src/common/npc_states.h`,
@@ -1570,6 +1575,10 @@ Keep entries to at most three lines: date, task, one-line result.
 Anything longer belongs in `PORTING_LEDGER.md`; historical verbose
 notes live in `PROGRESS_ARCHIVE.md`.
 
+- 2026-07-13: Area 37 CONTINUED: ported `potmaker_driver` (`CDR_POTMAKER`,
+  quest 73 "A Special Pot", gated on `level >= 48`) plus new
+  `IID_ARKHATA_IRONPOT` item id and `arkhata_pot_state` accessor. 4212
+  core [+10] + 1213 server tests pass, clean build/boot-smoke (area 37).
 - 2026-07-13: Area 37 CONTINUED: ported `jada_driver` (`CDR_JADA`, quest
   72 "The Source", gated on `ramin_state >= 12`) plus new
   `IID_ARKHATA_BLADE` item id and `arkhata_jada_state` accessor. 4202

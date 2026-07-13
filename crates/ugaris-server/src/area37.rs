@@ -26,6 +26,9 @@ use ugaris_core::world::npc::area37::gladiator::GladiatorDriverData;
 use ugaris_core::world::npc::area37::jada::{qlog_jada_source, JadaOutcomeEvent, JadaPlayerFacts};
 use ugaris_core::world::npc::area37::jaz::{qlog_jaz_bracelet, JazOutcomeEvent, JazPlayerFacts};
 use ugaris_core::world::npc::area37::judge::{JudgeOutcomeEvent, JudgePlayerFacts};
+use ugaris_core::world::npc::area37::potmaker::{
+    qlog_potmaker_special_pot, PotmakerOutcomeEvent, PotmakerPlayerFacts,
+};
 use ugaris_core::world::npc::area37::ramin::{
     qlog_ramin_shopkeeper, RaminOutcomeEvent, RaminPlayerFacts,
 };
@@ -825,6 +828,96 @@ pub(crate) async fn apply_judge_events(
                     }
                 }
                 applied += 1;
+            }
+        }
+    }
+    applied
+}
+
+pub(crate) fn potmaker_player_facts(
+    runtime: &ServerRuntime,
+) -> HashMap<CharacterId, PotmakerPlayerFacts> {
+    runtime
+        .players
+        .values()
+        .filter_map(|player| {
+            let character_id = player.character_id?;
+            Some((
+                character_id,
+                PotmakerPlayerFacts {
+                    pot_state: player.arkhata_pot_state(),
+                },
+            ))
+        })
+        .collect()
+}
+
+/// Applies each [`PotmakerOutcomeEvent`] queued by `World::
+/// process_potmaker_actions`. [`PotmakerOutcomeEvent::
+/// QuestDone73GiveInfravisionPot`] needs `ZoneLoader` item creation, same
+/// precedent as [`RammyOutcomeEvent::GiveFortressKeyAndLetter`].
+pub(crate) async fn apply_potmaker_events(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    loader: &mut ZoneLoader,
+    events: Vec<PotmakerOutcomeEvent>,
+) -> usize {
+    let mut applied = 0;
+    for event in events {
+        match event {
+            PotmakerOutcomeEvent::UpdatePotState {
+                player_id,
+                new_state,
+            } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.set_arkhata_pot_state(new_state);
+                applied += 1;
+            }
+            // C `questlog_open(co, 73)` (`arkhata.c:3073`).
+            PotmakerOutcomeEvent::QuestOpen73 { player_id } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.quest_log.open(qlog_potmaker_special_pot());
+                let payload = legacy_questlog_payload(player);
+                for (session_id, _) in runtime.sessions_for_character(player_id) {
+                    runtime.send_to_session(session_id, payload.clone());
+                }
+                applied += 1;
+            }
+            // C `questlog_done(co, 73)` plus `create_item(
+            // "infravision_pot")` (`arkhata.c:3132-3140`).
+            PotmakerOutcomeEvent::QuestDone73GiveInfravisionPot { player_id } => {
+                let Some(level) = world.characters.get(&player_id).map(|c| c.level) else {
+                    continue;
+                };
+                let level_val = level_value(level);
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                if let Some(completion) =
+                    player
+                        .quest_log
+                        .complete_legacy(qlog_potmaker_special_pot(), level, level_val)
+                {
+                    let payload = legacy_questlog_payload(player);
+                    world.give_exp(player_id, completion.granted_exp, u32::from(world.area_id));
+                    for (session_id, _) in runtime.sessions_for_character(player_id) {
+                        runtime.send_to_session(session_id, payload.clone());
+                    }
+                    applied += 1;
+                }
+                if let Ok(item) =
+                    loader.instantiate_item_template("infravision_pot", Some(player_id))
+                {
+                    let item_id = item.id;
+                    world.add_item(item);
+                    if !world.give_char_item(player_id, item_id) {
+                        world.destroy_item(item_id);
+                    }
+                }
             }
         }
     }

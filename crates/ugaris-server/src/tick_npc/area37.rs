@@ -355,3 +355,38 @@ pub(crate) async fn jada_driver_177(
         );
     }
 }
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn potmaker_driver_178(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    zone_loader: &mut ZoneLoader,
+    config: &ServerConfig,
+    _args: &Args,
+    _completed_actions: &[WorldActionCompletion],
+    _achievement_repository: &Option<ugaris_db::PgAchievementRepository>,
+    _character_repository: &Option<ugaris_db::PgCharacterRepository>,
+    _area_repository: &Option<ugaris_db::PgAreaRepository>,
+    _clan_repository: &Option<ugaris_db::PgClanRegistryRepository>,
+    _clan_log_repository: &Option<ugaris_db::PgClanLogRepository>,
+    _merchant_repository: &Option<ugaris_db::PgMerchantRepository>,
+    _military_master_storage_repository: &Option<ugaris_db::PgMilitaryMasterStorageRepository>,
+    _military_advisor_storage_repository: &Option<ugaris_db::PgMilitaryAdvisorStorageRepository>,
+    _notes_repository: &Option<ugaris_db::PgNotesRepository>,
+    _anticheat_repository: &Option<ugaris_db::PgAntiCheatRepository>,
+    _auction_repository: &Option<ugaris_db::PgAuctionRepository>,
+) {
+    // C `potmaker_driver`: the Arkhata craftsman who runs "A Special Pot"
+    // (quest 73) (area 37, `src/area/37/arkhata.c`).
+    let potmaker_facts = potmaker_player_facts(runtime);
+    let potmaker_events = world.process_potmaker_actions(&potmaker_facts, config.area_id);
+    let potmaker_events_applied =
+        apply_potmaker_events(world, runtime, zone_loader, potmaker_events).await;
+    if potmaker_events_applied != 0 {
+        info!(
+            potmaker_events_applied,
+            tick = world.tick.0,
+            "applied potmaker dialogue events"
+        );
+    }
+}

@@ -859,6 +859,15 @@ impl ZoneLoader {
                 crate::world::npc::area37::jada::JadaDriverData::default(),
             ));
         }
+        if template.driver == crate::character_driver::CDR_POTMAKER {
+            // C never parses zone-file args into `struct
+            // std_npc_driver_data` (`set_data` zero-initializes it) - no
+            // args to read here, same as `CDR_RAMMY`/`CDR_JAZ`/`CDR_RAMIN`/
+            // `CDR_JADA` above.
+            character.driver_state = Some(CharacterDriverState::Potmaker(
+                crate::world::npc::area37::potmaker::PotmakerDriverData::default(),
+            ));
+        }
         if template.driver == CDR_CALIGARGUARD2 {
             // C `ch_driver`'s `CDR_CALIGARGUARD2` dispatch
             // (`caligar.c:395-442`): `guard2_driver`'s own `NT_CHAR` loop

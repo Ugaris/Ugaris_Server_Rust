@@ -698,6 +698,12 @@ pub(crate) const IID_ARKHATA_DICTIONARY: u32 = IID_ARKHATA_AKEY1;
 /// `IID_ARKHATA_CROWN`.
 pub(crate) const IID_ARKHATA_BLADE: u32 = make_item_id(DEV_ID_DB, 0x0000C0);
 
+/// C `#define IID_ARKHATA_IRONPOT MAKE_ITEMID(DEV_ID_DB, 0x0000C1)`
+/// (`src/common/item_id.h:256`): the stolen iron pot `potmaker_driver`'s
+/// (`world::npc::area37::potmaker`) quest-73 ("A Special Pot") turn-in
+/// item.
+pub(crate) const IID_ARKHATA_IRONPOT: u32 = make_item_id(DEV_ID_DB, 0x0000C1);
+
 pub const IID_AREA25_TELEKEY: u32 = make_item_id(DEV_ID_DB, 0x000090);
 
 pub const IID_AREA25_DOORKEY: u32 = make_item_id(DEV_ID_DB, 0x000091);

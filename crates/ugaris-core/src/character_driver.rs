@@ -307,6 +307,10 @@ pub const CDR_JUDGE: u16 = 142;
 /// "arkhata"): the Arkhata mystic who runs "The Source" (quest 72), see
 /// `world::npc::area37::jada`'s module doc comment.
 pub const CDR_JADA: u16 = 144;
+/// C `#define CDR_POTMAKER 145` (`src/system/drvlib.h:195`, comment
+/// "arkhata"): the Arkhata craftsman who runs "A Special Pot" (quest 73),
+/// see `world::npc::area37::potmaker`'s module doc comment.
+pub const CDR_POTMAKER: u16 = 145;
 /// C `#define CDR_LAB2HERALD 196` (`src/system/drvlib.h:222`): the lab2
 /// graveyard chapel keeper (`src/area/22/lab2.c::lab2_herald_driver`), see
 /// `world::npc::area22::lab2_herald`'s module doc comment.
@@ -946,6 +950,7 @@ pub enum CharacterDriverState {
     Captain(crate::world::npc::area37::captain::CaptainDriverData),
     Judge(crate::world::npc::area37::judge::JudgeDriverData),
     Jada(crate::world::npc::area37::jada::JadaDriverData),
+    Potmaker(crate::world::npc::area37::potmaker::PotmakerDriverData),
 }
 /// C `bank_driver_parse` from `src/module/bank.c`. The C driver defaults
 /// opening hours to 6..23 before parsing (`bank_driver` lines 304-309).
@@ -1779,7 +1784,8 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::Arkhatamonk(_)
             | CharacterDriverState::Captain(_)
             | CharacterDriverState::Judge(_)
-            | CharacterDriverState::Jada(_),
+            | CharacterDriverState::Jada(_)
+            | CharacterDriverState::Potmaker(_),
         ) => SimpleBaddyDriverData::default(),
         None => SimpleBaddyDriverData::default(),
     };

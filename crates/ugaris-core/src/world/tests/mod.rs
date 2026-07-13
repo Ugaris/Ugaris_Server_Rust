@@ -133,6 +133,7 @@ mod npc_messages;
 mod palace_guard;
 mod pents;
 mod player_driver;
+mod potmaker;
 mod punish;
 mod querystats;
 mod ramin;
