@@ -1022,6 +1022,25 @@ impl PlayerRuntime {
         write_i32(&mut self.arkhata_ppd, ARKHATA_PPD_JUDGE_STATE_OFFSET, state);
     }
 
+    /// C `struct arkhata_ppd::jada_state` (`src/area/37/arkhata.h:14`) -
+    /// see [`ARKHATA_PPD_JADA_STATE_OFFSET`]'s doc comment.
+    pub fn arkhata_jada_state(&self) -> i32 {
+        if self.arkhata_ppd.len() < LEGACY_ARKHATA_PPD_SIZE {
+            return 0;
+        }
+        read_i32(&self.arkhata_ppd, ARKHATA_PPD_JADA_STATE_OFFSET)
+    }
+
+    /// C `struct arkhata_ppd::jada_state` write half - see
+    /// [`ARKHATA_PPD_JADA_STATE_OFFSET`]'s doc comment. `jada_driver`
+    /// (`world::npc::area37::jada`) is the only writer.
+    pub fn set_arkhata_jada_state(&mut self, state: i32) {
+        if self.arkhata_ppd.len() < LEGACY_ARKHATA_PPD_SIZE {
+            self.arkhata_ppd.resize(LEGACY_ARKHATA_PPD_SIZE, 0);
+        }
+        write_i32(&mut self.arkhata_ppd, ARKHATA_PPD_JADA_STATE_OFFSET, state);
+    }
+
     fn ensure_caligar_ppd_sized(&mut self) {
         if self.caligar_ppd.len() < LEGACY_CALIGAR_PPD_SIZE {
             self.caligar_ppd.resize(LEGACY_CALIGAR_PPD_SIZE, 0);

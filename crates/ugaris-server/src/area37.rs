@@ -23,6 +23,7 @@ use ugaris_core::world::npc::area37::fiona::{
     qlog_fiona_ring, FionaOutcomeEvent, FionaPlayerFacts,
 };
 use ugaris_core::world::npc::area37::gladiator::GladiatorDriverData;
+use ugaris_core::world::npc::area37::jada::{qlog_jada_source, JadaOutcomeEvent, JadaPlayerFacts};
 use ugaris_core::world::npc::area37::jaz::{qlog_jaz_bracelet, JazOutcomeEvent, JazPlayerFacts};
 use ugaris_core::world::npc::area37::judge::{JudgeOutcomeEvent, JudgePlayerFacts};
 use ugaris_core::world::npc::area37::ramin::{
@@ -487,6 +488,82 @@ pub(crate) async fn apply_ramin_events(
                 let new_bits = player.arkhata_letter_bits() | 2;
                 player.set_arkhata_letter_bits(new_bits);
                 applied += 1;
+            }
+        }
+    }
+    applied
+}
+
+pub(crate) fn jada_player_facts(runtime: &ServerRuntime) -> HashMap<CharacterId, JadaPlayerFacts> {
+    runtime
+        .players
+        .values()
+        .filter_map(|player| {
+            let character_id = player.character_id?;
+            Some((
+                character_id,
+                JadaPlayerFacts {
+                    jada_state: player.arkhata_jada_state(),
+                    ramin_state: player.arkhata_ramin_state(),
+                },
+            ))
+        })
+        .collect()
+}
+
+/// Applies each [`JadaOutcomeEvent`] queued by `World::
+/// process_jada_actions`.
+pub(crate) async fn apply_jada_events(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    events: Vec<JadaOutcomeEvent>,
+) -> usize {
+    let mut applied = 0;
+    for event in events {
+        match event {
+            JadaOutcomeEvent::UpdateJadaState {
+                player_id,
+                new_state,
+            } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.set_arkhata_jada_state(new_state);
+                applied += 1;
+            }
+            // C `questlog_open(co, 72)` (`arkhata.c:2902`).
+            JadaOutcomeEvent::QuestOpen72 { player_id } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.quest_log.open(qlog_jada_source());
+                let payload = legacy_questlog_payload(player);
+                for (session_id, _) in runtime.sessions_for_character(player_id) {
+                    runtime.send_to_session(session_id, payload.clone());
+                }
+                applied += 1;
+            }
+            // C `questlog_done(co, 72)` (`arkhata.c:2967`).
+            JadaOutcomeEvent::QuestDone72 { player_id } => {
+                let Some(level) = world.characters.get(&player_id).map(|c| c.level) else {
+                    continue;
+                };
+                let level_val = level_value(level);
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                if let Some(completion) =
+                    player
+                        .quest_log
+                        .complete_legacy(qlog_jada_source(), level, level_val)
+                {
+                    let payload = legacy_questlog_payload(player);
+                    world.give_exp(player_id, completion.granted_exp, u32::from(world.area_id));
+                    for (session_id, _) in runtime.sessions_for_character(player_id) {
+                        runtime.send_to_session(session_id, payload.clone());
+                    }
+                    applied += 1;
+                }
             }
         }
     }

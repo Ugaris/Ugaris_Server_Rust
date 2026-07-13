@@ -924,6 +924,11 @@ pub const ARKHATA_PPD_CAPTAIN_STATE_OFFSET: usize = 6 * 4;
 /// letters 2/3/4/5.
 pub const ARKHATA_PPD_JUDGE_STATE_OFFSET: usize = 7 * 4;
 
+/// C `struct arkhata_ppd::jada_state` (`src/area/37/arkhata.h:14`, field
+/// index 9): `jada_driver`'s (`world::npc::area37::jada`) own quest-72
+/// ("The Source") dialogue state - gated on `ramin_state >= 12` to start.
+pub const ARKHATA_PPD_JADA_STATE_OFFSET: usize = 9 * 4;
+
 // `struct staffer_ppd` field offsets (`src/common/staffer_ppd.h:13-` /
 // `src/system/game/ppd_structs.h:566-`), in declaration order. Only the
 // fields consumed by `questlog_init_staff` (`src/system/questlog.c:1203-

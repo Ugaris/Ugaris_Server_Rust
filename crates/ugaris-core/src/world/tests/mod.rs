@@ -79,6 +79,7 @@ mod hurt;
 mod islena;
 mod item_outcomes;
 mod items;
+mod jada;
 mod jail;
 mod james;
 mod janitor;

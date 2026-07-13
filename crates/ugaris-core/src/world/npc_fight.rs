@@ -729,7 +729,8 @@ impl World {
             | CharacterDriverState::Ramin(_)
             | CharacterDriverState::Arkhatamonk(_)
             | CharacterDriverState::Captain(_)
-            | CharacterDriverState::Judge(_) => None,
+            | CharacterDriverState::Judge(_)
+            | CharacterDriverState::Jada(_) => None,
         }
     }
 

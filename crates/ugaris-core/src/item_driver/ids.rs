@@ -690,6 +690,14 @@ pub(crate) const IID_ARKHATA_MONKPART3: u32 = make_item_id(DEV_ID_DB, 0x0000BA);
 /// `it[in].ID ==` checks.
 pub(crate) const IID_ARKHATA_DICTIONARY: u32 = IID_ARKHATA_AKEY1;
 
+/// C `#define IID_ARKHATA_BLADE MAKE_ITEMID(DEV_ID_DB, 0x0000C0)`
+/// (`src/common/item_id.h:255`): the evil blade `jada_driver`'s
+/// (`world::npc::area37::jada`) quest-72 ("The Source") turn-in item.
+/// Placed statically by `zones/37/Item.itm`, not created at runtime -
+/// same "static zone placement, not runtime creation" precedent as
+/// `IID_ARKHATA_CROWN`.
+pub(crate) const IID_ARKHATA_BLADE: u32 = make_item_id(DEV_ID_DB, 0x0000C0);
+
 pub const IID_AREA25_TELEKEY: u32 = make_item_id(DEV_ID_DB, 0x000090);
 
 pub const IID_AREA25_DOORKEY: u32 = make_item_id(DEV_ID_DB, 0x000091);
