@@ -111,6 +111,10 @@ impl World {
                         target_id,
                         require_visible,
                         hurtme,
+                    ) && !self.fortressguard_excludes_aggro_target(
+                        character_id,
+                        target_id,
+                        hurtme,
                     ) {
                         let tracking = self.simple_baddy_enemy_tracking(character_id, target_id);
                         if let Some(character) = self.characters.get_mut(&character_id) {
@@ -369,6 +373,34 @@ impl World {
             && !target.flags.contains(CharacterFlags::DEAD)
             && char_see_char(caster, target, &self.map, self.date.daylight)
             && may_add_spell(target, &self.items, IDR_BLESS, self.tick.0 as u32).is_some()
+    }
+
+    /// C `fortressguard_driver`'s own inline `NT_CHAR` case
+    /// (`arkhata.c:2625-2639`): unlike every other SimpleBaddy-backed
+    /// driver, the Arkhata Fortress guards never aggro a target purely on
+    /// initial sighting (`hurtme == false`, i.e. `StandardAggro`'s
+    /// `hurtme: false` variant, C's own `NT_CHAR` case) if that target
+    /// already holds an `IID_ARKHATA_LETTER5` entrance pass -
+    /// `has_item(co, IID_ARKHATA_LETTER5)`. Self-defense against an
+    /// already-attacking target (`hurtme == true`, C's `NT_GOTHIT` case,
+    /// which never checks this) is untouched, matching C exactly - see
+    /// `CDR_FORTRESSGUARD`'s own doc comment in `character_driver.rs`.
+    pub(crate) fn fortressguard_excludes_aggro_target(
+        &self,
+        character_id: CharacterId,
+        target_id: CharacterId,
+        hurtme: bool,
+    ) -> bool {
+        if hurtme {
+            return false;
+        }
+        let Some(character) = self.characters.get(&character_id) else {
+            return false;
+        };
+        if character.driver != crate::character_driver::CDR_FORTRESSGUARD {
+            return false;
+        }
+        self.character_has_item_template(target_id, crate::item_driver::IID_ARKHATA_LETTER5)
     }
 
     pub(crate) fn simple_baddy_can_add_standard_enemy(

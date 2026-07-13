@@ -713,6 +713,20 @@ impl ZoneLoader {
             character.push_driver_message(NT_CREATE, 0, 0, 0);
             apply_simple_baddy_create_message(&mut character, Some(&template.args), 0);
         }
+        if template.driver == crate::character_driver::CDR_FORTRESSGUARD {
+            // C `ch_driver`'s `CDR_FORTRESSGUARD` dispatch (`arkhata.c:
+            // 4592-4594`) calls `fortressguard_driver`, its own
+            // `simple_baddy_driver`-equivalent reimplementation over the
+            // same `DRD_SIMPLEBADDYDRIVER` storage slot (see
+            // `CDR_FORTRESSGUARD`'s own doc comment in
+            // `character_driver.rs` for the two real behavioral deltas -
+            // the `IID_ARKHATA_LETTER5` entrance-pass aggro exemption and
+            // the always-false `drinkInvPots` no-op difference). Spawn
+            // hookup follows the exact `CDR_ARKHATAPRISON`/`CDR_BOOKEATER`/
+            // `CDR_ARKHATASKELLY` precedent above.
+            character.push_driver_message(NT_CREATE, 0, 0, 0);
+            apply_simple_baddy_create_message(&mut character, Some(&template.args), 0);
+        }
         if template.driver == crate::character_driver::CDR_BOOKEATER {
             // C `ch_driver`'s `CDR_BOOKEATER` dispatch (`arkhata.c:2083-
             // 2085`): `bookeater_driver`'s entire body is an

@@ -1,6 +1,105 @@
 use super::*;
 
 #[test]
+fn fortressguard_aggros_seen_character_without_entrance_pass() {
+    let mut world = World::default();
+    world.tick = Tick(321);
+    let mut npc = character(1);
+    npc.driver = crate::character_driver::CDR_FORTRESSGUARD;
+    npc.group = 7;
+    npc.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+        aggressive: 1,
+        ..SimpleBaddyDriverData::default()
+    }));
+    npc.push_driver_message(NT_CHAR, 2, 0, 0);
+    let mut target = character(2);
+    target.group = 8;
+    world.spawn_character(npc, 10, 10);
+    world.spawn_character(target, 11, 10);
+
+    let outcomes = world.process_simple_baddy_message_actions(CharacterId(1), 1);
+
+    assert_eq!(outcomes, vec![ItemDriverOutcome::Noop]);
+    let data = world.characters[&CharacterId(1)]
+        .fight_driver
+        .as_ref()
+        .expect("fight driver state missing");
+    assert_eq!(data.enemies.len(), 1);
+    assert_eq!(data.enemies[0].target_id, CharacterId(2));
+}
+
+#[test]
+fn fortressguard_does_not_aggro_seen_character_holding_entrance_pass() {
+    // C `fortressguard_driver`'s own `NT_CHAR` case (`arkhata.c:2625-
+    // 2639`): `if (has_item(co, IID_ARKHATA_LETTER5)) break;` - entrance-
+    // pass holders are never aggroed purely on sighting.
+    let mut world = World::default();
+    world.tick = Tick(321);
+    let mut npc = character(1);
+    npc.driver = crate::character_driver::CDR_FORTRESSGUARD;
+    npc.group = 7;
+    npc.driver_state = Some(CharacterDriverState::SimpleBaddy(SimpleBaddyDriverData {
+        aggressive: 1,
+        ..SimpleBaddyDriverData::default()
+    }));
+    npc.push_driver_message(NT_CHAR, 2, 0, 0);
+    let mut target = character(2);
+    target.group = 8;
+    target.inventory[30] = Some(ItemId(50));
+    let mut pass = item(50, ItemFlags::empty());
+    pass.template_id = crate::item_driver::IID_ARKHATA_LETTER5;
+    pass.carried_by = Some(CharacterId(2));
+    world.spawn_character(npc, 10, 10);
+    world.spawn_character(target, 11, 10);
+    world.add_item(pass);
+
+    let outcomes = world.process_simple_baddy_message_actions(CharacterId(1), 1);
+
+    assert_eq!(outcomes, vec![ItemDriverOutcome::Noop]);
+    let data = world.characters[&CharacterId(1)]
+        .fight_driver
+        .as_ref()
+        .expect("fight driver state missing");
+    assert!(data.enemies.is_empty());
+}
+
+#[test]
+fn fortressguard_still_defends_itself_against_entrance_pass_holder() {
+    // C's `NT_GOTHIT` self-defense path is handled entirely by the
+    // trailing `standard_message_driver(cn, msg, 0, dat->helper)` call
+    // (`arkhata.c:2660`), which never checks `IID_ARKHATA_LETTER5` -
+    // only the initial-sighting `NT_CHAR` aggro is exempted.
+    let mut world = World::default();
+    world.tick = Tick(321);
+    let mut npc = character(1);
+    npc.driver = crate::character_driver::CDR_FORTRESSGUARD;
+    npc.group = 7;
+    npc.driver_state = Some(CharacterDriverState::SimpleBaddy(
+        SimpleBaddyDriverData::default(),
+    ));
+    npc.push_driver_message(NT_GOTHIT, 2, 10, 0);
+    let mut target = character(2);
+    target.group = 8;
+    target.inventory[30] = Some(ItemId(50));
+    let mut pass = item(50, ItemFlags::empty());
+    pass.template_id = crate::item_driver::IID_ARKHATA_LETTER5;
+    pass.carried_by = Some(CharacterId(2));
+    world.spawn_character(npc, 10, 10);
+    world.spawn_character(target, 11, 10);
+    world.add_item(pass);
+
+    let outcomes = world.process_simple_baddy_message_actions(CharacterId(1), 1);
+
+    assert_eq!(outcomes, vec![ItemDriverOutcome::Noop]);
+    let data = world.characters[&CharacterId(1)]
+        .fight_driver
+        .as_ref()
+        .expect("fight driver state missing");
+    assert_eq!(data.enemies.len(), 1);
+    assert_eq!(data.enemies[0].target_id, CharacterId(2));
+}
+
+#[test]
 fn simple_baddy_message_actions_use_inventory_hp_potion() {
     let mut world = World::default();
     let mut npc = character(1);

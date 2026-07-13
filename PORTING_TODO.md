@@ -1515,11 +1515,17 @@ Ordered by player progression; the C file is the oracle.
   existing `World::character_has_item_template` helper). New
   `PlayerRuntime::arkhata_captain_state`/`arkhata_judge_state` accessors
   and `IID_ARKHATA_LETTER4`/`IID_ARKHATA_LETTER5` item ids.
-  Still unported: `fortressguard`/`jada`/`potmaker`/`hunter`/`thaipan`/
-  `clerk`/`trainer`/`kidnappee`/`krenach` - most read/write the shared
-  `struct arkhata_ppd` quest-state blob (`PlayerRuntime::arkhata_ppd`,
-  scaffolded in `player/areas_misc.rs`; its `LEGACY_ARKHATA_PPD_SIZE` had
-  a pre-existing size bug, now fixed - see ledger).
+  `CDR_FORTRESSGUARD` (the Fortress guards) is now also done: not a pure
+  `CDR_SIMPLEBADDY` tail call like the other guard-shaped drivers in this
+  file - its own reimplementation with one real delta (never aggro an
+  `IID_ARKHATA_LETTER5` entrance-pass holder on initial sighting; self-
+  defense untouched), reproduced via a driver-id-gated filter in
+  `world::npc_messages` rather than a new NPC file (see ledger).
+  Still unported: `jada`/`potmaker`/`hunter`/`thaipan`/`clerk`/`trainer`/
+  `kidnappee`/`krenach` - most read/write the shared `struct arkhata_ppd`
+  quest-state blob (`PlayerRuntime::arkhata_ppd`, scaffolded in
+  `player/areas_misc.rs`; its `LEGACY_ARKHATA_PPD_SIZE` had a pre-existing
+  size bug, now fixed - see ledger).
 - [ ] **Area 38 - `src/area/38/shrike.c`** - Shrike NPCs (amulet assembly
   ported).
 - [ ] **Common NPCs - `src/common/professor.c`, `src/common/npc_states.h`,
@@ -2311,6 +2317,10 @@ notes live in `PROGRESS_ARCHIVE.md`.
   (`world/npc/area33/gorwin.rs`, new `CDR_TUNNELER_GORWIN`/`IID_TUNNEL*`
   ids). Item drivers/dungeon generator remain. 3954 core (+12) + 1204
   server tests pass, clean build/boot-smoke (areas 1 and 33).
+- 2026-07-13: Area 37 progress: ported `CDR_FORTRESSGUARD`/
+  `fortressguard_driver` (widened `CDR_SIMPLEBADDY` gates + spawn hookup
+  in `zone.rs`, no new NPC file - it's own reimpl, not a tail call).
+  4194 core (+3) tests pass, clean build/boot-smoke.
 - 2026-07-12: Area 33 closed: ported `tunneldoor`'s `DOOR_ENTRY`/
   `DOOR_CONTINUE` creeper-dungeon instance scan (`World::
   plan_tunnel_entry`, `find_unused_sector`/`build_fighter`/marker

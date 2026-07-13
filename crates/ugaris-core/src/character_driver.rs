@@ -238,6 +238,31 @@ pub const CDR_ARKHATASKELLY: u16 = 138;
 /// apply_arkhata_prisoner_death_from_hurt_event`, is the only other
 /// C-visible behavior this driver has).
 pub const CDR_ARKHATAPRISON: u16 = 151;
+/// C `#define CDR_FORTRESSGUARD 143` (`src/system/drvlib.h:193`, comment
+/// "arkhata"): the Arkhata Fortress guards. Unlike the plain SimpleBaddy
+/// tail calls above, `fortressguard_driver` (`arkhata.c:2587-2833`) is its
+/// own reimplementation of `simple_baddy_driver` (`src/module/
+/// simple_baddy.c:159-422`) over the same `DRD_SIMPLEBADDYDRIVER` storage
+/// slot (own locally-renamed `struct fortressguard_driver_data`, byte-
+/// identical field list) with exactly two behavioral deltas: (1) its own
+/// `NT_CHAR` case inlines the `aggressive && is_valid_enemy(...)` check
+/// itself, adding an extra `!has_item(co, IID_ARKHATA_LETTER5)` guard -
+/// entrance-pass holders are never aggroed on sighting - then always
+/// calls the trailing `standard_message_driver(cn, msg, 0, dat->helper)`
+/// with `aggressive` forced to `0` to avoid double-adding (this repo's
+/// [`SimpleBaddyMessageOutcome::StandardAggro`] `hurtme: false` variant,
+/// filtered by driver id in `world::npc_messages`); (2) it has no
+/// `NT_GOTHIT` potion-drinking case at all, which is a no-op difference
+/// since `fortressguard_driver_data` has no `drinkInvPots` field to begin
+/// with (`fortressguard_driver_parse` never accepts a `drinkinvpots=`
+/// arg), so C's own `dat->drinkInvPots` gate there would always have been
+/// false anyway. `NT_GOTHIT` self-defense (`fight_driver_add_enemy`
+/// via `standard_message_driver`, `hurtme: true`) is untouched and still
+/// fires for entrance-pass holders exactly like any other SimpleBaddy -
+/// only the initial-sighting aggro is suppressed. `ch_died_driver`/
+/// `ch_respawn_driver` (`arkhata.c:4675-4676,4738-4739`) are both bare
+/// `return 1` (no death hook, standard respawn), same as `CDR_BRIDGEGUARD`.
+pub const CDR_FORTRESSGUARD: u16 = 143;
 /// C `#define CDR_RAMMY 131` (`src/system/drvlib.h:181`, comment
 /// "arkhata"): the ruler of Arkhata, quest 65 ("Rammy's Crown") and quest
 /// 71 ("Entrance Passes") giver, see `world::npc::area37::rammy`'s module
