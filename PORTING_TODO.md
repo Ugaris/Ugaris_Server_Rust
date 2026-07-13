@@ -1545,8 +1545,12 @@ Ordered by player progression; the C file is the oracle.
   "The Traitors"), and `krenach_driver` (closes quest 78) are now also
   all ported end to end - all 23/23 character drivers in this file are
   done. Details in PORTING_LEDGER.md.
-- [ ] **Area 38 - `src/area/38/shrike.c`** - Shrike NPCs (amulet assembly
-  ported).
+- [~] **Area 38 - `src/area/38/shrike.c`** - Shrike NPCs (amulet assembly
+  ported). REMAINING: `CDR_SHR_WEREWOLF` (invisible-by-day werewolf NPC,
+  `shr_werewolf_driver`/`shr_werewolf_dead`, needs a new `world/npc/
+  area38/` module + `tick_npc/area38.rs` pass) is still unported; the
+  full `IDR_SHRIKE` misc-items driver (tree/rock/door/pool/cube/pedestal)
+  is now done - see PORTING_LEDGER.md.
 - [ ] **Common NPCs - `src/common/professor.c`, `src/common/npc_states.h`,
   `src/common/ice_shared.c` remainder** - shared NPC helpers referenced
   by multiple areas. Also wire `achievement_check_profession` from
@@ -1584,6 +1588,10 @@ Keep entries to at most three lines: date, task, one-line result.
 Anything longer belongs in `PORTING_LEDGER.md`; historical verbose
 notes live in `PROGRESS_ARCHIVE.md`.
 
+- 2026-07-13: Area 38 `IDR_SHRIKE` item driver family ported (tree/rock/
+  door/pool/cube/pedestal, `shrike_driver`'s full `drdata[0]` switch).
+  4284 core [+17] + 1213 server tests pass, clean build/boot-smoke (area
+  38, `scheduled_light_timers` confirms the new ambient priming fires).
 - 2026-07-13: Area 37 CLOSED (23/23 drivers): ported `trainer`/
   `kidnappee`/`clerk`/`krenach` drivers (quests 75/76/78) plus retroactive
   paperwork for `thaipan` (ported iteration 71, undocumented). 4267 core

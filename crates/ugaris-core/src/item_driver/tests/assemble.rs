@@ -106,7 +106,7 @@ fn execute_shrike_amulet_driver_combines_non_overlapping_parts() {
         &mut character,
         &mut amulet,
         request,
-        1,
+        38,
         false,
         &ItemDriverContext {
             cursor_driver: Some(IDR_SHRIKEAMULET),
@@ -129,7 +129,7 @@ fn execute_shrike_amulet_driver_combines_non_overlapping_parts() {
         &mut character,
         &mut amulet,
         request,
-        1,
+        38,
         false,
         &ItemDriverContext {
             cursor_driver: Some(IDR_SHRIKEAMULET),

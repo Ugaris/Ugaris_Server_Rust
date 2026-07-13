@@ -280,6 +280,7 @@ pub fn execute_item_driver_with_context(
                 IDR_DEMONCHIP => nomad_stack_driver(character, item),
                 IDR_STAFFER2 => staffer2_driver(character, item),
                 IDR_SHRIKEAMULET => shrike_amulet_driver(character, item, context),
+                IDR_SHRIKE => shrike_driver(character, item, context),
                 IDR_MINEGATEWAYKEY => mine_gateway_key_driver(character, item, context),
                 IDR_MINEGATEWAY => mine_gateway_driver(character, item, context),
                 IDR_WARPTELEPORT => warpteleport_driver(character, item, context),
@@ -372,6 +373,7 @@ pub(crate) fn legacy_libload_required_area(driver: u16) -> Option<u16> {
         IDR_TEUFELDOOR | IDR_TEUFELARENA | IDR_TEUFELRATNEST | IDR_TEUFELARENAEXIT => Some(34),
         IDR_CALIGAR => Some(36),
         IDR_ARKHATA => Some(37),
+        IDR_SHRIKEAMULET | IDR_SHRIKE => Some(38),
         IDR_DUNGEONTELE | IDR_DUNGEONFAKE | IDR_DUNGEONDOOR | IDR_DUNGEONKEY => Some(13),
         IDR_PALACEBOMB | IDR_PALACECAP => Some(11),
         IDR_FDEMONLIGHT | IDR_FDEMONLOADER | IDR_FDEMONCANNON | IDR_FDEMONGATE

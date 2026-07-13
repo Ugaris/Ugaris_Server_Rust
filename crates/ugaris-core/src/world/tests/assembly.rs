@@ -239,7 +239,7 @@ fn world_applies_shrike_amulet_assembly() {
             character_id: CharacterId(1),
             spec: 0,
         },
-        1,
+        38,
     );
 
     assert!(matches!(

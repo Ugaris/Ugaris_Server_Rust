@@ -36,6 +36,33 @@ pub enum StrStorageConversion {
     WrongKind,
 }
 
+/// C `shrike_driver`'s `drdata[0]` sub-driver selector, restricted here
+/// to the four "ambient day/night sprite" sub-drivers (`shrike.c:356-
+/// 377`): `1`=tree, `2`=rock, `6`=pedestal (all three also swap
+/// `description`), `3`=door (sprite only).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ShrikeAmbientKind {
+    Tree,
+    Rock,
+    Pede,
+    Door,
+}
+
+/// Which fresh amulet component template `tree_driver`/`rock_driver`/
+/// `pede_driver` creates (`shrike.c:113-123`/`:200-212`/`:156-166`; item
+/// keys/bits per `ugaris_data/zones/38/shrike.itm`: `shrike_amulet1` =
+/// crystal (bit 1), `shrike_amulet2` = silver chain (bit 2),
+/// `shrike_amulet3` = crescent charm (bit 4)).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ShrikeAmuletPiece {
+    /// `create_item("shrike_amulet1")` (pedestal, `pede_driver`).
+    Crystal,
+    /// `create_item("shrike_amulet2")` (tree, `tree_driver`).
+    Chain,
+    /// `create_item("shrike_amulet3")` (rock, `rock_driver`).
+    Charm,
+}
+
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ItemDriverContext {
     pub door_key: Option<DoorKeyAccess>,
@@ -148,6 +175,31 @@ pub struct ItemDriverContext {
     /// calls (`None` is treated as "not clear", never opening the door by
     /// mistake) - see `World::tunnel_mean_door_area_clear`.
     pub tunnel_door_area_clear: Option<bool>,
+    /// C `is_fullnight()` (`src/area/38/shrike.c:79-81`, `moonlight &&
+    /// sunlight < 100`): gates every `IDR_SHRIKE` sub-driver's player-
+    /// interaction branch (tree/rock/pedestal amulet pickup, pool
+    /// talisman activation) and the tree/rock/pedestal/door ambient
+    /// sprite swap. Populated from `World.date.{moonlight,sunlight}` at
+    /// every `IDR_SHRIKE` call (player-driven and timer-driven alike),
+    /// unlike the `fullmoon`/`newmoon` fields above which are only filled
+    /// in for a handful of specific drivers.
+    pub is_fullnight: bool,
+    /// C `cube_driver`'s player-push branch (`shrike.c:283-309`): the
+    /// single tile in front of the using character, if it is currently a
+    /// legal destination for the puzzle cube (`!(MF_MOVEBLOCK |
+    /// MF_TMOVEBLOCK)`, no `map[m2].it`, and `map[m2].gsprite` in
+    /// `59753..=59761`, the walkable shrine-floor sprite range). `None`
+    /// when blocked (or the item isn't `IDR_SHRIKE` `drdata[0]==5`) -
+    /// see `World::shrike_cube_push_target`.
+    pub shrike_cube_push_target: Option<(u16, u16)>,
+    /// C `cube_driver`'s `cn == 0` automatic-call branch (`shrike.c:
+    /// 322-341`): whether the cube's *remembered origin tile* (`drdata[8..
+    /// 12]`) is currently free of movement blockers/other items, i.e.
+    /// C's `!(map[m2].flags & (MF_MOVEBLOCK|MF_TMOVEBLOCK)) &&
+    /// !map[m2].it`. Only computed once the driver function has already
+    /// determined the 15-minute idle-and-moved condition holds (`None`
+    /// otherwise) - see `World::shrike_cube_origin_clear`.
+    pub shrike_cube_origin_clear: Option<bool>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -2419,6 +2471,126 @@ pub enum ItemDriverOutcome {
     TunnelDoorFlavor {
         item_id: ItemId,
         character_id: CharacterId,
+    },
+    /// C `tree_driver`/`rock_driver`/`pede_driver`/`door_driver`'s shared
+    /// `!cn` automatic-call branch (`src/area/38/shrike.c:88-104`,
+    /// `:169-185`, `:126-142`, `:224-238`): the periodic (`TICKS*60`)
+    /// day/night sprite (and, for tree/rock/pedestal, description) swap.
+    /// `kind` selects which of the four literal sprite/description pairs
+    /// `World::apply_item_driver_outcome` uses; the door has no
+    /// description swap (C never touches `it[in].description` there).
+    ShrikeAmbientRefresh {
+        item_id: ItemId,
+        x: u16,
+        y: u16,
+        kind: ShrikeAmbientKind,
+        night: bool,
+        schedule_after_ticks: u64,
+    },
+    /// C `tree_driver`/`pede_driver`'s success branch (`shrike.c:113-123`,
+    /// `:156-166`): full night, empty cursor - a fresh amulet component
+    /// is created and placed directly on the using character's cursor
+    /// (`ch[cn].citem = in2`, not the general inventory-then-hand `give_
+    /// char_item` path).
+    ShrikeGiveAmuletPiece {
+        item_id: ItemId,
+        character_id: CharacterId,
+        piece: ShrikeAmuletPiece,
+    },
+    /// C `tree_driver`/`pede_driver`'s occupied-cursor branch
+    /// (`shrike.c:107-110`, `:150-153`): "Please empty your hand (mouse
+    /// cursor) first."
+    ShrikeHandOccupied {
+        item_id: ItemId,
+        character_id: CharacterId,
+    },
+    /// C `rock_driver`'s no-cursor-item branch (`shrike.c:189-192`): "You
+    /// cannot take the piece of silver. The stone is too heavy to move."
+    ShrikeRockNoTool {
+        character_id: CharacterId,
+    },
+    /// C `rock_driver`'s wrong-cursor-item branch (`shrike.c:194-198`,
+    /// cursor item isn't `IDR_FORESTSPADE`): the "you cannot get enough
+    /// leverage..." hint.
+    ShrikeRockWrongTool {
+        character_id: CharacterId,
+    },
+    /// C `rock_driver`'s success branch (`shrike.c:200-212`): the
+    /// carried spade snaps (destroyed) and a fresh amulet component
+    /// lands on the cursor.
+    ShrikeRockDigSuccess {
+        item_id: ItemId,
+        character_id: CharacterId,
+        cursor_item_id: ItemId,
+        piece: ShrikeAmuletPiece,
+    },
+    /// C `door_driver`'s level gate (`shrike.c:229-234`, `level < 65`):
+    /// the "tingling in your fingers" hint.
+    ShrikeDoorTooWeak {
+        character_id: CharacterId,
+    },
+    /// C `door_driver`'s missing-key branch (`shrike.c:236-241`, no
+    /// cursor item or its description doesn't contain " of the Moon.")
+    /// - this port checks `cursor_template_id ==
+    /// Some(IID_SHRIKE_TALISMAN)` instead of the raw description
+    /// substring, since the Talisman of the Moon (`pool_driver`'s own
+    /// success branch) is the only item in the whole shrike item family
+    /// that description is ever set to.
+    ShrikeDoorNeedsTalisman {
+        character_id: CharacterId,
+    },
+    /// C `door_driver`'s success branch (`shrike.c:243-247`): `change_
+    /// area(cn, 38, 8, 92)`, ported as a same-area teleport since this
+    /// door only ever exists on area 38's own server (one area-server
+    /// process per area).
+    ShrikeDoorEnter {
+        character_id: CharacterId,
+    },
+    /// C `pool_driver`'s empty-cursor branch (`shrike.c:266-269`): "The
+    /// water is sweet and refreshing."
+    ShrikePoolSweetWater {
+        character_id: CharacterId,
+    },
+    /// C `pool_driver`'s not-ready branch (`shrike.c:271-274`, cursor
+    /// item isn't a fully-assembled Shrike amulet or it isn't full
+    /// night): "Your %s is wet now." - `cursor_item_id` is needed at
+    /// apply time to read the item's (lower-cased) name for the message.
+    ShrikePoolWetItem {
+        character_id: CharacterId,
+        cursor_item_id: ItemId,
+    },
+    /// C `pool_driver`'s success branch (`shrike.c:276-280`): the fully
+    /// assembled amulet becomes the Talisman of the Moon.
+    ShrikePoolTalismanCreated {
+        character_id: CharacterId,
+        cursor_item_id: ItemId,
+    },
+    /// C `cube_driver`'s blocked-push branch (`shrike.c:291-296`): "It
+    /// won't move."
+    ShrikeCubeBlocked {
+        character_id: CharacterId,
+    },
+    /// C `cube_driver`'s player-push branch (`shrike.c:297-310`): the
+    /// puzzle cube slides one tile in the direction the character is
+    /// facing.
+    ShrikeCubePush {
+        item_id: ItemId,
+        character_id: CharacterId,
+        from_x: u16,
+        from_y: u16,
+        to_x: u16,
+        to_y: u16,
+    },
+    /// C `cube_driver`'s `cn == 0` automatic-call branch (`shrike.c:
+    /// 312-341`): remembers the cube's origin tile the first time it
+    /// ever ticks, and slides the cube back to that origin once it has
+    /// sat untouched for 15 minutes away from it. Always reschedules
+    /// itself every `TICKS*5`, matching C's unconditional `call_item`.
+    ShrikeCubeAmbientTick {
+        item_id: ItemId,
+        set_origin: Option<(u16, u16)>,
+        reset_to: Option<(u16, u16)>,
+        schedule_after_ticks: u64,
     },
     AccountDepotOpened {
         item_id: ItemId,

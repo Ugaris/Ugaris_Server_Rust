@@ -83,6 +83,7 @@ mod tick_item_use_ice;
 mod tick_item_use_keyassembly;
 mod tick_item_use_lab;
 mod tick_item_use_minewall;
+mod tick_item_use_shrike;
 mod tick_item_use_shrines;
 mod tick_item_use_skelraise;
 mod tick_item_use_strategy;

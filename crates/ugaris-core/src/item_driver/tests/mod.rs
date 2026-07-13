@@ -24,6 +24,7 @@ mod area33_tunnel;
 mod area34_teufel;
 mod area36_caligar;
 mod area37_arkhata;
+mod area38_shrike;
 mod area4_pents;
 mod area6_edemon;
 mod area8_fdemon;

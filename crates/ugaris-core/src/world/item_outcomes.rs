@@ -179,6 +179,14 @@ impl World {
             && !context.has_matching_random_shrine_key)
             .then(|| self.has_matching_random_shrine_key(character_id, item_id))
             .unwrap_or(false);
+        let shrike_cube_push_target = (driver == Some(IDR_SHRIKE)
+            && context.shrike_cube_push_target.is_none()
+            && self
+                .items
+                .get(&item_id)
+                .is_some_and(|item| item.driver_data.first().copied().unwrap_or(0) == 5))
+        .then(|| self.shrike_cube_push_target(character_id, item_id))
+        .flatten();
         let area11_palace_key_context = (driver == Some(IDR_PALACEDOOR)
             && !context.has_area11_palace_key)
             .then(|| self.character_has_template_id(character_id, IID_AREA11_PALACEKEY))
@@ -271,6 +279,12 @@ impl World {
         }
         effective_context.clanspawn_contested |= clanspawn_contested;
         effective_context.has_matching_random_shrine_key |= random_shrine_key_context;
+        if effective_context.shrike_cube_push_target.is_none() {
+            effective_context.shrike_cube_push_target = shrike_cube_push_target;
+        }
+        if driver == Some(IDR_SHRIKE) {
+            effective_context.is_fullnight = self.date.moonlight != 0 && self.date.sunlight < 100;
+        }
         effective_context.has_area11_palace_key |= area11_palace_key_context;
         effective_context.has_area16_robber_key |= area16_robber_key_context;
         effective_context.has_area16_skelly_key |= area16_skelly_key_context;
@@ -371,6 +385,10 @@ impl World {
         effective_context.newmoon = self.date.newmoon;
         effective_context.solstice = self.date.solstice;
         effective_context.equinox = self.date.equinox;
+        effective_context.is_fullnight = self.date.moonlight != 0 && self.date.sunlight < 100;
+        if driver == IDR_SHRIKE && effective_context.shrike_cube_origin_clear.is_none() {
+            effective_context.shrike_cube_origin_clear = self.shrike_cube_origin_clear(item_id);
+        }
         if driver == IDR_EDEMONBALL && effective_context.edemon_fire_enabled.is_none() {
             effective_context.edemon_fire_enabled = Some(edemon_fire_enabled(&self.items));
         }
@@ -2568,6 +2586,50 @@ impl World {
                     character_id,
                     i64::from(exp_added),
                     u32::from(current_area_id),
+                );
+                outcome
+            }
+            ItemDriverOutcome::ShrikeAmbientRefresh {
+                item_id,
+                x,
+                y,
+                kind,
+                night,
+                schedule_after_ticks,
+            } => {
+                self.apply_shrike_ambient_refresh(item_id, x, y, kind, night, schedule_after_ticks);
+                outcome
+            }
+            ItemDriverOutcome::ShrikeDoorEnter { character_id } => {
+                self.apply_shrike_door_enter(character_id);
+                outcome
+            }
+            ItemDriverOutcome::ShrikePoolTalismanCreated { cursor_item_id, .. } => {
+                self.apply_shrike_pool_talisman(cursor_item_id);
+                outcome
+            }
+            ItemDriverOutcome::ShrikeCubePush {
+                item_id,
+                from_x,
+                from_y,
+                to_x,
+                to_y,
+                ..
+            } => {
+                self.apply_shrike_cube_push(item_id, from_x, from_y, to_x, to_y);
+                outcome
+            }
+            ItemDriverOutcome::ShrikeCubeAmbientTick {
+                item_id,
+                set_origin,
+                reset_to,
+                schedule_after_ticks,
+            } => {
+                self.apply_shrike_cube_ambient_tick(
+                    item_id,
+                    set_origin,
+                    reset_to,
+                    schedule_after_ticks,
                 );
                 outcome
             }

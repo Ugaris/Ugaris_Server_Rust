@@ -212,6 +212,22 @@ impl World {
                 // `cn == 0` driver needs its first timer call primed"
                 // class as every other entry in this match.
                 IDR_TUNNELDOOR2 => Some(item_id),
+                // C `create_item_nr` arms every driver-bearing item's
+                // first `call_item` at creation time (see the
+                // `IDR_LAB5_ITEM` comment above); `tree_driver`/
+                // `rock_driver`/`door_driver`/`pede_driver`'s shared `!cn`
+                // ambient day/night sprite refresh (`shrike.c:88-104`,
+                // `:169-185`, `:224-238`, `:126-142`) and `cube_driver`'s
+                // origin-remembering/auto-reset timer (`:312-343`) are
+                // this same "always-on ambient `cn == 0` driver" class -
+                // `drdata[0]` `1`=tree, `2`=rock, `3`=door, `5`=cube,
+                // `6`=pedestal. `4`=pool never participates (C's own
+                // `pool_driver` returns immediately on `cn == 0`).
+                IDR_SHRIKE
+                    if matches!(item.driver_data.first().copied(), Some(1 | 2 | 3 | 5 | 6)) =>
+                {
+                    Some(item_id)
+                }
                 _ => None,
             })
             .collect();

@@ -941,6 +941,30 @@ pub(crate) async fn process_completed_action_outcomes(
                                     &mut failed,
                                 );
                             }
+                            outcome @ (ugaris_core::item_driver::ItemDriverOutcome::ShrikeAmbientRefresh { .. }
+                            | ugaris_core::item_driver::ItemDriverOutcome::ShrikeGiveAmuletPiece { .. }
+                            | ugaris_core::item_driver::ItemDriverOutcome::ShrikeHandOccupied { .. }
+                            | ugaris_core::item_driver::ItemDriverOutcome::ShrikeRockNoTool { .. }
+                            | ugaris_core::item_driver::ItemDriverOutcome::ShrikeRockWrongTool { .. }
+                            | ugaris_core::item_driver::ItemDriverOutcome::ShrikeRockDigSuccess { .. }
+                            | ugaris_core::item_driver::ItemDriverOutcome::ShrikeDoorTooWeak { .. }
+                            | ugaris_core::item_driver::ItemDriverOutcome::ShrikeDoorNeedsTalisman { .. }
+                            | ugaris_core::item_driver::ItemDriverOutcome::ShrikeDoorEnter { .. }
+                            | ugaris_core::item_driver::ItemDriverOutcome::ShrikePoolSweetWater { .. }
+                            | ugaris_core::item_driver::ItemDriverOutcome::ShrikePoolWetItem { .. }
+                            | ugaris_core::item_driver::ItemDriverOutcome::ShrikePoolTalismanCreated { .. }
+                            | ugaris_core::item_driver::ItemDriverOutcome::ShrikeCubeBlocked { .. }
+                            | ugaris_core::item_driver::ItemDriverOutcome::ShrikeCubePush { .. }
+                            | ugaris_core::item_driver::ItemDriverOutcome::ShrikeCubeAmbientTick { .. }) => {
+                                tick_item_use_shrike::dispatch_shrike_outcome(
+                                    &mut world,
+                                    &mut zone_loader,
+                                    outcome,
+                                    &mut feedback,
+                                    &mut executed,
+                                    &mut blocked,
+                                );
+                            }
                             outcome @ (ugaris_core::item_driver::ItemDriverOutcome::KeyringShow { .. }
                             | ugaris_core::item_driver::ItemDriverOutcome::Extinguish { .. }
                             | ugaris_core::item_driver::ItemDriverOutcome::KeyedDoorToggle { .. }

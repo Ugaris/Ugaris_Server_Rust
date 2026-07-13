@@ -153,6 +153,7 @@ mod sanwyn;
 mod servant;
 mod seymour;
 mod shanra;
+mod shrike;
 mod sir_jones;
 mod skills;
 mod smugglecom;
