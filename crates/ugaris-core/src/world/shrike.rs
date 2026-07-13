@@ -26,6 +26,16 @@ const SHRIKE_CUBE_ORIGIN_X_OFFSET: usize = 8;
 const SHRIKE_CUBE_ORIGIN_Y_OFFSET: usize = 10;
 
 impl World {
+    /// C `is_fullnight()` (`shrike.c:79-81`): `moonlight && sunlight <
+    /// 100`. Shared by every `shrike.c` driver, including
+    /// `world::npc::area38::werewolf`'s day/night gate - the item-driver
+    /// boundary (`item_driver/types.rs::ItemDriverContext::is_fullnight`)
+    /// computes the same expression inline at its own two call sites in
+    /// `world/item_outcomes.rs` since it predates this helper.
+    pub(crate) fn is_fullnight(&self) -> bool {
+        self.date.moonlight != 0 && self.date.sunlight < 100
+    }
+
     /// C `tree_driver`/`rock_driver`/`pede_driver`/`door_driver`'s shared
     /// `!cn` automatic-call branch: swap sprite (and, for tree/rock/
     /// pedestal, description) if it changed, then unconditionally

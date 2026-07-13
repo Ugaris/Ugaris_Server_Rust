@@ -2,7 +2,7 @@ use super::*;
 use ugaris_core::character_driver::{
     ArenaFighterDriverData, ArenaMasterDriverData, CDR_ARENAFIGHTER, CDR_ARENAMASTER,
     CDR_ARKHATAPRISON, CDR_ARKHATASKELLY, CDR_BOOKEATER, CDR_CENTINEL, CDR_CLANCLERK,
-    CDR_CLANMASTER, CDR_LAMPGHOST, CDR_NOP, CDR_WARPFIGHTER, MS_FIGHT,
+    CDR_CLANMASTER, CDR_LAMPGHOST, CDR_NOP, CDR_SHR_WEREWOLF, CDR_WARPFIGHTER, MS_FIGHT,
 };
 use ugaris_core::world::npc::area25::WarpFighterDriverData;
 use ugaris_core::world::LegacyHurtOutcome;
@@ -2537,4 +2537,110 @@ fn warpfighter_death_ignores_the_owner_having_already_left_the_room() {
         &mut world,
         lethal_by_owner
     ));
+}
+
+fn shr_werewolf_npc(character_id: CharacterId) -> Character {
+    let mut werewolf = login_character(character_id, &login_block("Werewolf"), 38, 120, 235);
+    werewolf.flags.remove(CharacterFlags::PLAYER);
+    werewolf.driver = CDR_SHR_WEREWOLF;
+    werewolf.hp = POWERSCALE;
+    werewolf
+}
+
+#[test]
+fn shr_werewolf_death_drops_mist_sets_death_sprite_and_grumbles_at_its_player_killer() {
+    // C `shr_werewolf_dead` (`shrike.c:344-354`).
+    let mut world = World::default();
+    world.add_character(shr_werewolf_npc(CharacterId(1)));
+    world.add_character(login_character(
+        CharacterId(2),
+        &login_block("Godmode"),
+        38,
+        121,
+        235,
+    ));
+
+    let mut runtime = ServerRuntime::default();
+    let mut player = PlayerRuntime::connected(1, 0);
+    player.character_id = Some(CharacterId(2));
+    runtime.players.insert(1, player);
+
+    world.apply_legacy_hurt(
+        CharacterId(1),
+        Some(CharacterId(2)),
+        POWERSCALE * 2,
+        1,
+        0,
+        0,
+    );
+    apply_pk_hate_from_hurt_events(&mut runtime, &mut world, 0, &ZoneLoader::new());
+
+    let werewolf = world.characters.get(&CharacterId(1)).unwrap();
+    assert_eq!(werewolf.sprite, 6);
+    assert!(
+        !world.effects.is_empty(),
+        "create_mist should add an effect"
+    );
+
+    let player = runtime.player_for_character(CharacterId(2)).unwrap();
+    assert_eq!(player.area1_shrike_fails(), 1);
+
+    let texts = world.drain_pending_area_texts();
+    assert!(texts.iter().any(|text| {
+        text.message
+            .contains("I have deserved death. But still... I was hoping for something better.")
+    }));
+}
+
+#[test]
+fn shr_werewolf_death_handler_ignores_non_matching_driver_and_non_lethal_hits() {
+    let mut world = World::default();
+    let mut runtime = ServerRuntime::default();
+    let mut player = PlayerRuntime::connected(1, 0);
+    player.character_id = Some(CharacterId(2));
+    runtime.players.insert(1, player);
+
+    // Non-`CDR_SHR_WEREWOLF` driver: no counter/sprite change even on a
+    // lethal hit.
+    let mut other_npc = login_character(CharacterId(1), &login_block("Other"), 38, 120, 235);
+    other_npc.flags.remove(CharacterFlags::PLAYER);
+    other_npc.hp = POWERSCALE;
+    world.add_character(other_npc);
+    world.add_character(login_character(
+        CharacterId(2),
+        &login_block("Godmode"),
+        38,
+        121,
+        235,
+    ));
+    world.apply_legacy_hurt(
+        CharacterId(1),
+        Some(CharacterId(2)),
+        POWERSCALE * 2,
+        1,
+        0,
+        0,
+    );
+    apply_pk_hate_from_hurt_events(&mut runtime, &mut world, 0, &ZoneLoader::new());
+    assert_eq!(
+        runtime
+            .player_for_character(CharacterId(2))
+            .unwrap()
+            .area1_shrike_fails(),
+        0
+    );
+
+    // Non-lethal hit on a real werewolf: no counter/sprite change.
+    world.add_character(shr_werewolf_npc(CharacterId(3)));
+    world.apply_legacy_hurt(CharacterId(3), Some(CharacterId(2)), 1, 1, 0, 0);
+    apply_pk_hate_from_hurt_events(&mut runtime, &mut world, 0, &ZoneLoader::new());
+    assert_eq!(
+        runtime
+            .player_for_character(CharacterId(2))
+            .unwrap()
+            .area1_shrike_fails(),
+        0
+    );
+    let werewolf = world.characters.get(&CharacterId(3)).unwrap();
+    assert_ne!(werewolf.sprite, 6);
 }

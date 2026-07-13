@@ -37,12 +37,13 @@ use crate::{
         CDR_GWENDYLON, CDR_JANITOR, CDR_JAZ, CDR_JESSICA, CDR_JIU, CDR_KASSIM, CDR_KELLY,
         CDR_LAB2HERALD, CDR_LAB2UNDEAD, CDR_LAB4GNALB, CDR_LAB4SEYAN, CDR_LAB5DAEMON, CDR_LAB5MAGE,
         CDR_LAB5SEYAN, CDR_LABGNOMEDRIVER, CDR_LOSTDWARF, CDR_MISSIONGIVE, CDR_NOOK, CDR_NOP,
-        CDR_RAMMY, CDR_RESKIN, CDR_ROUVEN, CDR_SEYMOUR, CDR_SHANRA, CDR_SIMPLEBADDY, CDR_SIRJONES,
-        CDR_SMUGGLECOM, CDR_SPIRITBRAN, CDR_SUPERIOR, CDR_SUPERMAX, CDR_SWAMPCLARA, CDR_TERION,
-        CDR_TEUFELDEMON, CDR_TEUFELGAMBLER, CDR_TEUFELQUEST, CDR_TEUFELRAT, CDR_THOMAS, CDR_TRADER,
-        CDR_TUNNELER_GORWIN, CDR_TWOALCHEMIST, CDR_TWOBARKEEPER, CDR_TWOGUARD, CDR_TWOSANWYN,
-        CDR_TWOSERVANT, CDR_TWOSKELLY, CDR_TWOTHIEFGUARD, CDR_TWOTHIEFMASTER, CDR_WHITEROBBERBOSS,
-        CDR_YOAKIN, CDR_YOATIN, NT_CREATE,
+        CDR_RAMMY, CDR_RESKIN, CDR_ROUVEN, CDR_SEYMOUR, CDR_SHANRA, CDR_SHR_WEREWOLF,
+        CDR_SIMPLEBADDY, CDR_SIRJONES, CDR_SMUGGLECOM, CDR_SPIRITBRAN, CDR_SUPERIOR, CDR_SUPERMAX,
+        CDR_SWAMPCLARA, CDR_TERION, CDR_TEUFELDEMON, CDR_TEUFELGAMBLER, CDR_TEUFELQUEST,
+        CDR_TEUFELRAT, CDR_THOMAS, CDR_TRADER, CDR_TUNNELER_GORWIN, CDR_TWOALCHEMIST,
+        CDR_TWOBARKEEPER, CDR_TWOGUARD, CDR_TWOSANWYN, CDR_TWOSERVANT, CDR_TWOSKELLY,
+        CDR_TWOTHIEFGUARD, CDR_TWOTHIEFMASTER, CDR_WHITEROBBERBOSS, CDR_YOAKIN, CDR_YOATIN,
+        NT_CREATE,
     },
     entity::{
         Character, CharacterFlags, Item, ItemFlags, CHARACTER_VALUE_COUNT, INVENTORY_SIZE,
@@ -1514,6 +1515,23 @@ impl ZoneLoader {
             // The `centinel_count` template (`zones/29/wrtower.chr`) carries
             // the same `arg="aggressive=1;helper=1;scavenger=...;"` shape
             // SimpleBaddy's own `NT_CREATE` handler parses.
+            character.push_driver_message(NT_CREATE, 0, 0, 0);
+            apply_simple_baddy_create_message(&mut character, Some(&template.args), 0);
+        }
+        if template.driver == CDR_SHR_WEREWOLF {
+            // C `shr_werewolf_driver`'s night-time tail call to
+            // `char_driver(CDR_SIMPLEBADDY, ...)` (`shrike.c:382`) reuses
+            // the exact same `set_data(cn, DRD_SIMPLEBADDYDRIVER, ...)`
+            // memory slot `simple_baddy_driver_parse` fills from
+            // `ch[cn].arg` on `NT_CREATE` - parsed here at spawn time
+            // instead, same precedent as `CDR_WHITEROBBERBOSS`/
+            // `CDR_CENTINEL` above (`ugaris_data/zones/38/shrike.chr`'s
+            // `werewolf` template carries the same
+            // `arg="aggressive=1;helper=0;scavenger=20;..."` shape).
+            // `World::process_shr_werewolf_actions`
+            // (`world::npc::area38::werewolf`) decides, every tick,
+            // whether to actually run this SimpleBaddy state or the
+            // day-time invisible-walk-home behavior instead.
             character.push_driver_message(NT_CREATE, 0, 0, 0);
             apply_simple_baddy_create_message(&mut character, Some(&template.args), 0);
         }

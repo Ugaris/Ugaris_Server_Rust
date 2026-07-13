@@ -73,6 +73,7 @@ pub(crate) fn apply_pk_hate_from_hurt_events(
         apply_riverbeast_death_from_hurt_event(runtime, world, event);
         apply_bigbadspider_death_from_hurt_event(runtime, world, event);
         apply_asturin_death_from_hurt_event(runtime, world, event);
+        apply_shr_werewolf_death_from_hurt_event(runtime, world, event);
         apply_two_guard_death_from_hurt_event(runtime, world, event);
         apply_two_robber_death_from_hurt_event(runtime, world, event);
         apply_smugglelead_death_from_hurt_event(runtime, world, event);

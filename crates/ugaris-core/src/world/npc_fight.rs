@@ -154,7 +154,14 @@ impl World {
         // tail call (own reimplementation, see its own doc comment for the
         // two real deltas) but reuses `fight_driver_attack_visible`/
         // `fight_driver_follow_invisible` identically, so it needs the
-        // same gate widening.
+        // same gate widening. `CDR_SHR_WEREWOLF`'s `shr_werewolf_driver`
+        // (`shrike.c:379-391`) is a *conditional* tail call (only at full
+        // night) - unlike every other driver in this list it is
+        // deliberately *not* added to the batch sweep in
+        // `process_simple_baddy_attack_actions_with_random` below, only to
+        // this per-character gate, so `world::npc::area38::werewolf` can
+        // call this function directly once it has already decided it is
+        // night - see that module's doc comment.
         if (attacker.driver != CDR_SIMPLEBADDY
             && attacker.driver != CDR_DUNGEONFIGHTER
             && attacker.driver != CDR_PENTER
@@ -172,7 +179,8 @@ impl World {
             && attacker.driver != CDR_ARKHATAPRISON
             && attacker.driver != CDR_BOOKEATER
             && attacker.driver != CDR_ARKHATASKELLY
-            && attacker.driver != CDR_FORTRESSGUARD)
+            && attacker.driver != CDR_FORTRESSGUARD
+            && attacker.driver != CDR_SHR_WEREWOLF)
             || attacker.action != 0
             || attacker.flags.contains(CharacterFlags::DEAD)
         {

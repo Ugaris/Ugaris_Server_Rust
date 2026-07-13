@@ -1,7 +1,7 @@
 use super::*;
 use ugaris_core::character_driver::{
     CDR_ARKHATAPRISON, CDR_ARKHATASKELLY, CDR_BOOKEATER, CDR_CENTINEL, CDR_CLANCLERK,
-    CDR_CLANMASTER, CDR_GLADIATOR, CDR_LABGNOMEDRIVER, CDR_NOP, CDR_SMUGGLELEAD,
+    CDR_CLANMASTER, CDR_GLADIATOR, CDR_LABGNOMEDRIVER, CDR_NOP, CDR_SHR_WEREWOLF, CDR_SMUGGLELEAD,
     CDR_TUNNELER_GORWIN, CDR_TWOGUARD, CDR_TWOROBBER, CDR_TWOSERVANT, CDR_WARPFIGHTER,
     CDR_WHITEROBBERBOSS,
 };
@@ -1098,6 +1098,65 @@ pub(crate) fn apply_asturin_death_from_hurt_event(
     );
     if let Some(player) = runtime.player_for_character_mut(event.cause_id) {
         player.set_area1_asturin_state(4);
+    }
+    true
+}
+
+/// C `ch_died_driver`/`CDR_SHR_WEREWOLF` dispatch (`shrike.c:415-419`) ->
+/// `shr_werewolf_dead` (`:344-354`):
+/// ```c
+/// void shr_werewolf_dead(int cn, int co) {
+///     struct area1_ppd *ppd;
+///     create_mist(ch[cn].x, ch[cn].y);
+///     ch[cn].sprite = 6;
+///     if ((ch[co].flags & CF_PLAYER) && (ppd = set_data(co, DRD_AREA1_PPD, sizeof(struct area1_ppd)))) {
+///         ppd->shrike_fails++;
+///         say(cn, "I have deserved death. But still... I was hoping for something better.");
+///     }
+/// }
+/// ```
+/// Needs `PlayerRuntime::area1_shrike_fails` (a plain legacy `area1_ppd`
+/// blob offset accessor, not a fresh field - see `crate::player::area1`),
+/// so it can't live purely in `World` - same precedent as
+/// `apply_asturin_death_from_hurt_event` above.
+pub(crate) fn apply_shr_werewolf_death_from_hurt_event(
+    runtime: &mut ServerRuntime,
+    world: &mut World,
+    event: LegacyHurtEvent,
+) -> bool {
+    if !event.outcome.killed {
+        return false;
+    }
+    let Some(werewolf) = world.characters.get(&event.target_id).cloned() else {
+        return false;
+    };
+    if werewolf.driver != CDR_SHR_WEREWOLF {
+        return false;
+    }
+
+    // C `create_mist(ch[cn].x, ch[cn].y); ch[cn].sprite = 6;`
+    // (`shrike.c:347-348`).
+    world.create_mist_effect(i32::from(werewolf.x), i32::from(werewolf.y));
+    if let Some(werewolf_mut) = world.characters.get_mut(&event.target_id) {
+        werewolf_mut.sprite = 6;
+    }
+
+    // C `if ((ch[co].flags & CF_PLAYER) && (ppd = set_data(co,
+    // DRD_AREA1_PPD, ...))) { ppd->shrike_fails++; say(cn, "I have
+    // deserved death. But still... I was hoping for something better."); }`
+    // (`shrike.c:350-353`).
+    let killer_is_player = world
+        .characters
+        .get(&event.cause_id)
+        .is_some_and(|killer| killer.flags.contains(CharacterFlags::PLAYER));
+    if killer_is_player {
+        if let Some(player) = runtime.player_for_character_mut(event.cause_id) {
+            player.set_area1_shrike_fails(player.area1_shrike_fails() + 1);
+            world.npc_say(
+                event.target_id,
+                "I have deserved death. But still... I was hoping for something better.",
+            );
+        }
     }
     true
 }

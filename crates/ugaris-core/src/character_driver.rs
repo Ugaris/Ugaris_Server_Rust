@@ -799,6 +799,26 @@ pub const CDR_MISSIONGIVE: u16 = 111;
 /// (`1`=easy/`2`=normal/`3`=hard/`4`=boss) `mission_fighter_dead` reads,
 /// per `build_fighter`'s own `ch[cn].deaths = fID` (`missions.c:772`).
 pub const CDR_MISSIONFIGHT: u16 = 112;
+/// C `#define CDR_SHR_WEREWOLF 86` (`src/system/drvlib.h:134`, "shrike:
+/// werewolf"): the invisible-by-day wolf pit guardian in area 38
+/// (`src/area/38/shrike.c::shr_werewolf_driver`/`shr_werewolf_dead`).
+/// At full night (`moonlight != 0 && sunlight < 100`) it becomes visible
+/// and behaves exactly like a plain `CDR_SIMPLEBADDY` (C's unconditional
+/// tail call `char_driver(CDR_SIMPLEBADDY, CDT_DRIVER, cn, ret,
+/// lastact)`); by day it stays `CF_INVISIBLE` and walks home. See
+/// `world::npc::area38::werewolf` for the day/night driver body and
+/// `ugaris-server`'s `apply_shr_werewolf_death_from_hurt_event` for the
+/// `shr_werewolf_dead` mist/sprite/`PlayerRuntime::area1_shrike_fails`
+/// death hook. Its zone-spawn wiring in `zone.rs` (parsing the same
+/// `arg="aggressive=1;helper=0;scavenger=20;..."` string `CDR_SIMPLEBADDY`
+/// itself parses) follows the `CDR_WHITEROBBERBOSS`/`CDR_CENTINEL`
+/// precedent, but unlike those two pure tail calls, the `CDR_SIMPLEBADDY`
+/// gates in `world/npc_fight.rs`/`world/npc_idle.rs` are deliberately
+/// *not* widened for this driver - the werewolf's day/night gate must run
+/// first (only `world::npc::area38::werewolf` calls the single-character
+/// SimpleBaddy action functions directly, only when full night), or it
+/// would fight/wander during the day too.
+pub const CDR_SHR_WEREWOLF: u16 = 86;
 pub const DRD_SIMPLEBADDYDRIVER: u32 = 0x0100_0013;
 pub const DRD_CLARADRIVER: u32 = 0x0100_0059;
 pub const DRD_SKELLYDRIVER: u32 = 0x0100_006a;

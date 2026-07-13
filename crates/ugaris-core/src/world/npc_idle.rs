@@ -79,7 +79,15 @@ impl World {
         // `teufelrat_driver` (`teufel.c:1610-1626`) is a pure tail call
         // too - its own `NT_CHAR` case body is empty (commented out in
         // C), so unlike `CDR_TEUFELDEMON` it needs no extra per-tick
-        // logic of its own at all.
+        // logic of its own at all. `CDR_SHR_WEREWOLF`'s `shr_werewolf_
+        // driver` (`shrike.c:379-391`) is a *conditional* tail call (only
+        // at full night) - unlike every other driver in this list it is
+        // deliberately *not* added to the batch sweep in
+        // `process_simple_baddy_noncombat_actions_with_random_and_
+        // completions` below, only to this per-character gate, so
+        // `world::npc::area38::werewolf` can call this function directly
+        // once it has already decided it is night - see that module's
+        // doc comment.
         if (character.driver != CDR_SIMPLEBADDY
             && character.driver != CDR_DUNGEONFIGHTER
             && character.driver != CDR_PENTER
@@ -96,7 +104,8 @@ impl World {
             && character.driver != CDR_ARKHATAPRISON
             && character.driver != CDR_BOOKEATER
             && character.driver != CDR_ARKHATASKELLY
-            && character.driver != CDR_FORTRESSGUARD)
+            && character.driver != CDR_FORTRESSGUARD
+            && character.driver != CDR_SHR_WEREWOLF)
             || character.action != 0
             || character.flags.contains(CharacterFlags::DEAD)
         {

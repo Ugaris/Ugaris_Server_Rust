@@ -195,6 +195,7 @@ mod vampire2;
 mod warpfighter;
 mod warpmaster;
 mod weather;
+mod werewolf;
 mod world_misc;
 mod yoakin;
 mod yoatin;

@@ -1545,12 +1545,9 @@ Ordered by player progression; the C file is the oracle.
   "The Traitors"), and `krenach_driver` (closes quest 78) are now also
   all ported end to end - all 23/23 character drivers in this file are
   done. Details in PORTING_LEDGER.md.
-- [~] **Area 38 - `src/area/38/shrike.c`** - Shrike NPCs (amulet assembly
-  ported). REMAINING: `CDR_SHR_WEREWOLF` (invisible-by-day werewolf NPC,
-  `shr_werewolf_driver`/`shr_werewolf_dead`, needs a new `world/npc/
-  area38/` module + `tick_npc/area38.rs` pass) is still unported; the
-  full `IDR_SHRIKE` misc-items driver (tree/rock/door/pool/cube/pedestal)
-  is now done - see PORTING_LEDGER.md.
+- [x] **Area 38 - `src/area/38/shrike.c`** - Shrike NPCs (amulet assembly,
+  `IDR_SHRIKE` misc-items driver, and `CDR_SHR_WEREWOLF` invisible-by-day
+  werewolf + its death hook) all ported end to end - see PORTING_LEDGER.md.
 - [ ] **Common NPCs - `src/common/professor.c`, `src/common/npc_states.h`,
   `src/common/ice_shared.c` remainder** - shared NPC helpers referenced
   by multiple areas. Also wire `achievement_check_profession` from
@@ -2369,4 +2366,8 @@ notes live in `PROGRESS_ARCHIVE.md`.
   plan_tunnel_entry`, `find_unused_sector`/`build_fighter`/marker
   handlers) plus its `ugaris-server` creeper-spawn wiring. 3985 core
   (+31) + 1204 server tests pass, clean build/boot-smoke (areas 1, 33).
+- 2026-07-13: Area 38 closed: ported `CDR_SHR_WEREWOLF`'s day/night gate
+  (`world/npc/area38/werewolf.rs` + `tick_npc/area38.rs`) and its
+  `shr_werewolf_dead` mist/sprite/`area1_shrike_fails` death hook. 4288
+  core (+4) + 1215 server (+2) tests pass, clean build/boot-smoke.
 
