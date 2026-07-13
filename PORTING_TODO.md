@@ -1548,12 +1548,21 @@ Ordered by player progression; the C file is the oracle.
 - [x] **Area 38 - `src/area/38/shrike.c`** - Shrike NPCs (amulet assembly,
   `IDR_SHRIKE` misc-items driver, and `CDR_SHR_WEREWOLF` invisible-by-day
   werewolf + its death hook) all ported end to end - see PORTING_LEDGER.md.
-- [ ] **Common NPCs - `src/common/professor.c`, `src/common/npc_states.h`,
+- [x] **Common NPCs - `src/common/professor.c`, `src/common/npc_states.h`,
   `src/common/ice_shared.c` remainder** - shared NPC helpers referenced
   by multiple areas. Also wire `achievement_check_profession` from
   `learn_prof`/`improve_prof` using the existing `award_*` helper pattern
   in `crates/ugaris-server/src/achievement.rs` (Achievements task, closed
-  iteration 84).
+  iteration 84). *(done - `npc_states.h`/`ice_shared.c` were already fully
+  covered by prior work (their content is subsumed by already-ported NPC
+  drivers/item drivers); `professor.c` (`CDR_PROFESSOR`, 11 live
+  "Teacher" NPCs on Area 3's map) is now ported end to end -
+  `world::npc::professor` (driver, `PROFESSOR_QA`, `learn_prof`/
+  `improve_prof`/`free_prof_points`/`count_prof`, the `src/system/prof.c`
+  base/max/step table) plus a new `award_profession_achievement` wrapper
+  in `ugaris-server/src/achievement.rs` drained via a new
+  `ProfessorAchievementCheck` queue in `tick_world::world_step`. Details
+  in PORTING_LEDGER.md.)*
 
 ---
 
@@ -1585,6 +1594,10 @@ Keep entries to at most three lines: date, task, one-line result.
 Anything longer belongs in `PORTING_LEDGER.md`; historical verbose
 notes live in `PROGRESS_ARCHIVE.md`.
 
+- 2026-07-13: Common NPCs task CLOSED: `CDR_PROFESSOR` (`professor.c`, 11
+  live Area-3 "Teacher" NPCs) ported end to end with `award_profession_
+  achievement` wiring; `npc_states.h`/`ice_shared.c` were already done.
+  4302 core [+14] + 1219 server [+4] tests pass, clean build/boot-smoke.
 - 2026-07-13: Area 38 `IDR_SHRIKE` item driver family ported (tree/rock/
   door/pool/cube/pedestal, `shrike_driver`'s full `drdata[0]` switch).
   4284 core [+17] + 1213 server tests pass, clean build/boot-smoke (area

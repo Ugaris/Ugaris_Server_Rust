@@ -641,7 +641,8 @@ impl World {
                 | CharacterDriverState::Trainer(_)
                 | CharacterDriverState::Kidnappee(_)
                 | CharacterDriverState::Clerk(_)
-                | CharacterDriverState::Krenach(_) => None,
+                | CharacterDriverState::Krenach(_)
+                | CharacterDriverState::Professor(_) => None,
             });
         let Some(target_id) = target_id else {
             return false;

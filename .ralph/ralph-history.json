@@ -2783,19 +2783,60 @@
         "test result: ok. 81 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 0 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 0.00s"
       ]
+    },
+    {
+      "iteration": 75,
+      "startedAt": "2026-07-13T08:25:40.039Z",
+      "endedAt": "2026-07-13T09:22:59.286Z",
+      "durationMs": 3437635,
+      "agent": "opencode",
+      "model": "anthropic/claude-sonnet-5",
+      "toolsUsed": {},
+      "filesModified": [
+        "PORTING_LEDGER.md",
+        "PORTING_TODO.md",
+        "crates/ugaris-core/src/character_driver.rs",
+        "crates/ugaris-core/src/world/mod.rs",
+        "crates/ugaris-core/src/world/npc/mod.rs",
+        "crates/ugaris-core/src/world/npc_fight.rs",
+        "crates/ugaris-core/src/world/npc_idle.rs",
+        "crates/ugaris-core/src/world/tests/mod.rs",
+        "crates/ugaris-core/src/zone.rs",
+        "crates/ugaris-server/src/achievement.rs",
+        "crates/ugaris-server/src/tests/achievement.rs",
+        "crates/ugaris-server/src/tick_npc/mod.rs",
+        "crates/ugaris-server/src/tick_npc/system.rs",
+        "crates/ugaris-server/src/tick_world.rs",
+        "crates/ugaris-core/src/world/npc/professor.rs",
+        "crates/ugaris-core/src/world/tests/professor.rs"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": [
+        "All green: 4302 core + 1219 server tests pass, 0 failures. Now build the server binary and boot-smoke it since this touches the runtime tick loop.",
+        "Everything is green: workspace tests pass (4302 core, 81 db, 3 net, 45 protocol, 1219 server, all zero failures), `cargo fmt --all` clean, `cargo build -p ugaris-server` clean, and boot-smoke against ",
+        "- Added 18 new tests (14 core + 4 server); full workspace test suite green (4302+81+3+45+1219, 0 failures); clean `fmt`/build; boot-smoke against Area 3 (where the 11 live \"Teacher\" NPCs are placed) c",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "\u001b[0m$ \u001b[0mcargo test --workspace 2>&1 | grep -E \"FAILED|error|test result\" | head -50",
+        "test error::tests::error_constants_match_legacy_header ... ok",
+        "test error::tests::error_strings_match_legacy_table ... ok",
+        "test error::tests::out_of_range_errors_use_c_fallback_string ... ok",
+        "test world::tests::dungeon_master::attack_command_failure_says_error_and_never_charges_or_queues ... ok",
+        "test result: ok. 4288 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.32s"
+      ]
     }
   ],
-  "totalDurationMs": 210050862,
+  "totalDurationMs": 213488497,
   "struggleIndicators": {
     "repeatedErrors": {
       "3375 core (+17) and 1168 server (+6) tests all pass, zero failures. Now let's build ugaris-server fo": 1,
       "- `cargo fmt --all`, `cargo test --workspace` (3375 core + 1168 server, zero failures/warnings), `ca": 1,
-      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 74,
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 75,
       "\u001b[0m$ \u001b[0mcd /home/eddow/Development/UgarisProjects/Ugaris_Server_Rust && cargo test --workspace 2>&": 41,
-      "test error::tests::error_constants_match_legacy_header ... ok": 33,
-      "test error::tests::error_strings_match_legacy_table ... ok": 33,
-      "test error::tests::out_of_range_errors_use_c_fallback_string ... ok": 33,
-      "test world::tests::dungeon_master::attack_command_failure_says_error_and_never_charges_or_queues ...": 19,
+      "test error::tests::error_constants_match_legacy_header ... ok": 34,
+      "test error::tests::error_strings_match_legacy_table ... ok": 34,
+      "test error::tests::out_of_range_errors_use_c_fallback_string ... ok": 34,
+      "test world::tests::dungeon_master::attack_command_failure_says_error_and_never_charges_or_queues ...": 20,
       "test result: ok. 3358 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.30s": 1,
       "test result: ok. 81 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s": 38,
       "test result: ok. 1168 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 8.03s": 1,
@@ -3128,7 +3169,12 @@
       "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 4284 filtered out; finished in 0.03s": 1,
       "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 1214 filtered out; finished in 0.00s": 1,
       "test result: ok. 1215 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 6.46s": 1,
-      "test result: ok. 4288 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.31s": 1
+      "test result: ok. 4288 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.31s": 1,
+      "All green: 4302 core + 1219 server tests pass, 0 failures. Now build the server binary and boot-smok": 1,
+      "Everything is green: workspace tests pass (4302 core, 81 db, 3 net, 45 protocol, 1219 server, all ze": 1,
+      "- Added 18 new tests (14 core + 4 server); full workspace test suite green (4302+81+3+45+1219, 0 fai": 1,
+      "\u001b[0m$ \u001b[0mcargo test --workspace 2>&1 | grep -E \"FAILED|error|test result\" | head -50": 1,
+      "test result: ok. 4288 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.32s": 1
     },
     "noProgressIterations": 0,
     "shortIterations": 0

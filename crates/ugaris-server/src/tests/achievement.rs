@@ -1231,6 +1231,106 @@ async fn award_skill_achievement_is_a_noop_for_characters_without_a_player_runti
 }
 
 // ============================================================================
+// `award_profession_achievement` (`src/module/achievements/achievement.c:
+// 1220-1285`'s `achievement_check_profession`, called from `learn_prof`/
+// `improve_prof`, `src/common/professor.c:291`/`:329`).
+// ============================================================================
+
+#[tokio::test]
+async fn award_profession_achievement_unlocks_master_athlete_at_level_30() {
+    let character_id = CharacterId(7);
+    let (mut world, mut runtime) = connected_player(character_id, 1);
+
+    award_profession_achievement(
+        &mut world,
+        &mut runtime,
+        &None,
+        character_id,
+        ugaris_core::achievement::P_ATHLETE,
+        30,
+    )
+    .await;
+
+    let player = runtime.player_for_character(character_id).unwrap();
+    assert!(player
+        .achievement_data
+        .is_unlocked(AchievementType::MasterAthlete));
+    let payloads = runtime
+        .tick_out
+        .get(&1)
+        .expect("session should receive an unlock packet");
+    assert_eq!(payloads[0][3], AchievementType::MasterAthlete as u8);
+}
+
+#[tokio::test]
+async fn award_profession_achievement_ignores_sub_threshold_levels() {
+    let character_id = CharacterId(7);
+    let (mut world, mut runtime) = connected_player(character_id, 1);
+
+    award_profession_achievement(
+        &mut world,
+        &mut runtime,
+        &None,
+        character_id,
+        ugaris_core::achievement::P_ATHLETE,
+        29,
+    )
+    .await;
+
+    let player = runtime.player_for_character(character_id).unwrap();
+    assert!(!player
+        .achievement_data
+        .is_unlocked(AchievementType::MasterAthlete));
+    assert!(runtime.tick_out.get(&1).is_none());
+}
+
+#[tokio::test]
+async fn award_profession_achievement_unlocks_master_herbalist_at_level_30() {
+    let character_id = CharacterId(7);
+    let (mut world, mut runtime) = connected_player(character_id, 1);
+
+    award_profession_achievement(
+        &mut world,
+        &mut runtime,
+        &None,
+        character_id,
+        ugaris_core::achievement::P_HERBALIST,
+        30,
+    )
+    .await;
+
+    let player = runtime.player_for_character(character_id).unwrap();
+    assert!(player
+        .achievement_data
+        .is_unlocked(AchievementType::MasterHerbalistProf));
+}
+
+#[tokio::test]
+async fn award_profession_achievement_is_a_noop_for_characters_without_a_player_runtime() {
+    let character_id = CharacterId(9);
+    let mut world = World::default();
+    world.add_character(login_character(
+        character_id,
+        &login_block("Npc"),
+        1,
+        10,
+        10,
+    ));
+    let mut runtime = ServerRuntime::default();
+
+    award_profession_achievement(
+        &mut world,
+        &mut runtime,
+        &None,
+        character_id,
+        ugaris_core::achievement::P_ATHLETE,
+        30,
+    )
+    .await;
+    assert!(runtime.player_for_character(character_id).is_none());
+}
+
+// ============================================================================
 // `give_money` (`src/system/tool.c:1459-1483`).
 // ============================================================================
 

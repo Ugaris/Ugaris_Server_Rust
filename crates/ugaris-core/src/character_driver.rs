@@ -24,6 +24,10 @@ pub const CDR_SIMPLEBADDY: u16 = 7;
 pub const CDR_BANK: u16 = 22;
 pub const CDR_MACRO: u16 = 37;
 pub const CDR_SWAMPCLARA: u16 = 54;
+/// C `#define CDR_PROFESSOR 55` (`src/system/drvlib.h`): the generic
+/// profession-teacher NPC (`src/common/professor.c`), see
+/// `world::npc::professor`'s module doc comment.
+pub const CDR_PROFESSOR: u16 = 55;
 pub const CDR_SWAMPMONSTER: u16 = 56;
 pub const CDR_PALACEISLENA: u16 = 57;
 /// C `#define CDR_FORESTIMP 58` (`src/system/drvlib.h`): the treasure-
@@ -1004,6 +1008,7 @@ pub enum CharacterDriverState {
     Kidnappee(crate::world::npc::area37::kidnappee::KidnappeeDriverData),
     Clerk(crate::world::npc::area37::clerk::ClerkDriverData),
     Krenach(crate::world::npc::area37::krenach::KrenachDriverData),
+    Professor(crate::world::npc::professor::ProfessorDriverData),
 }
 /// C `bank_driver_parse` from `src/module/bank.c`. The C driver defaults
 /// opening hours to 6..23 before parsing (`bank_driver` lines 304-309).
@@ -1844,7 +1849,8 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::Trainer(_)
             | CharacterDriverState::Kidnappee(_)
             | CharacterDriverState::Clerk(_)
-            | CharacterDriverState::Krenach(_),
+            | CharacterDriverState::Krenach(_)
+            | CharacterDriverState::Professor(_),
         ) => SimpleBaddyDriverData::default(),
         None => SimpleBaddyDriverData::default(),
     };
@@ -4445,5 +4451,8 @@ pub use crate::world::npc::lostcon::LostconDriverData;
 pub use crate::world::npc::macro_npc::{MacroDriverData, MacroDriverState};
 pub use crate::world::npc::merchant::{
     parse_merchant_driver_args, MerchantDriverData, MERCHANT_QA,
+};
+pub use crate::world::npc::professor::{
+    parse_professor_driver_args, ProfessorDriverData, PROFESSOR_QA,
 };
 pub use crate::world::npc::trader::{TraderDriverData, TRADER_QA};

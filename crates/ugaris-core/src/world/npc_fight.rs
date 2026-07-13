@@ -745,7 +745,8 @@ impl World {
             | CharacterDriverState::Trainer(_)
             | CharacterDriverState::Kidnappee(_)
             | CharacterDriverState::Clerk(_)
-            | CharacterDriverState::Krenach(_) => None,
+            | CharacterDriverState::Krenach(_)
+            | CharacterDriverState::Professor(_) => None,
         }
     }
 

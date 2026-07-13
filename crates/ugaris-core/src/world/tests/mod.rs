@@ -138,6 +138,7 @@ mod palace_guard;
 mod pents;
 mod player_driver;
 mod potmaker;
+mod professor;
 mod punish;
 mod querystats;
 mod ramin;

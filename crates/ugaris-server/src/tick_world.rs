@@ -532,6 +532,18 @@ pub(crate) async fn world_step(
         )
         .await;
     }
+    // C professor.c learn_prof/improve_prof achievement_check_profession.
+    for check in world.drain_pending_professor_achievement_checks() {
+        award_profession_achievement(
+            &mut world,
+            &mut runtime,
+            &achievement_repository,
+            check.player_id,
+            check.profession,
+            check.level,
+        )
+        .await;
+    }
     // C kill_char give_first_kill.
     for check in world.drain_pending_first_kill_checks() {
         apply_first_kill_check(

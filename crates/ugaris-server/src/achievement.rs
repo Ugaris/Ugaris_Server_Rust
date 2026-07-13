@@ -823,6 +823,51 @@ pub(crate) async fn award_skill_achievement(
     record_achievement_firsts_and_announce(world, repository, character_id, &name, &unlocked).await;
 }
 
+/// C `achievement_check_profession` (`src/module/achievements/
+/// achievement.c:1220-1285`), called from `learn_prof`/`improve_prof`
+/// (`src/common/professor.c:291`/`:329`) after a successful profession
+/// learn/raise. `prof_type` is the legacy `P_*` index
+/// (`ugaris_core::achievement::P_ATHLETE` etc.), `prof_level` is the new
+/// bare profession value (`ch[co].prof[nr]` after the change). Consumes a
+/// `ProfessorAchievementCheck` queued by `World::process_professor_actions`
+/// (see `world::npc::professor`'s module doc comment for why the deferral
+/// exists). A no-op if the character has no live `PlayerRuntime` (mirrors
+/// C's `CF_PLAYER` gate, already checked before queuing the event).
+pub(crate) async fn award_profession_achievement(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    repository: &Option<ugaris_db::PgAchievementRepository>,
+    character_id: CharacterId,
+    prof_type: i32,
+    prof_level: i32,
+) {
+    let Some(name) = world
+        .characters
+        .get(&character_id)
+        .map(|character| character.name.clone())
+    else {
+        return;
+    };
+    let now = current_unix_time();
+    let Some(player) = runtime.player_for_character_mut(character_id) else {
+        return;
+    };
+    let unlocked = ugaris_core::achievement::check_profession(
+        &mut player.achievement_data,
+        prof_type,
+        prof_level,
+        &name,
+        now,
+    );
+    for ty in &unlocked {
+        let payload = achievement_unlock_payload(*ty, now);
+        for (sid, _) in runtime.sessions_for_character(character_id) {
+            runtime.send_to_session(sid, payload.clone());
+        }
+    }
+    record_achievement_firsts_and_announce(world, repository, character_id, &name, &unlocked).await;
+}
+
 /// C `give_money` (`src/system/tool.c:1459-1483`): adds `amount` silver to
 /// the character's gold pouch, sets `CF_ITEMS`, and sends the "You
 /// received ... It has been placed in your gold pouch." notice (colored

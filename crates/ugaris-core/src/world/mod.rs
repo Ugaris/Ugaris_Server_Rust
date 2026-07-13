@@ -509,6 +509,9 @@ pub struct World {
     pending_gold_change_events: Vec<CharacterId>,
     pending_bank_events: Vec<BankEvent>,
     pending_trader_events: Vec<TraderEvent>,
+    /// Queued `achievement_check_profession` calls from `learn_prof`/
+    /// `improve_prof` - see `world::npc::professor`'s module doc comment.
+    pending_professor_achievement_checks: Vec<ProfessorAchievementCheck>,
     pending_clanmaster_events: Vec<ClanmasterEvent>,
     pending_clanclerk_events: Vec<ClanclerkEvent>,
     pending_clubmaster_events: Vec<ClubmasterEvent>,

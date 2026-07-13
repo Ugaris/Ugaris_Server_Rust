@@ -518,6 +518,12 @@ impl ZoneLoader {
                 crate::character_driver::parse_bank_driver_args(&template.args),
             ));
         }
+        if template.driver == crate::character_driver::CDR_PROFESSOR {
+            character.driver_state =
+                Some(crate::character_driver::CharacterDriverState::Professor(
+                    crate::character_driver::parse_professor_driver_args(&template.args),
+                ));
+        }
         if template.driver == CDR_TRADER {
             // C never parses zone-file args into `struct trader_data`
             // (`set_data` zero-initializes it) - no args to read here.

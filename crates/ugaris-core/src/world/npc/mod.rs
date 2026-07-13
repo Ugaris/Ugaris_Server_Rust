@@ -39,6 +39,7 @@ pub mod janitor;
 pub mod lostcon;
 pub mod macro_npc;
 pub mod merchant;
+pub mod professor;
 pub mod trader;
 
 #[allow(unused_imports)]
@@ -109,5 +110,7 @@ pub use lostcon::*;
 pub use macro_npc::*;
 #[allow(unused_imports)]
 pub use merchant::*;
+#[allow(unused_imports)]
+pub use professor::*;
 #[allow(unused_imports)]
 pub use trader::*;
