@@ -75,6 +75,7 @@ mod guard;
 mod guardbran;
 mod guiwynn;
 mod gwendylon;
+mod hunter;
 mod hurt;
 mod islena;
 mod item_outcomes;

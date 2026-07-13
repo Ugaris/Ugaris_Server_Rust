@@ -704,6 +704,14 @@ pub(crate) const IID_ARKHATA_BLADE: u32 = make_item_id(DEV_ID_DB, 0x0000C0);
 /// item.
 pub(crate) const IID_ARKHATA_IRONPOT: u32 = make_item_id(DEV_ID_DB, 0x0000C1);
 
+/// C `#define IID_ARKHATA_HARPY MAKE_ITEMID(DEV_ID_DB, 0x0000C9)`
+/// (`src/common/item_id.h:264`): the "Harpy_Cape" skin `hunter_driver`'s
+/// (`world::npc::area37::hunter`) quest-77 ("The Blue Harpy") turn-in
+/// item, dropped by killing the Blue Harpy monster (`ugaris_data/zones/
+/// 37/Blue_harp.chr`) - not created at runtime, same "static loot drop,
+/// not driver-created" precedent as `IID_ARKHATA_RING`.
+pub(crate) const IID_ARKHATA_HARPY: u32 = make_item_id(DEV_ID_DB, 0x0000C9);
+
 pub const IID_AREA25_TELEKEY: u32 = make_item_id(DEV_ID_DB, 0x000090);
 
 pub const IID_AREA25_DOORKEY: u32 = make_item_id(DEV_ID_DB, 0x000091);

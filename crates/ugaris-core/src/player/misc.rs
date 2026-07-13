@@ -935,6 +935,12 @@ pub const ARKHATA_PPD_JADA_STATE_OFFSET: usize = 9 * 4;
 /// 48` to start.
 pub const ARKHATA_PPD_POT_STATE_OFFSET: usize = 10 * 4;
 
+/// C `struct arkhata_ppd::hunter_state` (`src/area/37/arkhata.h:16`, field
+/// index 11): `hunter_driver`'s (`world::npc::area37::hunter`) own quest-77
+/// ("The Blue Harpy") dialogue state - gated on `pot_state > 0`
+/// (`world::npc::area37::potmaker`'s own progress) to start.
+pub const ARKHATA_PPD_HUNTER_STATE_OFFSET: usize = 11 * 4;
+
 // `struct staffer_ppd` field offsets (`src/common/staffer_ppd.h:13-` /
 // `src/system/game/ppd_structs.h:566-`), in declaration order. Only the
 // fields consumed by `questlog_init_staff` (`src/system/questlog.c:1203-

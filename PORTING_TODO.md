@@ -1531,11 +1531,19 @@ Ordered by player progression; the C file is the oracle.
   ported end to end, including the `case 0`->`1` fallthrough collapse and
   the `NT_TEXT` "repeat" single-target state reset; new `PlayerRuntime::
   arkhata_pot_state` accessor and `IID_ARKHATA_IRONPOT` item id.
-  Still unported: `hunter`/`thaipan`/`clerk`/`trainer`/`kidnappee`/
-  `krenach` - most read/write the shared `struct arkhata_ppd` quest-state
-  blob (`PlayerRuntime::arkhata_ppd`, scaffolded in `player/areas_misc.rs`;
-  its `LEGACY_ARKHATA_PPD_SIZE` had a pre-existing size bug, now fixed -
-  see ledger).
+  `hunter_driver` (`CDR_HUNTER`, the Arkhata hunter who runs "The Blue
+  Harpy" quest 77, `world::npc::area37::hunter`) is now also ported end to
+  end, including the `case 0`->`1` and `case 4`->`5` fallthrough collapses
+  (the latter's rewound-state-gets-its-own-arm precedent from `rammy`'s
+  `rs == 14` applies to state `1` here too, since the `NT_TEXT` "repeat"
+  reset targets it directly) and the `NT_GIVE` harpy-skin turn-in
+  (150-gold reward); new `IID_ARKHATA_HARPY` item id (a static loot drop,
+  not driver-created) and `arkhata_hunter_state` accessor.
+  Still unported: `thaipan`/`clerk`/`trainer`/`kidnappee`/`krenach` - most
+  read/write the shared `struct arkhata_ppd` quest-state blob
+  (`PlayerRuntime::arkhata_ppd`, scaffolded in `player/areas_misc.rs`; its
+  `LEGACY_ARKHATA_PPD_SIZE` had a pre-existing size bug, now fixed - see
+  ledger).
 - [ ] **Area 38 - `src/area/38/shrike.c`** - Shrike NPCs (amulet assembly
   ported).
 - [ ] **Common NPCs - `src/common/professor.c`, `src/common/npc_states.h`,
@@ -1575,6 +1583,10 @@ Keep entries to at most three lines: date, task, one-line result.
 Anything longer belongs in `PORTING_LEDGER.md`; historical verbose
 notes live in `PROGRESS_ARCHIVE.md`.
 
+- 2026-07-13: Area 37 CONTINUED: ported `hunter_driver` (`CDR_HUNTER`,
+  quest 77 "The Blue Harpy", gated on `pot_state > 0` then `level >= 58`)
+  plus new `IID_ARKHATA_HARPY` item id and `arkhata_hunter_state` accessor.
+  4224 core [+12] + 1213 server tests pass, clean build/boot-smoke (area 37).
 - 2026-07-13: Area 37 CONTINUED: ported `potmaker_driver` (`CDR_POTMAKER`,
   quest 73 "A Special Pot", gated on `level >= 48`) plus new
   `IID_ARKHATA_IRONPOT` item id and `arkhata_pot_state` accessor. 4212

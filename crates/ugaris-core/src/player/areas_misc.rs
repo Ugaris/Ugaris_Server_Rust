@@ -1060,6 +1060,29 @@ impl PlayerRuntime {
         write_i32(&mut self.arkhata_ppd, ARKHATA_PPD_POT_STATE_OFFSET, state);
     }
 
+    /// C `struct arkhata_ppd::hunter_state` (`src/area/37/arkhata.h:16`) -
+    /// see [`ARKHATA_PPD_HUNTER_STATE_OFFSET`]'s doc comment.
+    pub fn arkhata_hunter_state(&self) -> i32 {
+        if self.arkhata_ppd.len() < LEGACY_ARKHATA_PPD_SIZE {
+            return 0;
+        }
+        read_i32(&self.arkhata_ppd, ARKHATA_PPD_HUNTER_STATE_OFFSET)
+    }
+
+    /// C `struct arkhata_ppd::hunter_state` write half - see
+    /// [`ARKHATA_PPD_HUNTER_STATE_OFFSET`]'s doc comment. `hunter_driver`
+    /// (`world::npc::area37::hunter`) is the only writer.
+    pub fn set_arkhata_hunter_state(&mut self, state: i32) {
+        if self.arkhata_ppd.len() < LEGACY_ARKHATA_PPD_SIZE {
+            self.arkhata_ppd.resize(LEGACY_ARKHATA_PPD_SIZE, 0);
+        }
+        write_i32(
+            &mut self.arkhata_ppd,
+            ARKHATA_PPD_HUNTER_STATE_OFFSET,
+            state,
+        );
+    }
+
     fn ensure_caligar_ppd_sized(&mut self) {
         if self.caligar_ppd.len() < LEGACY_CALIGAR_PPD_SIZE {
             self.caligar_ppd.resize(LEGACY_CALIGAR_PPD_SIZE, 0);

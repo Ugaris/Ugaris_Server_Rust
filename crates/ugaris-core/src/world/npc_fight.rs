@@ -731,7 +731,8 @@ impl World {
             | CharacterDriverState::Captain(_)
             | CharacterDriverState::Judge(_)
             | CharacterDriverState::Jada(_)
-            | CharacterDriverState::Potmaker(_) => None,
+            | CharacterDriverState::Potmaker(_)
+            | CharacterDriverState::Hunter(_) => None,
         }
     }
 

@@ -311,6 +311,10 @@ pub const CDR_JADA: u16 = 144;
 /// "arkhata"): the Arkhata craftsman who runs "A Special Pot" (quest 73),
 /// see `world::npc::area37::potmaker`'s module doc comment.
 pub const CDR_POTMAKER: u16 = 145;
+/// C `#define CDR_HUNTER 146` (`src/system/drvlib.h:196`, comment
+/// "arkhata"): the Arkhata hunter who runs "The Blue Harpy" (quest 77),
+/// see `world::npc::area37::hunter`'s module doc comment.
+pub const CDR_HUNTER: u16 = 146;
 /// C `#define CDR_LAB2HERALD 196` (`src/system/drvlib.h:222`): the lab2
 /// graveyard chapel keeper (`src/area/22/lab2.c::lab2_herald_driver`), see
 /// `world::npc::area22::lab2_herald`'s module doc comment.
@@ -951,6 +955,7 @@ pub enum CharacterDriverState {
     Judge(crate::world::npc::area37::judge::JudgeDriverData),
     Jada(crate::world::npc::area37::jada::JadaDriverData),
     Potmaker(crate::world::npc::area37::potmaker::PotmakerDriverData),
+    Hunter(crate::world::npc::area37::hunter::HunterDriverData),
 }
 /// C `bank_driver_parse` from `src/module/bank.c`. The C driver defaults
 /// opening hours to 6..23 before parsing (`bank_driver` lines 304-309).
@@ -1785,7 +1790,8 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::Captain(_)
             | CharacterDriverState::Judge(_)
             | CharacterDriverState::Jada(_)
-            | CharacterDriverState::Potmaker(_),
+            | CharacterDriverState::Potmaker(_)
+            | CharacterDriverState::Hunter(_),
         ) => SimpleBaddyDriverData::default(),
         None => SimpleBaddyDriverData::default(),
     };
@@ -4361,6 +4367,7 @@ pub use crate::world::npc::area32::military::{
 pub use crate::world::npc::area33::gorwin::GorwinDriverData;
 pub use crate::world::npc::area34::teufelgambler::TeufelGambleDriverData;
 pub use crate::world::npc::area34::teufelquest::TeufelQuestDriverData;
+pub use crate::world::npc::area37::hunter::HunterDriverData;
 pub use crate::world::npc::area37::jaz::JazDriverData;
 pub use crate::world::npc::area37::nop::{parse_nop_driver_args, NopDriverData};
 pub use crate::world::npc::area37::rammy::RammyDriverData;

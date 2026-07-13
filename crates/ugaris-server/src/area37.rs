@@ -23,6 +23,9 @@ use ugaris_core::world::npc::area37::fiona::{
     qlog_fiona_ring, FionaOutcomeEvent, FionaPlayerFacts,
 };
 use ugaris_core::world::npc::area37::gladiator::GladiatorDriverData;
+use ugaris_core::world::npc::area37::hunter::{
+    qlog_hunter_harpy, HunterOutcomeEvent, HunterPlayerFacts,
+};
 use ugaris_core::world::npc::area37::jada::{qlog_jada_source, JadaOutcomeEvent, JadaPlayerFacts};
 use ugaris_core::world::npc::area37::jaz::{qlog_jaz_bracelet, JazOutcomeEvent, JazPlayerFacts};
 use ugaris_core::world::npc::area37::judge::{JudgeOutcomeEvent, JudgePlayerFacts};
@@ -917,6 +920,86 @@ pub(crate) async fn apply_potmaker_events(
                     if !world.give_char_item(player_id, item_id) {
                         world.destroy_item(item_id);
                     }
+                }
+            }
+        }
+    }
+    applied
+}
+
+pub(crate) fn hunter_player_facts(
+    runtime: &ServerRuntime,
+) -> HashMap<CharacterId, HunterPlayerFacts> {
+    runtime
+        .players
+        .values()
+        .filter_map(|player| {
+            let character_id = player.character_id?;
+            Some((
+                character_id,
+                HunterPlayerFacts {
+                    hunter_state: player.arkhata_hunter_state(),
+                    pot_state: player.arkhata_pot_state(),
+                },
+            ))
+        })
+        .collect()
+}
+
+/// Applies each [`HunterOutcomeEvent`] queued by `World::
+/// process_hunter_actions`. No variant here needs `ZoneLoader` -
+/// `hunter_driver` never creates an item, only pays gold and consumes the
+/// harpy skin handed to it.
+pub(crate) async fn apply_hunter_events(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    events: Vec<HunterOutcomeEvent>,
+) -> usize {
+    let mut applied = 0;
+    for event in events {
+        match event {
+            HunterOutcomeEvent::UpdateHunterState {
+                player_id,
+                new_state,
+            } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.set_arkhata_hunter_state(new_state);
+                applied += 1;
+            }
+            // C `questlog_open(co, 77)` (`arkhata.c:3264`).
+            HunterOutcomeEvent::QuestOpen77 { player_id } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.quest_log.open(qlog_hunter_harpy());
+                let payload = legacy_questlog_payload(player);
+                for (session_id, _) in runtime.sessions_for_character(player_id) {
+                    runtime.send_to_session(session_id, payload.clone());
+                }
+                applied += 1;
+            }
+            // C `questlog_done(co, 77)` (`arkhata.c:3333`).
+            HunterOutcomeEvent::QuestDone77 { player_id } => {
+                let Some(level) = world.characters.get(&player_id).map(|c| c.level) else {
+                    continue;
+                };
+                let level_val = level_value(level);
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                if let Some(completion) =
+                    player
+                        .quest_log
+                        .complete_legacy(qlog_hunter_harpy(), level, level_val)
+                {
+                    let payload = legacy_questlog_payload(player);
+                    world.give_exp(player_id, completion.granted_exp, u32::from(world.area_id));
+                    for (session_id, _) in runtime.sessions_for_character(player_id) {
+                        runtime.send_to_session(session_id, payload.clone());
+                    }
+                    applied += 1;
                 }
             }
         }
