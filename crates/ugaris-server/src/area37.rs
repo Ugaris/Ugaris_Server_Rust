@@ -19,6 +19,9 @@ use ugaris_core::world::npc::area37::arkhatamonk::{
     ArkhatamonkPlayerFacts,
 };
 use ugaris_core::world::npc::area37::captain::{CaptainOutcomeEvent, CaptainPlayerFacts};
+use ugaris_core::world::npc::area37::clerk::{
+    qlog_clerk_traitors, ClerkOutcomeEvent, ClerkPlayerFacts,
+};
 use ugaris_core::world::npc::area37::fiona::{
     qlog_fiona_ring, FionaOutcomeEvent, FionaPlayerFacts,
 };
@@ -29,6 +32,10 @@ use ugaris_core::world::npc::area37::hunter::{
 use ugaris_core::world::npc::area37::jada::{qlog_jada_source, JadaOutcomeEvent, JadaPlayerFacts};
 use ugaris_core::world::npc::area37::jaz::{qlog_jaz_bracelet, JazOutcomeEvent, JazPlayerFacts};
 use ugaris_core::world::npc::area37::judge::{JudgeOutcomeEvent, JudgePlayerFacts};
+use ugaris_core::world::npc::area37::kidnappee::{KidnappeeOutcomeEvent, KidnappeePlayerFacts};
+use ugaris_core::world::npc::area37::krenach::{
+    qlog_krenach_dictionary, KrenachOutcomeEvent, KrenachPlayerFacts,
+};
 use ugaris_core::world::npc::area37::potmaker::{
     qlog_potmaker_special_pot, PotmakerOutcomeEvent, PotmakerPlayerFacts,
 };
@@ -40,6 +47,9 @@ use ugaris_core::world::npc::area37::rammy::{
 };
 use ugaris_core::world::npc::area37::thaipan::{
     qlog_thaipan_scroll, ThaipanOutcomeEvent, ThaipanPlayerFacts,
+};
+use ugaris_core::world::npc::area37::trainer::{
+    qlog_trainer_student, TrainerOutcomeEvent, TrainerPlayerFacts,
 };
 
 pub(crate) fn rammy_player_facts(
@@ -1094,6 +1104,327 @@ pub(crate) async fn apply_thaipan_events(
                 };
                 player.set_arkhata_last_budda(realtime_seconds);
                 applied += 1;
+            }
+        }
+    }
+    applied
+}
+
+pub(crate) fn trainer_player_facts(
+    runtime: &ServerRuntime,
+) -> HashMap<CharacterId, TrainerPlayerFacts> {
+    runtime
+        .players
+        .values()
+        .filter_map(|player| {
+            let character_id = player.character_id?;
+            Some((
+                character_id,
+                TrainerPlayerFacts {
+                    trainer_state: player.arkhata_trainer_state(),
+                    fiona_state: player.arkhata_fiona_state(),
+                    kid_state: player.arkhata_kid_state(),
+                },
+            ))
+        })
+        .collect()
+}
+
+/// Applies each [`TrainerOutcomeEvent`] queued by `World::
+/// process_trainer_actions`.
+pub(crate) async fn apply_trainer_events(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    events: Vec<TrainerOutcomeEvent>,
+) -> usize {
+    let mut applied = 0;
+    for event in events {
+        match event {
+            TrainerOutcomeEvent::UpdateTrainerState {
+                player_id,
+                new_state,
+            } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.set_arkhata_trainer_state(new_state);
+                applied += 1;
+            }
+            // C `questlog_open(co, 75)` (`arkhata.c:3902`).
+            TrainerOutcomeEvent::QuestOpen75 { player_id } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.quest_log.open(qlog_trainer_student());
+                let payload = legacy_questlog_payload(player);
+                for (session_id, _) in runtime.sessions_for_character(player_id) {
+                    runtime.send_to_session(session_id, payload.clone());
+                }
+                applied += 1;
+            }
+            // C `questlog_done(co, 75)` (`arkhata.c:3931`).
+            TrainerOutcomeEvent::QuestDone75 { player_id } => {
+                let Some(level) = world.characters.get(&player_id).map(|c| c.level) else {
+                    continue;
+                };
+                let level_val = level_value(level);
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                if let Some(completion) =
+                    player
+                        .quest_log
+                        .complete_legacy(qlog_trainer_student(), level, level_val)
+                {
+                    let payload = legacy_questlog_payload(player);
+                    world.give_exp(player_id, completion.granted_exp, u32::from(world.area_id));
+                    for (session_id, _) in runtime.sessions_for_character(player_id) {
+                        runtime.send_to_session(session_id, payload.clone());
+                    }
+                    applied += 1;
+                }
+            }
+        }
+    }
+    applied
+}
+
+pub(crate) fn kidnappee_player_facts(
+    runtime: &ServerRuntime,
+) -> HashMap<CharacterId, KidnappeePlayerFacts> {
+    runtime
+        .players
+        .values()
+        .filter_map(|player| {
+            let character_id = player.character_id?;
+            Some((
+                character_id,
+                KidnappeePlayerFacts {
+                    kid_state: player.arkhata_kid_state(),
+                    trainer_state: player.arkhata_trainer_state(),
+                },
+            ))
+        })
+        .collect()
+}
+
+/// Applies each [`KidnappeeOutcomeEvent`] queued by `World::
+/// process_kidnappee_actions`. No variant here needs `World` -
+/// `kidnappee_driver` never itself grants exp or creates an item.
+pub(crate) async fn apply_kidnappee_events(
+    runtime: &mut ServerRuntime,
+    events: Vec<KidnappeeOutcomeEvent>,
+) -> usize {
+    let mut applied = 0;
+    for event in events {
+        match event {
+            KidnappeeOutcomeEvent::UpdateKidState {
+                player_id,
+                new_state,
+            } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.set_arkhata_kid_state(new_state);
+                applied += 1;
+            }
+        }
+    }
+    applied
+}
+
+pub(crate) fn clerk_player_facts(
+    runtime: &ServerRuntime,
+    world: &World,
+) -> HashMap<CharacterId, ClerkPlayerFacts> {
+    runtime
+        .players
+        .values()
+        .filter_map(|player| {
+            let character_id = player.character_id?;
+            let is_god = world
+                .characters
+                .get(&character_id)
+                .is_some_and(|character| character.flags.contains(CharacterFlags::GOD));
+            Some((
+                character_id,
+                ClerkPlayerFacts {
+                    clerk_state: player.arkhata_clerk_state(),
+                    clerk_time: player.arkhata_clerk_time_seconds(),
+                    clerk_bits: player.arkhata_clerk_bits(),
+                    captain_state: player.arkhata_captain_state(),
+                    is_god,
+                },
+            ))
+        })
+        .collect()
+}
+
+/// Applies each [`ClerkOutcomeEvent`] queued by `World::
+/// process_clerk_actions`. [`ClerkOutcomeEvent::GiveStopwatch`] needs
+/// `ZoneLoader` item creation, same precedent as [`JudgeOutcomeEvent::
+/// GiveEntrancePass`].
+pub(crate) async fn apply_clerk_events(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    loader: &mut ZoneLoader,
+    events: Vec<ClerkOutcomeEvent>,
+) -> usize {
+    let mut applied = 0;
+    for event in events {
+        match event {
+            ClerkOutcomeEvent::UpdateClerkState {
+                player_id,
+                new_state,
+            } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.set_arkhata_clerk_state(new_state);
+                applied += 1;
+            }
+            // C `ppd->clerk_time = realtime; ppd->clerk_state = 5;`
+            // (`arkhata.c:3719-3720`).
+            ClerkOutcomeEvent::StartClerkTimer {
+                player_id,
+                realtime_seconds,
+            } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.set_arkhata_clerk_timer(5, realtime_seconds);
+                applied += 1;
+            }
+            // C `questlog_open(co, 76)` (`arkhata.c:3658`).
+            ClerkOutcomeEvent::QuestOpen76 { player_id } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.quest_log.open(qlog_clerk_traitors());
+                let payload = legacy_questlog_payload(player);
+                for (session_id, _) in runtime.sessions_for_character(player_id) {
+                    runtime.send_to_session(session_id, payload.clone());
+                }
+                applied += 1;
+            }
+            // C `questlog_done(co, 76)` (`arkhata.c:3769,3783,3797`).
+            ClerkOutcomeEvent::QuestDone76 { player_id } => {
+                let Some(level) = world.characters.get(&player_id).map(|c| c.level) else {
+                    continue;
+                };
+                let level_val = level_value(level);
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                if let Some(completion) =
+                    player
+                        .quest_log
+                        .complete_legacy(qlog_clerk_traitors(), level, level_val)
+                {
+                    let payload = legacy_questlog_payload(player);
+                    world.give_exp(player_id, completion.granted_exp, u32::from(world.area_id));
+                    for (session_id, _) in runtime.sessions_for_character(player_id) {
+                        runtime.send_to_session(session_id, payload.clone());
+                    }
+                    applied += 1;
+                }
+            }
+            // C `ppd->clerk_bits |= N` (`arkhata.c:3766,3780,3794`).
+            ClerkOutcomeEvent::UpdateClerkBits { player_id, bits } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.set_arkhata_clerk_bits(bits);
+                applied += 1;
+            }
+            // C `create_item("stopwatch")` (`arkhata.c:3728`/`:3745`).
+            ClerkOutcomeEvent::GiveStopwatch { player_id } => {
+                if let Ok(item) = loader.instantiate_item_template("stopwatch", Some(player_id)) {
+                    let item_id = item.id;
+                    world.add_item(item);
+                    if !world.give_char_item(player_id, item_id) {
+                        world.destroy_item(item_id);
+                    }
+                }
+                applied += 1;
+            }
+        }
+    }
+    applied
+}
+
+pub(crate) fn krenach_player_facts(
+    runtime: &ServerRuntime,
+) -> HashMap<CharacterId, KrenachPlayerFacts> {
+    runtime
+        .players
+        .values()
+        .filter_map(|player| {
+            let character_id = player.character_id?;
+            Some((
+                character_id,
+                KrenachPlayerFacts {
+                    krenach_state: player.arkhata_krenach_state(),
+                    krenach_time: player.arkhata_krenach_time_seconds(),
+                    monk_state: player.arkhata_monk_state(),
+                },
+            ))
+        })
+        .collect()
+}
+
+/// Applies each [`KrenachOutcomeEvent`] queued by `World::
+/// process_krenach_actions`.
+pub(crate) async fn apply_krenach_events(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    events: Vec<KrenachOutcomeEvent>,
+) -> usize {
+    let mut applied = 0;
+    for event in events {
+        match event {
+            KrenachOutcomeEvent::UpdateKrenachState {
+                player_id,
+                new_state,
+            } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.set_arkhata_krenach_timer(new_state, player.arkhata_krenach_time_seconds());
+                applied += 1;
+            }
+            // C `ppd->krenach_time = realtime` (`arkhata.c:4262`).
+            KrenachOutcomeEvent::UpdateKrenachTime {
+                player_id,
+                realtime_seconds,
+            } => {
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                player.set_arkhata_krenach_timer(player.arkhata_krenach_state(), realtime_seconds);
+                applied += 1;
+            }
+            // C `questlog_done(co, 78)` (`arkhata.c:4269`).
+            KrenachOutcomeEvent::QuestDone78 { player_id } => {
+                let Some(level) = world.characters.get(&player_id).map(|c| c.level) else {
+                    continue;
+                };
+                let level_val = level_value(level);
+                let Some(player) = runtime.player_for_character_mut(player_id) else {
+                    continue;
+                };
+                if let Some(completion) =
+                    player
+                        .quest_log
+                        .complete_legacy(qlog_krenach_dictionary(), level, level_val)
+                {
+                    let payload = legacy_questlog_payload(player);
+                    world.give_exp(player_id, completion.granted_exp, u32::from(world.area_id));
+                    for (session_id, _) in runtime.sessions_for_character(player_id) {
+                        runtime.send_to_session(session_id, payload.clone());
+                    }
+                    applied += 1;
+                }
             }
         }
     }

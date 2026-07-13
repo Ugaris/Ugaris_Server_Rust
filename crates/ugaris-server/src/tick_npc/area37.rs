@@ -460,3 +460,141 @@ pub(crate) async fn thaipan_driver_180(
         );
     }
 }
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn trainer_driver_181(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    _zone_loader: &mut ZoneLoader,
+    config: &ServerConfig,
+    _args: &Args,
+    _completed_actions: &[WorldActionCompletion],
+    _achievement_repository: &Option<ugaris_db::PgAchievementRepository>,
+    _character_repository: &Option<ugaris_db::PgCharacterRepository>,
+    _area_repository: &Option<ugaris_db::PgAreaRepository>,
+    _clan_repository: &Option<ugaris_db::PgClanRegistryRepository>,
+    _clan_log_repository: &Option<ugaris_db::PgClanLogRepository>,
+    _merchant_repository: &Option<ugaris_db::PgMerchantRepository>,
+    _military_master_storage_repository: &Option<ugaris_db::PgMilitaryMasterStorageRepository>,
+    _military_advisor_storage_repository: &Option<ugaris_db::PgMilitaryAdvisorStorageRepository>,
+    _notes_repository: &Option<ugaris_db::PgNotesRepository>,
+    _anticheat_repository: &Option<ugaris_db::PgAntiCheatRepository>,
+    _auction_repository: &Option<ugaris_db::PgAuctionRepository>,
+) {
+    // C `trainer_driver`: the Fighting School combat trainer who runs "A
+    // Kidnapped Student" (quest 75) (area 37, `src/area/37/arkhata.c`).
+    let trainer_facts = trainer_player_facts(runtime);
+    let trainer_events = world.process_trainer_actions(&trainer_facts, config.area_id);
+    let trainer_events_applied = apply_trainer_events(world, runtime, trainer_events).await;
+    if trainer_events_applied != 0 {
+        info!(
+            trainer_events_applied,
+            tick = world.tick.0,
+            "applied trainer dialogue events"
+        );
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn kidnappee_driver_182(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    _zone_loader: &mut ZoneLoader,
+    config: &ServerConfig,
+    _args: &Args,
+    _completed_actions: &[WorldActionCompletion],
+    _achievement_repository: &Option<ugaris_db::PgAchievementRepository>,
+    _character_repository: &Option<ugaris_db::PgCharacterRepository>,
+    _area_repository: &Option<ugaris_db::PgAreaRepository>,
+    _clan_repository: &Option<ugaris_db::PgClanRegistryRepository>,
+    _clan_log_repository: &Option<ugaris_db::PgClanLogRepository>,
+    _merchant_repository: &Option<ugaris_db::PgMerchantRepository>,
+    _military_master_storage_repository: &Option<ugaris_db::PgMilitaryMasterStorageRepository>,
+    _military_advisor_storage_repository: &Option<ugaris_db::PgMilitaryAdvisorStorageRepository>,
+    _notes_repository: &Option<ugaris_db::PgNotesRepository>,
+    _anticheat_repository: &Option<ugaris_db::PgAntiCheatRepository>,
+    _auction_repository: &Option<ugaris_db::PgAuctionRepository>,
+) {
+    // C `kidnappee_driver`: the trainer's kidnapped student, rescued as
+    // part of quest 75 (area 37, `src/area/37/arkhata.c`).
+    let kidnappee_facts = kidnappee_player_facts(runtime);
+    let kidnappee_events = world.process_kidnappee_actions(&kidnappee_facts, config.area_id);
+    let kidnappee_events_applied = apply_kidnappee_events(runtime, kidnappee_events).await;
+    if kidnappee_events_applied != 0 {
+        info!(
+            kidnappee_events_applied,
+            tick = world.tick.0,
+            "applied kidnappee dialogue events"
+        );
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn clerk_driver_183(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    zone_loader: &mut ZoneLoader,
+    config: &ServerConfig,
+    _args: &Args,
+    _completed_actions: &[WorldActionCompletion],
+    _achievement_repository: &Option<ugaris_db::PgAchievementRepository>,
+    _character_repository: &Option<ugaris_db::PgCharacterRepository>,
+    _area_repository: &Option<ugaris_db::PgAreaRepository>,
+    _clan_repository: &Option<ugaris_db::PgClanRegistryRepository>,
+    _clan_log_repository: &Option<ugaris_db::PgClanLogRepository>,
+    _merchant_repository: &Option<ugaris_db::PgMerchantRepository>,
+    _military_master_storage_repository: &Option<ugaris_db::PgMilitaryMasterStorageRepository>,
+    _military_advisor_storage_repository: &Option<ugaris_db::PgMilitaryAdvisorStorageRepository>,
+    _notes_repository: &Option<ugaris_db::PgNotesRepository>,
+    _anticheat_repository: &Option<ugaris_db::PgAntiCheatRepository>,
+    _auction_repository: &Option<ugaris_db::PgAuctionRepository>,
+) {
+    // C `clerk_driver`: the Fortress clerk who runs "The Traitors" (quest
+    // 76) (area 37, `src/area/37/arkhata.c`).
+    let clerk_facts = clerk_player_facts(runtime, world);
+    let clerk_events =
+        world.process_clerk_actions(&clerk_facts, current_unix_time() as i32, config.area_id);
+    let clerk_events_applied = apply_clerk_events(world, runtime, zone_loader, clerk_events).await;
+    if clerk_events_applied != 0 {
+        info!(
+            clerk_events_applied,
+            tick = world.tick.0,
+            "applied clerk dialogue events"
+        );
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn krenach_driver_184(
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    _zone_loader: &mut ZoneLoader,
+    config: &ServerConfig,
+    _args: &Args,
+    _completed_actions: &[WorldActionCompletion],
+    _achievement_repository: &Option<ugaris_db::PgAchievementRepository>,
+    _character_repository: &Option<ugaris_db::PgCharacterRepository>,
+    _area_repository: &Option<ugaris_db::PgAreaRepository>,
+    _clan_repository: &Option<ugaris_db::PgClanRegistryRepository>,
+    _clan_log_repository: &Option<ugaris_db::PgClanLogRepository>,
+    _merchant_repository: &Option<ugaris_db::PgMerchantRepository>,
+    _military_master_storage_repository: &Option<ugaris_db::PgMilitaryMasterStorageRepository>,
+    _military_advisor_storage_repository: &Option<ugaris_db::PgMilitaryAdvisorStorageRepository>,
+    _notes_repository: &Option<ugaris_db::PgNotesRepository>,
+    _anticheat_repository: &Option<ugaris_db::PgAntiCheatRepository>,
+    _auction_repository: &Option<ugaris_db::PgAuctionRepository>,
+) {
+    // C `krenach_driver`: the dwarf grandfather who closes out quest 78
+    // ("The Mysterious Language") (area 37, `src/area/37/arkhata.c`).
+    let krenach_facts = krenach_player_facts(runtime);
+    let krenach_events =
+        world.process_krenach_actions(&krenach_facts, current_unix_time() as i32, config.area_id);
+    let krenach_events_applied = apply_krenach_events(world, runtime, krenach_events).await;
+    if krenach_events_applied != 0 {
+        info!(
+            krenach_events_applied,
+            tick = world.tick.0,
+            "applied krenach dialogue events"
+        );
+    }
+}

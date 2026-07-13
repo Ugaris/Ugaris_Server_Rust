@@ -858,6 +858,33 @@ pub const ARKHATA_PPD_CLERK_STATE_OFFSET: usize = 16 * 4;
 
 pub const ARKHATA_PPD_CLERK_TIME_OFFSET: usize = 17 * 4;
 
+/// C `struct arkhata_ppd::trainer_state` (`src/area/37/arkhata.h:19`,
+/// field index 14): `trainer_driver`'s (`world::npc::area37::trainer`)
+/// own quest-75 ("A Kidnapped Student") dialogue state.
+pub const ARKHATA_PPD_TRAINER_STATE_OFFSET: usize = 14 * 4;
+
+/// C `struct arkhata_ppd::kid_state` (`src/area/37/arkhata.h:20`, field
+/// index 15): `kidnappee_driver`'s (`world::npc::area37::kidnappee`) own
+/// rescue-progress state, read by `trainer_driver` at `trainer_state` `6`
+/// to notice the rescue and by `kidnappee_driver` itself.
+pub const ARKHATA_PPD_KID_STATE_OFFSET: usize = 15 * 4;
+
+/// C `struct arkhata_ppd::clerk_bits` (`src/area/37/arkhata.h:23`, field
+/// index 18): the three-note turn-in bitmask (`1`/`2`/`4`)
+/// `clerk_driver`'s (`world::npc::area37::clerk`) own `NT_GIVE` handler
+/// maintains; `== (1|2|4)` triggers quest 76's completion.
+pub const ARKHATA_PPD_CLERK_BITS_OFFSET: usize = 18 * 4;
+
+/// C `struct arkhata_ppd::krenach_state` (`src/area/37/arkhata.h:24`,
+/// field index 19): `krenach_driver`'s (`world::npc::area37::krenach`)
+/// own dialogue state.
+pub const ARKHATA_PPD_KRENACH_STATE_OFFSET: usize = 19 * 4;
+
+/// C `struct arkhata_ppd::krenach_time` (`src/area/37/arkhata.h:25`,
+/// field index 20): `krenach_driver`'s own "already grumbled recently"
+/// wall-clock throttle stamp (`realtime`, `arkhata.c:4260-4263`).
+pub const ARKHATA_PPD_KRENACH_TIME_OFFSET: usize = 20 * 4;
+
 /// C `struct arkhata_ppd::rammy_state` (`src/area/37/arkhata.h:5`, field
 /// index 0, the first field): `rammy_driver`'s (`world::npc::
 /// area37::rammy`) own dialogue state. Also read by

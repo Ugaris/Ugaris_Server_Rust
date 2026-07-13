@@ -320,6 +320,24 @@ pub const CDR_HUNTER: u16 = 146;
 /// and the repeatable Buddah Statue hand-in, see `world::npc::area37::
 /// thaipan`'s module doc comment.
 pub const CDR_THAIPAN: u16 = 147;
+/// C `#define CDR_TRAINER 148` (`src/system/drvlib.h:198`, comment
+/// "arkhata"): the Fighting School combat trainer who runs "A Kidnapped
+/// Student" (quest 75), see `world::npc::area37::trainer`'s module doc
+/// comment.
+pub const CDR_TRAINER: u16 = 148;
+/// C `#define CDR_KIDNAPPEE 149` (`src/system/drvlib.h:199`, comment
+/// "arkhata"): the trainer's kidnapped student, rescued as part of quest
+/// 75, see `world::npc::area37::kidnappee`'s module doc comment.
+pub const CDR_KIDNAPPEE: u16 = 149;
+/// C `#define CDR_ARKHATACLERK 150` (`src/system/drvlib.h:200`, comment
+/// "arkhata"): the Fortress clerk who runs "The Traitors" (quest 76), see
+/// `world::npc::area37::clerk`'s module doc comment.
+pub const CDR_ARKHATACLERK: u16 = 150;
+/// C `#define CDR_KRENACH 152` (`src/system/drvlib.h:202`, comment
+/// "arkhata"): the dwarf grandfather who closes out quest 78 ("The
+/// Mysterious Language") and refunds part of the Monk Dictionary's cost,
+/// see `world::npc::area37::krenach`'s module doc comment.
+pub const CDR_KRENACH: u16 = 152;
 /// C `#define CDR_LAB2HERALD 196` (`src/system/drvlib.h:222`): the lab2
 /// graveyard chapel keeper (`src/area/22/lab2.c::lab2_herald_driver`), see
 /// `world::npc::area22::lab2_herald`'s module doc comment.
@@ -962,6 +980,10 @@ pub enum CharacterDriverState {
     Potmaker(crate::world::npc::area37::potmaker::PotmakerDriverData),
     Hunter(crate::world::npc::area37::hunter::HunterDriverData),
     Thaipan(crate::world::npc::area37::thaipan::ThaipanDriverData),
+    Trainer(crate::world::npc::area37::trainer::TrainerDriverData),
+    Kidnappee(crate::world::npc::area37::kidnappee::KidnappeeDriverData),
+    Clerk(crate::world::npc::area37::clerk::ClerkDriverData),
+    Krenach(crate::world::npc::area37::krenach::KrenachDriverData),
 }
 /// C `bank_driver_parse` from `src/module/bank.c`. The C driver defaults
 /// opening hours to 6..23 before parsing (`bank_driver` lines 304-309).
@@ -1798,7 +1820,11 @@ pub fn apply_simple_baddy_create_message(
             | CharacterDriverState::Jada(_)
             | CharacterDriverState::Potmaker(_)
             | CharacterDriverState::Hunter(_)
-            | CharacterDriverState::Thaipan(_),
+            | CharacterDriverState::Thaipan(_)
+            | CharacterDriverState::Trainer(_)
+            | CharacterDriverState::Kidnappee(_)
+            | CharacterDriverState::Clerk(_)
+            | CharacterDriverState::Krenach(_),
         ) => SimpleBaddyDriverData::default(),
         None => SimpleBaddyDriverData::default(),
     };

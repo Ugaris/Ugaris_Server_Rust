@@ -628,7 +628,11 @@ impl World {
                 | CharacterDriverState::Jada(_)
                 | CharacterDriverState::Potmaker(_)
                 | CharacterDriverState::Hunter(_)
-                | CharacterDriverState::Thaipan(_) => None,
+                | CharacterDriverState::Thaipan(_)
+                | CharacterDriverState::Trainer(_)
+                | CharacterDriverState::Kidnappee(_)
+                | CharacterDriverState::Clerk(_)
+                | CharacterDriverState::Krenach(_) => None,
             });
         let Some(target_id) = target_id else {
             return false;

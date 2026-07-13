@@ -1426,7 +1426,7 @@ Ordered by player progression; the C file is the oracle.
   quest-54-59 obelisk/key-part/dungeon-key/ring chain) are now ported in
   `world/npc/area36/{glori,arquin,smith,homden}.rs`; details in
   PORTING_LEDGER.md)*
-- [~] **Area 37 - `src/area/37/arkhata.c` (4,764 lines, 23 character
+- [x] **Area 37 - `src/area/37/arkhata.c` (4,764 lines, 23 character
   drivers)** - Arkhata clerk/quest NPC chain (pool/stopwatch/key items
   ported). REMAINING: `CDR_NOP` (Fighting School "Student" background
   NPC, `world::npc::area37::nop`), `CDR_ARKHATAPRISON` (Fortress
@@ -1539,11 +1539,12 @@ Ordered by player progression; the C file is the oracle.
   reset targets it directly) and the `NT_GIVE` harpy-skin turn-in
   (150-gold reward); new `IID_ARKHATA_HARPY` item id (a static loot drop,
   not driver-created) and `arkhata_hunter_state` accessor.
-  Still unported: `thaipan`/`clerk`/`trainer`/`kidnappee`/`krenach` - most
-  read/write the shared `struct arkhata_ppd` quest-state blob
-  (`PlayerRuntime::arkhata_ppd`, scaffolded in `player/areas_misc.rs`; its
-  `LEGACY_ARKHATA_PPD_SIZE` had a pre-existing size bug, now fixed - see
-  ledger).
+  `thaipan_driver` (quest 74 "The Ancient Scroll" + Buddah Statue
+  hand-in), `trainer_driver` (quest 75 "A Kidnapped Student"),
+  `kidnappee_driver` (the rescued student), `clerk_driver` (quest 76
+  "The Traitors"), and `krenach_driver` (closes quest 78) are now also
+  all ported end to end - all 23/23 character drivers in this file are
+  done. Details in PORTING_LEDGER.md.
 - [ ] **Area 38 - `src/area/38/shrike.c`** - Shrike NPCs (amulet assembly
   ported).
 - [ ] **Common NPCs - `src/common/professor.c`, `src/common/npc_states.h`,
@@ -1583,6 +1584,10 @@ Keep entries to at most three lines: date, task, one-line result.
 Anything longer belongs in `PORTING_LEDGER.md`; historical verbose
 notes live in `PROGRESS_ARCHIVE.md`.
 
+- 2026-07-13: Area 37 CLOSED (23/23 drivers): ported `trainer`/
+  `kidnappee`/`clerk`/`krenach` drivers (quests 75/76/78) plus retroactive
+  paperwork for `thaipan` (ported iteration 71, undocumented). 4267 core
+  [+30] + 1213 server tests pass, clean build/boot-smoke (area 37).
 - 2026-07-13: Area 37 CONTINUED: ported `hunter_driver` (`CDR_HUNTER`,
   quest 77 "The Blue Harpy", gated on `pot_state > 0` then `level >= 58`)
   plus new `IID_ARKHATA_HARPY` item id and `arkhata_hunter_state` accessor.

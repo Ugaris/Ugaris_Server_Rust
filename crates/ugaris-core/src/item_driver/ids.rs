@@ -655,6 +655,26 @@ pub(crate) const IID_ARKHATA_LETTER4: u32 = make_item_id(DEV_ID_DB, 0x0000BE);
 /// straight to the player at `judge_state` 4 - no other driver reads it.
 pub(crate) const IID_ARKHATA_LETTER5: u32 = make_item_id(DEV_ID_DB, 0x0000BF);
 
+/// C `#define IID_ARKHATA_IRONPOTION MAKE_ITEMID(DEV_ID_DB, 0x0000C5)`
+/// (`src/common/item_id.h:260`): `kidnappee_driver`'s (`world::npc::
+/// area37::kidnappee`) cage-opening potion, checked via `has_item` (never
+/// handed over via `NT_GIVE`).
+pub(crate) const IID_ARKHATA_IRONPOTION: u32 = make_item_id(DEV_ID_DB, 0x0000C5);
+
+/// C `#define IID_ARKHATA_NOTE1 MAKE_ITEMID(DEV_ID_DB, 0x0000C6)`
+/// (`src/common/item_id.h:261`): the first of three traitor notes
+/// `clerk_driver`'s (`world::npc::area37::clerk`) quest-76 `NT_GIVE`
+/// turn-in consumes.
+pub(crate) const IID_ARKHATA_NOTE1: u32 = make_item_id(DEV_ID_DB, 0x0000C6);
+
+/// C `#define IID_ARKHATA_NOTE2 MAKE_ITEMID(DEV_ID_DB, 0x0000C7)`
+/// (`src/common/item_id.h:262`): see [`IID_ARKHATA_NOTE1`].
+pub(crate) const IID_ARKHATA_NOTE2: u32 = make_item_id(DEV_ID_DB, 0x0000C7);
+
+/// C `#define IID_ARKHATA_NOTE3 MAKE_ITEMID(DEV_ID_DB, 0x0000C8)`
+/// (`src/common/item_id.h:263`): see [`IID_ARKHATA_NOTE1`].
+pub(crate) const IID_ARKHATA_NOTE3: u32 = make_item_id(DEV_ID_DB, 0x0000C8);
+
 /// C `#define IID_ARKHATA_BRACELET MAKE_ITEMID(DEV_ID_DB, 0x0000B6)`
 /// (`src/common/item_id.h:245`): Jaz's insignia-of-Ishtar bracelet,
 /// `jaz_driver`'s (`world::npc::area37::jaz`) quest-66 turn-in item.

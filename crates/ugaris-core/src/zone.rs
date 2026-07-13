@@ -886,6 +886,42 @@ impl ZoneLoader {
                 crate::world::npc::area37::thaipan::ThaipanDriverData::default(),
             ));
         }
+        if template.driver == crate::character_driver::CDR_TRAINER {
+            // C never parses zone-file args into `struct
+            // std_npc_driver_data` (`set_data` zero-initializes it) - no
+            // args to read here, same as `CDR_RAMMY`/`CDR_JAZ`/`CDR_RAMIN`/
+            // `CDR_JADA`/`CDR_POTMAKER`/`CDR_HUNTER`/`CDR_THAIPAN` above.
+            character.driver_state = Some(CharacterDriverState::Trainer(
+                crate::world::npc::area37::trainer::TrainerDriverData::default(),
+            ));
+        }
+        if template.driver == crate::character_driver::CDR_KIDNAPPEE {
+            // C never parses zone-file args into `struct
+            // std_npc_driver_data` (`set_data` zero-initializes it) - no
+            // args to read here, same as `CDR_RAMMY`/`CDR_JAZ`/`CDR_RAMIN`/
+            // `CDR_JADA`/`CDR_POTMAKER`/`CDR_HUNTER`/`CDR_THAIPAN` above.
+            character.driver_state = Some(CharacterDriverState::Kidnappee(
+                crate::world::npc::area37::kidnappee::KidnappeeDriverData::default(),
+            ));
+        }
+        if template.driver == crate::character_driver::CDR_ARKHATACLERK {
+            // C never parses zone-file args into `struct
+            // std_npc_driver_data` (`set_data` zero-initializes it) - no
+            // args to read here, same as `CDR_RAMMY`/`CDR_JAZ`/`CDR_RAMIN`/
+            // `CDR_JADA`/`CDR_POTMAKER`/`CDR_HUNTER`/`CDR_THAIPAN` above.
+            character.driver_state = Some(CharacterDriverState::Clerk(
+                crate::world::npc::area37::clerk::ClerkDriverData::default(),
+            ));
+        }
+        if template.driver == crate::character_driver::CDR_KRENACH {
+            // C never parses zone-file args into `struct
+            // std_npc_driver_data` (`set_data` zero-initializes it) - no
+            // args to read here, same as `CDR_RAMMY`/`CDR_JAZ`/`CDR_RAMIN`/
+            // `CDR_JADA`/`CDR_POTMAKER`/`CDR_HUNTER`/`CDR_THAIPAN` above.
+            character.driver_state = Some(CharacterDriverState::Krenach(
+                crate::world::npc::area37::krenach::KrenachDriverData::default(),
+            ));
+        }
         if template.driver == CDR_CALIGARGUARD2 {
             // C `ch_driver`'s `CDR_CALIGARGUARD2` dispatch
             // (`caligar.c:395-442`): `guard2_driver`'s own `NT_CHAR` loop

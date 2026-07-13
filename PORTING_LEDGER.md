@@ -8884,3 +8884,79 @@ startup log line unchanged.
   game loop" with no panics (`placed_characters=811`, area 37).
   `PORTING_TODO.md` Area 37 stays `[~]`: `thaipan`/`clerk`/`trainer`/
   `kidnappee`/`krenach` remain.
+- 2026-07-13: Area 37 (`src/area/37/arkhata.c`) closed - all 23/23
+  character drivers now ported. A prior iteration ported `thaipan_driver`
+  (`CDR_THAIPAN = 147`, `world::npc::area37::thaipan`) without writing its
+  paperwork; this bullet records it retroactively alongside today's four
+  drivers. `thaipan_driver` runs quest 74 ("The Ancient Scroll") plus a
+  repeatable Buddah Statue negative-exp-recovery hand-in gated on
+  `pot_state`; ten-state chain with one fallthrough collapse (`0` needs
+  `level >= 49 && pot_state >= 4`). This iteration ported the file's four
+  remaining drivers, all sharing the `struct arkhata_ppd` fields added at
+  the end of the C struct (`trainer_state`/`kid_state`/`clerk_state`/
+  `clerk_time`/`clerk_bits`/`krenach_state`/`krenach_time`, field indices
+  14-20 of 21 - `ARKHATA_PPD_TRAINER_STATE_OFFSET` through
+  `_KRENACH_TIME_OFFSET`, `player/misc.rs`; accessors in
+  `player/areas_misc.rs`): `trainer_driver` (`CDR_TRAINER = 148`,
+  `world::npc::area37::trainer`) runs quest 75 ("A Kidnapped Student"),
+  nine states with two fallthrough collapses (`0` needs `level >= 53 &&
+  fiona_state >= 4`; `6` waits on `kidnappee`'s own `kid_state == 5`).
+  `kidnappee_driver` (`CDR_KIDNAPPEE = 149`, `world::npc::area37::
+  kidnappee`) is the rescued student: six states, gated on `trainer_state
+  > 0` to start, a Bend Iron Potion (`IID_ARKHATA_IRONPOTION`, new item
+  id) `has_item` check/wait pair (state `2`/`3`, not an `NT_GIVE` turn-in),
+  then a `CF_INVISIBLE` "walks off" flourish reproducing a genuine C typo
+  verbatim (`set_sector(ch[cn].x, ch[co].y)` mixes the kidnappee's own `x`
+  with the player's `y` - ported via `World::mark_dirty_sector` on that
+  same mixed pair, matching `world::npc::area31::lostdwarf`'s own
+  `set_sector` mapping) before reappearing via a `dat->misc` timestamp
+  (new `misc: u64` field on `KidnappeeDriverData`, `world::npc::area31::
+  lostdwarf`-style). `clerk_driver` (`CDR_ARKHATACLERK = 150`,
+  `world::npc::area37::clerk`) runs quest 76 ("The Traitors"): seven
+  states gated on `captain_state >= 5`, a real-time `CLERKTIME` (`60*15`
+  seconds) countdown re-checked on every `NT_CHAR` sighting once state `5`
+  is reached, an "Aye"/"watch" `NT_TEXT` pair (`ARKHATA_QA` codes `6`/`7`,
+  already ported) that creates a `stopwatch` item via `ZoneLoader`
+  (`ClerkOutcomeEvent::GiveStopwatch`, `ugaris-server::area37::
+  apply_clerk_events`, same `ZoneLoader`-needs-server-layer precedent as
+  `JudgeOutcomeEvent::GiveEntrancePass`), and a three-note `NT_GIVE`
+  turn-in (new `IID_ARKHATA_NOTE1/2/3` item ids, new `clerk_bits`
+  accessors) reproducing a genuine C bug verbatim: only the `NOTE3`
+  branch's own `if (clerk_bits == (1|2|4))` sets `clerk_state = 6` on
+  completion - turning in `NOTE1`/`NOTE2` last completes the quest via
+  `questlog_done` but never advances `clerk_state` past `5`. `is_god`
+  (`CharacterFlags::GOD`, the "Aye" branch's admin bypass) needed
+  `clerk_player_facts` to take `world: &World` in addition to
+  `runtime: &ServerRuntime` - the only area-37 player-facts function that
+  needs both, since every other cross-driver fact so far lived on
+  `PlayerRuntime`. `krenach_driver` (`CDR_KRENACH = 152`, `world::npc::
+  area37::krenach`) closes out quest 78 ("The Mysterious Language",
+  opened by `arkhatamonk_driver`'s Johnatan persona - corrected a stray
+  doc-comment in `world::npc::area37::arkhatamonk` that misattributed this
+  completion site to "the still-unported `kidnappee_driver`"; `arkhata.c:
+  4269` is actually inside `krenach_driver`) and refunds 5000g of the
+  Monk Dictionary's cost; unlike every other dialogue NPC in this file it
+  has no `NT_TEXT`/`analyse_text_driver` hookup at all. Five states, one
+  fallthrough collapse (`0` needs `monk_state >= 29`); while the gate is
+  closed C prints a throttled (`realtime - krenach_time > 300`) grumble
+  line that deliberately does not set `didsay` (`ppd->krenach_time` is
+  its only side effect - `KrenachOutcomeEvent::UpdateKrenachTime`, kept
+  separate from `UpdateKrenachState` since C's own two writes are
+  independent). `character_driver.rs`'s `CharacterDriverState` enum plus
+  its exhaustive fallback match and `world/npc_fight.rs`/`npc_idle.rs`'s
+  own exhaustive "not a fight/idle target" matches each needed four new
+  arms (`Trainer`/`Kidnappee`/`Clerk`/`Krenach`), same mechanical step
+  every prior area-37 NPC addition required. New `tick_npc::area37::
+  trainer_driver_181`/`kidnappee_driver_182`/`clerk_driver_183`/
+  `krenach_driver_184` registered last in `tick_npc::run_all`; new
+  `area37.rs` `*_player_facts`/`apply_*_events` pairs for all four.
+  30 new focused tests (`world/tests/trainer.rs` ×8, `kidnappee.rs` ×7,
+  `clerk.rs` ×9 including both the C `clerk_bits`-completion-quirk shapes
+  and the `is_god` bypass, `krenach.rs` ×6 including both grumble-cooldown
+  shapes) covering every dialogue state transition, every `NT_GIVE`
+  branch, and the `NT_TEXT` "repeat"/"aye"/"watch" codes. `cargo fmt
+  --all`, `cargo test --workspace`: 4267 core [+30] + 81 db + 3 net + 45
+  protocol + 1213 server, all green, zero failures/warnings. `cargo build
+  -p ugaris-server`/`--workspace` clean, boot-smoke confirmed "entering
+  Rust game loop" with no panics across hundreds of ticks. `PORTING_TODO.md`
+  Area 37 marked `[x]` - all 23/23 character drivers ported.

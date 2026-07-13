@@ -854,6 +854,114 @@ impl PlayerRuntime {
         );
     }
 
+    /// C `ppd->clerk_state = N` write half not paired with a
+    /// `clerk_time` update (every `clerk_driver` transition besides the
+    /// countdown-start one [`Self::set_arkhata_clerk_timer`] covers) -
+    /// see [`ARKHATA_PPD_CLERK_STATE_OFFSET`]'s doc comment.
+    pub fn set_arkhata_clerk_state(&mut self, state: i32) {
+        if self.arkhata_ppd.len() < LEGACY_ARKHATA_PPD_SIZE {
+            self.arkhata_ppd.resize(LEGACY_ARKHATA_PPD_SIZE, 0);
+        }
+        write_i32(&mut self.arkhata_ppd, ARKHATA_PPD_CLERK_STATE_OFFSET, state);
+    }
+
+    /// C `struct arkhata_ppd::clerk_bits` (`src/area/37/arkhata.h:23`) -
+    /// see [`ARKHATA_PPD_CLERK_BITS_OFFSET`]'s doc comment.
+    pub fn arkhata_clerk_bits(&self) -> i32 {
+        if self.arkhata_ppd.len() < LEGACY_ARKHATA_PPD_SIZE {
+            return 0;
+        }
+        read_i32(&self.arkhata_ppd, ARKHATA_PPD_CLERK_BITS_OFFSET)
+    }
+
+    /// C `ppd->clerk_bits |= N` (`clerk_driver`, `arkhata.c:3766,3780,
+    /// 3794`) - see [`ARKHATA_PPD_CLERK_BITS_OFFSET`]'s doc comment.
+    pub fn set_arkhata_clerk_bits(&mut self, bits: i32) {
+        if self.arkhata_ppd.len() < LEGACY_ARKHATA_PPD_SIZE {
+            self.arkhata_ppd.resize(LEGACY_ARKHATA_PPD_SIZE, 0);
+        }
+        write_i32(&mut self.arkhata_ppd, ARKHATA_PPD_CLERK_BITS_OFFSET, bits);
+    }
+
+    /// C `struct arkhata_ppd::trainer_state` (`src/area/37/arkhata.h:19`)
+    /// - see [`ARKHATA_PPD_TRAINER_STATE_OFFSET`]'s doc comment.
+    pub fn arkhata_trainer_state(&self) -> i32 {
+        if self.arkhata_ppd.len() < LEGACY_ARKHATA_PPD_SIZE {
+            return 0;
+        }
+        read_i32(&self.arkhata_ppd, ARKHATA_PPD_TRAINER_STATE_OFFSET)
+    }
+
+    /// C `struct arkhata_ppd::trainer_state` write half - see
+    /// [`ARKHATA_PPD_TRAINER_STATE_OFFSET`]'s doc comment. `trainer_driver`
+    /// itself is the only writer.
+    pub fn set_arkhata_trainer_state(&mut self, state: i32) {
+        if self.arkhata_ppd.len() < LEGACY_ARKHATA_PPD_SIZE {
+            self.arkhata_ppd.resize(LEGACY_ARKHATA_PPD_SIZE, 0);
+        }
+        write_i32(
+            &mut self.arkhata_ppd,
+            ARKHATA_PPD_TRAINER_STATE_OFFSET,
+            state,
+        );
+    }
+
+    /// C `struct arkhata_ppd::kid_state` (`src/area/37/arkhata.h:20`) -
+    /// see [`ARKHATA_PPD_KID_STATE_OFFSET`]'s doc comment.
+    pub fn arkhata_kid_state(&self) -> i32 {
+        if self.arkhata_ppd.len() < LEGACY_ARKHATA_PPD_SIZE {
+            return 0;
+        }
+        read_i32(&self.arkhata_ppd, ARKHATA_PPD_KID_STATE_OFFSET)
+    }
+
+    /// C `struct arkhata_ppd::kid_state` write half - see
+    /// [`ARKHATA_PPD_KID_STATE_OFFSET`]'s doc comment. `kidnappee_driver`
+    /// itself is the only writer.
+    pub fn set_arkhata_kid_state(&mut self, state: i32) {
+        if self.arkhata_ppd.len() < LEGACY_ARKHATA_PPD_SIZE {
+            self.arkhata_ppd.resize(LEGACY_ARKHATA_PPD_SIZE, 0);
+        }
+        write_i32(&mut self.arkhata_ppd, ARKHATA_PPD_KID_STATE_OFFSET, state);
+    }
+
+    /// C `struct arkhata_ppd::krenach_state` (`src/area/37/arkhata.h:24`)
+    /// - see [`ARKHATA_PPD_KRENACH_STATE_OFFSET`]'s doc comment.
+    pub fn arkhata_krenach_state(&self) -> i32 {
+        if self.arkhata_ppd.len() < LEGACY_ARKHATA_PPD_SIZE {
+            return 0;
+        }
+        read_i32(&self.arkhata_ppd, ARKHATA_PPD_KRENACH_STATE_OFFSET)
+    }
+
+    /// C `struct arkhata_ppd::krenach_time` (`src/area/37/arkhata.h:25`)
+    /// - see [`ARKHATA_PPD_KRENACH_TIME_OFFSET`]'s doc comment.
+    pub fn arkhata_krenach_time_seconds(&self) -> i32 {
+        if self.arkhata_ppd.len() < LEGACY_ARKHATA_PPD_SIZE {
+            return 0;
+        }
+        read_i32(&self.arkhata_ppd, ARKHATA_PPD_KRENACH_TIME_OFFSET)
+    }
+
+    /// C `ppd->krenach_state++`/`ppd->krenach_time = realtime` write half
+    /// - see [`ARKHATA_PPD_KRENACH_STATE_OFFSET`]'s doc comment.
+    /// `krenach_driver` itself is the only writer of either field.
+    pub fn set_arkhata_krenach_timer(&mut self, state: i32, realtime_seconds: i32) {
+        if self.arkhata_ppd.len() < LEGACY_ARKHATA_PPD_SIZE {
+            self.arkhata_ppd.resize(LEGACY_ARKHATA_PPD_SIZE, 0);
+        }
+        write_i32(
+            &mut self.arkhata_ppd,
+            ARKHATA_PPD_KRENACH_STATE_OFFSET,
+            state,
+        );
+        write_i32(
+            &mut self.arkhata_ppd,
+            ARKHATA_PPD_KRENACH_TIME_OFFSET,
+            realtime_seconds,
+        );
+    }
+
     /// C `struct arkhata_ppd::monk_state` (`src/area/37/arkhata.h:9`) -
     /// see [`ARKHATA_PPD_MONK_STATE_OFFSET`]'s doc comment.
     pub fn arkhata_monk_state(&self) -> i32 {
