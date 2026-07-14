@@ -148,11 +148,16 @@ pub(crate) fn inventory_swap_slot(
         return InventoryCommandResult::Ignored;
     };
     character.cursor_item = slot_id;
-    character.inventory[slot] = if money_price.is_some() {
-        None
-    } else {
-        cursor_id
-    };
+    // Defensive: `slot` was validated against `INVENTORY_SIZE`, but the
+    // inventory vec itself comes from persisted data (same `.get(slot)`
+    // caution as the read above) - never panic on a client packet.
+    if let Some(entry) = character.inventory.get_mut(slot) {
+        *entry = if money_price.is_some() {
+            None
+        } else {
+            cursor_id
+        };
+    }
     character.flags.insert(CharacterFlags::ITEMS);
     if let Some(price) = money_price {
         character.gold = character.gold.saturating_add(price);

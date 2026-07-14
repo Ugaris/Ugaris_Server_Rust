@@ -34,6 +34,59 @@ fn character_snapshot_restores_active_legacy_shutup_ppd() {
         .contains(CharacterFlags::SHUTUP));
 }
 
+/// Bad persisted data (hand-edited/corrupted `character_json` with
+/// truncated `values`/`inventory`/`professions` vectors) must never crash
+/// the server: `apply_character_snapshot` restores the fixed C-array
+/// shapes before the character enters the per-tick/per-packet indexing
+/// paths (`login_payload`'s `values[0][v]` loop, `inventory_swap_slot`'s
+/// `inventory[slot]` write, ...).
+#[test]
+fn character_snapshot_with_malformed_shape_does_not_panic() {
+    let target_id = CharacterId(8);
+    let mut character = login_character(target_id, &login_block("Target"), 1, 11, 10);
+    character.values = vec![vec![5; 3], vec![7; 3]]; // two short rows instead of 2 x 43
+    character.professions = Vec::new();
+    character.inventory = vec![None; 4]; // far short of INVENTORY_SIZE
+
+    let snapshot = CharacterSnapshot {
+        player_state_json: None,
+        character,
+        items: Vec::new(),
+        ppd_blob: Vec::new(),
+        subscriber_blob: Vec::new(),
+        current_area: 1,
+        current_mirror: 1,
+        allowed_area: 1,
+        mirror: 1,
+    };
+    let mut world = World::default();
+    let mut player = PlayerRuntime::connected(1, 0);
+
+    let result = apply_character_snapshot(&mut world, &mut player, snapshot, 11, 10, 100);
+    assert!(result.loaded);
+
+    let character = world.characters.get(&target_id).unwrap();
+    assert_eq!(character.values.len(), 2);
+    assert_eq!(
+        character.values[0].len(),
+        ugaris_core::entity::CHARACTER_VALUE_COUNT
+    );
+    assert_eq!(character.values[1][0], 7); // surviving bare prefix is preserved
+    assert_eq!(
+        character.professions.len(),
+        ugaris_core::entity::PROFESSION_COUNT
+    );
+    assert_eq!(
+        character.inventory.len(),
+        ugaris_core::entity::INVENTORY_SIZE
+    );
+
+    // The formerly panicking per-connection/per-packet paths now run clean.
+    let character = world.characters.get(&target_id).unwrap().clone();
+    let _ = login_payload(&world, &character, 1, 1);
+    let _ = inventory_swap_slot(&mut world, target_id, 35);
+}
+
 #[test]
 fn logout_save_omits_arkhata_stopwatch_from_cursor_snapshot() {
     let mut world = World::default();

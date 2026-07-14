@@ -21,11 +21,13 @@
 
 use super::*;
 
+// `&mut Vec` matches the caller-owned queue this phase drains in place.
+#[allow(clippy::ptr_arg)]
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn process_completed_action_outcomes(
-    mut world: &mut World,
-    mut runtime: &mut ServerRuntime,
-    mut zone_loader: &mut ZoneLoader,
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    zone_loader: &mut ZoneLoader,
     config: &ServerConfig,
     args: &Args,
     completed_actions: &mut Vec<WorldActionCompletion>,
@@ -51,7 +53,7 @@ pub(crate) async fn process_completed_action_outcomes(
                 continue;
             };
             let keyring_result = apply_keyring_auto_add_pickup(
-                &mut world,
+                world,
                 runtime.player_for_character_mut(completion.character_id),
                 completion.character_id,
                 item_id,
@@ -100,9 +102,9 @@ pub(crate) async fn process_completed_action_outcomes(
                     if item.template_id == ugaris_core::item_driver::IID_ALCHEMY_INGREDIENT {
                         let stone_drdata = item.driver_data.first().copied().unwrap_or_default();
                         award_stone_pickup_achievement(
-                            &mut world,
-                            &mut runtime,
-                            &achievement_repository,
+                            world,
+                            runtime,
+                            achievement_repository,
                             completion.character_id,
                             stone_drdata,
                         )
@@ -194,7 +196,7 @@ pub(crate) async fn process_completed_action_outcomes(
                             } => character_id,
                         };
                         let driver_context = item_driver_context_for_request(
-                            &world,
+                            world,
                             runtime.player_for_character(request_character_id),
                             &request,
                         );
@@ -228,11 +230,11 @@ pub(crate) async fn process_completed_action_outcomes(
                             | ugaris_core::item_driver::ItemDriverOutcome::ChestSpawnCheck { .. }
                             | ugaris_core::item_driver::ItemDriverOutcome::MissionChestOpen { .. }) => {
                                 tick_item_use_chests::dispatch_chest_outcome(
-                                    &mut world,
-                                    &mut zone_loader,
-                                    &mut runtime,
-                                    &achievement_repository,
-                                    &config,
+                                    world,
+                                    zone_loader,
+                                    runtime,
+                                    achievement_repository,
+                                    config,
                                     realtime_seconds,
                                     outcome,
                                     &mut feedback,
@@ -255,8 +257,8 @@ pub(crate) async fn process_completed_action_outcomes(
                             | ugaris_core::item_driver::ItemDriverOutcome::IslenaDoorResting { .. }
                             | ugaris_core::item_driver::ItemDriverOutcome::PalaceDoorTick { .. }) => {
                                 tick_item_use_ice::dispatch_ice_outcome(
-                                    &mut world,
-                                    &mut zone_loader,
+                                    world,
+                                    zone_loader,
                                     outcome,
                                     &mut feedback,
                                     &mut executed,
@@ -272,8 +274,8 @@ pub(crate) async fn process_completed_action_outcomes(
                             | ugaris_core::item_driver::ItemDriverOutcome::DungeonDoorTooManyDefenders { .. }
                             | ugaris_core::item_driver::ItemDriverOutcome::DungeonDoorSolved { .. }) => {
                                 tick_item_use_dungeon::dispatch_dungeon_outcome(
-                                    &mut world,
-                                    &mut zone_loader,
+                                    world,
+                                    zone_loader,
                                     outcome,
                                     &mut feedback,
                                     &mut executed,
@@ -291,9 +293,9 @@ pub(crate) async fn process_completed_action_outcomes(
                             | ugaris_core::item_driver::ItemDriverOutcome::PickDoorToggle { .. }
                             | ugaris_core::item_driver::ItemDriverOutcome::PickDoorLocked { .. }) => {
                                 tick_item_use_dig_pick::dispatch_dig_pick_outcome(
-                                    &mut world,
-                                    &mut zone_loader,
-                                    &mut runtime,
+                                    world,
+                                    zone_loader,
+                                    runtime,
                                     realtime_seconds,
                                     outcome,
                                     &mut feedback,
@@ -308,7 +310,7 @@ pub(crate) async fn process_completed_action_outcomes(
                             | ugaris_core::item_driver::ItemDriverOutcome::BurndownIgnite { .. }
                             | ugaris_core::item_driver::ItemDriverOutcome::BurndownTimerTick { .. }) => {
                                 tick_item_use_burndown::dispatch_burndown_outcome(
-                                    &mut runtime,
+                                    runtime,
                                     outcome,
                                     &mut feedback,
                                     &mut executed,
@@ -333,9 +335,9 @@ pub(crate) async fn process_completed_action_outcomes(
                             | ugaris_core::item_driver::ItemDriverOutcome::TeufelRatNestDestroyed { .. }
                             | ugaris_core::item_driver::ItemDriverOutcome::TeufelRatNestGuarded { .. }) => {
                                 tick_item_use_teufel::dispatch_teufel_outcome(
-                                    &mut world,
-                                    &mut zone_loader,
-                                    &mut runtime,
+                                    world,
+                                    zone_loader,
+                                    runtime,
                                     outcome,
                                     &mut feedback,
                                     &mut executed,
@@ -348,9 +350,9 @@ pub(crate) async fn process_completed_action_outcomes(
                             | ugaris_core::item_driver::ItemDriverOutcome::SkelRaiseRaise { .. }
                             | ugaris_core::item_driver::ItemDriverOutcome::SkelRaiseTimer { .. }) => {
                                 tick_item_use_skelraise::dispatch_skelraise_outcome(
-                                    &mut world,
-                                    &mut zone_loader,
-                                    &mut runtime,
+                                    world,
+                                    zone_loader,
+                                    runtime,
                                     outcome,
                                     &mut feedback,
                                     &mut executed,
@@ -389,8 +391,8 @@ pub(crate) async fn process_completed_action_outcomes(
                                     ^ (u64::from(item_id.0) << 16)
                                     ^ u64::from(character_id.0);
                                 match apply_orb_spawn(
-                                    &mut world,
-                                    &mut zone_loader,
+                                    world,
+                                    zone_loader,
                                     runtime.player_for_character_mut(character_id),
                                     item_id,
                                     character_id,
@@ -429,7 +431,7 @@ pub(crate) async fn process_completed_action_outcomes(
                                 modifier,
                             } => {
                                 let granted = instantiate_orb_with_modifier(
-                                    &mut zone_loader,
+                                    zone_loader,
                                     character_id,
                                     modifier,
                                 )
@@ -448,7 +450,7 @@ pub(crate) async fn process_completed_action_outcomes(
                                 }
                             }
                             ugaris_core::item_driver::ItemDriverOutcome::NomadStack { item_id, character_id } => {
-                                match apply_nomad_stack(&mut world, &mut zone_loader, item_id, character_id) {
+                                match apply_nomad_stack(world, zone_loader, item_id, character_id) {
                                     NomadStackApplyResult::Split { left, right, unit } => {
                                         feedback.push((character_id, format!("Split into {left} {unit}s and {right} {unit}s.")));
                                         executed += 1;
@@ -499,11 +501,11 @@ pub(crate) async fn process_completed_action_outcomes(
                             | ugaris_core::item_driver::ItemDriverOutcome::TransportInvalid { .. }
                             | ugaris_core::item_driver::ItemDriverOutcome::TransportTravel { .. }) => {
                                 tick_item_use_transport::dispatch_transport_outcome(
-                                    &mut world,
-                                    &mut runtime,
-                                    &character_repository,
-                                    &area_repository,
-                                    &config,
+                                    world,
+                                    runtime,
+                                    character_repository,
+                                    area_repository,
+                                    config,
                                     outcome,
                                     &mut feedback,
                                     &mut executed,
@@ -527,12 +529,12 @@ pub(crate) async fn process_completed_action_outcomes(
                             | ugaris_core::item_driver::ItemDriverOutcome::LqEntrancePenalty { .. }
                             | ugaris_core::item_driver::ItemDriverOutcome::ArenaToplist { .. }) => {
                                 tick_item_use_clan_lq_arena::dispatch_clan_lq_arena_outcome(
-                                    &mut world,
-                                    &mut runtime,
-                                    &mut zone_loader,
-                                    &character_repository,
-                                    &area_repository,
-                                    &config,
+                                    world,
+                                    runtime,
+                                    zone_loader,
+                                    character_repository,
+                                    area_repository,
+                                    config,
                                     outcome,
                                     &mut feedback,
                                     &mut executed,
@@ -549,9 +551,9 @@ pub(crate) async fn process_completed_action_outcomes(
                             | ugaris_core::item_driver::ItemDriverOutcome::StrSpawnerUse { .. }
                             | ugaris_core::item_driver::ItemDriverOutcome::StrSpawnerAmbientTick { .. }) => {
                                 tick_item_use_strategy::dispatch_strategy_outcome(
-                                    &mut world,
-                                    &mut zone_loader,
-                                    &mut runtime,
+                                    world,
+                                    zone_loader,
+                                    runtime,
                                     outcome,
                                     &mut feedback,
                                     &mut executed,
@@ -566,10 +568,10 @@ pub(crate) async fn process_completed_action_outcomes(
                             | ugaris_core::item_driver::ItemDriverOutcome::SpecialShrine { .. }
                             | ugaris_core::item_driver::ItemDriverOutcome::DemonShrine { .. }) => {
                                 tick_item_use_shrines::dispatch_shrine_outcome(
-                                    &mut world,
-                                    &mut zone_loader,
-                                    &mut runtime,
-                                    &config,
+                                    world,
+                                    zone_loader,
+                                    runtime,
+                                    config,
                                     realtime_seconds,
                                     outcome,
                                     &mut feedback,
@@ -583,9 +585,9 @@ pub(crate) async fn process_completed_action_outcomes(
                             | ugaris_core::item_driver::ItemDriverOutcome::SwampSpawnPulse { .. }
                             | ugaris_core::item_driver::ItemDriverOutcome::XmasTree { .. }) => {
                                 tick_item_use_xmas_swamp::dispatch_xmas_swamp_outcome(
-                                    &mut world,
-                                    &mut zone_loader,
-                                    &mut runtime,
+                                    world,
+                                    zone_loader,
+                                    runtime,
                                     args.area_id,
                                     outcome,
                                     &mut feedback,
@@ -599,7 +601,7 @@ pub(crate) async fn process_completed_action_outcomes(
                             {
                                 feedback.push((
                                     character_id,
-                                    chest_blocked_message(&world, item_id, character_id).to_string(),
+                                    chest_blocked_message(world, item_id, character_id).to_string(),
                                 ));
                                 blocked += 1;
                             }
@@ -650,9 +652,9 @@ pub(crate) async fn process_completed_action_outcomes(
                             | ugaris_core::item_driver::ItemDriverOutcome::FdemonLoaderChanged { .. }
                             | ugaris_core::item_driver::ItemDriverOutcome::EdemonDoorToggle { .. }) => {
                                 tick_item_use_edemon_fdemon::dispatch_edemon_fdemon_outcome(
-                                    &mut world,
-                                    &mut zone_loader,
-                                    &mut runtime,
+                                    world,
+                                    zone_loader,
+                                    runtime,
                                     outcome,
                                     &mut feedback,
                                     &mut executed,
@@ -665,7 +667,7 @@ pub(crate) async fn process_completed_action_outcomes(
                             } => {
                                 area_feedback.push((
                                     character_id,
-                                    potion_area_message(&world, character_id),
+                                    potion_area_message(world, character_id),
                                     10,
                                 ));
                                 executed += 1;
@@ -688,11 +690,11 @@ pub(crate) async fn process_completed_action_outcomes(
                             | ugaris_core::item_driver::ItemDriverOutcome::WarpTrialDoorBug { .. }
                             | ugaris_core::item_driver::ItemDriverOutcome::WarpTrialDoor { .. }) => {
                                 tick_item_use_warp::dispatch_warp_outcome(
-                                    &mut world,
-                                    &mut zone_loader,
-                                    &mut runtime,
-                                    &achievement_repository,
-                                    &args,
+                                    world,
+                                    zone_loader,
+                                    runtime,
+                                    achievement_repository,
+                                    args,
                                     outcome,
                                     &mut feedback,
                                     &mut feedback_bytes,
@@ -720,12 +722,18 @@ pub(crate) async fn process_completed_action_outcomes(
                                 if let Some(level) = world
                                     .characters
                                     .get(&character_id)
-                                    .map(|character| character.values[1][value as usize])
+                                    .and_then(|character| {
+                                        character
+                                            .values
+                                            .get(1)?
+                                            .get(value as usize)
+                                            .copied()
+                                    })
                                 {
                                     award_skill_achievement(
-                                        &mut world,
-                                        &mut runtime,
-                                        &achievement_repository,
+                                        world,
+                                        runtime,
+                                        achievement_repository,
                                         character_id,
                                         value as i32,
                                         level as i32,
@@ -832,8 +840,8 @@ pub(crate) async fn process_completed_action_outcomes(
                             | ugaris_core::item_driver::ItemDriverOutcome::BookcaseText { .. }
                             | ugaris_core::item_driver::ItemDriverOutcome::BookcaseLocked { .. }) => {
                                 tick_item_use_books_potions::dispatch_books_potions_outcome(
-                                    &mut world,
-                                    &mut runtime,
+                                    world,
+                                    runtime,
                                     args.area_id,
                                     outcome,
                                     &mut feedback,
@@ -900,13 +908,13 @@ pub(crate) async fn process_completed_action_outcomes(
                             | ugaris_core::item_driver::ItemDriverOutcome::LizardFlowerNeedsCursor { .. }
                             | ugaris_core::item_driver::ItemDriverOutcome::LizardFlowerDoesNotFit { .. }) => {
                                 tick_item_use_keyassembly::dispatch_keyassembly_outcome(
-                                    &mut world,
-                                    &mut zone_loader,
-                                    &mut runtime,
-                                    &character_repository,
-                                    &area_repository,
-                                    &config,
-                                    &args,
+                                    world,
+                                    zone_loader,
+                                    runtime,
+                                    character_repository,
+                                    area_repository,
+                                    config,
+                                    args,
                                     realtime_seconds,
                                     outcome,
                                     &mut feedback,
@@ -931,9 +939,9 @@ pub(crate) async fn process_completed_action_outcomes(
                             | ugaris_core::item_driver::ItemDriverOutcome::CaligarSkellyDoorBusy { .. }
                             | ugaris_core::item_driver::ItemDriverOutcome::CaligarTraining { .. }) => {
                                 tick_item_use_caligar::dispatch_caligar_outcome(
-                                    &mut world,
-                                    &mut zone_loader,
-                                    &mut runtime,
+                                    world,
+                                    zone_loader,
+                                    runtime,
                                     outcome,
                                     &mut feedback,
                                     &mut executed,
@@ -957,8 +965,8 @@ pub(crate) async fn process_completed_action_outcomes(
                             | ugaris_core::item_driver::ItemDriverOutcome::ShrikeCubePush { .. }
                             | ugaris_core::item_driver::ItemDriverOutcome::ShrikeCubeAmbientTick { .. }) => {
                                 tick_item_use_shrike::dispatch_shrike_outcome(
-                                    &mut world,
-                                    &mut zone_loader,
+                                    world,
+                                    zone_loader,
                                     outcome,
                                     &mut feedback,
                                     &mut executed,
@@ -988,10 +996,10 @@ pub(crate) async fn process_completed_action_outcomes(
                             | ugaris_core::item_driver::ItemDriverOutcome::FlaskMixed { .. }
                             | ugaris_core::item_driver::ItemDriverOutcome::FlaskRuined { .. }) => {
                                 tick_item_use_crafting::dispatch_crafting_outcome(
-                                    &mut world,
-                                    &mut zone_loader,
-                                    &mut runtime,
-                                    &achievement_repository,
+                                    world,
+                                    zone_loader,
+                                    runtime,
+                                    achievement_repository,
                                     realtime_seconds,
                                     outcome,
                                     &driver_context,
@@ -1053,12 +1061,12 @@ pub(crate) async fn process_completed_action_outcomes(
                             | ugaris_core::item_driver::ItemDriverOutcome::Lab5NoPotionDoorBlocked { .. }
                             | ugaris_core::item_driver::ItemDriverOutcome::Lab5NoPotionDoorPass { .. }) => {
                                 tick_item_use_lab::dispatch_lab_outcome(
-                                    &mut world,
-                                    &mut zone_loader,
-                                    &mut runtime,
-                                    &character_repository,
-                                    &area_repository,
-                                    &config,
+                                    world,
+                                    zone_loader,
+                                    runtime,
+                                    character_repository,
+                                    area_repository,
+                                    config,
                                     outcome,
                                     &mut feedback,
                                     &mut area_feedback,
@@ -1074,15 +1082,15 @@ pub(crate) async fn process_completed_action_outcomes(
                                 empty_kind,
                             } => {
                                 if apply_empty_potion_drink(
-                                    &mut world,
-                                    &mut zone_loader,
+                                    world,
+                                    zone_loader,
                                     item_id,
                                     character_id,
                                     empty_kind,
                                 ) {
                                     area_feedback.push((
                                         character_id,
-                                        potion_area_message(&world, character_id),
+                                        potion_area_message(world, character_id),
                                         10,
                                     ));
                                     executed += 1;
@@ -1091,7 +1099,7 @@ pub(crate) async fn process_completed_action_outcomes(
                                 }
                             }
                             ugaris_core::item_driver::ItemDriverOutcome::BlockedByArea { item_id, character_id }
-                                if is_no_potion_area_blocked_item(&world, item_id) =>
+                                if is_no_potion_area_blocked_item(world, item_id) =>
                             {
                                 feedback.push((character_id, "You sense that the potion would not work.".to_string()));
                                 blocked += 1;
@@ -1104,9 +1112,9 @@ pub(crate) async fn process_completed_action_outcomes(
                                 blocked += 1;
                             }
                             ugaris_core::item_driver::ItemDriverOutcome::BlockedByRequirements { item_id, character_id }
-                                if is_timed_potion_source_item(&world, item_id) =>
+                                if is_timed_potion_source_item(world, item_id) =>
                             {
-                                let message = if character_has_active_beyond_potion(&world, character_id) {
+                                let message = if character_has_active_beyond_potion(world, character_id) {
                                     "Another potion is still active."
                                 } else {
                                     "You do not meet the requirements needed to use this potion."
@@ -1118,13 +1126,13 @@ pub(crate) async fn process_completed_action_outcomes(
                                 blocked += 1;
                             }
                             ugaris_core::item_driver::ItemDriverOutcome::BlockedByRequirements { item_id, character_id }
-                                if is_torch_item(&world, item_id) =>
+                                if is_torch_item(world, item_id) =>
                             {
                                 feedback.push((character_id, TORCH_UNDERWATER_MESSAGE.to_string()));
                                 blocked += 1;
                             }
                             ugaris_core::item_driver::ItemDriverOutcome::BlockedByRequirements { item_id, character_id }
-                                if is_demonshrine_item(&world, item_id) =>
+                                if is_demonshrine_item(world, item_id) =>
                             {
                                 feedback.push((character_id, "You're not powerful enough to read this book.".to_string()));
                                 blocked += 1;
@@ -1231,10 +1239,10 @@ pub(crate) async fn process_completed_action_outcomes(
                             | ugaris_core::item_driver::ItemDriverOutcome::MineWallExhausted { .. }
                             | ugaris_core::item_driver::ItemDriverOutcome::MineWallCollapse { .. }) => {
                                 tick_item_use_minewall::dispatch_minewall_outcome(
-                                    &mut world,
-                                    &mut zone_loader,
-                                    &mut runtime,
-                                    &achievement_repository,
+                                    world,
+                                    zone_loader,
+                                    runtime,
+                                    achievement_repository,
                                     config.area_id,
                                     outcome,
                                     &mut feedback,
@@ -1248,9 +1256,9 @@ pub(crate) async fn process_completed_action_outcomes(
                                 ..
                             } => {
                                 tick_item_use_tunnel::dispatch_tunnel_outcome(
-                                    &mut world,
-                                    &mut runtime,
-                                    &achievement_repository,
+                                    world,
+                                    runtime,
+                                    achievement_repository,
                                     config.area_id,
                                     outcome,
                                     &mut feedback,
@@ -1263,9 +1271,9 @@ pub(crate) async fn process_completed_action_outcomes(
                                 ..
                             } => {
                                 tick_item_use_tunnel::dispatch_tunnel_enter_outcome(
-                                    &mut world,
-                                    &mut zone_loader,
-                                    &mut runtime,
+                                    world,
+                                    zone_loader,
+                                    runtime,
                                     outcome,
                                     &mut feedback,
                                     &mut executed,
@@ -1366,7 +1374,7 @@ pub(crate) async fn process_completed_action_outcomes(
             for (character_id, message, maxdist) in area_feedback {
                 let payload = ugaris_protocol::packet::system_text(&message);
                 for (session_id, _) in
-                    runtime.sessions_for_area_message(&world, character_id, maxdist)
+                    runtime.sessions_for_area_message(world, character_id, maxdist)
                 {
                     if runtime.send_to_session(session_id, payload.clone()) {
                         feedback_sessions += 1;
@@ -1378,7 +1386,7 @@ pub(crate) async fn process_completed_action_outcomes(
             container_refresh.dedup();
             for character_id in container_refresh {
                 let Some(payload) = current_container_payload(
-                    &world,
+                    world,
                     runtime.account_depots.get(&character_id),
                     runtime
                         .player_for_character(character_id)
@@ -1406,7 +1414,7 @@ pub(crate) async fn process_completed_action_outcomes(
                 "processed item-use requests"
             );
         }
-        clear_completed_use_actions(&mut runtime, &completed_actions);
+        clear_completed_use_actions(runtime, completed_actions);
         let mut refreshed_sessions = 0;
         for completion in completed_actions.iter() {
             let Some(character) = world.characters.get(&completion.character_id) else {
@@ -1420,7 +1428,7 @@ pub(crate) async fn process_completed_action_outcomes(
                 } else {
                     None
                 };
-            let pk_relations = PkRelationSnapshot::from_runtime(&runtime);
+            let pk_relations = PkRelationSnapshot::from_runtime(runtime);
             for (session_id, view_distance) in
                 runtime.sessions_for_character(completion.character_id)
             {
@@ -1444,44 +1452,40 @@ pub(crate) async fn process_completed_action_outcomes(
                         Some(payload) => vec![payload],
                         None => {
                             let payloads = map_refresh_payloads(
-                                &world,
+                                world,
                                 character,
                                 &pk_relations,
                                 view_distance,
                             );
                             runtime.map_caches.insert(
                                 session_id,
-                                visible_map_cache(&world, character, &pk_relations, view_distance),
+                                visible_map_cache(world, character, &pk_relations, view_distance),
                             );
                             payloads
                         }
                     }
                 } else {
                     match runtime.map_caches.get_mut(&session_id) {
-                        Some(cache) => map_diff_payloads(
-                            &world,
-                            character,
-                            &pk_relations,
-                            view_distance,
-                            cache,
-                        ),
+                        Some(cache) => {
+                            map_diff_payloads(world, character, &pk_relations, view_distance, cache)
+                        }
                         None => {
                             let payloads = map_refresh_payloads(
-                                &world,
+                                world,
                                 character,
                                 &pk_relations,
                                 view_distance,
                             );
                             runtime.map_caches.insert(
                                 session_id,
-                                visible_map_cache(&world, character, &pk_relations, view_distance),
+                                visible_map_cache(world, character, &pk_relations, view_distance),
                             );
                             payloads
                         }
                     }
                 };
                 if completion.action_id != ugaris_core::legacy::action::WALK {
-                    payloads.push(inventory_snapshot_payload(&world, character));
+                    payloads.push(inventory_snapshot_payload(world, character));
                 }
                 if let Some(payload) = &walk_section_payload {
                     payloads.push(payload.clone());
@@ -1500,7 +1504,7 @@ pub(crate) async fn process_completed_action_outcomes(
                     }
                 }
                 payloads.extend(client_effect_payloads(
-                    &world,
+                    world,
                     character,
                     view_distance,
                     runtime.effect_caches.entry(session_id).or_default(),

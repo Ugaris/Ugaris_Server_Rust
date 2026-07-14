@@ -72,8 +72,11 @@ pub async fn run_session(
     let mut login_buffer = BytesMut::with_capacity(LOGIN_BLOCK_SIZE);
     let mut logged_in = false;
 
-    loop {
-        tokio::select! {
+    // A malformed packet or socket error must still emit `Disconnected`
+    // below, otherwise the server runtime would keep a ghost session.
+    let result: anyhow::Result<()> = async {
+        loop {
+            tokio::select! {
             read = socket.read(&mut buf) => {
                 let read = read?;
                 if read == 0 {
@@ -124,12 +127,15 @@ pub async fn run_session(
                     Some(SessionCommand::Disconnect) | None => break,
                 }
             }
+            }
         }
+        Ok(())
     }
+    .await;
 
     events.send(SessionEvent::Disconnected { id }).await.ok();
     info!(%id, %peer_addr, "client disconnected");
-    Ok(())
+    result
 }
 
 #[cfg(test)]
@@ -194,6 +200,58 @@ mod tests {
         assert_eq!(login.password, "secret");
         assert_eq!(login.client_version, Some(3));
         server_task.abort();
+    }
+
+    #[tokio::test]
+    async fn malformed_command_after_login_disconnects_without_panic() {
+        let listener = TcpListener::bind(SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0)))
+            .await
+            .unwrap();
+        let addr = listener.local_addr().unwrap();
+        let (events_tx, mut events_rx) = mpsc::channel(8);
+        let (command_tx, command_rx) = mpsc::channel(8);
+
+        let server_task = tokio::spawn(async move {
+            let (socket, peer_addr) = listener.accept().await.unwrap();
+            run_session(
+                SessionId(1),
+                socket,
+                peer_addr,
+                events_tx,
+                command_tx,
+                command_rx,
+            )
+            .await
+        });
+
+        let mut client = TcpStream::connect(addr).await.unwrap();
+        let login_block = legacy_login_block("Tester", "secret", 3);
+        client.write_all(&login_block).await.unwrap();
+        // 0xff is not a known client command: the session must end with a
+        // decode error (graceful disconnect), never a panic.
+        client.write_all(&[0xff_u8; 16]).await.unwrap();
+
+        let result = server_task.await.expect("session task must not panic");
+        assert!(result.is_err(), "unknown command should error the session");
+        // Even on a decode error the session must emit Disconnected so the
+        // server runtime never keeps a ghost session.
+        let mut saw_login = false;
+        let mut saw_disconnected = false;
+        while let Ok(event) =
+            tokio::time::timeout(std::time::Duration::from_secs(1), events_rx.recv()).await
+        {
+            match event {
+                Some(SessionEvent::Login { .. }) => saw_login = true,
+                Some(SessionEvent::Disconnected { .. }) => {
+                    saw_disconnected = true;
+                    break;
+                }
+                Some(_) => {}
+                None => break,
+            }
+        }
+        assert!(saw_login);
+        assert!(saw_disconnected);
     }
 
     fn legacy_login_block(

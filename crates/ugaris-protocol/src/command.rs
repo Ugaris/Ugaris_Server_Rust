@@ -380,6 +380,30 @@ mod tests {
     }
 
     #[test]
+    fn truncated_or_garbage_commands_never_panic() {
+        // Attacker-controlled bytes: every command byte with every
+        // truncated payload length must yield Ok or Err, never a panic.
+        use crate::client::{ClientCommandDecoder, CLIENT_INFO_SIZE};
+        for first in 0..=255_u8 {
+            for len in 0..CLIENT_INFO_SIZE + 2 {
+                let mut bytes = vec![0xff_u8; len + 1];
+                bytes[0] = first;
+                let _ = parse_action(&bytes);
+                let _ = client_command_size(&bytes);
+            }
+        }
+        assert!(parse_action(&[]).is_err());
+        assert_eq!(client_command_size(&[]), Ok(None));
+
+        // The stream decoder must also survive an arbitrary garbage burst.
+        let mut decoder = ClientCommandDecoder::default();
+        decoder.push(&[0xff_u8; 64]);
+        while let Ok(Some(command)) = decoder.next_command() {
+            let _ = parse_action(&command.bytes);
+        }
+    }
+
+    #[test]
     fn parses_ping_opaque_value_little_endian() {
         // C `cl_ping` (`src/system/player.c`) reads the client's 4-byte
         // payload as a raw `unsigned int` and echoes it back unmodified -

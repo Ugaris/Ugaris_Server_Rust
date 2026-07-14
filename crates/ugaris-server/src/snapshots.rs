@@ -6,6 +6,27 @@ pub(crate) struct CharacterSnapshotApplyResult {
     pub(crate) account_depot: Option<AccountDepotState>,
 }
 
+/// Restores the fixed C-array lengths (`ch.value[2][V_MAX]`,
+/// `ch.item[INVENTORY_SIZE]`, `ch.profession[P_MAX]`) on a character
+/// deserialized from `character_json`. Downstream per-tick/per-packet code
+/// indexes these collections directly (matching the C fixed arrays), so a
+/// hand-edited or corrupted row must never be allowed to violate the shape
+/// invariant - bad persisted data must not crash the server.
+pub(crate) fn normalize_character_shape(character: &mut Character) {
+    character
+        .values
+        .resize(2, vec![0; ugaris_core::entity::CHARACTER_VALUE_COUNT]);
+    for values in &mut character.values {
+        values.resize(ugaris_core::entity::CHARACTER_VALUE_COUNT, 0);
+    }
+    character
+        .professions
+        .resize(ugaris_core::entity::PROFESSION_COUNT, 0);
+    character
+        .inventory
+        .resize(ugaris_core::entity::INVENTORY_SIZE, None);
+}
+
 pub(crate) fn apply_character_snapshot(
     world: &mut World,
     player: &mut PlayerRuntime,
@@ -22,6 +43,8 @@ pub(crate) fn apply_character_snapshot(
         player_state_json,
         ..
     } = snapshot;
+
+    normalize_character_shape(&mut character);
 
     // Typed JSON state (migration 0020) is authoritative when present; the
     // legacy PPD/subscriber blobs remain a read fallback for rows saved
@@ -111,10 +134,7 @@ pub(crate) fn character_snapshot_items(world: &World, character: &Character) -> 
         .filter(|item| {
             item.carried_by == Some(character.id)
                 || character.cursor_item == Some(item.id)
-                || character
-                    .inventory
-                    .iter()
-                    .any(|slot| *slot == Some(item.id))
+                || character.inventory.contains(&Some(item.id))
         })
         .cloned()
         .collect()

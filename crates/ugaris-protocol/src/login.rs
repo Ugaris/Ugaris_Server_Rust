@@ -83,7 +83,7 @@ impl LoginBlock {
 pub fn decrypt_password(name: &[u8], password: &mut [u8; PASSWORD_SIZE]) {
     let selector = name.get(1).copied().unwrap_or_default() as usize % 4;
     for i in 0..PASSWORD_SIZE {
-        password[i] ^= SECRET[selector][i] ^ name[i % 3];
+        password[i] ^= SECRET[selector][i] ^ name.get(i % 3).copied().unwrap_or_default();
     }
 }
 
@@ -107,6 +107,25 @@ mod tests {
         decrypt_password(name, &mut password);
         decrypt_password(name, &mut password);
         assert_eq!(password, original);
+    }
+
+    #[test]
+    fn short_or_garbage_login_blocks_never_panic() {
+        // Attacker-controlled bytes: every undersized block must be
+        // rejected with an error, never a slice/index panic.
+        for len in 0..LOGIN_BLOCK_SIZE {
+            assert_eq!(
+                LoginBlock::parse(&vec![0xff_u8; len]),
+                Err(LoginError::TooShort(len))
+            );
+        }
+        // Full-size all-0xff block parses without panicking.
+        let _ = LoginBlock::parse(&[0xff_u8; LOGIN_BLOCK_SIZE]);
+        // Short names (< 3 bytes) must not panic the XOR decrypt.
+        for name in [&b""[..], b"a", b"ab"] {
+            let mut password = [0xff_u8; PASSWORD_SIZE];
+            decrypt_password(name, &mut password);
+        }
     }
 
     #[test]
