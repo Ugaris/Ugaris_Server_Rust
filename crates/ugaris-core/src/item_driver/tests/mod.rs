@@ -13,6 +13,7 @@ mod area19_nomad;
 mod area2;
 mod area20_lq;
 mod area22_lab;
+mod area22_lab5;
 mod area25_warped;
 mod area26_staffer;
 mod area28_forest;

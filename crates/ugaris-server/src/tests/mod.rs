@@ -48,6 +48,9 @@ mod transport;
 mod tutorial;
 mod weather;
 mod world_events;
+mod world_events_death;
+mod world_events_hurt;
+mod world_events_npc;
 mod xmas;
 mod zone;
 
