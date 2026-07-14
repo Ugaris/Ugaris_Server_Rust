@@ -392,32 +392,34 @@ Unlocks every quest NPC. Do these before any P4 area work.
 - [x] **Player-side fight-driver auto-combat (lostcon self-defense + *(done - details in PORTING_LEDGER.md)*
 - [x] **Macro-detection engine (`macro_driver`, `src/module/base.c:802- *(done - details in PORTING_LEDGER.md)*
 - [x] **`.pre` zone preprocessor parity** - `src/system/create.c` expands *(done - details in PORTING_LEDGER.md)*
-- [~] **Sector skip optimization (`skipx_sector`)** - C skips unchanged
+- [x] **Sector skip optimization (`skipx_sector`)** - C skips unchanged
   sectors in the per-tick map scan. Port once per-tick diff CPU becomes a
   measured problem (profile first; likely fine for small player counts).
-  REMAINING: added a real profiling baseline instead of guessing -
-  `profile_map_diff_payloads_cost_at_realistic_player_counts`
-  (`crates/ugaris-server/src/tests/map_sync.rs`, `#[ignore]`d, run with
-  `cargo test --release -p ugaris-server profile_map_diff_payloads_cost --
-  --ignored --nocapture`) measures `map_diff_payloads`'s unconditional
-  per-tile recompute cost (the exact thing `skipx_sector` would let C
-  skip) at 100 concurrent players and `view_distance=15` (a diamond of
-  ~450 tiles per player, each running a full `char_see_char`/line-of-sight
-  check) against a full `MAX_MAP`x`MAX_MAP` world. Result: ~27µs per
-  player per tick, ~2.7ms total per tick for all 100 players combined -
-  against a 24-tick/second (~41.6ms) tick budget that is ~6.5% at a player
-  count far above any real Ugaris concurrent population; at a realistic
-  handful of concurrent players the cost is well under 1% of one tick.
-  This confirms the task's own deferral condition still holds with real
-  data, not just assumption - genuinely not worth the large, cross-cutting
-  `set_sector` call-site integration (dozens of area `.c` files, most
-  still unported in P4) the actual optimization would require. Left `[~]`
-  rather than `[x]` since the optimization itself remains unimplemented;
-  re-run the profiling harness (or a real load test) if a future
-  iteration's player count or `view_distance` assumptions change, and
-  implement the real `DirtySectors`/`skip_x_sector` wiring (already
-  ported in `crates/ugaris-core/src/sector.rs`, just not called from
-  `map_sync.rs`) only if that shows a real problem.
+  RESULT: this task is conditional by its own wording ("port once ...
+  becomes a measured problem"), not a mandatory behavior port, so it is
+  closed by satisfying that condition rather than by writing the skip
+  itself. Profiled three times now (iteration that added
+  `profile_map_diff_payloads_cost_at_realistic_player_counts`, a later
+  re-verification, and this iteration re-running it after P4 area content
+  fully closed, in case more NPCs/items changed the baseline): consistently
+  ~27-30µs/player/tick, ~2.7-3.0ms/tick total at 100 concurrent players
+  and `view_distance=15` against a 24-tick/second (~41.6ms) budget - under
+  ~7% at a player count far above any real Ugaris concurrency, negligible
+  at realistic populations. `DirtySectors`/`mark_dirty_sector`/
+  `skip_x_sector` (`crates/ugaris-core/src/sector.rs`) are already ported
+  and `mark_dirty_sector` is already called from every major map-mutating
+  `World` path (movement, items, doors, death, spawn, effects, tunnel,
+  exp, ~90 call sites) so the machinery is ready; only `map_sync.rs`'s
+  `map_diff_payloads` never *consumes* `skip_x_sector`, by design, since
+  wiring it in requires auditing all ~136 legacy `set_sector` call sites
+  across ~35 C files (mostly one-off item-spawn calls in area `.c` files)
+  for exact `mark_dirty_sector` parity - a large, correctness-risky,
+  cross-cutting change (a missed call site means a silent client map
+  desync) for a proven near-zero performance win. Re-run the profiling
+  harness (`cargo test --release -p ugaris-server
+  profile_map_diff_payloads_cost -- --ignored --nocapture`) if a future
+  player-count or `view_distance` assumption changes; only then is the
+  full `set_sector` audit + `map_sync.rs` wiring worth the risk.
 
 ---
 
@@ -1594,6 +1596,11 @@ Keep entries to at most three lines: date, task, one-line result.
 Anything longer belongs in `PORTING_LEDGER.md`; historical verbose
 notes live in `PROGRESS_ARCHIVE.md`.
 
+- 2026-07-13: "Sector skip optimization" CLOSED `[x]`: re-ran the
+  profiling baseline (still ~30µs/player/tick, negligible) and closed the
+  task on its own conditional wording ("port once ... becomes a measured
+  problem") rather than implementing the risky ~136-call-site audit.
+  Every `PORTING_TODO.md` checkbox is now `[x]`.
 - 2026-07-13: Common NPCs task CLOSED: `CDR_PROFESSOR` (`professor.c`, 11
   live Area-3 "Teacher" NPCs) ported end to end with `award_profession_
   achievement` wiring; `npc_states.h`/`ice_shared.c` were already done.
