@@ -259,6 +259,7 @@ fn reopen_quest_legacy_simple_single_state_reset_cases() {
     // exercised end-to-end through the public, precondition-gated
     // `reopen_quest_legacy` API since every one of these quest
     // numbers is genuinely `QLF_REPEATABLE` in the table.
+    #[allow(clippy::type_complexity)]
     let cases: &[(
         usize,
         fn(&PlayerRuntime) -> i32,

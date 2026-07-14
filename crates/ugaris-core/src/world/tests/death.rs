@@ -1,3 +1,6 @@
+// Test setups intentionally mirror the C sources' memset-then-assign
+// initialization pattern.
+#![allow(clippy::field_reassign_with_default)]
 use super::*;
 
 fn lethal_hurt(world: &mut World, target: u32, killer: u32) {

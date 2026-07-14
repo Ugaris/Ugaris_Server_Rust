@@ -972,6 +972,9 @@ impl World {
         }
 
         // ---- misc (`gwendylon.c:5794-5827`) ----
+        // Index-based loop kept: mirrors C's `for (v = 0; v < V_MAX; v++)`
+        // reading and writing `raise[v]` in place (`gwendylon.c:5795-5827`).
+        #[allow(clippy::needless_range_loop)]
         for idx in 0..CHARACTER_VALUE_COUNT {
             let value = character_value_from_index(idx).unwrap();
             let weight = match value {
@@ -1065,6 +1068,9 @@ impl World {
 
         let mut sum = 0.0_f64;
         let mut cnt = 0_u32;
+        // Index-based loop kept: mirrors C's balance-summary pass over
+        // `raise[v]` (`gwendylon.c:5870-5874`).
+        #[allow(clippy::needless_range_loop)]
         for idx in 0..CHARACTER_VALUE_COUNT {
             if raise[idx] != 0.0 && idx != CharacterValue::Freeze as usize {
                 sum += raise[idx] / mr;

@@ -102,9 +102,10 @@ impl World {
             }
 
             let fix = if let Some(carrier_id) = item.carried_by {
-                let linked_back = self.characters.get(&carrier_id).is_some_and(|c| {
-                    c.cursor_item == Some(id) || c.inventory.iter().any(|slot| *slot == Some(id))
-                });
+                let linked_back = self
+                    .characters
+                    .get(&carrier_id)
+                    .is_some_and(|c| c.cursor_item == Some(id) || c.inventory.contains(&Some(id)));
                 if linked_back {
                     ItemFix::None
                 } else {
@@ -250,6 +251,11 @@ impl World {
 
                 let fix = match self.items.get(&id) {
                     None => CharFix::ClearSlot,
+                    // The VOID and wrong-carrier branches are identical
+                    // on purpose: C checks them separately (with distinct
+                    // "consist3"/"consist4" log messages) but applies the
+                    // same clear-slot fix (`consistency.c:290-331`).
+                    #[allow(clippy::if_same_then_else)]
                     Some(item) => {
                         if item.flags.contains(ItemFlags::VOID) {
                             CharFix::ClearSlot

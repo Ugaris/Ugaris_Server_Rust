@@ -33,8 +33,8 @@
 //! `attempt_cross_area_transfer` helper (`World` has no DB handle or
 //! `ServerRuntime` of its own, same reason the lookup itself is deferred)
 //! - matching C's `change_area(cn, resta, restx, resty)` call exactly;
-//! the caller is only told "Nothing happens - target area server is
-//! down." if that hand-off itself fails.
+//!   the caller is only told "Nothing happens - target area server is
+//!   down." if that hand-off itself fails.
 use super::lastseen::is_valid_lookup_name;
 use super::*;
 

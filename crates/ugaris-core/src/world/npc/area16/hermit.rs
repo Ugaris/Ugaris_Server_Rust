@@ -359,6 +359,7 @@ impl World {
     /// C `hermit_driver`'s `NT_TEXT` branch (`forest.c:760-785`), wired
     /// through the generic `analyse_text_qa` matcher (same pattern as
     /// `world::npc::area3::astro2`'s text handler).
+    #[allow(clippy::too_many_arguments)]
     fn forest_hermit_handle_text_message(
         &mut self,
         hermit_id: CharacterId,

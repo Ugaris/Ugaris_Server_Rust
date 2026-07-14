@@ -27,6 +27,9 @@ pub(crate) fn randomshrine_driver(
 
     let shrine_type = drdata(item, 0);
     let level = drdata(item, 1);
+    // Intentional mirror of C's `case 255` dispatch in area/14/random.c:2570;
+    // the >= keeps the ported control flow byte-for-byte comparable.
+    #[allow(clippy::absurd_extreme_comparisons)]
     if shrine_type >= 255 {
         if shrine_type == 255 {
             if !context.has_matching_random_shrine_key {
@@ -136,12 +139,14 @@ pub(crate) fn trapdoor_driver(
         };
     }
 
-    if character.cursor_item.is_some() && context.cursor_template_id == Some(IID_AREA14_STEELBAR) {
-        return ItemDriverOutcome::TrapdoorBlocked {
-            item_id: item.id,
-            character_id: character.id,
-            cursor_item_id: character.cursor_item.expect("checked cursor above"),
-        };
+    if let Some(cursor_item_id) = character.cursor_item {
+        if context.cursor_template_id == Some(IID_AREA14_STEELBAR) {
+            return ItemDriverOutcome::TrapdoorBlocked {
+                item_id: item.id,
+                character_id: character.id,
+                cursor_item_id,
+            };
+        }
     }
 
     ItemDriverOutcome::TrapdoorNeedsStick {

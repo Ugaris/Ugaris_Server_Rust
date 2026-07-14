@@ -230,12 +230,12 @@ impl World {
                 continue;
             };
             if target.flags.contains(CharacterFlags::DEAD)
-                || !can_attack(&attacker, &target, &self.map)
+                || !can_attack(attacker, &target, &self.map)
             {
                 continue;
             }
             enemy.visible = char_see_char(attacker, &target, &self.map, self.date.daylight);
-            if enemy.visible && self.simple_baddy_enemy_past_stop_dist(&attacker, &target) {
+            if enemy.visible && self.simple_baddy_enemy_past_stop_dist(attacker, &target) {
                 continue;
             }
             if enemy.visible {

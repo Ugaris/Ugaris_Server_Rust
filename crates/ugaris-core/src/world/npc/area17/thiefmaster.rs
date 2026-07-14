@@ -315,6 +315,9 @@ impl World {
                 0,
                 area_id,
             ) {
+                // Mirrors the C early return; nothing follows, but keep the
+                // ported control flow explicit.
+                #[allow(clippy::needless_return)]
                 return;
             }
         }

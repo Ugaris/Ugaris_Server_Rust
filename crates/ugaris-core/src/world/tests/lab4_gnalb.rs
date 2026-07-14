@@ -122,7 +122,7 @@ fn nt_give_destroys_cursor_item_unconditionally() {
 
     world.process_lab4_gnalb_actions(1);
 
-    assert!(world.items.get(&ItemId(50)).is_none());
+    assert!(!world.items.contains_key(&ItemId(50)));
     assert!(world
         .characters
         .get(&CharacterId(1))

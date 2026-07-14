@@ -263,6 +263,9 @@ pub(crate) fn mission_random(seed: &mut u32, below: i32) -> i32 {
 /// C `get_level_experience_cap(player_level)` (`military.c:580-609`): caps
 /// a mission's exp reward at 15% of the exp needed to reach the next
 /// level, itself clamped to `[1000, 1_000_000]`.
+// The two sequential `if` clamps mirror the ported C function's own
+// spelling (`if (cap < 1000) ... if (cap > 1000000) ...`) verbatim.
+#[allow(clippy::manual_clamp)]
 pub fn get_level_experience_cap(level: i32) -> i32 {
     if level <= 0 {
         return 1000;
@@ -451,7 +454,7 @@ pub fn generate_single_ratling_mission(
         adjusted_level += difficulty - 2;
     }
 
-    if adjusted_level < 9 || adjusted_level > 39 || adjusted_level & 1 == 0 {
+    if !(9..=39).contains(&adjusted_level) || adjusted_level & 1 == 0 {
         return SingleMission::default();
     }
 

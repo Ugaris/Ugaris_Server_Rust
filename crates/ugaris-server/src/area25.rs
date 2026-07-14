@@ -59,6 +59,10 @@ pub(crate) fn apply_warpmaster_events(
                         world.destroy_item(item_id);
                     }
                 }
+                // Identical branches on purpose: mirrors C's `flag ||
+                // !give_char_item(co, in)` fallback, where the else arm's
+                // give attempt is the observable difference.
+                #[allow(clippy::if_same_then_else)]
                 if gave_any {
                     world.destroy_item(ingredient_item_id);
                 } else if !world.give_char_item(player_id, ingredient_item_id) {

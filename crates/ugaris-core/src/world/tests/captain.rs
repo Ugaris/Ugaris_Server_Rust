@@ -163,7 +163,7 @@ fn give_letter1_at_state0_is_a_silent_turn_in() {
     }));
     // No dialogue at all on this path - reproduced verbatim from C.
     assert!(world.drain_pending_area_texts().is_empty());
-    assert!(world.items.get(&ItemId(50)).is_none());
+    assert!(!world.items.contains_key(&ItemId(50)));
 }
 
 #[test]
@@ -190,7 +190,7 @@ fn give_letter4_with_bit_unset_is_accepted_and_sets_the_bit() {
     assert!(texts
         .iter()
         .any(|text| text.message.contains("has not left anything out")));
-    assert!(world.items.get(&ItemId(50)).is_none());
+    assert!(!world.items.contains_key(&ItemId(50)));
 }
 
 #[test]

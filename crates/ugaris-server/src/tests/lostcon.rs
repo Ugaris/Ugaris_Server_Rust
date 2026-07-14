@@ -111,7 +111,7 @@ fn reclaim_lostcon_on_login_returns_false_when_not_lingering() {
     let reclaimed = reclaim_lostcon_on_login(&mut world, &mut runtime, 2, character_id, 9_000);
 
     assert!(!reclaimed);
-    assert!(runtime.players.get(&2).is_none());
+    assert!(!runtime.players.contains_key(&2));
 }
 
 #[test]

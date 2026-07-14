@@ -47,7 +47,7 @@ fn self_destructs_after_three_minutes_of_silence_and_teleports_arena_players() {
     world.tick = Tick(SELF_DESTRUCT_TICKS + 1);
     world.process_gladiator_actions(1);
 
-    assert!(world.characters.get(&CharacterId(1)).is_none());
+    assert!(!world.characters.contains_key(&CharacterId(1)));
     let godmode = world.characters.get(&CharacterId(2)).unwrap();
     assert_eq!((godmode.x, godmode.y), (15, 235));
     let texts = world.drain_pending_area_texts();
@@ -64,7 +64,7 @@ fn does_not_self_destruct_before_the_timeout() {
     world.tick = Tick(SELF_DESTRUCT_TICKS - 1);
     world.process_gladiator_actions(1);
 
-    assert!(world.characters.get(&CharacterId(1)).is_some());
+    assert!(world.characters.contains_key(&CharacterId(1)));
 }
 
 #[test]
@@ -149,7 +149,7 @@ fn killing_a_player_self_destructs() {
     }
     world.process_gladiator_actions(1);
 
-    assert!(world.characters.get(&CharacterId(1)).is_none());
+    assert!(!world.characters.contains_key(&CharacterId(1)));
 }
 
 #[test]
@@ -165,7 +165,7 @@ fn witnessing_an_unrelated_death_is_a_no_op() {
     }
     world.process_gladiator_actions(1);
 
-    assert!(world.characters.get(&CharacterId(1)).is_some());
+    assert!(world.characters.contains_key(&CharacterId(1)));
 }
 
 #[test]

@@ -106,9 +106,7 @@ pub(crate) fn grant_chest_treasure(
     let item_id = item.id;
     let item_name = item.name.clone();
 
-    let Some(character) = world.characters.get_mut(&character_id) else {
-        return None;
-    };
+    let character = world.characters.get_mut(&character_id)?;
     if character.cursor_item.is_some() {
         return None;
     }
@@ -281,6 +279,7 @@ pub(crate) fn infinite_chest_key_access(
     None
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn apply_random_chest(
     world: &mut World,
     loader: &mut ZoneLoader,
@@ -340,6 +339,7 @@ pub(crate) fn apply_random_chest(
     RandomChestApplyResult::Money { amount }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn apply_rat_chest(
     world: &mut World,
     loader: &mut ZoneLoader,

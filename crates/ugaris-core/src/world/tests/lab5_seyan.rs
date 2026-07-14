@@ -180,7 +180,7 @@ fn lab5_seyan_give_head1_sets_bit_and_advances_state() {
         seyanstate: 10,
         seyangot: 1,
     }));
-    assert!(world.items.get(&ItemId(50)).is_none());
+    assert!(!world.items.contains_key(&ItemId(50)));
     assert!(world
         .characters
         .get(&CharacterId(1))

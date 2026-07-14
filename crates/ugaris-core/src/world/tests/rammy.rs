@@ -169,7 +169,7 @@ fn give_crown_at_state10_completes_quest65_silently_and_jumps_to_11() {
     }));
     // C's crown turn-in is silent - no dialogue at all.
     assert!(world.drain_pending_area_texts().is_empty());
-    assert!(world.items.get(&ItemId(50)).is_none());
+    assert!(!world.items.contains_key(&ItemId(50)));
 }
 
 #[test]

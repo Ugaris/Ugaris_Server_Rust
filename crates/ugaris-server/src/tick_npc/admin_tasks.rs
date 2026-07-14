@@ -5,7 +5,7 @@ use super::*;
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn lastseen_15(
-    mut world: &mut World,
+    world: &mut World,
     _runtime: &mut ServerRuntime,
     _zone_loader: &mut ZoneLoader,
     _config: &ServerConfig,
@@ -28,7 +28,7 @@ pub(crate) async fn lastseen_15(
     // `database_notes.c:352-390`), queued by
     // `apply_lastseen_command` above.
     let lastseen_events_applied =
-        apply_lastseen_events(&mut world, &character_repository, current_unix_time()).await;
+        apply_lastseen_events(world, character_repository, current_unix_time()).await;
     if lastseen_events_applied != 0 {
         info!(
             lastseen_events_applied,
@@ -40,7 +40,7 @@ pub(crate) async fn lastseen_15(
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn acstatus_16(
-    mut world: &mut World,
+    world: &mut World,
     _runtime: &mut ServerRuntime,
     _zone_loader: &mut ZoneLoader,
     _config: &ServerConfig,
@@ -63,7 +63,7 @@ pub(crate) async fn acstatus_16(
     // in this codebase's architecture - see `ugaris-core`'s
     // `world/anticheat.rs` module doc comment), queued by
     // `apply_admin_character_command` above.
-    let ac_status_events_applied = apply_ac_status_events(&mut world, &anticheat_repository).await;
+    let ac_status_events_applied = apply_ac_status_events(world, anticheat_repository).await;
     if ac_status_events_applied != 0 {
         info!(
             ac_status_events_applied,
@@ -71,7 +71,7 @@ pub(crate) async fn acstatus_16(
             "applied #acstatus lookups"
         );
     }
-    let ac_stats_events_applied = apply_ac_stats_events(&mut world, &anticheat_repository).await;
+    let ac_stats_events_applied = apply_ac_stats_events(world, anticheat_repository).await;
     if ac_stats_events_applied != 0 {
         info!(
             ac_stats_events_applied,
@@ -79,7 +79,7 @@ pub(crate) async fn acstatus_16(
             "applied #acstats lookups"
         );
     }
-    let ac_list_events_applied = apply_ac_list_events(&mut world, &anticheat_repository).await;
+    let ac_list_events_applied = apply_ac_list_events(world, anticheat_repository).await;
     if ac_list_events_applied != 0 {
         info!(
             ac_list_events_applied,
@@ -88,7 +88,7 @@ pub(crate) async fn acstatus_16(
         );
     }
     let ac_suspicious_events_applied =
-        apply_ac_suspicious_events(&mut world, &anticheat_repository).await;
+        apply_ac_suspicious_events(world, anticheat_repository).await;
     if ac_suspicious_events_applied != 0 {
         info!(
             ac_suspicious_events_applied,
@@ -96,8 +96,7 @@ pub(crate) async fn acstatus_16(
             "applied #acsuspicious lookups"
         );
     }
-    let ac_cleanup_events_applied =
-        apply_ac_cleanup_events(&mut world, &anticheat_repository).await;
+    let ac_cleanup_events_applied = apply_ac_cleanup_events(world, anticheat_repository).await;
     if ac_cleanup_events_applied != 0 {
         info!(
             ac_cleanup_events_applied,
@@ -105,7 +104,7 @@ pub(crate) async fn acstatus_16(
             "applied #accleanup lookups"
         );
     }
-    let ac_reset_events_applied = apply_ac_reset_events(&mut world, &anticheat_repository).await;
+    let ac_reset_events_applied = apply_ac_reset_events(world, anticheat_repository).await;
     if ac_reset_events_applied != 0 {
         info!(
             ac_reset_events_applied,
@@ -113,7 +112,7 @@ pub(crate) async fn acstatus_16(
             "applied #acreset lookups"
         );
     }
-    let ac_flag_events_applied = apply_ac_flag_events(&mut world, &anticheat_repository).await;
+    let ac_flag_events_applied = apply_ac_flag_events(world, anticheat_repository).await;
     if ac_flag_events_applied != 0 {
         info!(
             ac_flag_events_applied,
@@ -121,7 +120,7 @@ pub(crate) async fn acstatus_16(
             "applied #acflag lookups"
         );
     }
-    let ac_unflag_events_applied = apply_ac_unflag_events(&mut world, &anticheat_repository).await;
+    let ac_unflag_events_applied = apply_ac_unflag_events(world, anticheat_repository).await;
     if ac_unflag_events_applied != 0 {
         info!(
             ac_unflag_events_applied,
@@ -129,7 +128,7 @@ pub(crate) async fn acstatus_16(
             "applied #acunflag lookups"
         );
     }
-    let ac_trust_events_applied = apply_ac_trust_events(&mut world, &anticheat_repository).await;
+    let ac_trust_events_applied = apply_ac_trust_events(world, anticheat_repository).await;
     if ac_trust_events_applied != 0 {
         info!(
             ac_trust_events_applied,
@@ -137,8 +136,7 @@ pub(crate) async fn acstatus_16(
             "applied #actrust lookups"
         );
     }
-    let ac_untrust_events_applied =
-        apply_ac_untrust_events(&mut world, &anticheat_repository).await;
+    let ac_untrust_events_applied = apply_ac_untrust_events(world, anticheat_repository).await;
     if ac_untrust_events_applied != 0 {
         info!(
             ac_untrust_events_applied,
@@ -146,7 +144,7 @@ pub(crate) async fn acstatus_16(
             "applied #acuntrust lookups"
         );
     }
-    let ac_warn_events_applied = apply_ac_warn_events(&mut world, &anticheat_repository).await;
+    let ac_warn_events_applied = apply_ac_warn_events(world, anticheat_repository).await;
     if ac_warn_events_applied != 0 {
         info!(
             ac_warn_events_applied,
@@ -154,8 +152,7 @@ pub(crate) async fn acstatus_16(
             "applied #acwarn lookups"
         );
     }
-    let ac_sessions_events_applied =
-        apply_ac_sessions_events(&mut world, &anticheat_repository).await;
+    let ac_sessions_events_applied = apply_ac_sessions_events(world, anticheat_repository).await;
     if ac_sessions_events_applied != 0 {
         info!(
             ac_sessions_events_applied,
@@ -164,7 +161,7 @@ pub(crate) async fn acstatus_16(
         );
     }
     let ac_violations_events_applied =
-        apply_ac_violations_events(&mut world, &anticheat_repository).await;
+        apply_ac_violations_events(world, anticheat_repository).await;
     if ac_violations_events_applied != 0 {
         info!(
             ac_violations_events_applied,
@@ -172,8 +169,7 @@ pub(crate) async fn acstatus_16(
             "applied #acviolations lookups"
         );
     }
-    let ac_history_events_applied =
-        apply_ac_history_events(&mut world, &anticheat_repository).await;
+    let ac_history_events_applied = apply_ac_history_events(world, anticheat_repository).await;
     if ac_history_events_applied != 0 {
         info!(
             ac_history_events_applied,
@@ -181,8 +177,7 @@ pub(crate) async fn acstatus_16(
             "applied #achistory lookups"
         );
     }
-    let ac_sharedip_events_applied =
-        apply_ac_sharedip_events(&mut world, &anticheat_repository).await;
+    let ac_sharedip_events_applied = apply_ac_sharedip_events(world, anticheat_repository).await;
     if ac_sharedip_events_applied != 0 {
         info!(
             ac_sharedip_events_applied,
@@ -190,8 +185,7 @@ pub(crate) async fn acstatus_16(
             "applied #acsharedip lookups"
         );
     }
-    let ac_sharedhw_events_applied =
-        apply_ac_sharedhw_events(&mut world, &anticheat_repository).await;
+    let ac_sharedhw_events_applied = apply_ac_sharedhw_events(world, anticheat_repository).await;
     if ac_sharedhw_events_applied != 0 {
         info!(
             ac_sharedhw_events_applied,
@@ -199,8 +193,7 @@ pub(crate) async fn acstatus_16(
             "applied #acsharedhw lookups"
         );
     }
-    let ac_highrisk_events_applied =
-        apply_ac_highrisk_events(&mut world, &anticheat_repository).await;
+    let ac_highrisk_events_applied = apply_ac_highrisk_events(world, anticheat_repository).await;
     if ac_highrisk_events_applied != 0 {
         info!(
             ac_highrisk_events_applied,
@@ -208,7 +201,7 @@ pub(crate) async fn acstatus_16(
             "applied #achighrisk lookups"
         );
     }
-    let ac_lookup_events_applied = apply_ac_lookup_events(&mut world, &anticheat_repository).await;
+    let ac_lookup_events_applied = apply_ac_lookup_events(world, anticheat_repository).await;
     if ac_lookup_events_applied != 0 {
         info!(
             ac_lookup_events_applied,
@@ -216,8 +209,7 @@ pub(crate) async fn acstatus_16(
             "applied #aclookup lookups"
         );
     }
-    let ac_siglist_events_applied =
-        apply_ac_siglist_events(&mut world, &anticheat_repository).await;
+    let ac_siglist_events_applied = apply_ac_siglist_events(world, anticheat_repository).await;
     if ac_siglist_events_applied != 0 {
         info!(
             ac_siglist_events_applied,
@@ -225,7 +217,7 @@ pub(crate) async fn acstatus_16(
             "applied #acsiglist lookups"
         );
     }
-    let ac_sigadd_events_applied = apply_ac_sigadd_events(&mut world, &anticheat_repository).await;
+    let ac_sigadd_events_applied = apply_ac_sigadd_events(world, anticheat_repository).await;
     if ac_sigadd_events_applied != 0 {
         info!(
             ac_sigadd_events_applied,
@@ -233,7 +225,7 @@ pub(crate) async fn acstatus_16(
             "applied #acsigadd lookups"
         );
     }
-    let ac_sigdel_events_applied = apply_ac_sigdel_events(&mut world, &anticheat_repository).await;
+    let ac_sigdel_events_applied = apply_ac_sigdel_events(world, anticheat_repository).await;
     if ac_sigdel_events_applied != 0 {
         info!(
             ac_sigdel_events_applied,
@@ -245,7 +237,7 @@ pub(crate) async fn acstatus_16(
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn querystats_17(
-    mut world: &mut World,
+    world: &mut World,
     _runtime: &mut ServerRuntime,
     _zone_loader: &mut ZoneLoader,
     _config: &ServerConfig,
@@ -268,7 +260,7 @@ pub(crate) async fn querystats_17(
     // see `ugaris-core`'s `world/querystats.rs` module doc
     // comment, queued by `apply_admin_character_command`
     // above.
-    let querystats_events_applied = apply_querystats_events(&mut world, &character_repository);
+    let querystats_events_applied = apply_querystats_events(world, character_repository);
     if querystats_events_applied != 0 {
         info!(
             querystats_events_applied,
@@ -280,7 +272,7 @@ pub(crate) async fn querystats_17(
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn jail_18(
-    mut world: &mut World,
+    world: &mut World,
     _runtime: &mut ServerRuntime,
     _zone_loader: &mut ZoneLoader,
     _config: &ServerConfig,
@@ -302,7 +294,7 @@ pub(crate) async fn jail_18(
     // `lookup_name`, `system/lookup.c:42-98` + `system/
     // database/database_lookup.c:57-83`), queued by
     // `apply_admin_character_command` above.
-    let jail_events_applied = apply_jail_events(&mut world, &character_repository).await;
+    let jail_events_applied = apply_jail_events(world, character_repository).await;
     if jail_events_applied != 0 {
         info!(
             jail_events_applied,
@@ -314,8 +306,8 @@ pub(crate) async fn jail_18(
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn jail_19(
-    mut world: &mut World,
-    mut runtime: &mut ServerRuntime,
+    world: &mut World,
+    runtime: &mut ServerRuntime,
     _zone_loader: &mut ZoneLoader,
     config: &ServerConfig,
     _args: &Args,
@@ -337,10 +329,10 @@ pub(crate) async fn jail_19(
     // `World::apply_jail_action` above when the destination
     // area differs from this area server's own `area_id`.
     let jail_cross_area_transfers_applied = apply_jail_cross_area_transfers(
-        &mut world,
-        &mut runtime,
-        &character_repository,
-        &area_repository,
+        world,
+        runtime,
+        character_repository,
+        area_repository,
         config.area_id,
         config.mirror_id,
     )
@@ -356,8 +348,8 @@ pub(crate) async fn jail_19(
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn change_area_20(
-    mut world: &mut World,
-    mut runtime: &mut ServerRuntime,
+    world: &mut World,
+    runtime: &mut ServerRuntime,
     _zone_loader: &mut ZoneLoader,
     config: &ServerConfig,
     _args: &Args,
@@ -380,10 +372,10 @@ pub(crate) async fn change_area_20(
     // the challenge-room/original-area destination differs
     // from this area server's own `area_id`.
     let macro_cross_area_transfers_applied = apply_macro_cross_area_transfers(
-        &mut world,
-        &mut runtime,
-        &character_repository,
-        &area_repository,
+        world,
+        runtime,
+        character_repository,
+        area_repository,
         config.area_id,
         config.mirror_id,
     )
@@ -399,7 +391,7 @@ pub(crate) async fn change_area_20(
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn rmdeath_22(
-    mut world: &mut World,
+    world: &mut World,
     _runtime: &mut ServerRuntime,
     _zone_loader: &mut ZoneLoader,
     _config: &ServerConfig,
@@ -421,7 +413,7 @@ pub(crate) async fn rmdeath_22(
     // `lookup_name`, `system/lookup.c:42-98` + `system/
     // database/database_lookup.c:57-83`), queued by
     // `apply_admin_character_command` above.
-    let rmdeath_events_applied = apply_rmdeath_events(&mut world, &character_repository).await;
+    let rmdeath_events_applied = apply_rmdeath_events(world, character_repository).await;
     if rmdeath_events_applied != 0 {
         info!(
             rmdeath_events_applied,
@@ -433,8 +425,8 @@ pub(crate) async fn rmdeath_22(
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn complain_23(
-    mut world: &mut World,
-    mut runtime: &mut ServerRuntime,
+    world: &mut World,
+    runtime: &mut ServerRuntime,
     _zone_loader: &mut ZoneLoader,
     _config: &ServerConfig,
     _args: &Args,
@@ -456,13 +448,8 @@ pub(crate) async fn complain_23(
     // `system/lookup.c:42-98` + `system/database/
     // database_lookup.c:57-83`), queued by
     // `apply_complain_command` above.
-    let complain_events_applied = apply_complain_events(
-        &mut world,
-        &mut runtime,
-        &character_repository,
-        current_unix_time(),
-    )
-    .await;
+    let complain_events_applied =
+        apply_complain_events(world, runtime, character_repository, current_unix_time()).await;
     if complain_events_applied != 0 {
         info!(
             complain_events_applied,
@@ -474,7 +461,7 @@ pub(crate) async fn complain_23(
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn god_24(
-    mut world: &mut World,
+    world: &mut World,
     _runtime: &mut ServerRuntime,
     _zone_loader: &mut ZoneLoader,
     _config: &ServerConfig,
@@ -497,8 +484,7 @@ pub(crate) async fn god_24(
     // `cmd_flag`'s offline fallback, `task_set_flags`/
     // `set_flags`, `task.c:198-211,385-394`), queued by
     // `World::apply_cmd_flag_command` above.
-    let admin_flag_events_applied =
-        apply_admin_flag_events(&mut world, &character_repository).await;
+    let admin_flag_events_applied = apply_admin_flag_events(world, character_repository).await;
     if admin_flag_events_applied != 0 {
         info!(
             admin_flag_events_applied,
@@ -510,7 +496,7 @@ pub(crate) async fn god_24(
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn rename_25(
-    mut world: &mut World,
+    world: &mut World,
     _runtime: &mut ServerRuntime,
     _zone_loader: &mut ZoneLoader,
     _config: &ServerConfig,
@@ -532,7 +518,7 @@ pub(crate) async fn rename_25(
     // `do_rename`/`db_rename`, `src/system/database/
     // database_admin.c:291-355`), queued by
     // `World::queue_rename_command` above.
-    let rename_events_applied = apply_rename_events(&mut world, &character_repository).await;
+    let rename_events_applied = apply_rename_events(world, character_repository).await;
     if rename_events_applied != 0 {
         info!(
             rename_events_applied,
@@ -544,7 +530,7 @@ pub(crate) async fn rename_25(
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn lockname_26(
-    mut world: &mut World,
+    world: &mut World,
     _runtime: &mut ServerRuntime,
     _zone_loader: &mut ZoneLoader,
     _config: &ServerConfig,
@@ -567,7 +553,7 @@ pub(crate) async fn lockname_26(
     // database_admin.c:357-434`), queued by `World::
     // queue_lockname_command`/`queue_unlockname_command`
     // above.
-    let lockname_events_applied = apply_lockname_events(&mut world, &character_repository).await;
+    let lockname_events_applied = apply_lockname_events(world, character_repository).await;
     if lockname_events_applied != 0 {
         info!(
             lockname_events_applied,
@@ -575,8 +561,7 @@ pub(crate) async fn lockname_26(
             "applied /lockname lookups"
         );
     }
-    let unlockname_events_applied =
-        apply_unlockname_events(&mut world, &character_repository).await;
+    let unlockname_events_applied = apply_unlockname_events(world, character_repository).await;
     if unlockname_events_applied != 0 {
         info!(
             unlockname_events_applied,
@@ -588,8 +573,8 @@ pub(crate) async fn lockname_26(
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn punish_27(
-    mut world: &mut World,
-    mut runtime: &mut ServerRuntime,
+    world: &mut World,
+    runtime: &mut ServerRuntime,
     _zone_loader: &mut ZoneLoader,
     _config: &ServerConfig,
     _args: &Args,
@@ -611,10 +596,10 @@ pub(crate) async fn punish_27(
     // `src/system/task.c` + `src/system/punish.c`), queued by
     // `World::queue_punish_command` above.
     let punish_events_applied = apply_punish_events(
-        &mut world,
-        &mut runtime,
-        &character_repository,
-        &notes_repository,
+        world,
+        runtime,
+        character_repository,
+        notes_repository,
         current_unix_time(),
     )
     .await;
@@ -629,7 +614,7 @@ pub(crate) async fn punish_27(
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn unpunish_28(
-    mut world: &mut World,
+    world: &mut World,
     _runtime: &mut ServerRuntime,
     _zone_loader: &mut ZoneLoader,
     _config: &ServerConfig,
@@ -652,7 +637,7 @@ pub(crate) async fn unpunish_28(
     // `src/system/task.c` + `src/system/punish.c`), queued by
     // `World::queue_unpunish_command` above.
     let unpunish_events_applied =
-        apply_unpunish_events(&mut world, &character_repository, &notes_repository).await;
+        apply_unpunish_events(world, character_repository, notes_repository).await;
     if unpunish_events_applied != 0 {
         info!(
             unpunish_events_applied,
@@ -664,7 +649,7 @@ pub(crate) async fn unpunish_28(
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn exterminate_29(
-    mut world: &mut World,
+    world: &mut World,
     _runtime: &mut ServerRuntime,
     _zone_loader: &mut ZoneLoader,
     _config: &ServerConfig,
@@ -686,8 +671,7 @@ pub(crate) async fn exterminate_29(
     // `exterminate`/`db_exterminate`, `src/system/database/
     // database_admin.c:29-95,503-507`), queued by
     // `World::queue_exterminate_command` above.
-    let exterminate_events_applied =
-        apply_exterminate_events(&mut world, &character_repository).await;
+    let exterminate_events_applied = apply_exterminate_events(world, character_repository).await;
     if exterminate_events_applied != 0 {
         info!(
             exterminate_events_applied,
@@ -699,7 +683,7 @@ pub(crate) async fn exterminate_29(
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn look_30(
-    mut world: &mut World,
+    world: &mut World,
     _runtime: &mut ServerRuntime,
     _zone_loader: &mut ZoneLoader,
     _config: &ServerConfig,
@@ -721,7 +705,7 @@ pub(crate) async fn look_30(
     // `db_read_notes`/`list_punishment`), queued by
     // `World::queue_look_command` above.
     let look_events_applied =
-        apply_look_events(&mut world, &character_repository, &notes_repository).await;
+        apply_look_events(world, character_repository, notes_repository).await;
     if look_events_applied != 0 {
         info!(
             look_events_applied,
@@ -733,7 +717,7 @@ pub(crate) async fn look_30(
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn klog_31(
-    mut world: &mut World,
+    world: &mut World,
     _runtime: &mut ServerRuntime,
     _zone_loader: &mut ZoneLoader,
     _config: &ServerConfig,
@@ -755,9 +739,9 @@ pub(crate) async fn klog_31(
     // `db_karmalog`/`karmalog_s`), queued by
     // `World::queue_klog_command` above.
     let klog_events_applied = apply_klog_events(
-        &mut world,
-        &character_repository,
-        &notes_repository,
+        world,
+        character_repository,
+        notes_repository,
         current_unix_time(),
     )
     .await;
@@ -772,7 +756,7 @@ pub(crate) async fn klog_31(
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn showvalues_32(
-    mut world: &mut World,
+    world: &mut World,
     _runtime: &mut ServerRuntime,
     _zone_loader: &mut ZoneLoader,
     _config: &ServerConfig,
@@ -793,8 +777,7 @@ pub(crate) async fn showvalues_32(
     // `/showvalues <name>`'s async DB round trip (C
     // `show_values`/`show_values_bg`), queued by `World::
     // queue_showvalues_command` above.
-    let showvalues_events_applied =
-        apply_showvalues_events(&mut world, &character_repository).await;
+    let showvalues_events_applied = apply_showvalues_events(world, character_repository).await;
     if showvalues_events_applied != 0 {
         info!(
             showvalues_events_applied,
@@ -806,8 +789,8 @@ pub(crate) async fn showvalues_32(
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn values_33(
-    mut world: &mut World,
-    mut runtime: &mut ServerRuntime,
+    world: &mut World,
+    runtime: &mut ServerRuntime,
     _zone_loader: &mut ZoneLoader,
     config: &ServerConfig,
     _args: &Args,
@@ -828,9 +811,9 @@ pub(crate) async fn values_33(
     // `look_values`/`look_values_bg`), queued by `World::
     // queue_values_command` above.
     let values_events_applied = apply_values_events(
-        &mut world,
-        &mut runtime,
-        &character_repository,
+        world,
+        runtime,
+        character_repository,
         config.area_id,
         config.mirror_id,
         current_unix_time(),
@@ -847,7 +830,7 @@ pub(crate) async fn values_33(
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn allow_34(
-    mut world: &mut World,
+    world: &mut World,
     _runtime: &mut ServerRuntime,
     _zone_loader: &mut ZoneLoader,
     config: &ServerConfig,
@@ -869,7 +852,7 @@ pub(crate) async fn allow_34(
     // `allow_body_db`), queued by `World::
     // queue_allow_command` above.
     let allow_events_applied =
-        apply_allow_events(&mut world, &character_repository, config.area_id).await;
+        apply_allow_events(world, character_repository, config.area_id).await;
     if allow_events_applied != 0 {
         info!(
             allow_events_applied,
@@ -881,8 +864,8 @@ pub(crate) async fn allow_34(
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn player_update_59(
-    mut world: &mut World,
-    mut runtime: &mut ServerRuntime,
+    world: &mut World,
+    runtime: &mut ServerRuntime,
     _zone_loader: &mut ZoneLoader,
     _config: &ServerConfig,
     _args: &Args,
@@ -917,13 +900,7 @@ pub(crate) async fn player_update_59(
             .filter_map(|player| player.character_id)
             .collect();
         for character_id in play_time_characters {
-            award_play_time_minute(
-                &mut world,
-                &mut runtime,
-                &achievement_repository,
-                character_id,
-            )
-            .await;
+            award_play_time_minute(world, runtime, achievement_repository, character_id).await;
             // `stats_update`'s `.online` half (the only field
             // this codebase reads anywhere, via `PlayerRuntime::
             // stats_online_time`, `/values`' "Playing for %d

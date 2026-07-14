@@ -384,7 +384,7 @@ impl World {
             return false;
         };
         let is_pk_death = character.act2 != 0;
-        let killer_id = (character.act1 > 0).then(|| CharacterId(character.act1 as u32));
+        let killer_id = (character.act1 > 0).then_some(CharacterId(character.act1 as u32));
         let is_player = character.flags.contains(CharacterFlags::PLAYER);
         let x = character.x;
         let y = character.y;

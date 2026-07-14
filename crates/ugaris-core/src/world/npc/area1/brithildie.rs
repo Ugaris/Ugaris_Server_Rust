@@ -520,11 +520,11 @@ impl World {
                 events.push(BrithildieOutcomeEvent::QuestOpen { player_id });
                 new_state = BRITHILDIE_STATE_NOMORETALES_QOPEN;
             }
-            BRITHILDIE_STATE_NOMORETALES_QOPEN | BRITHILDIE_STATE_NOMORETALES_QDONE => {
+            BRITHILDIE_STATE_NOMORETALES_QOPEN | BRITHILDIE_STATE_NOMORETALES_QDONE
                 // C `case BRITHILDIE_STATE_NOMORETALES_QOPEN: case
                 // BRITHILDIE_STATE_NOMORETALES_QDONE:` (`gwendylon.c:2713-
                 // 2722`).
-                if now.saturating_sub(facts.seen_timer) > BRITHILDIE_EXTEND_WAIT_TIME {
+                if now.saturating_sub(facts.seen_timer) > BRITHILDIE_EXTEND_WAIT_TIME => {
                     self.npc_quiet_say_bytes(
                         brithildie_id,
                         &format!(
@@ -534,7 +534,6 @@ impl World {
                     );
                     didsay = true;
                 }
-            }
             // Every other value: no-op, matching C's `switch` with no
             // matching `case`.
             _ => {}
@@ -565,6 +564,7 @@ impl World {
     /// C `brithildie_driver`'s `NT_TEXT` branch (`gwendylon.c:2735-2790`),
     /// wired through the generic `analyse_text_qa` matcher (same pattern
     /// as `world::forest_ranger`'s/`world::yoakin`'s text handlers).
+    #[allow(clippy::too_many_arguments)]
     fn brithildie_handle_text_message(
         &mut self,
         brithildie_id: CharacterId,

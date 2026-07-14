@@ -193,7 +193,7 @@ fn clan_jewel_give_founds_clan_and_awards_master() {
         }]
     );
 
-    assert!(world.items.get(&ItemId(900)).is_none());
+    assert!(!world.items.contains_key(&ItemId(900)));
     assert_eq!(
         world.characters.get(&CharacterId(1)).unwrap().cursor_item,
         None
@@ -217,7 +217,7 @@ fn clan_jewel_give_without_name_first_fails() {
     assert!(texts.iter().any(|t| t
         .message
         .contains("You must name your clan first. Say: 'name: <clan-name>'.")));
-    assert!(world.items.get(&ItemId(900)).is_none());
+    assert!(!world.items.contains_key(&ItemId(900)));
     assert!(world.drain_pending_clanmaster_events().is_empty());
 }
 
@@ -244,7 +244,7 @@ fn non_jewel_give_is_silently_destroyed() {
     assert!(!texts.iter().any(
         |t| t.message.contains("name your clan first") || t.message.contains("error creating")
     ));
-    assert!(world.items.get(&ItemId(900)).is_none());
+    assert!(!world.items.contains_key(&ItemId(900)));
 }
 
 #[test]

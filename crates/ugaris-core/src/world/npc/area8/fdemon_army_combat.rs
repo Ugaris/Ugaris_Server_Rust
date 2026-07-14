@@ -65,7 +65,7 @@ const FDEMON_ARMY_TALK_RANGE: i32 = 12;
 
 /// Matches `world::text::notify_area`'s own `NOTIFY_SIZE` broadcast radius
 /// - same "replace message-driven sighting with a direct scan" precedent
-/// as `fdemon_demon.rs`'s own constant of the same name.
+///   as `fdemon_demon.rs`'s own constant of the same name.
 const SIGHTING_SCAN_RADIUS: u16 = 32;
 
 impl World {
@@ -274,11 +274,11 @@ impl World {
                         }
                     }
                 }
-                NT_SEEHIT => {
+                NT_SEEHIT
                     // C `standard_message_driver`'s `NT_SEEHIT` case
                     // (`drvlib.c:2478-2510`): help whichever side (victim
                     // or attacker) is our platoon-mate.
-                    if message.dat1 > 0 && message.dat2 > 0 {
+                    if message.dat1 > 0 && message.dat2 > 0 => {
                         let attacker_id = CharacterId(message.dat1 as u32);
                         let victim_id = CharacterId(message.dat2 as u32);
                         if let Some((target_id, hurtme)) =
@@ -293,7 +293,6 @@ impl World {
                             self.sort_simple_baddy_enemies_like_c(soldier_id);
                         }
                     }
-                }
                 _ => {}
             }
         }

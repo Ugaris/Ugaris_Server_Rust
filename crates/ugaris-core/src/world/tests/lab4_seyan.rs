@@ -199,7 +199,7 @@ fn lab4_seyan_give_crown_sets_bit_and_advances_state() {
         seyan4state: 10,
         seyan4got: 1,
     }));
-    assert!(world.items.get(&ItemId(50)).is_none());
+    assert!(!world.items.contains_key(&ItemId(50)));
     assert!(world
         .characters
         .get(&CharacterId(1))
@@ -250,7 +250,7 @@ fn lab4_seyan_give_non_quest_item_is_destroyed_without_state_change() {
 
     let events = world.process_lab4_seyan_actions(&facts(CharacterId(2), 0, 0), 1);
     assert!(events.is_empty());
-    assert!(world.items.get(&ItemId(52)).is_none());
+    assert!(!world.items.contains_key(&ItemId(52)));
 }
 
 #[test]

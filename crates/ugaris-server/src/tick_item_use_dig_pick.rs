@@ -15,8 +15,8 @@
 //!   occupied cursor.
 //! - Area 17 Two-City pick-door lockpicking (`src/area/17/two.c`): toggle
 //!   (with pick-the-lock flavor text) and locked-with-wrong-key.
-//! The rest of the match (the remaining no-op catch-all) is still inline
-//! in `main.rs` pending further slices.
+//!   The rest of the match (the remaining no-op catch-all) is still inline
+//!   in `main.rs` pending further slices.
 
 use super::*;
 use crate::area_apply::{

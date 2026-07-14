@@ -1,3 +1,6 @@
+// Test setups intentionally mirror the C sources' memset-then-assign
+// initialization pattern.
+#![allow(clippy::field_reassign_with_default)]
 use super::*;
 
 #[test]
@@ -82,7 +85,7 @@ fn world_tracks_area3_onofflight_counts_and_gate_window() {
     assert_eq!(world.area3_palace_lamps.switched_on_count, 1);
     assert_eq!(
         world.area3_palace_lamps.keep_open_until_tick,
-        100 + TICKS_PER_SECOND as u64 * 60 * 3
+        100 + TICKS_PER_SECOND * 60 * 3
     );
     assert_eq!(world.timers.used_timers(), 1);
     assert_eq!(world.map.tile(10, 10).unwrap().light, 14);

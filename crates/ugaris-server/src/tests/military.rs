@@ -216,6 +216,6 @@ fn apply_military_mission_kill_check_is_a_no_op_on_no_match() {
         },
     );
 
-    assert!(runtime.tick_out.get(&1).is_none());
+    assert!(!runtime.tick_out.contains_key(&1));
     assert!(world.drain_pending_system_text_bytes().is_empty());
 }

@@ -57,7 +57,7 @@ pub struct LqQuestSnapshot {
 
 /// The on-disk envelope `ugaris-server` reads/writes at `quest/<name>.qst`
 /// - C's `write(handle, password, 40)` file header plus the payload C
-/// splits across the next three `write` calls (`lq.c:1388-1391`).
+///   splits across the next three `write` calls (`lq.c:1388-1391`).
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct LqQuestFile {
     pub password: String,

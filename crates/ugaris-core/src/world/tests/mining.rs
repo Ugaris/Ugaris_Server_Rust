@@ -1,3 +1,6 @@
+// Test setups intentionally mirror the C sources' memset-then-assign
+// initialization pattern.
+#![allow(clippy::field_reassign_with_default)]
 use super::*;
 
 fn mine_wall(id: u32, silver_base: u8, gold_base: u8, tier: u8) -> Item {

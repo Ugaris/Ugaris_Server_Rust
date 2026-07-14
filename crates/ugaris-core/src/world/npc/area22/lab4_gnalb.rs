@@ -119,7 +119,7 @@ const GNALB_PATH: [(u16, u16, [u16; 4]); 64] = [
 /// never read anywhere in the C driver's body - dead even in C, same
 /// precedent as other ported NPCs' own dead fields - so it is not
 /// ported.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, Default)]
 pub struct Lab4GnalbDriverData {
     /// C `char type` (`lab4.c:421`): `1`=guard, `2`=dead code, `3`=young/
     /// crazy, `4`=mage, `5`=king. See module doc comment.
@@ -133,22 +133,6 @@ pub struct Lab4GnalbDriverData {
     pub victim_visible: bool,
     pub victim_last_x: u16,
     pub victim_last_y: u16,
-}
-
-impl Default for Lab4GnalbDriverData {
-    fn default() -> Self {
-        Self {
-            gnalb_type: 0,
-            aggressive: false,
-            helper: false,
-            path: 0,
-            lastpath: 0,
-            victim: None,
-            victim_visible: false,
-            victim_last_x: 0,
-            victim_last_y: 0,
-        }
-    }
 }
 
 /// C `lab4_gnalb_driver_parse` (`lab4.c:429-439`).
@@ -551,6 +535,9 @@ impl World {
                 self.npc_whisper(gnalb_id, "Tell mage me saw in fire, me not crazy.");
             }
             // C `if (do_use(cn, DX_RIGHT, 0)) return;` (`lab4.c:620`).
+            // Kept nested: `lab4_gnalb_use_right` mutates world state, so
+            // hoisting it into a match guard would hide the side effect.
+            #[allow(clippy::collapsible_match)]
             10..=14 => {
                 if self.lab4_gnalb_use_right(gnalb_id) {
                     return true;

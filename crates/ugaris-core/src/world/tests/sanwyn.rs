@@ -279,7 +279,7 @@ fn sanwyn_receiving_first_palace_note_sets_its_bit_and_awards_military_points() 
     let texts = world.drain_pending_area_texts();
     assert!(texts.iter().any(|text| text.message.contains("Well done")));
     // Cursor note item destroyed.
-    assert!(world.items.get(&ItemId(50)).is_none());
+    assert!(!world.items.contains_key(&ItemId(50)));
     assert_eq!(
         world.characters.get(&CharacterId(1)).unwrap().cursor_item,
         None

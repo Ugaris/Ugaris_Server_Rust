@@ -158,7 +158,7 @@ impl World {
     /// C `give_reward` (`src/area/33/tunnel.c:527-601`). `door_type` is
     /// the raw `it[in].drdata[0]` (`DOOR_EXIT_EXP` or `DOOR_EXIT_MILITARY`
     /// - any other value is a no-op, matching C's `if/else if` with no
-    /// `else` branch).
+    ///   `else` branch).
     pub fn apply_tunnel_reward(
         &mut self,
         character_id: CharacterId,

@@ -450,8 +450,8 @@ pub enum MissionRequestOutcome {
     /// highlighted this call (`mission_type_preference > 0` and the
     /// preferred difficulty's freshly generated mission type matches it)
     /// - carries the mission description line plus the "accept by
-    /// saying X" prompt line; C returns immediately here without the
-    /// general `offer_missions` listing.
+    ///   saying X" prompt line; C returns immediately here without the
+    ///   general `offer_missions` listing.
     AdvisorRecommendation { description: String, prompt: String },
     /// Normal offer: every line [`offer_missions_text`] produced, plus
     /// the reroll-footer line.
@@ -668,7 +668,7 @@ impl MilitaryMasterStorage {
 /// restart merely delays the next recommendation rather than losing
 /// meaningful player-facing state permanently. Closing this gap (a
 /// `military_master_storage(storage_id integer primary key, storage_json
-/// jsonb not null, updated_at)` table following `clan.rs`'s
+///      jsonb not null, updated_at)` table following `clan.rs`'s
 /// `PgClanRegistryRepository` pattern, loaded at boot and periodically
 /// saved when [`Self::dirty`]) is left for a future slice - see the
 /// "Military ranks" task in `PORTING_TODO.md`.

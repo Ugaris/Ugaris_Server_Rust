@@ -42,7 +42,7 @@ fn found_clan(world: &mut World, name: &str) -> u16 {
 /// early `break` once a free slot is found, matching C's own forward-
 /// scanning `may_add_spell`), so tests look up the granted potion by
 /// scanning for an `IDR_POTION_SP` item rather than assuming a fixed slot.
-fn find_potion_spell_item<'a>(world: &'a World, character_id: CharacterId) -> Option<&'a Item> {
+fn find_potion_spell_item(world: &World, character_id: CharacterId) -> Option<&Item> {
     let character = world.characters.get(&character_id)?;
     character.inventory[crate::spell::SPELL_SLOT_START..crate::spell::SPELL_SLOT_END]
         .iter()

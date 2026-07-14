@@ -1,3 +1,6 @@
+// Test setups intentionally mirror the C sources' memset-then-assign
+// initialization pattern.
+#![allow(clippy::field_reassign_with_default)]
 use super::*;
 
 #[test]
@@ -822,7 +825,7 @@ fn world_timer_callback_expires_and_destroys_burned_out_torch() {
     assert_eq!(outcomes.len(), 1);
     assert!(matches!(
         outcomes[0],
-        ItemDriverOutcome::TorchExpired { item_name: _, .. }
+        ItemDriverOutcome::TorchExpired { .. }
     ));
     assert!(!world.items.contains_key(&ItemId(7)));
     let character = world.characters.get(&CharacterId(1)).unwrap();

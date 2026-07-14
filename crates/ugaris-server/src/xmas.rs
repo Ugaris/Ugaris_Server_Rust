@@ -219,6 +219,7 @@ pub(crate) enum XmasTreeApplyResult {
     MissingPlayer,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn apply_xmastree(
     world: &mut World,
     loader: &mut ZoneLoader,

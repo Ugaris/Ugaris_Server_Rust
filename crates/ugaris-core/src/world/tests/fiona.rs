@@ -220,7 +220,7 @@ fn give_ring_at_state3_completes_quest67_and_jumps_to_4() {
         player_id: CharacterId(2),
         new_state: 4,
     }));
-    assert!(world.items.get(&ItemId(50)).is_none());
+    assert!(!world.items.contains_key(&ItemId(50)));
 }
 
 #[test]

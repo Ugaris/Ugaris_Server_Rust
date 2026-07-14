@@ -1,3 +1,6 @@
+// Test setups intentionally mirror the C sources' memset-then-assign
+// initialization pattern.
+#![allow(clippy::field_reassign_with_default)]
 use std::collections::HashMap;
 
 use super::*;
@@ -140,7 +143,11 @@ fn gate_welcome_ignores_a_different_player_while_a_victim_conversation_is_fresh(
         }));
         gate.push_driver_message(NT_CHAR, 3, 0, 0);
     }
-    assert!(TALK_MIN < TALK_VICTIM);
+    // Documents the constant ordering this test's scenario relies on.
+    #[allow(clippy::assertions_on_constants)]
+    {
+        assert!(TALK_MIN < TALK_VICTIM);
+    }
 
     let events = world.process_gate_welcome_actions(&facts(CharacterId(3), 0, false), 0);
     assert!(events.is_empty());
@@ -414,7 +421,7 @@ fn gate_welcome_destroys_item_when_giver_inventory_is_full() {
 
     world.process_gate_welcome_actions(&facts(CharacterId(2), 0, false), 0);
 
-    assert!(world.items.get(&ItemId(900)).is_none());
+    assert!(!world.items.contains_key(&ItemId(900)));
 }
 
 /// C `enter_room`'s room-clear scan (`gatekeeper.c:233-240`).
@@ -519,9 +526,9 @@ fn gate_finish_enter_room_teleports_strips_spells_and_resets_resources() {
     assert_eq!(hero.mana, POWERSCALE);
     assert_eq!(hero.endurance, POWERSCALE);
     assert_eq!(hero.regen_ticker, 500);
-    assert!(world.items.get(&ItemId(1)).is_none());
-    assert!(world.items.get(&ItemId(2)).is_none());
-    assert!(world.items.get(&ItemId(3)).is_some());
+    assert!(!world.items.contains_key(&ItemId(1)));
+    assert!(!world.items.contains_key(&ItemId(2)));
+    assert!(world.items.contains_key(&ItemId(3)));
 
     let texts: Vec<String> = world
         .drain_pending_system_texts()

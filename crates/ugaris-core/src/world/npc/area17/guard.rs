@@ -609,11 +609,9 @@ pub fn parse_two_guard_driver_args(args: &str) -> TwoGuardDriverData {
                     data.patx[pat] = parsed as u8;
                 }
             }
-            "paty" => {
-                if pat < MAXPAT {
-                    data.paty[pat] = parsed as u8;
-                    pat += 1;
-                }
+            "paty" if pat < MAXPAT => {
+                data.paty[pat] = parsed as u8;
+                pat += 1;
             }
             _ => {} // C: `elog(...)` - log-only.
         }

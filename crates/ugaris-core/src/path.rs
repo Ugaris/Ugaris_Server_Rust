@@ -18,7 +18,7 @@ enum PathBlockMode {
     IgnoreCharacters,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct PathResult {
     pub direction: Option<Direction>,
     pub cost: i32,
@@ -28,21 +28,6 @@ pub struct PathResult {
     pub best_direction: Option<Direction>,
     pub best_cost: i32,
     pub best_distance: usize,
-}
-
-impl Default for PathResult {
-    fn default() -> Self {
-        Self {
-            direction: None,
-            cost: 0,
-            nodes: 0,
-            best_x: 0,
-            best_y: 0,
-            best_direction: None,
-            best_cost: 0,
-            best_distance: 0,
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -121,6 +106,7 @@ pub fn pathfinder_ignore_characters(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn pathfinder_with_mode(
     grid: &MapGrid,
     from_x: usize,

@@ -303,7 +303,7 @@ impl World {
         };
         let level = character.level as i32;
 
-        if mission_type == 2 && (level < 9 || level > 39 || level % 2 == 0) {
+        if mission_type == 2 && (!(9..=39).contains(&level) || level % 2 == 0) {
             return SpecificMissionRequestOutcome::RatlingLevelGate;
         }
         if mission_type == 3 && level < 12 {
@@ -586,9 +586,10 @@ impl World {
     /// [`crate::PlayerRuntime::greet_player`] in C's own `NT_CHAR`
     /// handler (`military.c:2150-2151`) - [`crate::PlayerRuntime::
     /// greet_player`]'s own `military_recommend() == yday + 1 &&
-    /// mission_type_preference() > 0 && mission_difficulty_preference()
-    /// >= 0` short-circuit (`GreetPlayerOutcome::
-    /// AdvisorRecommendationAlreadyShown`) exists specifically to detect
+    /// mission_type_preference() > 0 &&
+    /// mission_difficulty_preference() >= 0` short-circuit
+    /// (`GreetPlayerOutcome::AdvisorRecommendationAlreadyShown`) exists
+    /// specifically to detect
     /// that this function already greeted the player this same call,
     /// matching C's own back-to-back `process_advisor_recommendation`/
     /// `greet_player` call order.

@@ -44,7 +44,7 @@ impl World {
 
     pub(crate) fn mark_dirty_sector(&mut self, x: usize, y: usize) {
         self.dirty_sectors
-            .set_sector(x as isize, y as isize, self.tick.0.max(1) as u64);
+            .set_sector(x as isize, y as isize, self.tick.0.max(1));
     }
 
     pub(crate) fn mark_light_area(&mut self, x: usize, y: usize, strength: i16) {

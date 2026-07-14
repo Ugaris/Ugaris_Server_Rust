@@ -256,8 +256,8 @@ fn give_amulet_in_range_completes_quest38_destroys_arikey_and_jumps_to_8() {
     assert!(texts
         .iter()
         .any(|text| text.message.contains("Please accept this reward")));
-    assert!(world.items.get(&ItemId(50)).is_none());
-    assert!(world.items.get(&ItemId(51)).is_none());
+    assert!(!world.items.contains_key(&ItemId(50)));
+    assert!(!world.items.contains_key(&ItemId(51)));
     assert!(world
         .characters
         .get(&CharacterId(1))

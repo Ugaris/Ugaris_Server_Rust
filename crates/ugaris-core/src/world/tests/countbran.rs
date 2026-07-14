@@ -198,7 +198,7 @@ fn give_count_jewel_rewards_exp_gold_bit_and_mausoleum_key() {
     let godmode = world.characters.get(&CharacterId(2)).unwrap();
     assert_eq!(godmode.exp, 60000);
     assert_eq!(godmode.gold, 1000 * 100);
-    assert!(world.items.get(&ItemId(50)).is_none());
+    assert!(!world.items.contains_key(&ItemId(50)));
 }
 
 #[test]
@@ -254,7 +254,7 @@ fn give_arkhata_letter3_sets_letter_bit_and_destroys_letter() {
             bit: 4,
         })
     );
-    assert!(world.items.get(&ItemId(50)).is_none());
+    assert!(!world.items.contains_key(&ItemId(50)));
     let texts = world.drain_pending_area_texts();
     assert!(texts
         .iter()
@@ -287,7 +287,7 @@ fn give_arkhata_letter3_when_bit_already_set_falls_back_to_no_use_for_it() {
         .iter()
         .any(|event| matches!(event, CountBranOutcomeEvent::SetArkhataLetterBit { .. })));
     // Handed back, not destroyed.
-    assert!(world.items.get(&ItemId(50)).is_some());
+    assert!(world.items.contains_key(&ItemId(50)));
 }
 
 #[test]
@@ -320,7 +320,7 @@ fn give_countessa_jewel_when_already_holding_bit_grants_no_reward() {
     let godmode = world.characters.get(&CharacterId(2)).unwrap();
     assert_eq!(godmode.exp, 0);
     // Handed back, not destroyed.
-    assert!(world.items.get(&ItemId(50)).is_some());
+    assert!(world.items.contains_key(&ItemId(50)));
 }
 
 #[test]

@@ -150,7 +150,7 @@ impl World {
         }
 
         if let Some(seyan) = self.characters.get_mut(&seyan_id) {
-            seyan.driver_state = Some(CharacterDriverState::Lab4Seyan(data.clone()));
+            seyan.driver_state = Some(CharacterDriverState::Lab4Seyan(data));
         }
 
         // C `if (talkdir) turn(cn, talkdir);` (`lab4.c:326-328`).

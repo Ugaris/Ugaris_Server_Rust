@@ -1,3 +1,6 @@
+// Test setups intentionally mirror the C sources' memset-then-assign
+// initialization pattern.
+#![allow(clippy::field_reassign_with_default)]
 use super::*;
 
 #[test]
@@ -18,7 +21,7 @@ pub(crate) fn god_setxmas_command_sets_runtime_christmas_override() {
         vec!["Setting christmas special to 1, old value was 0."]
     );
     assert_eq!(runtime.xmas_special_override, Some(1));
-    assert_eq!(runtime_effective_xmas_event(&runtime).0, true);
+    assert!(runtime_effective_xmas_event(&runtime).0);
 
     let result =
         apply_admin_character_command(&mut world, &mut runtime, character_id, "/setxmas 0", 1)
@@ -28,7 +31,7 @@ pub(crate) fn god_setxmas_command_sets_runtime_christmas_override() {
         vec!["Setting christmas special to 0, old value was 1."]
     );
     assert_eq!(runtime.xmas_special_override, Some(0));
-    assert_eq!(runtime_effective_xmas_event(&runtime).0, false);
+    assert!(!runtime_effective_xmas_event(&runtime).0);
 }
 
 #[test]

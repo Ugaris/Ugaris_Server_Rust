@@ -1,5 +1,9 @@
 use super::*;
 
+// C divides by the granularity unguarded (`clanmaster.c:1319,1335`, always
+// the nonzero `CLANSPAWN_TIME_GRANULARITY_SECS` constant); the `== 0` arm
+// here is defensive-only and unreachable at the C-parity call sites.
+#[allow(clippy::manual_checked_ops)]
 pub(crate) fn round_down_to_granularity(value: u32, granularity: u32) -> u32 {
     if granularity == 0 {
         value

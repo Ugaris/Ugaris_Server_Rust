@@ -335,7 +335,7 @@ impl World {
         target: u16,
         dat: &DungeonmasterDriverData,
     ) -> Result<DungeonRaidPlan, DungeonRaidError> {
-        if target < 1 || target >= 32 {
+        if !(1..32).contains(&target) {
             return Err(DungeonRaidError::NoSuchClan);
         }
 

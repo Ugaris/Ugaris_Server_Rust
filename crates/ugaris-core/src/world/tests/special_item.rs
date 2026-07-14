@@ -1,3 +1,6 @@
+// Test setups intentionally mirror the C sources' memset-then-assign
+// initialization pattern.
+#![allow(clippy::field_reassign_with_default)]
 use super::*;
 use crate::character_driver::{MerchantDriverData, CDR_MERCHANT};
 use crate::world::special_item::MERCHANT_SPECIAL_REFRESH_TICKS;

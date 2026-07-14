@@ -139,6 +139,9 @@ pub(crate) fn take_soldiers(
     }
 
     let mut spawned = [CharacterId(0); MAXSOLDIER];
+    // `slot` mirrors C `take_soldiers`' `n` loop counter, which is both a
+    // PPD accessor argument and the `spawned` index.
+    #[allow(clippy::needless_range_loop)]
     for slot in 0..MAXSOLDIER {
         let Some((soldier_type, profile_index, rank, mut emote)) =
             runtime.player_for_character(player_id).map(|player| {

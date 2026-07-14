@@ -413,7 +413,7 @@ fn give_chronicles_in_range_completes_quest63_and_jumps_to_10() {
     assert!(texts
         .iter()
         .any(|text| text.message.contains("Thank you for the book")));
-    assert!(world.items.get(&ItemId(50)).is_none());
+    assert!(!world.items.contains_key(&ItemId(50)));
     assert!(world
         .characters
         .get(&CharacterId(1))

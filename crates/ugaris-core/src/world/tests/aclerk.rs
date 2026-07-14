@@ -1,3 +1,6 @@
+// Test setups intentionally mirror the C sources' memset-then-assign
+// initialization pattern.
+#![allow(clippy::field_reassign_with_default)]
 use super::*;
 use crate::character_driver::{
     mem_add_driver, parse_aclerk_driver_args, AclerkDriverData, CDR_ACLERK,

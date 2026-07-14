@@ -130,6 +130,9 @@ fn onofflight_timer_registers_and_use_toggles_light_state() {
 }
 
 #[test]
+// The modifier asserts intentionally mirror C's
+// `min(base, base * strength / maxstrength / 2)` formula verbatim.
+#[allow(clippy::unnecessary_min_or_max, clippy::identity_op)]
 fn torch_user_use_lights_and_extinguishes_carried_torch() {
     let mut character = character(1);
     let mut torch = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_TORCH);
@@ -186,6 +189,9 @@ fn torch_user_use_extracts_non_light_modifier_before_toggling() {
 }
 
 #[test]
+// The modifier asserts intentionally mirror C's
+// `min(base, base * strength / maxstrength / 2)` formula verbatim.
+#[allow(clippy::unnecessary_min_or_max)]
 fn torch_timer_burns_down_marks_special_and_expires() {
     let mut character = character(1);
     let mut torch = item(7, ItemFlags::USED | ItemFlags::USE, 0, IDR_TORCH);

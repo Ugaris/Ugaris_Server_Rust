@@ -193,10 +193,9 @@ impl World {
             && dat.alc_pots_taken < 3
             && dat.damage_done > 0
             && hp_after > max_hp * POWERSCALE / 2
+            && self.dungeon_potion(fighter_id)
         {
-            if self.dungeon_potion(fighter_id) {
-                dat.alc_pots_taken += 1;
-            }
+            dat.alc_pots_taken += 1;
         }
 
         self.store_dungeonfighter_data(fighter_id, dat);

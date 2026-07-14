@@ -577,7 +577,7 @@ impl World {
             data.line = Direction::Up as u8;
         }
 
-        if matches!(here, 51050 | 51051 | 51052) {
+        if matches!(here, 51050..=51052) {
             if let Ok(direction) = Direction::try_from(data.line) {
                 let weather_movement_percent = self.settings.weather_movement_percent;
                 let earthmud_extra_cost = self.earthmud_extra_movement_cost(guard_id);

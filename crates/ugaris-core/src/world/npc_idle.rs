@@ -688,6 +688,7 @@ impl World {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn secure_move_driver(
         &mut self,
         character_id: CharacterId,

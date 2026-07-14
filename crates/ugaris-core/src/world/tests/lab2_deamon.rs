@@ -241,7 +241,7 @@ fn lab2_deamon_elias_ladder_ends_by_clearing_co_and_self_destructing() {
 
     let _ = world.process_lab2_deamon_actions(&facts(CharacterId(2), false), 22);
 
-    assert!(world.characters.get(&CharacterId(1)).is_none());
+    assert!(!world.characters.contains_key(&CharacterId(1)));
 }
 
 #[test]
@@ -340,7 +340,7 @@ fn lab2_deamon_check_ignores_serial_mismatch_and_self_destructs() {
 
     let _ = world.process_lab2_deamon_actions(&facts(CharacterId(2), false), 22);
 
-    assert!(world.characters.get(&CharacterId(1)).is_none());
+    assert!(!world.characters.contains_key(&CharacterId(1)));
 }
 
 #[test]
@@ -352,7 +352,7 @@ fn lab2_deamon_self_destructs_when_target_gone() {
 
     world.process_lab2_deamon_actions(&facts(CharacterId(99), false), 22);
 
-    assert!(world.characters.get(&CharacterId(1)).is_none());
+    assert!(!world.characters.contains_key(&CharacterId(1)));
 }
 
 #[test]

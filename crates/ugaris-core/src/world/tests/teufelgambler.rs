@@ -149,7 +149,7 @@ fn teufelgambler_bet_destroys_stack_when_fully_consumed() {
 
     // C `if (cnt == have) { destroy_item(in); ch[co].item[n] = 0; }`
     // (`teufel.c:1339-1341`).
-    assert!(world.items.get(&ItemId(900)).is_none());
+    assert!(!world.items.contains_key(&ItemId(900)));
     let player_after = world.characters.get(&CharacterId(2)).unwrap();
     assert_eq!(player_after.inventory[30], None);
 }

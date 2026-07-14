@@ -438,7 +438,7 @@ impl World {
             // C `case 12:`/`case 13:` fall through into `case 14`'s body
             // with no intervening `break` (`area3.c:804-818`) - see the
             // module doc comment's deviation note.
-            12 | 13 | 14 => {
+            12..=14 => {
                 if facts.quest12_done {
                     new_state = 16;
                 } else {

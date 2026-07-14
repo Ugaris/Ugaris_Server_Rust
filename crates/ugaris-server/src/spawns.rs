@@ -4,6 +4,7 @@ use ugaris_core::{
     world::npc::area20::LqNpcDriverData,
 };
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn spawn_edemon_gate_character(
     world: &mut World,
     loader: &mut ZoneLoader,
@@ -472,6 +473,7 @@ pub(crate) fn apply_teufel_ratnest_random_suffix(
     character.flags.insert(CharacterFlags::UPDATE);
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn spawn_fdemon_gate_character(
     world: &mut World,
     loader: &mut ZoneLoader,

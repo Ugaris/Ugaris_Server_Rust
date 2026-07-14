@@ -129,7 +129,7 @@ fn give_ring_while_waiting_completes_quest59() {
         })
     );
     // The ring is destroyed, not given back.
-    assert!(world.items.get(&ItemId(50)).is_none());
+    assert!(!world.items.contains_key(&ItemId(50)));
 }
 
 #[test]

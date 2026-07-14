@@ -352,6 +352,7 @@ impl World {
     /// C `jiu_driver`'s `NT_TEXT` branch (`gwendylon.c:2177-2211`), wired
     /// through the generic `analyse_text_qa` matcher (same pattern as
     /// `world::yoakin`'s text handler).
+    #[allow(clippy::too_many_arguments)]
     fn jiu_handle_text_message(
         &mut self,
         jiu_id: CharacterId,

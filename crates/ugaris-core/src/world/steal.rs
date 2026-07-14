@@ -91,7 +91,7 @@ impl World {
             return StealOutcome::OutOfMap;
         };
         // C: `if (x < 1 || x >= MAXMAP - 1 || y < 1 || y >= MAXMAP - 1)`.
-        if x < 1 || x >= MAX_MAP - 1 || y < 1 || y >= MAX_MAP - 1 {
+        if !(1..MAX_MAP - 1).contains(&x) || !(1..MAX_MAP - 1).contains(&y) {
             return StealOutcome::OutOfMap;
         }
 

@@ -198,12 +198,11 @@ pub(crate) fn apply_merchant_container_command(
                 .get(&character_id)
                 .is_some_and(|character| character.cursor_item.is_some());
             if has_cursor {
-                match world.merchant_store_sell(merchant_id, character_id) {
-                    MerchantTradeResult::Traded(price) => {
-                        result.messages.push(legacy_price_text("Sold", price));
-                        result.changed = true;
-                    }
-                    _ => {}
+                if let MerchantTradeResult::Traded(price) =
+                    world.merchant_store_sell(merchant_id, character_id)
+                {
+                    result.messages.push(legacy_price_text("Sold", price));
+                    result.changed = true;
                 }
             } else {
                 match world.merchant_store_buy(merchant_id, character_id, usize::from(*slot)) {

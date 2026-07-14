@@ -1,3 +1,6 @@
+// Test setups intentionally mirror the C sources' memset-then-assign
+// initialization pattern.
+#![allow(clippy::field_reassign_with_default)]
 use super::*;
 use crate::character_driver::{
     apply_lab5_daemon_create_message, Lab5DaemonDriverData, CDR_LAB5DAEMON, NT_CHAR, NT_CREATE,

@@ -187,6 +187,7 @@ pub(crate) fn finish_dungeon_guard_spawn(
 /// "warrior" template and scales its skills to `level`. Returns the
 /// spawned character's final level (matching C's `return ch[cn].level;`),
 /// or `None` if the template/item lookups or the map placement failed.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn build_warrior(
     world: &mut World,
     loader: &mut ZoneLoader,
@@ -286,6 +287,7 @@ pub(crate) fn build_warrior(
 
 /// C `build_mage(x, y, level)` (`dungeon.c:389-535`): instantiates the
 /// "mage" template and scales its skills to `level`.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn build_mage(
     world: &mut World,
     loader: &mut ZoneLoader,
@@ -375,6 +377,7 @@ pub(crate) fn build_mage(
 
 /// C `build_seyan(x, y, level)` (`dungeon.c:551-700`): instantiates the
 /// "seyan" template and scales its skills to `level`.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn build_seyan(
     world: &mut World,
     loader: &mut ZoneLoader,
@@ -803,7 +806,7 @@ pub(crate) fn build_cell(
     match cell.special {
         3 => build_key(world, loader, center_x, center_y, 1, maze_base, maze_clan),
         4 => build_key(world, loader, center_x, center_y, 2, maze_base, maze_clan),
-        5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20 | 21 | 22 => {
+        5..=22 => {
             let tier = (cell.special - 5) / 3;
             let kind = (cell.special - 5) % 3;
             let level = maze_level + tier * 2;

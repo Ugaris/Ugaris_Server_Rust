@@ -883,9 +883,7 @@ pub(crate) fn apply_chat_command(
     realtime_seconds: u64,
 ) -> Option<ChatCommandResult> {
     let (channel_nr, raw_text) = legacy_chat_command_channel(command)?;
-    let Some(channel) = legacy_chat_channel(channel_nr) else {
-        return None;
-    };
+    let channel = legacy_chat_channel(channel_nr)?;
     let Some(sender) = world.characters.get(&sender_id) else {
         return Some(ChatCommandResult::default());
     };

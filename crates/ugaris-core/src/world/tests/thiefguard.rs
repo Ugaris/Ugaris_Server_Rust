@@ -465,7 +465,7 @@ fn thiefguard_receiving_any_item_destroys_it_unconditionally() {
 
     world.process_two_thiefguard_actions(&facts(CharacterId(2), 0), 17);
 
-    assert!(world.items.get(&ItemId(50)).is_none());
+    assert!(!world.items.contains_key(&ItemId(50)));
     assert_eq!(
         world.characters.get(&CharacterId(1)).unwrap().cursor_item,
         None

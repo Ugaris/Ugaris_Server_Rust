@@ -30,11 +30,11 @@
 //!   623-640`) needs a DB lookup and session redirect `World` has no
 //!   access to (same architectural gap as `world::jail`/`world::macro_npc`)
 //!   - queued as a [`GwendylonCrossAreaTransfer`] for `ugaris-server`'s
-//!   `area1.rs::apply_gwendylon_cross_area_transfers`, which calls the
-//!   shared `attempt_cross_area_transfer` helper. The `give_char_item_
+//!     `area1.rs::apply_gwendylon_cross_area_transfers`, which calls the
+//!     shared `attempt_cross_area_transfer` helper. The `give_char_item_
 //!   smart(co, ch[cn].citem, 1)` hand-back (unconditional, regardless of
-//!   whether the transfer itself later succeeds) still happens
-//!   synchronously here, matching C's ordering.
+//!     whether the transfer itself later succeeds) still happens
+//!     synchronously here, matching C's ordering.
 //! - `destroy_item_byID(co, ID)` (the four skull-turn-in branches) sweeps
 //!   the player's equipment/inventory/cursor via
 //!   [`World::destroy_items_by_template_id`] but not the account depot
@@ -661,6 +661,7 @@ impl World {
     /// wired through the generic `analyse_text_qa` matcher (same pattern
     /// as `world::camhermit`/`world::yoakin`/`world::terion`'s text
     /// handlers).
+    #[allow(clippy::too_many_arguments)]
     fn gwendylon_handle_text_message(
         &mut self,
         gwendylon_id: CharacterId,

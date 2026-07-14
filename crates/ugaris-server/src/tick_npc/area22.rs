@@ -175,10 +175,8 @@ pub(crate) async fn lostcon_driver_4(
         );
     }
 
-    let simple_baddy_noncombat = world.process_simple_baddy_noncombat_actions_with_completions(
-        config.area_id,
-        &completed_actions,
-    );
+    let simple_baddy_noncombat = world
+        .process_simple_baddy_noncombat_actions_with_completions(config.area_id, completed_actions);
     if simple_baddy_noncombat != 0 {
         info!(
             simple_baddy_noncombat,

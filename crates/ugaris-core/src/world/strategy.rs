@@ -740,13 +740,7 @@ pub fn str_exp_cost(ppd: &StrategyPpd, nr: i32) -> i32 {
                 0
             }
         }
-        8 => {
-            if ppd.eguardlvl < 115 {
-                3
-            } else {
-                0
-            }
-        }
+        8 if ppd.eguardlvl < 115 => 3,
         _ => 0,
     }
 }

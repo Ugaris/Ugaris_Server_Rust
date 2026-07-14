@@ -122,7 +122,7 @@ impl PlayerRuntime {
         character: &mut Character,
         location_id: u32,
     ) -> DemonShrineResult {
-        if self.demonshrines.iter().any(|&id| id == location_id) {
+        if self.demonshrines.contains(&location_id) {
             return DemonShrineResult::AlreadyKnown;
         }
         if self.demonshrines.len() >= DEMONSHRINE_MAX_ENTRIES {

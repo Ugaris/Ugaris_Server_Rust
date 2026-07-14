@@ -206,7 +206,7 @@ fn william_receiving_mantis_at_state6_completes_quest_and_advances_imp() {
     );
     let texts = world.drain_pending_area_texts();
     assert!(texts.iter().any(|text| text.message.contains("nice stew")));
-    assert!(world.items.get(&ItemId(50)).is_none());
+    assert!(!world.items.contains_key(&ItemId(50)));
 }
 
 #[test]

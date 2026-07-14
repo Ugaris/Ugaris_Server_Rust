@@ -823,7 +823,7 @@ impl World {
             return;
         }
 
-        let mut boosted = vec![false; CHARACTER_VALUE_COUNT];
+        let mut boosted = [false; CHARACTER_VALUE_COUNT];
         let mut skill_desc = String::new();
         if update_desc {
             skill_desc.push_str("Enhanced: ");

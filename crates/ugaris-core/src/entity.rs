@@ -275,16 +275,12 @@ pub enum CharacterValue {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(u8)]
+#[derive(Default)]
 pub enum SpeedMode {
+    #[default]
     Normal = 0,
     Fast = 1,
     Stealth = 2,
-}
-
-impl Default for SpeedMode {
-    fn default() -> Self {
-        Self::Normal
-    }
 }
 
 impl SpeedMode {

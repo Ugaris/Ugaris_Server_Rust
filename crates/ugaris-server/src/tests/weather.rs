@@ -1,3 +1,6 @@
+// Test setups intentionally mirror the C sources' memset-then-assign
+// initialization pattern.
+#![allow(clippy::field_reassign_with_default)]
 use super::*;
 use ugaris_protocol::mod_weather::{
     MOD_WEATHER_EFFECT_INDOOR, SV_VIS_WEATHER, SV_WEATHER_PACKET_SIZE,
@@ -486,7 +489,7 @@ fn broadcast_weather_packet_skips_areas_without_weather() {
     runtime.weather.weather_intensity = 2;
 
     broadcast_weather_packet(&world, &mut runtime, 12); // area 12 = Mines, no weather.
-    assert!(runtime.tick_out.get(&1).is_none());
+    assert!(!runtime.tick_out.contains_key(&1));
 
     broadcast_weather_packet(&world, &mut runtime, 1); // area 1 = Cameron, has weather.
     let payloads = runtime.tick_out.get(&1).expect("packet queued");
@@ -550,7 +553,7 @@ fn broadcast_weather_thunder_effect_sends_bolt_and_fading_flash_within_radius() 
     assert_eq!(nearby_payloads.len(), 2);
     assert_eq!(nearby_payloads[1][8], 50); // dist=20 -> floored.
 
-    assert!(runtime.tick_out.get(&3).is_none());
+    assert!(!runtime.tick_out.contains_key(&3));
 }
 
 #[test]

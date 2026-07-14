@@ -115,11 +115,11 @@ fn highest_occupied_janitor_bag_slot(character: &Character) -> Option<usize> {
 impl World {
     /// C `janitor_driver`'s `lightcmp`-sorted selection (`base.c:4899-4915`
     /// + `4917-4936`): the nearest known `IDR_TOYLIGHT` item, on the
-    /// janitor's town half, whose `drdata[0]` (on/off state) does not
-    /// already match the desired `ls` state. Ties break on the lowest
-    /// `ItemId` for determinism (C's `qsort` is not stable and has no
-    /// documented tie-break; there is no observable difference between
-    /// two lights at the same distance).
+    ///   janitor's town half, whose `drdata[0]` (on/off state) does not
+    ///   already match the desired `ls` state. Ties break on the lowest
+    ///   `ItemId` for determinism (C's `qsort` is not stable and has no
+    ///   documented tie-break; there is no observable difference between
+    ///   two lights at the same distance).
     fn find_nearest_janitor_light(&self, janitor: &Character, ls: u8) -> Option<ItemId> {
         let mut best: Option<(usize, ItemId)> = None;
         for item in self.items.values() {

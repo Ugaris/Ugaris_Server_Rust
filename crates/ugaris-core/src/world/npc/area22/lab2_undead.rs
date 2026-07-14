@@ -492,7 +492,7 @@ impl World {
 #[allow(unused_imports)]
 use crate::character_driver::*;
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, Default)]
 pub struct Lab2UndeadDriverData {
     pub aggressive: i32,
     pub helper: i32,
@@ -509,27 +509,6 @@ pub struct Lab2UndeadDriverData {
     pub next_wait_tick: i32,
     #[serde(default)]
     pub enemies: Vec<SimpleBaddyEnemy>,
-}
-
-impl Default for Lab2UndeadDriverData {
-    fn default() -> Self {
-        Self {
-            aggressive: 0,
-            helper: 0,
-            undead: 0,
-            patrol: 0,
-            pat: 0,
-            patstep: 0,
-            patx: [0; 8],
-            paty: [0; 8],
-            grave_item_id: None,
-            regenerate_item_id: None,
-            opened_by_character_id: None,
-            opened_by_serial: 0,
-            next_wait_tick: 0,
-            enemies: Vec::new(),
-        }
-    }
 }
 
 pub fn parse_lab2_undead_driver_args(

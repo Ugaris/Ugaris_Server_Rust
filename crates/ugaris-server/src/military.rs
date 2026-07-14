@@ -747,7 +747,7 @@ fn apply_military_master_promote(
     if runtime.player_for_character(player_id).is_none() {
         return false;
     }
-    if world.characters.get(&master_id).is_none() {
+    if !world.characters.contains_key(&master_id) {
         return false;
     }
     world.give_military_pts_from_npc(player_id, master_id, 100, 1, u32::from(area_id));
@@ -849,7 +849,7 @@ fn apply_military_advisor_info(
     advisor_id: CharacterId,
     player_id: CharacterId,
 ) -> bool {
-    if world.characters.get(&player_id).is_none() {
+    if !world.characters.contains_key(&player_id) {
         return false;
     }
     let storage_id = world.advisor_storage_id(advisor_id);

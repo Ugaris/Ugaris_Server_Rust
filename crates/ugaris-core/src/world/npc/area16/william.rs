@@ -409,6 +409,7 @@ impl World {
     /// C `william_driver`'s `NT_TEXT` branch (`forest.c:545-574`), wired
     /// through the generic `analyse_text_qa` matcher (same pattern as
     /// `world::npc::area3::astro2`'s text handler).
+    #[allow(clippy::too_many_arguments)]
     fn forest_william_handle_text_message(
         &mut self,
         william_id: CharacterId,

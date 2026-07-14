@@ -93,8 +93,8 @@ pub(crate) fn load_zone_template_dir(
         } else {
             loader.load_character_templates_str(&text)
         };
-        if result.is_err() {
-            warn!(file = %file.display(), error = %result.unwrap_err(), "skipping unsupported zone template file");
+        if let Err(error) = result {
+            warn!(file = %file.display(), error = %error, "skipping unsupported zone template file");
             skipped += 1;
         }
     }

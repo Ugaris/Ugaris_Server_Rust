@@ -128,9 +128,7 @@ pub(crate) fn grant_orb_spawn_item(
 
     let item_id = item.id;
     let item_name = item.name.clone();
-    let Some(character) = world.characters.get_mut(&character_id) else {
-        return None;
-    };
+    let character = world.characters.get_mut(&character_id)?;
     if character.cursor_item.is_some() {
         return None;
     }
@@ -192,6 +190,7 @@ pub(crate) fn ensure_drdata_len(item: &mut Item, len: usize) {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn apply_orb_spawn(
     world: &mut World,
     loader: &mut ZoneLoader,
@@ -292,7 +291,7 @@ pub(crate) fn apply_forest_chest(
     amount: u32,
     imp_flag_mask: u32,
 ) -> ForestChestApplyResult {
-    if world.characters.get(&character_id).is_none() {
+    if !world.characters.contains_key(&character_id) {
         return ForestChestApplyResult::MissingPlayer;
     }
     if world
@@ -325,7 +324,7 @@ pub(crate) fn apply_junkpile_search(
     level: u8,
     random_seed: u64,
 ) -> JunkpileApplyResult {
-    if world.characters.get(&character_id).is_none() {
+    if !world.characters.contains_key(&character_id) {
         return JunkpileApplyResult::MissingPlayer;
     }
     if world
@@ -1351,12 +1350,7 @@ pub(crate) fn grant_ice_itemspawn_to_cursor(
             .inventory
             .iter()
             .filter_map(|slot| slot.and_then(|id| world.items.get(&id)))
-            .chain(
-                character
-                    .cursor_item
-                    .and_then(|id| world.items.get(&id))
-                    .into_iter(),
-            )
+            .chain(character.cursor_item.and_then(|id| world.items.get(&id)))
             .any(|carried| carried.driver == item.driver)
     {
         return IceItemSpawnGrantResult::OneCarry { item_name };

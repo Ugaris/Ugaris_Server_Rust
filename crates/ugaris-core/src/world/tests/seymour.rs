@@ -240,7 +240,7 @@ fn seymour_receiving_loisan_note_completes_quest12_and_awards_military_pts() {
         .iter()
         .any(|text| text.message.contains("So he is dead")));
     // The NPC's cursor item (the note) is destroyed, not handed back.
-    assert!(world.items.get(&ItemId(50)).is_none());
+    assert!(!world.items.contains_key(&ItemId(50)));
     assert!(world
         .characters
         .get(&CharacterId(1))
@@ -295,7 +295,7 @@ fn seymour_receiving_zombieskull1_completes_quest10_and_enrolls_unranked_player(
             .military_points,
         1
     );
-    assert!(world.items.get(&ItemId(50)).is_none());
+    assert!(!world.items.contains_key(&ItemId(50)));
 }
 
 #[test]
@@ -369,7 +369,7 @@ fn seymour_receiving_zombieskull2_completes_quest11_and_awards_military_pts() {
 
     let texts = world.drain_pending_area_texts();
     assert!(texts.iter().any(|text| text.message.contains("Well done")));
-    assert!(world.items.get(&ItemId(50)).is_none());
+    assert!(!world.items.contains_key(&ItemId(50)));
 }
 
 #[test]

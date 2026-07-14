@@ -123,12 +123,12 @@ pub enum LogainOutcomeEvent {
     QuestDone { player_id: CharacterId },
     /// C's `!has_item(co, IID_AREA1_MADKEY6)` + `create_item("mad_key6")`
     /// + plain `give_char_item` (`gwendylon.c:5009-5015`, `5029-5035`) -
-    /// deferred to `ugaris-server` since `World` has no `ZoneLoader`
-    /// template access.
+    ///   deferred to `ugaris-server` since `World` has no `ZoneLoader`
+    ///   template access.
     GrantMadKey6 { player_id: CharacterId },
     /// C's `!has_item(co, IID_AREA1_MADKEY9)` + `create_item("mad_key9")`
     /// + plain `give_char_item` (`gwendylon.c:5022-5028`) - deferred to
-    /// `ugaris-server` since `World` has no `ZoneLoader` template access.
+    ///   `ugaris-server` since `World` has no `ZoneLoader` template access.
     GrantMadKey9 { player_id: CharacterId },
 }
 
@@ -480,16 +480,15 @@ impl World {
                     );
                 }
             }
-            9 => {
+            9
                 // C `case 9:` (`gwendylon.c:5087-5092`).
-                if now.saturating_sub(facts.seen_timer) > LOGAIN_REMINDER_SECONDS {
+                if now.saturating_sub(facts.seen_timer) > LOGAIN_REMINDER_SECONDS => {
                     self.npc_quiet_say(
                         logain_id,
                         &format!("I am pleased to see thee, {}.", player.name),
                     );
                     didsay = true;
                 }
-            }
             // Every other value: no-op, matching C's `switch` with no
             // matching `case`.
             _ => {}
@@ -529,6 +528,7 @@ impl World {
     /// C `logain_driver`'s `NT_TEXT` branch (`gwendylon.c:5083-5106`),
     /// wired through the generic `analyse_text_qa` matcher (same pattern
     /// as every other area-1 NPC's own text handler).
+    #[allow(clippy::too_many_arguments)]
     fn logain_handle_text_message(
         &mut self,
         logain_id: CharacterId,

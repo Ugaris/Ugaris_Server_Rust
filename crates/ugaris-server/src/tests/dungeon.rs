@@ -515,6 +515,9 @@ fn warrior_stat_value_default_and_negative_base_branches() {
 }
 
 // C `build_wall(x, y)` (`dungeon.c:715-723`).
+// The sprite asserts intentionally mirror C's `59171 + ((x & 3) + (y & 3)) % 4`
+// formula verbatim, even where sub-terms fold away for these coordinates.
+#[allow(clippy::identity_op)]
 #[test]
 fn build_wall_sets_indoor_blocking_flags_and_cycling_sprite() {
     let mut world = World::default();

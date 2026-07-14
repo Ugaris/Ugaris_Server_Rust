@@ -7,7 +7,7 @@ pub(crate) fn teufel_arena_exit_driver(character: &Character, item: &Item) -> It
 
     let max_hp = character
         .values
-        .get(0)
+        .first()
         .and_then(|values| values.get(CharacterValue::Hp as usize))
         .copied()
         .unwrap_or_default() as i32

@@ -194,6 +194,10 @@ pub(crate) async fn dispatch_warp_outcome(
                             )
                             .await;
                         }
+                        // Kept nested: `grant_template_item_smart` mutates
+                        // world state, so hoisting it into a match guard
+                        // would hide the side effect.
+                        #[allow(clippy::collapsible_match)]
                         Some(5) => {
                             if grant_template_item_smart(
                                 world,

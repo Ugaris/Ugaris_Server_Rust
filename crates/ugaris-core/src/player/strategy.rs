@@ -24,7 +24,7 @@ use crate::world::STRATEGY_MAXMISSION;
 /// player's chosen banner/name color for their spawned workers.
 /// `boss_stage`/`boss_timer`/`init_done` back the still-unported
 /// `strategy_boss` dialogue state machine.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct StrategyPpd {
     pub max_worker: i32,
     pub max_level: i32,
@@ -55,33 +55,6 @@ pub struct StrategyPpd {
     /// indexing directly.
     #[serde(default)]
     pub solve_cnt: Vec<u8>,
-}
-
-impl Default for StrategyPpd {
-    fn default() -> Self {
-        Self {
-            max_worker: 0,
-            max_level: 0,
-            trainspeed: 0,
-            income: 0,
-            endurance: 0,
-            warcry: 0,
-            speed: 0,
-            eguards: 0,
-            eguardlvl: 0,
-            exp: 0,
-            boss_exp: 0,
-            boss_msg_exp: 0,
-            mis_cnt: 0,
-            won_cnt: 0,
-            current_mission: 0,
-            npc_color: 0,
-            boss_stage: 0,
-            boss_timer: 0,
-            init_done: 0,
-            solve_cnt: Vec::new(),
-        }
-    }
 }
 
 impl StrategyPpd {

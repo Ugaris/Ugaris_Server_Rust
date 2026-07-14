@@ -615,7 +615,7 @@ async fn award_chest_opened_achievement_bumps_stat_without_unlock_below_looter_t
     assert!(!player
         .achievement_data
         .is_unlocked(ugaris_core::achievement::AchievementType::Looter));
-    assert!(runtime.tick_out.get(&1).is_none());
+    assert!(!runtime.tick_out.contains_key(&1));
 }
 
 #[tokio::test]
@@ -684,7 +684,7 @@ async fn award_chest_opened_achievement_non_gold_looter_chest_does_not_award_gol
     assert!(!player
         .achievement_data
         .is_unlocked(ugaris_core::achievement::AchievementType::GoldLooter));
-    assert!(runtime.tick_out.get(&1).is_none());
+    assert!(!runtime.tick_out.contains_key(&1));
 }
 
 #[tokio::test]

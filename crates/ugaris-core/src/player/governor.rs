@@ -32,7 +32,7 @@ pub struct SingleMission {
 /// later as a pure additive change with no further `PlayerRuntime` field
 /// churn. `statowed`/`statcnt`/`stat` back the now-ported custom stat
 /// potion (`CTPOT` reward) flow.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct MissionPpd {
     /// C `int missiongive_state`: `0` greet, `1` about to offer jobs, `2`
     /// waiting for the player.
@@ -84,28 +84,4 @@ pub struct MissionPpd {
     /// C `int stat[3]`: the `V_*` skill indices chosen so far for the
     /// in-progress custom potion.
     pub stat: [i32; 3],
-}
-
-impl Default for MissionPpd {
-    fn default() -> Self {
-        Self {
-            missiongive_state: 0,
-            lastseenmissiongiver: 0,
-            active: 0,
-            solved: 0,
-            points: 0,
-            mcnt: 0,
-            dif_kill: 0,
-            sm: [SingleMission::default(); 3],
-            md_idx: 0,
-            kill_easy: [0; 2],
-            kill_normal: [0; 2],
-            kill_hard: [0; 2],
-            kill_boss: [0; 2],
-            find_item: [0; 2],
-            statowed: 0,
-            statcnt: 0,
-            stat: [0; 3],
-        }
-    }
 }

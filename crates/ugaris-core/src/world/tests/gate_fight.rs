@@ -72,7 +72,7 @@ fn gate_fight_self_destructs_after_ten_minutes() {
     let acted = world.process_gate_fight_actions(1);
 
     assert_eq!(acted, 1);
-    assert!(world.characters.get(&CharacterId(1)).is_none());
+    assert!(!world.characters.contains_key(&CharacterId(1)));
     let texts = world.drain_pending_area_texts();
     assert!(texts
         .iter()
@@ -92,7 +92,7 @@ fn gate_fight_does_not_self_destruct_before_ten_minutes() {
 
     world.process_gate_fight_actions(1);
 
-    assert!(world.characters.get(&CharacterId(1)).is_some());
+    assert!(world.characters.contains_key(&CharacterId(1)));
 }
 
 #[test]
@@ -111,7 +111,7 @@ fn gate_fight_attacks_adjacent_visible_victim() {
     assert_eq!(acted, 1);
     let fighter = world.characters.get(&CharacterId(1)).unwrap();
     assert_eq!(fighter.action, action::ATTACK1);
-    assert_eq!(fight_state(&world, CharacterId(1)).victim_visible, true);
+    assert!(fight_state(&world, CharacterId(1)).victim_visible);
 }
 
 #[test]

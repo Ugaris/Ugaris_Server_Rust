@@ -57,10 +57,10 @@
 //!   the drop for `ugaris-server`'s `lab::create_lab_exit` to apply
 //!   (needs `ZoneLoader`), and the `IDR_LABEXIT` use-side (`set_solved_lab`
 //!   + `change_area(cn, 3, 183, 199)`) is ported in `ugaris-server`'s
-//!   `tick_item_use_lab::dispatch_lab_outcome` (`ItemDriverOutcome::
+//!     `tick_item_use_lab::dispatch_lab_outcome` (`ItemDriverOutcome::
 //!   LabExitUse`). The full "kill a lab master, get a labexit, use it to
-//!   solve the level and warp to Aston" loop is therefore live end to end
-//!   for every one of the five lab areas that calls `create_lab_exit`.
+//!     solve the level and warp to Aston" loop is therefore live end to end
+//!     for every one of the five lab areas that calls `create_lab_exit`.
 //! - `tabunga` (the `CF_GOD` debug stat dump `NT_TEXT` triggers) reuses
 //!   the already-ported `World::apply_tabunga_text_notification`
 //!   (`world::text`), same as `CDR_SIMPLEBADDY`'s own generic `NT_TEXT`
@@ -151,7 +151,7 @@ fn parse_labgnome_driver_args(args: &str) -> LabGnomeDriverData {
 pub fn apply_labgnome_create_message(character: &mut Character, args: Option<&str>) {
     let mut data = args
         .filter(|args| !args.is_empty())
-        .map(|args| parse_labgnome_driver_args(args))
+        .map(parse_labgnome_driver_args)
         .unwrap_or_default();
     // C `ch[cn].flags |= CF_IMMORTAL;` inside the `dat->master` branch
     // (`lab1.c:279`).

@@ -228,6 +228,9 @@ impl World {
                 0,
                 area_id,
             ) {
+                // Mirrors the C early return; nothing follows, but keep the
+                // ported control flow explicit.
+                #[allow(clippy::needless_return)]
                 return;
             }
         }
@@ -315,10 +318,10 @@ impl World {
                 });
                 didsay = true;
             }
-            1 => {
+            1
                 // C `if (ppd->citizen_status < CS_GUEST || ppd->
                 // legal_status == LS_DEAD) { ... }` (`two.c:841-859`).
-                if facts.citizen_status < CS_GUEST || facts.legal_status == LS_DEAD {
+                if (facts.citizen_status < CS_GUEST || facts.legal_status == LS_DEAD) => {
                     if facts.legal_status == LS_FINE {
                         self.npc_say_bytes(
                             barkeeper_id,
@@ -353,7 +356,6 @@ impl World {
                     });
                     didsay = true;
                 }
-            }
             // `barkeeper_state == 2`: C's own dead-code no-op
             // reassignment (`ppd->barkeeper_state = 2;`, `two.c:862-864`)
             // - no observable effect, see this module's doc comment.

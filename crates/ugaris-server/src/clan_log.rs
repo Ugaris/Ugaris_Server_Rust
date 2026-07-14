@@ -143,6 +143,9 @@ pub(crate) fn parse_clan_log_args(
     let mut end: i64 = 0;
 
     let mut cursor = args;
+    // Kept as `loop` + let-else exit: the body has several distinct exit
+    // paths mirroring the legacy argument parser's control flow.
+    #[allow(clippy::while_let_loop)]
     loop {
         let Some(ch) = cursor.chars().next() else {
             break;
@@ -166,9 +169,9 @@ pub(crate) fn parse_clan_log_args(
                         "Invalid name".to_string()
                     ]));
                 }
-                match find_online_character_by_name(world, name_token) {
-                    Some(id) => character_id_filter = id.0,
-                    None => return None,
+                {
+                    let id = find_online_character_by_name(world, name_token)?;
+                    character_id_filter = id.0
                 }
                 cursor = rest;
             }

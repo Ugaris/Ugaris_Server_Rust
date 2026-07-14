@@ -694,7 +694,7 @@ fn thiefmaster_quest27_give_note_at_state17_completes_and_hands_over_sewerkey2()
     assert!(texts
         .iter()
         .any(|t| t.message.contains("agreement I wanted")));
-    assert!(world.items.get(&ItemId(50)).is_none());
+    assert!(!world.items.contains_key(&ItemId(50)));
     assert_eq!(
         world.characters.get(&CharacterId(1)).unwrap().cursor_item,
         None
@@ -747,7 +747,7 @@ fn thiefmaster_give_unrelated_item_is_destroyed_unconditionally() {
     }
     let events = world.process_two_thiefmaster_actions(&facts(CharacterId(2), 0), 0, 17);
     assert!(events.is_empty());
-    assert!(world.items.get(&ItemId(50)).is_none());
+    assert!(!world.items.contains_key(&ItemId(50)));
     assert_eq!(
         world.characters.get(&CharacterId(1)).unwrap().cursor_item,
         None

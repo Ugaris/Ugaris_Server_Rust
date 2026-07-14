@@ -1,3 +1,6 @@
+// Test setups intentionally mirror the C sources' memset-then-assign
+// initialization pattern.
+#![allow(clippy::field_reassign_with_default)]
 use std::collections::HashMap;
 
 use super::*;
@@ -126,7 +129,7 @@ fn giving_prison_key_unlocks_note_step() {
         .unwrap()
         .cursor_item
         .is_none());
-    assert!(world.items.get(&ItemId(50)).is_none());
+    assert!(!world.items.contains_key(&ItemId(50)));
 }
 
 #[test]
@@ -147,7 +150,7 @@ fn giving_non_key_item_is_destroyed_without_unlocking() {
     let events = world.process_lab3_prisoner_actions(&facts(CharacterId(2), 0), 22);
 
     assert!(events.is_empty());
-    assert!(world.items.get(&ItemId(50)).is_none());
+    assert!(!world.items.contains_key(&ItemId(50)));
 }
 
 #[test]
@@ -256,7 +259,7 @@ fn give_target_cancelled_when_player_leaves_home_range() {
         .unwrap()
         .cursor_item
         .is_none());
-    assert!(world.items.get(&ItemId(50)).is_none());
+    assert!(!world.items.contains_key(&ItemId(50)));
 }
 
 #[test]

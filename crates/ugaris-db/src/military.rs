@@ -185,7 +185,7 @@ mod tests {
         let registry = MilitaryAdvisorStorageRegistry::from_rows([(11, storage)]);
         let mut rows: Vec<(i32, MilitaryAdvisorStorage)> = registry
             .iter()
-            .map(|(id, storage)| (id, storage.clone()))
+            .map(|(id, storage)| (id, *storage))
             .collect();
         assert_eq!(rows.len(), 1);
         let (storage_id, storage) = rows.remove(0);

@@ -2,7 +2,7 @@ use std::time::Duration;
 
 pub const TICKS_PER_SECOND: u64 = 24;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Tick(pub u64);
 
 #[derive(Debug, Clone, Copy)]

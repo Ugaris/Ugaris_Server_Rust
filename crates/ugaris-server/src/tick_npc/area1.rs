@@ -5,8 +5,8 @@ use super::*;
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn camhermit_driver_41(
-    mut world: &mut World,
-    mut runtime: &mut ServerRuntime,
+    world: &mut World,
+    runtime: &mut ServerRuntime,
     _zone_loader: &mut ZoneLoader,
     config: &ServerConfig,
     _args: &Args,
@@ -25,19 +25,14 @@ pub(crate) async fn camhermit_driver_41(
 ) {
     // C `camhermit_driver`: area 1's forest hermit quest NPC
     // (`src/area/1/gwendylon.c`).
-    let camhermit_facts = camhermit_player_facts(&runtime);
+    let camhermit_facts = camhermit_player_facts(runtime);
     let camhermit_events = world.process_camhermit_actions(
         &camhermit_facts,
         current_unix_time() as i32,
         config.area_id,
     );
-    let camhermit_events_applied = apply_camhermit_events(
-        &mut world,
-        &mut runtime,
-        &achievement_repository,
-        camhermit_events,
-    )
-    .await;
+    let camhermit_events_applied =
+        apply_camhermit_events(world, runtime, achievement_repository, camhermit_events).await;
     if camhermit_events_applied != 0 {
         info!(
             camhermit_events_applied,
@@ -49,8 +44,8 @@ pub(crate) async fn camhermit_driver_41(
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn yoakin_driver_42(
-    mut world: &mut World,
-    mut runtime: &mut ServerRuntime,
+    world: &mut World,
+    runtime: &mut ServerRuntime,
     _zone_loader: &mut ZoneLoader,
     config: &ServerConfig,
     _args: &Args,
@@ -69,16 +64,11 @@ pub(crate) async fn yoakin_driver_42(
 ) {
     // C `yoakin_driver`: area 1's hunter/bear-hunt quest NPC
     // (`src/area/1/gwendylon.c`).
-    let yoakin_facts = yoakin_player_facts(&world, &runtime);
+    let yoakin_facts = yoakin_player_facts(world, runtime);
     let yoakin_events =
         world.process_yoakin_actions(&yoakin_facts, current_unix_time() as i32, config.area_id);
-    let yoakin_events_applied = apply_yoakin_events(
-        &mut world,
-        &mut runtime,
-        &achievement_repository,
-        yoakin_events,
-    )
-    .await;
+    let yoakin_events_applied =
+        apply_yoakin_events(world, runtime, achievement_repository, yoakin_events).await;
     if yoakin_events_applied != 0 {
         info!(
             yoakin_events_applied,
@@ -91,7 +81,7 @@ pub(crate) async fn yoakin_driver_42(
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn terion_driver_43(
     world: &mut World,
-    mut runtime: &mut ServerRuntime,
+    runtime: &mut ServerRuntime,
     _zone_loader: &mut ZoneLoader,
     config: &ServerConfig,
     _args: &Args,
@@ -110,9 +100,9 @@ pub(crate) async fn terion_driver_43(
 ) {
     // C `terion_driver`: area 1's ambient lore/storyteller NPC
     // (`src/area/1/gwendylon.c`).
-    let terion_facts = terion_player_facts(&runtime);
+    let terion_facts = terion_player_facts(runtime);
     let terion_events = world.process_terion_actions(&terion_facts, config.area_id);
-    let terion_events_applied = apply_terion_events(&mut runtime, terion_events);
+    let terion_events_applied = apply_terion_events(runtime, terion_events);
     if terion_events_applied != 0 {
         info!(
             terion_events_applied,
@@ -124,8 +114,8 @@ pub(crate) async fn terion_driver_43(
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn gwendylon_driver_44(
-    mut world: &mut World,
-    mut runtime: &mut ServerRuntime,
+    world: &mut World,
+    runtime: &mut ServerRuntime,
     _zone_loader: &mut ZoneLoader,
     config: &ServerConfig,
     _args: &Args,
@@ -144,19 +134,14 @@ pub(crate) async fn gwendylon_driver_44(
 ) {
     // C `gwendylon_driver`: area 1's main quest-giver mage NPC
     // (`src/area/1/gwendylon.c`).
-    let gwendylon_facts = gwendylon_player_facts(&runtime);
+    let gwendylon_facts = gwendylon_player_facts(runtime);
     let gwendylon_events = world.process_gwendylon_actions(
         &gwendylon_facts,
         current_unix_time() as i32,
         config.area_id,
     );
-    let gwendylon_events_applied = apply_gwendylon_events(
-        &mut world,
-        &mut runtime,
-        &achievement_repository,
-        gwendylon_events,
-    )
-    .await;
+    let gwendylon_events_applied =
+        apply_gwendylon_events(world, runtime, achievement_repository, gwendylon_events).await;
     if gwendylon_events_applied != 0 {
         info!(
             gwendylon_events_applied,
@@ -168,8 +153,8 @@ pub(crate) async fn gwendylon_driver_44(
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn gwendylon_driver_45(
-    mut world: &mut World,
-    mut runtime: &mut ServerRuntime,
+    world: &mut World,
+    runtime: &mut ServerRuntime,
     _zone_loader: &mut ZoneLoader,
     config: &ServerConfig,
     _args: &Args,
@@ -191,10 +176,10 @@ pub(crate) async fn gwendylon_driver_45(
     // `src/area/1/gwendylon.c:637`), queued above when the
     // teleport letter is handed in.
     let gwendylon_cross_area_transfers_applied = apply_gwendylon_cross_area_transfers(
-        &mut world,
-        &mut runtime,
-        &character_repository,
-        &area_repository,
+        world,
+        runtime,
+        character_repository,
+        area_repository,
         config.area_id,
         config.mirror_id,
     )
@@ -211,7 +196,7 @@ pub(crate) async fn gwendylon_driver_45(
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn greeter_driver_46(
     world: &mut World,
-    mut runtime: &mut ServerRuntime,
+    runtime: &mut ServerRuntime,
     _zone_loader: &mut ZoneLoader,
     config: &ServerConfig,
     _args: &Args,
@@ -230,10 +215,10 @@ pub(crate) async fn greeter_driver_46(
 ) {
     // C `greeter_driver`: area 1's tutorial-town greeter NPC
     // (Cameron the Governor, `src/area/1/gwendylon.c`).
-    let greeter_facts = greeter_player_facts(&runtime);
+    let greeter_facts = greeter_player_facts(runtime);
     let greeter_events =
         world.process_greeter_actions(&greeter_facts, current_unix_time() as i32, config.area_id);
-    let greeter_events_applied = apply_greeter_events(&mut runtime, greeter_events);
+    let greeter_events_applied = apply_greeter_events(runtime, greeter_events);
     if greeter_events_applied != 0 {
         info!(
             greeter_events_applied,
@@ -245,8 +230,8 @@ pub(crate) async fn greeter_driver_46(
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn jessica_driver_47(
-    mut world: &mut World,
-    mut runtime: &mut ServerRuntime,
+    world: &mut World,
+    runtime: &mut ServerRuntime,
     _zone_loader: &mut ZoneLoader,
     config: &ServerConfig,
     _args: &Args,
@@ -265,10 +250,10 @@ pub(crate) async fn jessica_driver_47(
 ) {
     // C `jessica_driver`: area 1's robber-operations quest NPC
     // (`src/area/1/gwendylon.c`).
-    let jessica_facts = jessica_player_facts(&runtime);
+    let jessica_facts = jessica_player_facts(runtime);
     let jessica_events =
         world.process_jessica_actions(&jessica_facts, current_unix_time() as i32, config.area_id);
-    let jessica_events_applied = apply_jessica_events(&mut world, &mut runtime, jessica_events);
+    let jessica_events_applied = apply_jessica_events(world, runtime, jessica_events);
     if jessica_events_applied != 0 {
         info!(
             jessica_events_applied,
@@ -280,8 +265,8 @@ pub(crate) async fn jessica_driver_47(
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn jiu_driver_48(
-    mut world: &mut World,
-    mut runtime: &mut ServerRuntime,
+    world: &mut World,
+    runtime: &mut ServerRuntime,
     _zone_loader: &mut ZoneLoader,
     config: &ServerConfig,
     _args: &Args,
@@ -300,10 +285,10 @@ pub(crate) async fn jiu_driver_48(
 ) {
     // C `jiu_driver`: area 1's riverbeast quest-giving pilgrim
     // NPC (`src/area/1/gwendylon.c`).
-    let jiu_facts = jiu_player_facts(&runtime);
+    let jiu_facts = jiu_player_facts(runtime);
     let jiu_events =
         world.process_jiu_actions(&jiu_facts, current_unix_time() as i32, config.area_id);
-    let jiu_events_applied = apply_jiu_events(&mut world, &mut runtime, jiu_events);
+    let jiu_events_applied = apply_jiu_events(world, runtime, jiu_events);
     if jiu_events_applied != 0 {
         info!(
             jiu_events_applied,
@@ -316,7 +301,7 @@ pub(crate) async fn jiu_driver_48(
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn forest_ranger_driver_49(
     world: &mut World,
-    mut runtime: &mut ServerRuntime,
+    runtime: &mut ServerRuntime,
     _zone_loader: &mut ZoneLoader,
     config: &ServerConfig,
     _args: &Args,
@@ -335,14 +320,13 @@ pub(crate) async fn forest_ranger_driver_49(
 ) {
     // C `forest_ranger_driver`: area 1's bear-attack warning
     // sentry NPC (`src/area/1/gwendylon.c`).
-    let forest_ranger_facts = forest_ranger_player_facts(&runtime);
+    let forest_ranger_facts = forest_ranger_player_facts(runtime);
     let forest_ranger_events = world.process_forest_ranger_actions(
         &forest_ranger_facts,
         current_unix_time() as i32,
         config.area_id,
     );
-    let forest_ranger_events_applied =
-        apply_forest_ranger_events(&mut runtime, forest_ranger_events);
+    let forest_ranger_events_applied = apply_forest_ranger_events(runtime, forest_ranger_events);
     if forest_ranger_events_applied != 0 {
         info!(
             forest_ranger_events_applied,
@@ -354,9 +338,9 @@ pub(crate) async fn forest_ranger_driver_49(
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn gate_welcome_driver_50(
-    mut world: &mut World,
-    mut runtime: &mut ServerRuntime,
-    mut zone_loader: &mut ZoneLoader,
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    zone_loader: &mut ZoneLoader,
     config: &ServerConfig,
     _args: &Args,
     _completed_actions: &[WorldActionCompletion],
@@ -374,15 +358,11 @@ pub(crate) async fn gate_welcome_driver_50(
 ) {
     // C `gate_welcome_driver`: the Ishtar labyrinth gatekeeper
     // greeter NPC (`src/system/gatekeeper.c`).
-    let gate_welcome_facts = gate_welcome_player_facts(&runtime);
+    let gate_welcome_facts = gate_welcome_player_facts(runtime);
     let gate_welcome_events =
         world.process_gate_welcome_actions(&gate_welcome_facts, config.area_id);
-    let gate_welcome_events_applied = apply_gate_welcome_events(
-        &mut runtime,
-        &mut world,
-        &mut zone_loader,
-        gate_welcome_events,
-    );
+    let gate_welcome_events_applied =
+        apply_gate_welcome_events(runtime, world, zone_loader, gate_welcome_events);
     if gate_welcome_events_applied != 0 {
         info!(
             gate_welcome_events_applied,
@@ -395,7 +375,7 @@ pub(crate) async fn gate_welcome_driver_50(
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn brithildie_driver_62(
     world: &mut World,
-    mut runtime: &mut ServerRuntime,
+    runtime: &mut ServerRuntime,
     _zone_loader: &mut ZoneLoader,
     config: &ServerConfig,
     _args: &Args,
@@ -414,13 +394,13 @@ pub(crate) async fn brithildie_driver_62(
 ) {
     // C `brithildie_driver`: area 1's Governor's-mother ambient lore
     // NPC (`src/area/1/gwendylon.c`).
-    let brithildie_facts = brithildie_player_facts(&runtime);
+    let brithildie_facts = brithildie_player_facts(runtime);
     let brithildie_events = world.process_brithildie_actions(
         &brithildie_facts,
         current_unix_time() as i32,
         config.area_id,
     );
-    let brithildie_events_applied = apply_brithildie_events(&mut runtime, brithildie_events);
+    let brithildie_events_applied = apply_brithildie_events(runtime, brithildie_events);
     if brithildie_events_applied != 0 {
         info!(
             brithildie_events_applied,
@@ -432,8 +412,8 @@ pub(crate) async fn brithildie_driver_62(
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn nook_driver_63(
-    mut world: &mut World,
-    mut runtime: &mut ServerRuntime,
+    world: &mut World,
+    runtime: &mut ServerRuntime,
     _zone_loader: &mut ZoneLoader,
     config: &ServerConfig,
     _args: &Args,
@@ -452,9 +432,9 @@ pub(crate) async fn nook_driver_63(
 ) {
     // C `nook_driver`: area 1's identity-crisis judge/knight/jester NPC
     // (`src/area/1/gwendylon.c`).
-    let nook_facts = nook_player_facts(&runtime);
+    let nook_facts = nook_player_facts(runtime);
     let nook_events = world.process_nook_actions(&nook_facts, config.area_id);
-    let nook_events_applied = apply_nook_events(&mut world, &mut runtime, nook_events);
+    let nook_events_applied = apply_nook_events(world, runtime, nook_events);
     if nook_events_applied != 0 {
         info!(
             nook_events_applied,
@@ -466,9 +446,9 @@ pub(crate) async fn nook_driver_63(
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn lydia_driver_64(
-    mut world: &mut World,
-    mut runtime: &mut ServerRuntime,
-    mut zone_loader: &mut ZoneLoader,
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    zone_loader: &mut ZoneLoader,
     config: &ServerConfig,
     _args: &Args,
     _completed_actions: &[WorldActionCompletion],
@@ -486,14 +466,14 @@ pub(crate) async fn lydia_driver_64(
 ) {
     // C `lydia_driver`: area 1's hungover mage's-daughter quest NPC
     // (`src/area/1/gwendylon.c`).
-    let lydia_facts = lydia_player_facts(&runtime);
+    let lydia_facts = lydia_player_facts(runtime);
     let lydia_events =
         world.process_lydia_actions(&lydia_facts, current_unix_time() as i32, config.area_id);
     let lydia_events_applied = apply_lydia_events(
-        &mut world,
-        &mut runtime,
-        &mut zone_loader,
-        &achievement_repository,
+        world,
+        runtime,
+        zone_loader,
+        achievement_repository,
         lydia_events,
     )
     .await;
@@ -510,7 +490,7 @@ pub(crate) async fn lydia_driver_64(
 pub(crate) async fn robber_driver_65(
     world: &mut World,
     _runtime: &mut ServerRuntime,
-    mut zone_loader: &mut ZoneLoader,
+    zone_loader: &mut ZoneLoader,
     config: &ServerConfig,
     _args: &Args,
     _completed_actions: &[WorldActionCompletion],
@@ -528,7 +508,7 @@ pub(crate) async fn robber_driver_65(
 ) {
     // C `robber_driver`: area 1's midnight-meeting forest patrol NPC
     // (`src/area/1/gwendylon.c`).
-    world.process_robber_actions(&mut zone_loader, config.area_id);
+    world.process_robber_actions(zone_loader, config.area_id);
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -593,8 +573,8 @@ pub(crate) async fn asturin_driver_67(
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn reskin_driver_68(
-    mut world: &mut World,
-    mut runtime: &mut ServerRuntime,
+    world: &mut World,
+    runtime: &mut ServerRuntime,
     _zone_loader: &mut ZoneLoader,
     config: &ServerConfig,
     _args: &Args,
@@ -613,16 +593,11 @@ pub(crate) async fn reskin_driver_68(
 ) {
     // C `reskin_driver`: area 1's tavern-keeper/alchemy-turn-in NPC
     // (`src/area/1/gwendylon.c`).
-    let reskin_facts = reskin_player_facts(&runtime);
+    let reskin_facts = reskin_player_facts(runtime);
     let reskin_events =
         world.process_reskin_actions(&reskin_facts, current_unix_time() as i32, config.area_id);
-    let reskin_events_applied = apply_reskin_events(
-        &mut world,
-        &mut runtime,
-        &achievement_repository,
-        reskin_events,
-    )
-    .await;
+    let reskin_events_applied =
+        apply_reskin_events(world, runtime, achievement_repository, reskin_events).await;
     if reskin_events_applied != 0 {
         info!(
             reskin_events_applied,
@@ -634,9 +609,9 @@ pub(crate) async fn reskin_driver_68(
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn guiwynn_driver_69(
-    mut world: &mut World,
-    mut runtime: &mut ServerRuntime,
-    mut zone_loader: &mut ZoneLoader,
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    zone_loader: &mut ZoneLoader,
     config: &ServerConfig,
     _args: &Args,
     _completed_actions: &[WorldActionCompletion],
@@ -654,11 +629,11 @@ pub(crate) async fn guiwynn_driver_69(
 ) {
     // C `guiwynn_driver`: area 1's town-mage "Order of Mages" quest NPC
     // (`src/area/1/gwendylon.c`).
-    let guiwynn_facts = guiwynn_player_facts(&runtime);
+    let guiwynn_facts = guiwynn_player_facts(runtime);
     let guiwynn_events =
         world.process_guiwynn_actions(&guiwynn_facts, current_unix_time() as i32, config.area_id);
     let guiwynn_events_applied =
-        apply_guiwynn_events(&mut world, &mut runtime, &mut zone_loader, guiwynn_events).await;
+        apply_guiwynn_events(world, runtime, zone_loader, guiwynn_events).await;
     if guiwynn_events_applied != 0 {
         info!(
             guiwynn_events_applied,
@@ -729,9 +704,9 @@ pub(crate) async fn balltrap_driver_71(
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn logain_driver_72(
-    mut world: &mut World,
-    mut runtime: &mut ServerRuntime,
-    mut zone_loader: &mut ZoneLoader,
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    zone_loader: &mut ZoneLoader,
     config: &ServerConfig,
     _args: &Args,
     _completed_actions: &[WorldActionCompletion],
@@ -750,11 +725,11 @@ pub(crate) async fn logain_driver_72(
     // C `logain_driver`: area 1's retired knight-trainer quest-giver NPC,
     // the last driver in `ch_driver`'s dispatch table
     // (`src/area/1/gwendylon.c`).
-    let logain_facts = logain_player_facts(&runtime);
+    let logain_facts = logain_player_facts(runtime);
     let logain_events =
         world.process_logain_actions(&logain_facts, current_unix_time() as i32, config.area_id);
     let logain_events_applied =
-        apply_logain_events(&mut world, &mut runtime, &mut zone_loader, logain_events).await;
+        apply_logain_events(world, runtime, zone_loader, logain_events).await;
     if logain_events_applied != 0 {
         info!(
             logain_events_applied,

@@ -459,6 +459,7 @@ impl World {
     }
 
     /// C `kassim_driver`'s `NT_TEXT` branch (`area3.c:467-526`).
+    #[allow(clippy::too_many_arguments)]
     fn kassim_handle_text_message(
         &mut self,
         kassim_id: CharacterId,

@@ -442,7 +442,7 @@ fn kelly_state19_sells_carried_heads_and_stays_below_level56() {
         .iter()
         .any(|e| matches!(e, KellyOutcomeEvent::UpdateKellyState { .. })));
     assert_eq!(world.characters.get(&CharacterId(2)).unwrap().gold, 200);
-    assert!(world.items.get(&ItemId(50)).is_none());
+    assert!(!world.items.contains_key(&ItemId(50)));
     let texts = world.drain_pending_area_texts();
     assert!(texts.iter().any(|text| text.message.contains("1 heads")));
 }
@@ -677,7 +677,7 @@ fn kelly_receiving_creeperhead_completes_quest13_and_advances_state() {
     }));
     let texts = world.drain_pending_area_texts();
     assert!(texts.iter().any(|text| text.message.contains("Well done")));
-    assert!(world.items.get(&ItemId(50)).is_none());
+    assert!(!world.items.contains_key(&ItemId(50)));
 }
 
 #[test]
@@ -717,7 +717,7 @@ fn kelly_receiving_plaque_completes_quest60_and_awards_gold() {
     assert!(texts
         .iter()
         .any(|text| text.message.contains("thank you so much")));
-    assert!(world.items.get(&ItemId(50)).is_none());
+    assert!(!world.items.contains_key(&ItemId(50)));
 }
 
 #[test]

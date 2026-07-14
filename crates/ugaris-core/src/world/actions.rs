@@ -371,6 +371,11 @@ impl World {
                     self.set_player_idle(player, character_id)
                 }
             }
+            // Both success arms are identical `true` blocks on purpose:
+            // they mirror C's separate "walk succeeded" and "wall-slide
+            // along a cardinal succeeded" outcomes of `PAC_WALK_DIR`
+            // (`player_driver.c:1088-1108`).
+            #[allow(clippy::if_same_then_else)]
             PlayerActionCode::WalkDir => {
                 let weather_movement_percent = self.settings.weather_movement_percent;
                 let earthmud_extra_cost = self.earthmud_extra_movement_cost(character_id);

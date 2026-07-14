@@ -17,8 +17,8 @@
 //! completed at least once, every subsequent visit instead drives the
 //! `carlos_state` (`0`-`6`) dragon-staff chain (quest 20, `QLF_REPEATABLE`
 //! - the achievement/turn-in fires every time, not just on first
-//! completion, matching C's unconditional `achievement_award` call at
-//! `area3.c:2271`).
+//!   completion, matching C's unconditional `achievement_award` call at
+//!   `area3.c:2271`).
 //!
 //! Deviations/gaps (documented, not silent):
 //! - C's `NT_TEXT` "repeat"/"restart" handler (`case 2`, `area3.c:2264-
@@ -480,6 +480,7 @@ impl World {
     /// C `carlos_driver`'s `NT_TEXT` branch (`area3.c:2223-2244`), wired
     /// through the generic `analyse_text_qa` matcher (same pattern as
     /// `world::sir_jones`'s text handler).
+    #[allow(clippy::too_many_arguments)]
     fn carlos_handle_text_message(
         &mut self,
         carlos_id: CharacterId,

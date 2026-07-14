@@ -449,6 +449,7 @@ impl World {
     /// C `nook_driver`'s `NT_TEXT` branch (`gwendylon.c:3346-3380`), wired
     /// through the generic `analyse_text_qa` matcher (same pattern as
     /// `world::jessica`'s/`world::brithildie`'s text handlers).
+    #[allow(clippy::too_many_arguments)]
     fn nook_handle_text_message(
         &mut self,
         nook_id: CharacterId,

@@ -269,6 +269,7 @@ impl World {
     }
 
     /// C `yoakin_driver`'s `NT_CHAR` branch (`gwendylon.c:1012-1111`).
+    #[allow(clippy::too_many_arguments)]
     fn yoakin_handle_char_message(
         &mut self,
         yoakin_id: CharacterId,
@@ -378,17 +379,17 @@ impl World {
             );
             didsay = true;
             new_state = YOAKIN_STATE_QUEST_DO;
-        } else if new_state == YOAKIN_STATE_QUEST_DO {
-            if now.saturating_sub(facts.seen_timer) > YOAKIN_STATE4_REMINDER_SECONDS {
-                self.npc_quiet_say_bytes(
+        } else if new_state == YOAKIN_STATE_QUEST_DO
+            && now.saturating_sub(facts.seen_timer) > YOAKIN_STATE4_REMINDER_SECONDS
+        {
+            self.npc_quiet_say_bytes(
                     yoakin_id,
                     &format!(
                         "Hail, {}! Didst thou find that big mother bear? Or dost thou want me to {COL_STR_LIGHT_BLUE}repeat{COL_STR_RESET} mine offer?",
                         player.name
                     ),
                 );
-                didsay = true;
-            }
+            didsay = true;
         }
         // `YOAKIN_STATE_DONE` and any other value: no-op, matching C's
         // empty `case 5: break;`.
@@ -418,6 +419,7 @@ impl World {
     /// C `yoakin_driver`'s `NT_TEXT` branch (`gwendylon.c:1114-1141`),
     /// wired through the generic `analyse_text_qa` matcher (same pattern
     /// as `world::camhermit`'s text handler).
+    #[allow(clippy::too_many_arguments)]
     fn yoakin_handle_text_message(
         &mut self,
         yoakin_id: CharacterId,

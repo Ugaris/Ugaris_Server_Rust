@@ -235,7 +235,7 @@ fn give_holy_relic_in_range_completes_quest44_and_jumps_to_5() {
     assert!(texts
         .iter()
         .any(|text| text.message.contains("Ishtar's blessings")));
-    assert!(world.items.get(&ItemId(50)).is_none());
+    assert!(!world.items.contains_key(&ItemId(50)));
     assert!(world
         .characters
         .get(&CharacterId(1))

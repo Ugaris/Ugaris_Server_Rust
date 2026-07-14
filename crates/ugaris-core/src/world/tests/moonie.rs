@@ -97,7 +97,7 @@ fn moonie_eats_the_spider_on_its_cursor_and_starts_munching() {
 
     world.process_moonie_actions(1);
 
-    assert!(world.items.get(&ItemId(9)).is_none());
+    assert!(!world.items.contains_key(&ItemId(9)));
     assert_eq!(
         world.characters.get(&CharacterId(1)).unwrap().cursor_item,
         None

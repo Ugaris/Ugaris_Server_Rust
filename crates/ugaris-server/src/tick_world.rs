@@ -10,9 +10,9 @@ use super::*;
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn world_step(
-    mut world: &mut World,
-    mut runtime: &mut ServerRuntime,
-    mut zone_loader: &mut ZoneLoader,
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    zone_loader: &mut ZoneLoader,
     config: &ServerConfig,
     args: &Args,
     achievement_repository: &Option<ugaris_db::PgAchievementRepository>,
@@ -38,7 +38,7 @@ pub(crate) async fn world_step(
         runtime_random_below,
     );
     if weather_changed {
-        broadcast_weather_packet(&world, &mut runtime, config.area_id);
+        broadcast_weather_packet(world, runtime, config.area_id);
     }
     // C `modify_movement_speed` (`module/weather/weather.c:
     // 477-493`): refresh the live movement-slow percent every
@@ -128,8 +128,8 @@ pub(crate) async fn world_step(
                             let (x, y) = (character.x, character.y);
                             let weather_intensity = runtime.weather.weather_intensity;
                             broadcast_weather_thunder_effect(
-                                &world,
-                                &mut runtime,
+                                world,
+                                runtime,
                                 x,
                                 y,
                                 12,
@@ -200,10 +200,10 @@ pub(crate) async fn world_step(
     // `lostcon_early_exit_characters`'s doc comment has the
     // full list) that leaves at once regardless of the
     // ordinary lagout timeout.
-    let mut expired_lostcon = take_expired_lostcon_characters(&world, &mut runtime, world.tick.0);
+    let mut expired_lostcon = take_expired_lostcon_characters(world, runtime, world.tick.0);
     expired_lostcon.extend(take_lostcon_early_exit_characters(
-        &world,
-        &mut runtime,
+        world,
+        runtime,
         config.area_id,
     ));
     if !expired_lostcon.is_empty() {
@@ -212,7 +212,7 @@ pub(crate) async fn world_step(
             if let Some(repository) = &character_repository {
                 if let Some(character) = world.characters.get(&character_id) {
                     let request = character_save_request(
-                        &world,
+                        world,
                         &player,
                         character,
                         account_depot.as_ref(),
@@ -296,7 +296,7 @@ pub(crate) async fn world_step(
             outcome,
             ugaris_core::item_driver::ItemDriverOutcome::StrTicker { .. }
         ) {
-            apply_strategy_reward_events(&mut world, &mut runtime);
+            apply_strategy_reward_events(world, runtime);
         }
         if let ugaris_core::item_driver::ItemDriverOutcome::EdemonGateSpawn {
             item_id,
@@ -308,9 +308,9 @@ pub(crate) async fn world_step(
         } = outcome
         {
             if spawn_edemon_gate_character(
-                &mut world,
-                &mut zone_loader,
-                &mut runtime,
+                world,
+                zone_loader,
+                runtime,
                 *item_id,
                 template,
                 *slot,
@@ -328,15 +328,7 @@ pub(crate) async fn world_step(
             ..
         } = outcome
         {
-            if spawn_chestspawn_character(
-                &mut world,
-                &mut zone_loader,
-                &mut runtime,
-                *item_id,
-                template,
-                *x,
-                *y,
-            ) {
+            if spawn_chestspawn_character(world, zone_loader, runtime, *item_id, template, *x, *y) {
                 chest_spawns += 1;
             }
         }
@@ -348,15 +340,7 @@ pub(crate) async fn world_step(
             ..
         } = outcome
         {
-            if spawn_swampspawn_character(
-                &mut world,
-                &mut zone_loader,
-                &mut runtime,
-                *item_id,
-                template,
-                *x,
-                *y,
-            ) {
+            if spawn_swampspawn_character(world, zone_loader, runtime, *item_id, template, *x, *y) {
                 swamp_spawns += 1;
             }
         }
@@ -370,9 +354,9 @@ pub(crate) async fn world_step(
         } = outcome
         {
             if spawn_fdemon_gate_character(
-                &mut world,
-                &mut zone_loader,
-                &mut runtime,
+                world,
+                zone_loader,
+                runtime,
                 *item_id,
                 *level,
                 *slot,
@@ -415,7 +399,7 @@ pub(crate) async fn world_step(
     if !lq_spawn_requests.is_empty() {
         let mut lq_spawns = 0;
         for request in &lq_spawn_requests {
-            if spawn_lq_npc_character(&mut world, &mut zone_loader, &mut runtime, request) {
+            if spawn_lq_npc_character(world, zone_loader, runtime, request) {
                 lq_spawns += 1;
             }
         }
@@ -436,12 +420,9 @@ pub(crate) async fn world_step(
     if !ai_worker_spawns.is_empty() {
         let mut spawned = 0;
         for (code, plan) in ai_worker_spawns {
-            if let Some((character_id, x, y)) = tick_item_use_strategy::spawn_ai_worker(
-                &mut world,
-                &mut zone_loader,
-                &mut runtime,
-                plan,
-            ) {
+            if let Some((character_id, x, y)) =
+                tick_item_use_strategy::spawn_ai_worker(world, zone_loader, runtime, plan)
+            {
                 world.register_ai_worker(code, character_id, x, y);
                 spawned += 1;
             }
@@ -459,12 +440,9 @@ pub(crate) async fn world_step(
         let mut spawned = 0;
         for (code, place, plan) in ai_eguard_spawns {
             let (x, y) = (plan.x, plan.y);
-            if let Some(character_id) = tick_item_use_strategy::spawn_ai_eguard(
-                &mut world,
-                &mut zone_loader,
-                &mut runtime,
-                plan,
-            ) {
+            if let Some(character_id) =
+                tick_item_use_strategy::spawn_ai_eguard(world, zone_loader, runtime, plan)
+            {
                 world.register_ai_eguard(code, character_id, x, y, place);
                 spawned += 1;
             }
@@ -483,7 +461,7 @@ pub(crate) async fn world_step(
     if !respawn_requests.is_empty() {
         let mut respawned = 0;
         for request in &respawn_requests {
-            if respawn_npc_character(&mut world, &mut zone_loader, &mut runtime, request) {
+            if respawn_npc_character(world, zone_loader, runtime, request) {
                 respawned += 1;
             } else {
                 world.schedule_npc_respawn_retry(request.slot);
@@ -502,7 +480,7 @@ pub(crate) async fn world_step(
     for award in world.drain_pending_kill_exp() {
         let area_id = args.area_id;
         give_exp_with_runtime_modifiers(
-            &mut world,
+            world,
             award.killer_id,
             i64::from(award.exp),
             u32::from(area_id),
@@ -511,9 +489,9 @@ pub(crate) async fn world_step(
     // C kill_char achievement_add_enemy_killed/achievement_add_demons.
     for award in world.drain_pending_kill_achievements() {
         award_enemy_killed_achievement(
-            &mut world,
-            &mut runtime,
-            &achievement_repository,
+            world,
+            runtime,
+            achievement_repository,
             award.killer_id,
             award.area_id,
             award.target_is_demon,
@@ -523,9 +501,9 @@ pub(crate) async fn world_step(
     // C check_levelup achievement_check_level.
     for check in world.drain_pending_level_achievements() {
         award_level_achievement(
-            &mut world,
-            &mut runtime,
-            &achievement_repository,
+            world,
+            runtime,
+            achievement_repository,
             check.character_id,
             check.level as i32,
             check.is_hardcore,
@@ -535,9 +513,9 @@ pub(crate) async fn world_step(
     // C professor.c learn_prof/improve_prof achievement_check_profession.
     for check in world.drain_pending_professor_achievement_checks() {
         award_profession_achievement(
-            &mut world,
-            &mut runtime,
-            &achievement_repository,
+            world,
+            runtime,
+            achievement_repository,
             check.player_id,
             check.profession,
             check.level,
@@ -547,9 +525,9 @@ pub(crate) async fn world_step(
     // C kill_char give_first_kill.
     for check in world.drain_pending_first_kill_checks() {
         apply_first_kill_check(
-            &mut world,
-            &mut runtime,
-            &achievement_repository,
+            world,
+            runtime,
+            achievement_repository,
             i32::from(args.area_id),
             check,
         )
@@ -557,17 +535,12 @@ pub(crate) async fn world_step(
     }
     // C kill_char check_military_solve.
     for check in world.drain_pending_military_mission_checks() {
-        apply_military_mission_kill_check(&mut world, &mut runtime, check);
+        apply_military_mission_kill_check(world, runtime, check);
     }
     // C die_char apply_death_loot_for_template.
     let death_loot_rolls = world.drain_pending_death_loot_rolls();
     if !death_loot_rolls.is_empty() {
-        let added = apply_pending_death_loot_rolls(
-            &mut world,
-            &runtime,
-            &mut zone_loader,
-            death_loot_rolls,
-        );
+        let added = apply_pending_death_loot_rolls(world, runtime, zone_loader, death_loot_rolls);
         if added != 0 {
             info!(
                 added,

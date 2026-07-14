@@ -57,8 +57,8 @@ pub(crate) async fn death_1(
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn macro_track_exp_gain_2(
-    mut world: &mut World,
-    mut runtime: &mut ServerRuntime,
+    world: &mut World,
+    runtime: &mut ServerRuntime,
     _zone_loader: &mut ZoneLoader,
     _config: &ServerConfig,
     _args: &Args,
@@ -83,8 +83,7 @@ pub(crate) async fn macro_track_exp_gain_2(
     // combat/gold events this tick's `give_exp`/
     // `apply_legacy_hurt`/`gate_give_money_silent` calls
     // queued, wherever in this tick they happened.
-    let macro_events_applied =
-        apply_macro_activity_events(&mut runtime, &mut world, current_unix_time());
+    let macro_events_applied = apply_macro_activity_events(runtime, world, current_unix_time());
     if macro_events_applied != 0 {
         info!(
             macro_events_applied,
@@ -96,9 +95,9 @@ pub(crate) async fn macro_track_exp_gain_2(
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn macro_driver_3(
-    mut world: &mut World,
-    mut runtime: &mut ServerRuntime,
-    mut zone_loader: &mut ZoneLoader,
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    zone_loader: &mut ZoneLoader,
     config: &ServerConfig,
     _args: &Args,
     _completed_actions: &[WorldActionCompletion],
@@ -118,11 +117,11 @@ pub(crate) async fn macro_driver_3(
     // NPC (`src/module/base.c`) - victim search (plus
     // `/summonmacro`'s forced-pickup), teleport-to-victim,
     // challenge asking/repeating/timeout, and reward granting.
-    let (is_xmas, _xmas_event_year) = runtime_effective_xmas_event(&runtime);
+    let (is_xmas, _xmas_event_year) = runtime_effective_xmas_event(runtime);
     let macro_daemon_events_applied = apply_macro_events(
-        &mut world,
-        &mut runtime,
-        &mut zone_loader,
+        world,
+        runtime,
+        zone_loader,
         config.area_id,
         is_xmas,
         current_unix_time(),
@@ -167,8 +166,8 @@ pub(crate) async fn merchant_actions_5(
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn bank_driver_7(
-    mut world: &mut World,
-    mut runtime: &mut ServerRuntime,
+    world: &mut World,
+    runtime: &mut ServerRuntime,
     _zone_loader: &mut ZoneLoader,
     config: &ServerConfig,
     _args: &Args,
@@ -189,7 +188,7 @@ pub(crate) async fn bank_driver_7(
     // deposit/withdraw/balance text commands (`src/module/
     // bank.c`).
     world.process_bank_actions(config.area_id);
-    let bank_events_applied = apply_bank_events(&mut runtime, &mut world);
+    let bank_events_applied = apply_bank_events(runtime, world);
     if bank_events_applied != 0 {
         info!(
             bank_events_applied,
@@ -201,8 +200,8 @@ pub(crate) async fn bank_driver_7(
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn trader_driver_8(
-    mut world: &mut World,
-    mut runtime: &mut ServerRuntime,
+    world: &mut World,
+    runtime: &mut ServerRuntime,
     _zone_loader: &mut ZoneLoader,
     _config: &ServerConfig,
     _args: &Args,
@@ -222,8 +221,7 @@ pub(crate) async fn trader_driver_8(
     // C `trader_driver`: player-to-player trade middleman NPC
     // (`src/module/base.c`).
     world.process_trader_actions();
-    let trader_events_applied =
-        apply_trader_events(&mut world, &mut runtime, &achievement_repository).await;
+    let trader_events_applied = apply_trader_events(world, runtime, achievement_repository).await;
     if trader_events_applied != 0 {
         info!(
             trader_events_applied,
@@ -260,9 +258,9 @@ pub(crate) async fn janitor_driver_52(
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn merchant_driver_53(
-    mut world: &mut World,
+    world: &mut World,
     _runtime: &mut ServerRuntime,
-    mut zone_loader: &mut ZoneLoader,
+    zone_loader: &mut ZoneLoader,
     _config: &ServerConfig,
     _args: &Args,
     _completed_actions: &[WorldActionCompletion],
@@ -281,9 +279,9 @@ pub(crate) async fn merchant_driver_53(
 ) {
     // C `merchant_driver`: seed/refresh "special" enchanted-item
     // stock (`add_special_store`, every 12h).
-    let special_store_updates = world.refresh_special_stores(&mut zone_loader);
+    let special_store_updates = world.refresh_special_stores(zone_loader);
     for merchant_id in special_store_updates {
-        save_merchant_store_if_configured(&world, &merchant_repository, merchant_id).await;
+        save_merchant_store_if_configured(world, merchant_repository, merchant_id).await;
     }
     if let Some(repository) = &merchant_repository {
         // C `create_store`: `load_merchant_inventory` on first
@@ -308,11 +306,11 @@ pub(crate) async fn merchant_driver_53(
                 .await
             {
                 Ok(Some(snapshot)) => {
-                    apply_merchant_store_snapshot(&mut world, merchant_id, snapshot);
+                    apply_merchant_store_snapshot(world, merchant_id, snapshot);
                     info!(merchant = %name, x, y, "loaded merchant store from database");
                 }
                 Ok(None) => {
-                    if let Some(snapshot) = merchant_store_snapshot(&world, merchant_id) {
+                    if let Some(snapshot) = merchant_store_snapshot(world, merchant_id) {
                         match repository.save_store(&snapshot).await {
                             Ok(()) => {
                                 info!(merchant = %name, x, y, "saved initial merchant store to database")
@@ -492,7 +490,7 @@ pub(crate) async fn init_event_system_60(
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn tick_player_61(
-    mut world: &mut World,
+    world: &mut World,
     runtime: &mut ServerRuntime,
     _zone_loader: &mut ZoneLoader,
     _config: &ServerConfig,
@@ -574,8 +572,8 @@ pub(crate) async fn tick_player_61(
                     ));
                     if !unlocked.is_empty() {
                         record_achievement_firsts_and_announce(
-                            &mut world,
-                            &achievement_repository,
+                            world,
+                            achievement_repository,
                             character_id,
                             &name,
                             &unlocked,
@@ -639,10 +637,8 @@ pub(crate) async fn tick_player_61(
             match (current, cached) {
                 (Some(merchant_id), cached) if cached != Some(merchant_id) => {
                     runtime.merchant_views.insert(character_id, merchant_id);
-                    merchant_view_updates.push((
-                        character_id,
-                        merchant_store_payload(&mut world, character_id),
-                    ));
+                    merchant_view_updates
+                        .push((character_id, merchant_store_payload(world, character_id)));
                 }
                 (None, Some(_)) => {
                     runtime.merchant_views.remove(&character_id);

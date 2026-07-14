@@ -55,11 +55,11 @@ pub enum CaveInResult {
     /// divided by `POWERSCALE`, ready to format into the C message
     /// text). `unreduced_loss_units` is `Some` only when `P_ATHLETE > 0`
     /// - C's athlete-reduction message needs both the actual loss and a
-    /// reverse-divided "instead of" value computed from the *already*
-    /// `min(_, endurance)`-clamped loss (a real C quirk: if the clamp
-    /// kicked in, the "instead of" number is derived from the clamped
-    /// value, not the pre-clamp one). `now_exhausted` mirrors C's
-    /// trailing `endurance < POWERSCALE` warning.
+    ///   reverse-divided "instead of" value computed from the *already*
+    ///   `min(_, endurance)`-clamped loss (a real C quirk: if the clamp
+    ///   kicked in, the "instead of" number is derived from the clamped
+    ///   value, not the pre-clamp one). `now_exhausted` mirrors C's
+    ///   trailing `endurance < POWERSCALE` warning.
     Collapsed {
         endurance_loss_units: i32,
         unreduced_loss_units: Option<i32>,

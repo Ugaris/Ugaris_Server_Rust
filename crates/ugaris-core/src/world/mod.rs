@@ -706,9 +706,3 @@ pub struct World {
     /// `world::npc::area22::lab3_passguard`'s module doc comment.
     pub(crate) lab3_passguard_talk_latched: bool,
 }
-
-impl Default for Tick {
-    fn default() -> Self {
-        Self(0)
-    }
-}

@@ -111,6 +111,10 @@ impl World {
     /// C `do_emote(cn, dat)` (`fdemon.c:781-1000`) - see the module doc
     /// comment for the shared-`bestscore`-across-blocks quirk this
     /// reproduces digit-for-digit.
+    // Index-based loops kept: they mirror C's `for (n = 0; n < MAXSOLDIER
+    // + 1; n++)` passes indexing the parallel `platoon[n]`/`likes[n]`/
+    // `talked[n]` arrays with one shared index (`fdemon.c:785,837,903,951`).
+    #[allow(clippy::needless_range_loop)]
     pub fn fdemon_army_do_emote(&mut self, soldier_id: CharacterId) {
         let Some(soldier) = self.characters.get(&soldier_id).cloned() else {
             return;

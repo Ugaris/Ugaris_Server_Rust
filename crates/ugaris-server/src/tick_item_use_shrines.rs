@@ -18,7 +18,7 @@
 //! &completed_actions` loop. Since this function is now called once per
 //! outcome (not from inside that loop), each `continue` became a `return`
 //! - the equivalent "stop processing this outcome" behavior at function
-//! scope.
+//!   scope.
 
 use super::*;
 

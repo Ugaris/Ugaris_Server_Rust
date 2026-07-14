@@ -199,13 +199,11 @@ impl World {
         // 0)) return; if (fight_driver_follow_invisible(cn)) return;`
         // (`:280-286`), narrowed to the single tracked `co` (see module
         // doc comment).
-        if data.attacking {
-            if self.lab3_passguard_pursue(guard_id, &mut data, area_id) {
-                if let Some(guard) = self.characters.get_mut(&guard_id) {
-                    guard.driver_state = Some(CharacterDriverState::Lab3Passguard(data));
-                }
-                return;
+        if data.attacking && self.lab3_passguard_pursue(guard_id, &mut data, area_id) {
+            if let Some(guard) = self.characters.get_mut(&guard_id) {
+                guard.driver_state = Some(CharacterDriverState::Lab3Passguard(data));
             }
+            return;
         }
 
         // C: `if (regenerate_driver(cn)) return; if (spell_self_driver(cn))

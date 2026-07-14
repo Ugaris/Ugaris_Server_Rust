@@ -562,7 +562,7 @@ impl World {
             13 => {
                 if player.level >= KELLY_SWAMP_MIN_LEVEL {
                     let (state, said) =
-                        self.kelly_case14_body(kelly_id, &player, &rank_name, facts, events);
+                        self.kelly_case14_body(kelly_id, &player, rank_name, facts, events);
                     new_state = state;
                     didsay = said;
                 }
@@ -572,7 +572,7 @@ impl World {
             // module doc comment.
             14 => {
                 let (state, said) =
-                    self.kelly_case14_body(kelly_id, &player, &rank_name, facts, events);
+                    self.kelly_case14_body(kelly_id, &player, rank_name, facts, events);
                 new_state = state;
                 didsay = said;
             }
@@ -958,9 +958,7 @@ impl World {
     /// C's `return 1`/`return 0`; the achievement wealth-ladder half is
     /// left to the caller via [`KellyOutcomeEvent::GoldEarned`].
     fn collect_heads(&mut self, kelly_id: CharacterId, player_id: CharacterId) -> Option<u32> {
-        let Some(player) = self.characters.get(&player_id) else {
-            return None;
-        };
+        let player = self.characters.get(&player_id)?;
         let head_item_ids: Vec<ItemId> = player
             .inventory
             .iter()

@@ -134,7 +134,7 @@ fn login_bootstrap_payloads_include_visible_client_effect_slots() {
     }));
     assert!(payloads
         .iter()
-        .any(|payload| &payload[..] == &ugaris_protocol::packet::used_effects(1)[..]));
+        .any(|payload| payload[..] == ugaris_protocol::packet::used_effects(1)[..]));
     assert!(client_effect_payloads(&world, &character, 2, &mut effect_cache).is_empty());
 }
 

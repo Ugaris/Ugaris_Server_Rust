@@ -1,3 +1,6 @@
+// Test setups intentionally mirror the C sources' memset-then-assign
+// initialization pattern.
+#![allow(clippy::field_reassign_with_default)]
 use super::*;
 use crate::character_driver::{CDR_DUNGEONMASTER, NTID_DUNGEON};
 use crate::clan::ClanRelation;
@@ -494,8 +497,8 @@ fn build_remove_tile_falls_back_to_rest_point_in_the_same_area_when_the_safe_zon
     for (x, y) in [(245, 250), (240, 250), (235, 250), (230, 250)] {
         for dx in -1..=1_i32 {
             for dy in -1..=1_i32 {
-                let tx = (x as i32 + dx) as usize;
-                let ty = (y as i32 + dy) as usize;
+                let tx = (x + dx) as usize;
+                let ty = (y + dy) as usize;
                 world.map.tile_mut(tx, ty).unwrap().flags |= MapFlags::MOVEBLOCK;
             }
         }
@@ -522,8 +525,8 @@ fn build_remove_tile_queues_a_cross_area_transfer_when_the_rest_point_is_in_a_di
     for (x, y) in [(245, 250), (240, 250), (235, 250), (230, 250)] {
         for dx in -1..=1_i32 {
             for dy in -1..=1_i32 {
-                let tx = (x as i32 + dx) as usize;
-                let ty = (y as i32 + dy) as usize;
+                let tx = (x + dx) as usize;
+                let ty = (y + dy) as usize;
                 world.map.tile_mut(tx, ty).unwrap().flags |= MapFlags::MOVEBLOCK;
             }
         }
@@ -588,8 +591,8 @@ fn build_remove_tile_destroys_a_player_body_when_no_space_is_available() {
     for (x, y) in [(250, 245), (250, 240), (250, 235), (250, 230)] {
         for dx in -1..=1_i32 {
             for dy in -1..=1_i32 {
-                let tx = (x as i32 + dx) as usize;
-                let ty = (y as i32 + dy) as usize;
+                let tx = (x + dx) as usize;
+                let ty = (y + dy) as usize;
                 world.map.tile_mut(tx, ty).unwrap().flags |= MapFlags::MOVEBLOCK;
             }
         }
@@ -787,7 +790,7 @@ fn attack_command_success_charges_fee_updates_slot_and_queues_build_request() {
     assert!(world.spawn_character(raider, 10, 10));
 
     if let Some(dungeonmaster) = world.characters.get_mut(&CharacterId(1)) {
-        dungeonmaster.push_driver_text_message(CharacterId(2), &format!("attack {target_clan}"));
+        dungeonmaster.push_driver_text_message(CharacterId(2), format!("attack {target_clan}"));
     }
     world.process_dungeonmaster_actions();
 
@@ -854,7 +857,7 @@ fn attack_command_says_cannot_afford_fee_without_charging_when_gold_is_short() {
     assert!(world.spawn_character(raider, 10, 10));
 
     if let Some(dungeonmaster) = world.characters.get_mut(&CharacterId(1)) {
-        dungeonmaster.push_driver_text_message(CharacterId(2), &format!("attack {target_clan}"));
+        dungeonmaster.push_driver_text_message(CharacterId(2), format!("attack {target_clan}"));
     }
     world.process_dungeonmaster_actions();
 

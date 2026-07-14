@@ -736,7 +736,7 @@ fn clan_jewel_give_adds_jewel_and_destroys_item() {
     world.process_clanclerk_actions(0, 0);
 
     assert_eq!(world.clan_registry.jewel_count(clan), 1);
-    assert!(world.items.get(&ItemId(900)).is_none());
+    assert!(!world.items.contains_key(&ItemId(900)));
     assert_eq!(
         world.characters.get(&CharacterId(1)).unwrap().cursor_item,
         None
@@ -793,7 +793,7 @@ fn flask_give_adds_attack_potion_and_destroys_item() {
         world.clan_registry.identity(clan).unwrap().economy.alc_pot[0][0],
         1
     );
-    assert!(world.items.get(&ItemId(900)).is_none());
+    assert!(!world.items.contains_key(&ItemId(900)));
     let texts = world.drain_pending_area_texts();
     assert!(texts
         .iter()
@@ -847,7 +847,7 @@ fn flask_give_rejects_unmatched_modifiers_and_destroys_item() {
         .message
         .contains("Failed to add potion to storage, please try again.")));
     // Out-of-scope "give it back" fallback: the item still vanishes.
-    assert!(world.items.get(&ItemId(900)).is_none());
+    assert!(!world.items.contains_key(&ItemId(900)));
 }
 
 #[test]
@@ -866,7 +866,7 @@ fn non_jewel_non_flask_give_is_silently_destroyed() {
     }
     world.process_clanclerk_actions(0, 0);
 
-    assert!(world.items.get(&ItemId(900)).is_none());
+    assert!(!world.items.contains_key(&ItemId(900)));
     let texts = world.drain_pending_area_texts();
     assert!(texts.is_empty());
 }
@@ -916,9 +916,9 @@ fn add_potions_adds_matching_potions_and_reports_count() {
             .simple_pot[2][1],
         1
     );
-    assert!(world.items.get(&ItemId(900)).is_none());
-    assert!(world.items.get(&ItemId(901)).is_none());
-    assert!(world.items.get(&ItemId(902)).is_some());
+    assert!(!world.items.contains_key(&ItemId(900)));
+    assert!(!world.items.contains_key(&ItemId(901)));
+    assert!(world.items.contains_key(&ItemId(902)));
     let inventory = &world.characters.get(&CharacterId(2)).unwrap().inventory;
     assert_eq!(inventory[30], None);
     assert_eq!(inventory[31], None);
@@ -974,5 +974,5 @@ fn add_potions_works_for_non_clan_member() {
             .simple_pot[0][0],
         1
     );
-    assert!(world.items.get(&ItemId(900)).is_none());
+    assert!(!world.items.contains_key(&ItemId(900)));
 }

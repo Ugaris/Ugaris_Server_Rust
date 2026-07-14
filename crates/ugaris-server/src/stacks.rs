@@ -350,6 +350,9 @@ pub(crate) fn enhance_would_make_unusable(item: &Item, character: &Character) ->
     false
 }
 
+// The WNARMS/WNLEGS branches are identical on purpose, mirroring the C
+// original's separate per-slot cases.
+#[allow(clippy::if_same_then_else)]
 pub(crate) fn armor_bonus(item: &Item) -> i16 {
     if item.flags.contains(ItemFlags::WNHEAD) {
         40

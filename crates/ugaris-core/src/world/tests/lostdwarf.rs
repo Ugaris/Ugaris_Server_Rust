@@ -89,7 +89,7 @@ fn giving_matching_recall1_at_state_le3_rescues_miner_1() {
         .contains("uses a scroll of recall and vanishes")));
     let lostdwarf = world.characters.get(&CharacterId(1)).unwrap();
     assert!(lostdwarf.flags.contains(CharacterFlags::INVISIBLE));
-    assert!(world.items.get(&ItemId(50)).is_none());
+    assert!(!world.items.contains_key(&ItemId(50)));
 }
 
 #[test]
@@ -115,7 +115,7 @@ fn giving_wrong_nr_recall_scroll_does_not_rescue() {
     assert!(!lostdwarf.flags.contains(CharacterFlags::INVISIBLE));
     // The item is always destroyed regardless of a match (C's
     // unconditional trailing "let it vanish" catch-all).
-    assert!(world.items.get(&ItemId(50)).is_none());
+    assert!(!world.items.contains_key(&ItemId(50)));
 }
 
 #[test]

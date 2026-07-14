@@ -1,3 +1,6 @@
+// Test setups intentionally mirror the C sources' memset-then-assign
+// initialization pattern.
+#![allow(clippy::field_reassign_with_default)]
 use super::*;
 use ugaris_core::achievement::{AccountAchievements, AchievementStats, AchievementType};
 use ugaris_protocol::mod_achievements::SV_ACH_UNLOCK;
@@ -662,7 +665,7 @@ async fn award_play_time_minute_bumps_stat_without_unlock_below_threshold() {
     assert!(!player
         .achievement_data
         .is_unlocked(AchievementType::DedicatedPlayer));
-    assert!(runtime.tick_out.get(&1).is_none());
+    assert!(!runtime.tick_out.contains_key(&1));
 }
 
 #[tokio::test]
@@ -751,7 +754,7 @@ async fn award_level_achievement_below_threshold_unlocks_nothing() {
     assert!(!player
         .achievement_data
         .is_unlocked(AchievementType::RisingBeginner));
-    assert!(runtime.tick_out.get(&1).is_none());
+    assert!(!runtime.tick_out.contains_key(&1));
 }
 
 #[tokio::test]
@@ -834,7 +837,7 @@ async fn award_enemy_killed_achievement_does_not_reunlock_first_blood_on_later_k
 
     let player = runtime.player_for_character(character_id).unwrap();
     assert_eq!(player.achievement_stats.enemies_killed, 2);
-    assert!(runtime.tick_out.get(&1).is_none());
+    assert!(!runtime.tick_out.contains_key(&1));
 }
 
 #[tokio::test]
@@ -1026,7 +1029,7 @@ async fn award_potion_brewed_achievement_bumps_stat_without_unlock_below_thresho
     assert!(!player
         .achievement_data
         .is_unlocked(AchievementType::Alchemist));
-    assert!(runtime.tick_out.get(&1).is_none());
+    assert!(!runtime.tick_out.contains_key(&1));
 }
 
 #[tokio::test]
@@ -1202,7 +1205,7 @@ async fn award_skill_achievement_ignores_unrelated_skill_types_and_sub_threshold
     assert!(!player
         .achievement_data
         .is_unlocked(AchievementType::WeaponNovice));
-    assert!(runtime.tick_out.get(&1).is_none());
+    assert!(!runtime.tick_out.contains_key(&1));
 }
 
 #[tokio::test]
@@ -1281,7 +1284,7 @@ async fn award_profession_achievement_ignores_sub_threshold_levels() {
     assert!(!player
         .achievement_data
         .is_unlocked(AchievementType::MasterAthlete));
-    assert!(runtime.tick_out.get(&1).is_none());
+    assert!(!runtime.tick_out.contains_key(&1));
 }
 
 #[tokio::test]
@@ -1634,8 +1637,8 @@ async fn award_trader_deal_achievement_does_not_reunlock_on_a_later_deal() {
     runtime.tick_out.clear();
     award_trader_deal_achievement(&mut world, &mut runtime, &None, c1, c2).await;
 
-    assert!(runtime.tick_out.get(&1).is_none());
-    assert!(runtime.tick_out.get(&2).is_none());
+    assert!(!runtime.tick_out.contains_key(&1));
+    assert!(!runtime.tick_out.contains_key(&2));
 }
 
 #[tokio::test]
@@ -1718,7 +1721,7 @@ async fn award_swap_money_converted_achievement_is_a_no_op_without_a_player_runt
         .await;
 
     assert!(runtime.player_for_character(character_id).is_none());
-    assert!(runtime.tick_out.get(&1).is_none());
+    assert!(!runtime.tick_out.contains_key(&1));
 }
 
 // ============================================================================

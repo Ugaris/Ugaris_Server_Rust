@@ -175,6 +175,7 @@ fn tick_macro_daemon(
 /// C `macro_driver`'s message loop (`base.c:816-910`): the `NT_TEXT`
 /// answer-checking branch (plus the generic `tabunga` GM stat-dump hook,
 /// `base.c:898`) and the `NT_GIVE` gift-destroying branch.
+#[allow(clippy::too_many_arguments)]
 fn macro_process_messages(
     world: &mut World,
     runtime: &mut ServerRuntime,

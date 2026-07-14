@@ -1,3 +1,6 @@
+// Test setups intentionally mirror the C sources' memset-then-assign
+// initialization pattern.
+#![allow(clippy::field_reassign_with_default)]
 use super::*;
 
 #[test]
@@ -96,7 +99,7 @@ fn simple_baddy_noncombat_action_idles_shortly_after_creation() {
 #[test]
 fn simple_baddy_noncombat_action_teleports_to_night_post_and_sets_home() {
     let mut world = World::default();
-    world.tick = Tick((TICKS_PER_SECOND * 2) as u64);
+    world.tick = Tick(TICKS_PER_SECOND * 2);
     world.date.hour = 21;
     let mut npc = character(1);
     npc.driver = CDR_SIMPLEBADDY;
@@ -124,7 +127,7 @@ fn simple_baddy_noncombat_action_teleports_to_night_post_and_sets_home() {
 #[test]
 fn simple_baddy_noncombat_action_turns_to_day_post_direction() {
     let mut world = World::default();
-    world.tick = Tick((TICKS_PER_SECOND * 2) as u64);
+    world.tick = Tick(TICKS_PER_SECOND * 2);
     world.date.hour = 12;
     let mut npc = character(1);
     npc.driver = CDR_SIMPLEBADDY;
@@ -155,7 +158,7 @@ fn simple_baddy_noncombat_action_turns_to_day_post_direction() {
 #[test]
 fn simple_baddy_noncombat_action_walks_back_to_rest_home() {
     let mut world = World::default();
-    world.tick = Tick((TICKS_PER_SECOND * 2) as u64);
+    world.tick = Tick(TICKS_PER_SECOND * 2);
     let mut npc = character(1);
     npc.driver = CDR_SIMPLEBADDY;
     npc.rest_x = 15;
@@ -219,7 +222,7 @@ fn secure_move_driver_skips_move_after_blocked_use_and_teleports() {
 #[test]
 fn simple_baddy_noncombat_threads_failed_use_into_secure_move() {
     let mut world = World::default();
-    world.tick = Tick((TICKS_PER_SECOND * 20) as u64);
+    world.tick = Tick(TICKS_PER_SECOND * 20);
     let mut npc = character(1);
     npc.driver = CDR_SIMPLEBADDY;
     npc.rest_x = 12;
@@ -256,7 +259,7 @@ fn simple_baddy_noncombat_threads_failed_use_into_secure_move() {
 #[test]
 fn simple_baddy_noncombat_failed_use_without_retry_code_still_walks() {
     let mut world = World::default();
-    world.tick = Tick((TICKS_PER_SECOND * 20) as u64);
+    world.tick = Tick(TICKS_PER_SECOND * 20);
     let mut npc = character(1);
     npc.driver = CDR_SIMPLEBADDY;
     npc.rest_x = 12;
@@ -307,7 +310,7 @@ fn secure_move_driver_walks_before_teleport_when_not_blocked_use() {
 #[test]
 fn simple_baddy_scavenger_idles_on_legacy_random_gate() {
     let mut world = World::default();
-    world.tick = Tick((TICKS_PER_SECOND * 2) as u64);
+    world.tick = Tick(TICKS_PER_SECOND * 2);
     let mut npc = character(1);
     npc.driver = CDR_SIMPLEBADDY;
     npc.rest_x = 10;
@@ -329,7 +332,7 @@ fn simple_baddy_scavenger_idles_on_legacy_random_gate() {
 #[test]
 fn simple_baddy_scavenger_uses_secure_move_when_returning_home() {
     let mut world = World::default();
-    world.tick = Tick((TICKS_PER_SECOND * 20) as u64);
+    world.tick = Tick(TICKS_PER_SECOND * 20);
     let mut npc = character(1);
     npc.driver = CDR_SIMPLEBADDY;
     npc.rest_x = 12;
@@ -373,7 +376,7 @@ fn simple_baddy_scavenger_uses_secure_move_when_returning_home() {
 #[test]
 fn simple_baddy_scavenger_recent_fight_does_not_secure_teleport_home() {
     let mut world = World::default();
-    world.tick = Tick((TICKS_PER_SECOND * 20) as u64);
+    world.tick = Tick(TICKS_PER_SECOND * 20);
     let mut npc = character(1);
     npc.driver = CDR_SIMPLEBADDY;
     npc.rest_x = 12;
@@ -422,7 +425,7 @@ fn simple_baddy_scavenger_recent_fight_does_not_secure_teleport_home() {
 #[test]
 fn simple_baddy_scavenger_randomly_walks_inside_home_bounds() {
     let mut world = World::default();
-    world.tick = Tick((TICKS_PER_SECOND * 2) as u64);
+    world.tick = Tick(TICKS_PER_SECOND * 2);
     let mut npc = character(1);
     npc.driver = CDR_SIMPLEBADDY;
     npc.rest_x = 10;
@@ -461,7 +464,7 @@ fn simple_baddy_scavenger_randomly_walks_inside_home_bounds() {
 #[test]
 fn simple_baddy_bulk_noncombat_uses_legacy_rng_seed_for_wander() {
     let mut world = World::default();
-    world.tick = Tick((TICKS_PER_SECOND * 2) as u64);
+    world.tick = Tick(TICKS_PER_SECOND * 2);
     world.legacy_random_seed = 0;
     let mut npc = character(1);
     npc.driver = CDR_SIMPLEBADDY;
@@ -487,7 +490,7 @@ fn simple_baddy_bulk_noncombat_uses_legacy_rng_seed_for_wander() {
 #[test]
 fn simple_baddy_scavenger_regenerates_before_random_wander() {
     let mut world = World::default();
-    world.tick = Tick((TICKS_PER_SECOND * 2) as u64);
+    world.tick = Tick(TICKS_PER_SECOND * 2);
     let mut npc = character(1);
     npc.driver = CDR_SIMPLEBADDY;
     npc.rest_x = 10;
@@ -517,7 +520,7 @@ fn simple_baddy_scavenger_regenerates_before_random_wander() {
 #[test]
 fn simple_baddy_scavenger_regenerates_before_drinkspecial_poison() {
     let mut world = World::default();
-    world.tick = Tick((TICKS_PER_SECOND * 2) as u64);
+    world.tick = Tick(TICKS_PER_SECOND * 2);
     let mut npc = character(1);
     npc.driver = CDR_SIMPLEBADDY;
     npc.rest_x = 10;
@@ -552,7 +555,7 @@ fn simple_baddy_scavenger_regenerates_before_drinkspecial_poison() {
 #[test]
 fn simple_baddy_noncombat_self_blesses_before_idle() {
     let mut world = World::default();
-    world.tick = Tick((TICKS_PER_SECOND * 2) as u64);
+    world.tick = Tick(TICKS_PER_SECOND * 2);
     let mut npc = character(1);
     npc.driver = CDR_SIMPLEBADDY;
     npc.mana = 10 * POWERSCALE;
@@ -574,7 +577,7 @@ fn simple_baddy_noncombat_self_blesses_before_idle() {
 #[test]
 fn simple_baddy_noncombat_self_magicshields_when_bless_unavailable() {
     let mut world = World::default();
-    world.tick = Tick((TICKS_PER_SECOND * 2) as u64);
+    world.tick = Tick(TICKS_PER_SECOND * 2);
     let mut npc = character(1);
     npc.driver = CDR_SIMPLEBADDY;
     npc.mana = 10 * POWERSCALE;
@@ -595,7 +598,7 @@ fn simple_baddy_noncombat_self_magicshields_when_bless_unavailable() {
 #[test]
 fn simple_baddy_noncombat_regenerates_before_self_spells() {
     let mut world = World::default();
-    world.tick = Tick((TICKS_PER_SECOND * 2) as u64);
+    world.tick = Tick(TICKS_PER_SECOND * 2);
     let mut npc = character(1);
     npc.driver = CDR_SIMPLEBADDY;
     npc.mana = 10 * POWERSCALE;
@@ -618,7 +621,7 @@ fn simple_baddy_noncombat_regenerates_before_self_spells() {
 #[test]
 fn simple_baddy_scavenger_clears_direction_when_walk_fails() {
     let mut world = World::default();
-    world.tick = Tick((TICKS_PER_SECOND * 2) as u64);
+    world.tick = Tick(TICKS_PER_SECOND * 2);
     let mut npc = character(1);
     npc.driver = CDR_SIMPLEBADDY;
     npc.rest_x = 10;

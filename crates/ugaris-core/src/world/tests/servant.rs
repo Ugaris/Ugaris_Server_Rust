@@ -502,7 +502,7 @@ fn servant_receiving_any_item_destroys_it() {
 
     let events = world.process_two_servant_actions(&facts(CharacterId(2), CS_ENEMY), 17);
     assert!(events.is_empty());
-    assert!(world.items.get(&ItemId(50)).is_none());
+    assert!(!world.items.contains_key(&ItemId(50)));
     assert_eq!(
         world.characters.get(&CharacterId(1)).unwrap().cursor_item,
         None

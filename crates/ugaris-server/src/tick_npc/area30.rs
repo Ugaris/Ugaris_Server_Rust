@@ -5,8 +5,8 @@ use super::*;
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn clanmaster_driver_9(
-    mut world: &mut World,
-    mut runtime: &mut ServerRuntime,
+    world: &mut World,
+    runtime: &mut ServerRuntime,
     _zone_loader: &mut ZoneLoader,
     config: &ServerConfig,
     _args: &Args,
@@ -27,11 +27,11 @@ pub(crate) async fn clanmaster_driver_9(
     // (`src/area/30/clanmaster.c`).
     world.process_clanmaster_actions(config.area_id, current_unix_time());
     let clanmaster_events_applied = apply_clanmaster_events(
-        &mut world,
-        &mut runtime,
-        &achievement_repository,
-        &clan_log_repository,
-        &character_repository,
+        world,
+        runtime,
+        achievement_repository,
+        clan_log_repository,
+        character_repository,
         current_unix_time(),
     )
     .await;
@@ -46,7 +46,7 @@ pub(crate) async fn clanmaster_driver_9(
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn clanclerk_driver_10(
-    mut world: &mut World,
+    world: &mut World,
     _runtime: &mut ServerRuntime,
     _zone_loader: &mut ZoneLoader,
     config: &ServerConfig,
@@ -68,7 +68,7 @@ pub(crate) async fn clanclerk_driver_10(
     // NPC (`src/area/30/clanmaster.c`).
     world.process_clanclerk_actions(config.area_id, current_unix_time());
     let clanclerk_events_applied =
-        apply_clanclerk_events(&mut world, &clan_log_repository, current_unix_time()).await;
+        apply_clanclerk_events(world, clan_log_repository, current_unix_time()).await;
     if clanclerk_events_applied != 0 {
         info!(
             clanclerk_events_applied,
@@ -80,8 +80,8 @@ pub(crate) async fn clanclerk_driver_10(
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn military_advisor_driver_36(
-    mut world: &mut World,
-    mut runtime: &mut ServerRuntime,
+    world: &mut World,
+    runtime: &mut ServerRuntime,
     _zone_loader: &mut ZoneLoader,
     config: &ServerConfig,
     _args: &Args,
@@ -102,7 +102,7 @@ pub(crate) async fn military_advisor_driver_36(
     // recommendation Military Advisor NPC
     // (`src/module/military.c`).
     world.process_military_advisor_actions(config.area_id);
-    let military_advisor_events_applied = apply_military_advisor_events(&mut world, &mut runtime);
+    let military_advisor_events_applied = apply_military_advisor_events(world, runtime);
     if military_advisor_events_applied != 0 {
         info!(
             military_advisor_events_applied,

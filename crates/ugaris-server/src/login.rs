@@ -222,6 +222,7 @@ pub(crate) fn area_redirect_payload(record: Option<&AreaServerRecord>) -> Option
     Some(builder.into_payload())
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn login_bootstrap_payloads(
     world: &World,
     character: &Character,

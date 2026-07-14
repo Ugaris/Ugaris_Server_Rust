@@ -187,7 +187,7 @@ fn give_bracelet_at_state5_completes_quest66_silently_and_jumps_to_6() {
     }));
     // C's bracelet turn-in is silent - no dialogue at all.
     assert!(world.drain_pending_area_texts().is_empty());
-    assert!(world.items.get(&ItemId(50)).is_none());
+    assert!(!world.items.contains_key(&ItemId(50)));
 }
 
 #[test]

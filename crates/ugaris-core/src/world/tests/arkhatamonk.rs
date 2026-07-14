@@ -352,7 +352,7 @@ fn give_gregor_keypart_at_state12_sets_bit_and_thanks() {
     assert!(texts
         .iter()
         .any(|text| text.message.contains("My key-part! I thank thee, Godmode")));
-    assert!(world.items.get(&ItemId(50)).is_none());
+    assert!(!world.items.contains_key(&ItemId(50)));
 }
 
 #[test]
@@ -411,7 +411,7 @@ fn give_dictionary_at_state28_grants_exp_and_advances() {
     assert!(texts
         .iter()
         .any(|text| text.message.contains("translate the language")));
-    assert!(world.items.get(&ItemId(50)).is_none());
+    assert!(!world.items.contains_key(&ItemId(50)));
 }
 
 #[test]

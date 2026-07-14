@@ -44,7 +44,7 @@ fn item_with_no_link_at_all_is_removed() {
 
     let report = world.consistency_check();
     assert_eq!(report.item_errors, 1);
-    assert!(world.items.get(&ItemId(20)).is_none());
+    assert!(!world.items.contains_key(&ItemId(20)));
 }
 
 #[test]

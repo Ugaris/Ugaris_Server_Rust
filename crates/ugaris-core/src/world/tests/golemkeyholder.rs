@@ -48,7 +48,7 @@ fn golemkeyhold_self_destructs_after_five_minutes() {
     let acted = world.process_golemkeyhold_actions(12);
 
     assert_eq!(acted, 1);
-    assert!(world.characters.get(&CharacterId(1)).is_none());
+    assert!(!world.characters.contains_key(&CharacterId(1)));
     let texts = world.drain_pending_area_texts();
     assert!(texts
         .iter()
@@ -64,7 +64,7 @@ fn golemkeyhold_does_not_self_destruct_before_five_minutes() {
 
     world.process_golemkeyhold_actions(12);
 
-    assert!(world.characters.get(&CharacterId(1)).is_some());
+    assert!(world.characters.contains_key(&CharacterId(1)));
 }
 
 #[test]

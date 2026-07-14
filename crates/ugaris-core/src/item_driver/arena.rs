@@ -34,6 +34,10 @@ pub fn arena_toplist_lines(
 
     let start = rank_index.saturating_sub(5).max(10);
     let end = (rank_index + 5).min(entries.len()).min(100);
+    // Index-based loop kept: mirrors C's `for (m = max(10, n - 5); m <
+    // min(100, n + 5); m++)` window print, where the 1-based rank `m + 1`
+    // is part of the output (`arena.c:1078-1083`).
+    #[allow(clippy::needless_range_loop)]
     for index in start..end {
         let entry = &entries[index];
         if entry.name.is_empty() {

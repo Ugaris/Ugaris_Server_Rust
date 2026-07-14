@@ -1,3 +1,6 @@
+// Test setups intentionally mirror the C sources' memset-then-assign
+// initialization pattern.
+#![allow(clippy::field_reassign_with_default)]
 use super::*;
 use crate::character_driver::{mem_add_driver, parse_bank_driver_args, BankDriverData, CDR_BANK};
 use crate::world::bank::{BankEvent, BANK_TALK_INTERVAL_TICKS};

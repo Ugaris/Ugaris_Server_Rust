@@ -84,23 +84,13 @@ const ARENA_BOX: (u16, u16, u16, u16) = (234, 242, 133, 141);
 
 /// C `struct entry` (`arena.c:226-230`), one ranking-table slot. An empty
 /// `name` is C's "unused slot" sentinel (`entry.name[0] == 0`).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ArenaToplistRecord {
     pub name: String,
     pub score: i32,
     /// C `entry.updated` (`realtime` at last write), used only for the
     /// 7-day staleness eviction.
     pub updated: i64,
-}
-
-impl Default for ArenaToplistRecord {
-    fn default() -> Self {
-        Self {
-            name: String::new(),
-            score: 0,
-            updated: 0,
-        }
-    }
 }
 
 /// A `master_driver` outcome that needs `ugaris-server`'s `PlayerRuntime`

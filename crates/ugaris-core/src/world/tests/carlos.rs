@@ -246,7 +246,7 @@ fn carlos_receiving_dragonstaff_completes_quest20_and_advances_state() {
     }));
     let texts = world.drain_pending_area_texts();
     assert!(texts.iter().any(|text| text.message.contains("Well done")));
-    assert!(world.items.get(&ItemId(50)).is_none());
+    assert!(!world.items.contains_key(&ItemId(50)));
 }
 
 #[test]
@@ -272,7 +272,7 @@ fn carlos_receiving_dragonstaff_sweeps_remaining_dragon_keys() {
     }
 
     world.process_carlos_actions(&facts(CharacterId(2), 5, 0, 30, 1), 1);
-    assert!(world.items.get(&ItemId(51)).is_none());
+    assert!(!world.items.contains_key(&ItemId(51)));
 }
 
 #[test]
@@ -302,7 +302,7 @@ fn carlos_receiving_ritual_completes_quest61_and_advances_state() {
     }));
     let texts = world.drain_pending_area_texts();
     assert!(texts.iter().any(|text| text.message.contains("Well done")));
-    assert!(world.items.get(&ItemId(50)).is_none());
+    assert!(!world.items.contains_key(&ItemId(50)));
 }
 
 #[test]

@@ -329,6 +329,7 @@ fn push_colored_line(out: &mut Vec<Vec<u8>>, color: &[u8], text_str: &str) {
 /// `World::destroy_item`, C's `consume_item`) after it succeeds - the
 /// Postgres insert is the only step that can meaningfully fail, so the
 /// ordering still guarantees the item is never lost.
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn auction_create(
     repository: &PgAuctionRepository,
     world: &mut World,

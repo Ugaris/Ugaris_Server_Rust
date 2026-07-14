@@ -5,9 +5,9 @@ use super::*;
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn dungeonmaster_11(
-    mut world: &mut World,
-    mut runtime: &mut ServerRuntime,
-    mut zone_loader: &mut ZoneLoader,
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    zone_loader: &mut ZoneLoader,
     _config: &ServerConfig,
     _args: &Args,
     _completed_actions: &[WorldActionCompletion],
@@ -29,10 +29,10 @@ pub(crate) async fn dungeonmaster_11(
     // warning tick, and the greeting.
     world.process_dungeonmaster_actions();
     let dungeonmaster_events_applied = apply_dungeonmaster_events(
-        &mut world,
-        &mut zone_loader,
-        &mut runtime,
-        &clan_log_repository,
+        world,
+        zone_loader,
+        runtime,
+        clan_log_repository,
         current_unix_time(),
     )
     .await;
@@ -47,7 +47,7 @@ pub(crate) async fn dungeonmaster_11(
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn dungeondoor_12(
-    mut world: &mut World,
+    world: &mut World,
     _runtime: &mut ServerRuntime,
     _zone_loader: &mut ZoneLoader,
     _config: &ServerConfig,
@@ -73,8 +73,7 @@ pub(crate) async fn dungeondoor_12(
     // catacomb door was solved this tick; only the DB-backed
     // clan-log entries remain queued.
     let dungeon_jewel_steal_events_applied =
-        apply_dungeon_jewel_steal_events(&mut world, &clan_log_repository, current_unix_time())
-            .await;
+        apply_dungeon_jewel_steal_events(world, clan_log_repository, current_unix_time()).await;
     if dungeon_jewel_steal_events_applied != 0 {
         info!(
             dungeon_jewel_steal_events_applied,
@@ -112,8 +111,8 @@ pub(crate) async fn dungeonfighter_13(
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn build_remove_tile_21(
-    mut world: &mut World,
-    mut runtime: &mut ServerRuntime,
+    world: &mut World,
+    runtime: &mut ServerRuntime,
     _zone_loader: &mut ZoneLoader,
     config: &ServerConfig,
     _args: &Args,
@@ -136,10 +135,10 @@ pub(crate) async fn build_remove_tile_21(
     // player's own `rest_area` differs from this area
     // server's own `area_id`.
     let dungeon_eviction_transfers_applied = apply_dungeon_eviction_transfers(
-        &mut world,
-        &mut runtime,
-        &character_repository,
-        &area_repository,
+        world,
+        runtime,
+        character_repository,
+        area_repository,
         config.area_id,
         config.mirror_id,
     )
@@ -155,7 +154,7 @@ pub(crate) async fn build_remove_tile_21(
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn tick_clan_37(
-    mut world: &mut World,
+    world: &mut World,
     _runtime: &mut ServerRuntime,
     _zone_loader: &mut ZoneLoader,
     _config: &ServerConfig,
@@ -179,7 +178,7 @@ pub(crate) async fn tick_clan_37(
     // debt, bankrupt-clan deletion), and the hourly dungeon
     // training-score decay tick.
     let clan_economy_events_applied =
-        apply_clan_economy_tick(&mut world, &clan_log_repository, current_unix_time()).await;
+        apply_clan_economy_tick(world, clan_log_repository, current_unix_time()).await;
     if clan_economy_events_applied != 0 {
         info!(
             clan_economy_events_applied,

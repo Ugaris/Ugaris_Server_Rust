@@ -54,9 +54,9 @@
 //!   sentinels idiom, which has an obscure off-by-one: if the *only*
 //!   player found is in the rectangle's last row, C's post-loop `y == ey
 //!   + 1` check can look identical to "no player found", incorrectly
-//!   treating an occupied room as free. This port always gets that one
-//!   case right instead of reproducing the C bug - documented as the one
-//!   deliberate correctness deviation in this file.
+//!     treating an occupied room as free. This port always gets that one
+//!     case right instead of reproducing the C bug - documented as the one
+//!     deliberate correctness deviation in this file.
 //! - `IDR_LAB5_ITEM`'s nameplate/realnameplate/entrance/backdoor branches
 //!   (`drdata[0]` 5/6/7/8) - the normal, non-god way to progress
 //!   `ritualstate`/populate `namecoordx[1..=3]`/override
@@ -276,7 +276,7 @@ impl World {
         }
 
         if let Some(mage) = self.characters.get_mut(&mage_id) {
-            mage.driver_state = Some(CharacterDriverState::Lab5Mage(data.clone()));
+            mage.driver_state = Some(CharacterDriverState::Lab5Mage(data));
         }
 
         // C `if (talkdir) turn(cn, talkdir);` (`lab5.c:825-827`).

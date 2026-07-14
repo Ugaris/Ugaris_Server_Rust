@@ -751,7 +751,7 @@ fn regenerate_special_offers_rerolls_and_destroys_the_old_item_once_the_period_e
     regenerate_mission_giver_special_offers(&mut world, &mut loader);
 
     assert!(
-        world.items.get(&ItemId(900)).is_none(),
+        !world.items.contains_key(&ItemId(900)),
         "the stale item must be destroyed"
     );
     let giver = world.characters.get(&CharacterId(1)).unwrap();

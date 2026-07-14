@@ -87,7 +87,7 @@ impl World {
                     }
                     // C `case 3/4/5/6:` (dice/statue purchase)
                     // (`nomad.c:1019-1033`).
-                    TextAnalysisOutcome::Matched(res @ (3 | 4 | 5)) => {
+                    TextAnalysisOutcome::Matched(res @ (3..=5)) => {
                         if data.nr == 2 {
                             data.last_talk_tick = 0;
                             self.nomad_2_text(nomad_id, speaker_id, facts, res, events);

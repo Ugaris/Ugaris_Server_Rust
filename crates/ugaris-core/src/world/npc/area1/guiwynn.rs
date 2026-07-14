@@ -148,8 +148,8 @@ pub enum GuiwynnOutcomeEvent {
     },
     /// C's `!has_item(co, IID_AREA1_MADKEY1)` + `create_item("mad_key1")`
     /// + plain `give_char_item` (`gwendylon.c:4658-4664`, `4691-4697`,
-    /// `4719-4725`) - deferred to `ugaris-server` since `World` has no
-    /// `ZoneLoader` template access.
+    ///   `4719-4725`) - deferred to `ugaris-server` since `World` has no
+    ///   `ZoneLoader` template access.
     GrantKeyItem { player_id: CharacterId },
 }
 
@@ -528,13 +528,12 @@ impl World {
                     self.npc_quiet_say(guiwynn_id, "This key opens the front door of the Order.");
                 }
             }
-            11 => {
+            11
                 // C `case 11:` (`gwendylon.c:4727-4732`).
-                if now.saturating_sub(facts.seen_timer) > GUIWYNN_REMINDER_SECONDS {
+                if now.saturating_sub(facts.seen_timer) > GUIWYNN_REMINDER_SECONDS => {
                     self.npc_quiet_say(guiwynn_id, &format!("Nice to see you, {}.", player.name));
                     didsay = true;
                 }
-            }
             // Every other value (>= 12): no-op, matching C's `switch`
             // with no matching `case`.
             _ => {}
@@ -574,6 +573,7 @@ impl World {
     /// C `guiwynn_driver`'s `NT_TEXT` branch (`gwendylon.c:4745-4778`),
     /// wired through the generic `analyse_text_qa` matcher (same pattern
     /// as every other area-1 NPC's own text handler).
+    #[allow(clippy::too_many_arguments)]
     fn guiwynn_handle_text_message(
         &mut self,
         guiwynn_id: CharacterId,

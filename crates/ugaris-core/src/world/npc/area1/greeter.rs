@@ -534,6 +534,7 @@ impl World {
     /// wired through the generic `analyse_text_qa` matcher (same pattern
     /// as `world::camhermit`/`world::yoakin`/`world::terion`'s text
     /// handlers).
+    #[allow(clippy::too_many_arguments)]
     fn greeter_handle_text_message(
         &mut self,
         greeter_id: CharacterId,

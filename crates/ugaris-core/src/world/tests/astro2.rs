@@ -141,7 +141,7 @@ fn astro2_receiving_astronote_completes_quest_and_destroys_item() {
     let texts = world.drain_pending_area_texts();
     assert!(texts.iter().any(|text| text.message.contains("jolly good")));
     // The NPC's cursor item (the notes) is destroyed, not handed back.
-    assert!(world.items.get(&ItemId(50)).is_none());
+    assert!(!world.items.contains_key(&ItemId(50)));
     assert!(world
         .characters
         .get(&CharacterId(1))

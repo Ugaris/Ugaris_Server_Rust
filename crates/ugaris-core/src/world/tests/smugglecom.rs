@@ -436,7 +436,7 @@ fn give_book_completes_quest35_destroys_book_and_sets_state5() {
         .iter()
         .any(|text| text.message.contains("Thank you for the book")));
     // The book is destroyed, not handed back.
-    assert!(world.items.get(&ItemId(50)).is_none());
+    assert!(!world.items.contains_key(&ItemId(50)));
     assert!(world
         .characters
         .get(&CharacterId(1))
@@ -502,7 +502,7 @@ fn give_contraband_pearls_grants_scaled_exp_and_sets_bit() {
     // scale_exp(0, 1000) = 1000 reward is granted uncapped.
     let godmode = world.characters.get(&CharacterId(2)).unwrap();
     assert_eq!(godmode.exp, 1000);
-    assert!(world.items.get(&ItemId(50)).is_none());
+    assert!(!world.items.contains_key(&ItemId(50)));
 }
 
 #[test]

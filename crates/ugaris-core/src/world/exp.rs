@@ -246,6 +246,10 @@ impl World {
     ///   `dlog` sink exists).
     pub fn check_levelup(&mut self, character_id: CharacterId) -> bool {
         let mut leveled = false;
+        // Kept as `loop` + let-else exits: the body re-borrows the
+        // character mutably mid-iteration, mirroring C's `while` with
+        // multiple exit points.
+        #[allow(clippy::while_let_loop)]
         loop {
             let Some(character) = self.characters.get(&character_id) else {
                 break;

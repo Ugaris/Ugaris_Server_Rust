@@ -162,7 +162,7 @@ fn give_ironpot_while_turn_in_window_open_completes_quest_and_sets_state4() {
     assert!(texts
         .iter()
         .any(|text| text.message.contains("blessed by all that is good")));
-    assert!(world.items.get(&ItemId(50)).is_none());
+    assert!(!world.items.contains_key(&ItemId(50)));
 }
 
 #[test]

@@ -253,7 +253,7 @@ impl World {
         }
 
         if let Some(character) = self.characters.get_mut(&daemon_id) {
-            character.driver_state = Some(CharacterDriverState::Lab5Daemon(data.clone()));
+            character.driver_state = Some(CharacterDriverState::Lab5Daemon(data));
         }
 
         // C `if (fight_driver_attack_visible(cn, 0)) return;`
@@ -274,7 +274,7 @@ impl World {
             if arrived {
                 data.victim = None;
                 if let Some(character) = self.characters.get_mut(&daemon_id) {
-                    character.driver_state = Some(CharacterDriverState::Lab5Daemon(data.clone()));
+                    character.driver_state = Some(CharacterDriverState::Lab5Daemon(data));
                 }
             } else if self.secure_move_driver(
                 daemon_id,

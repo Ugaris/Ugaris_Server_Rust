@@ -674,14 +674,14 @@ impl ServerRuntime {
             })
             .collect();
         for (session_id, cache) in &mut self.map_caches {
-            if cache.known_character_names.contains_key(&character_id) {
+            if let std::collections::hash_map::Entry::Occupied(mut e) =
+                cache.known_character_names.entry(character_id)
+            {
                 let packet = viewer_packets
                     .get(session_id)
                     .cloned()
                     .unwrap_or_else(|| character_name_packet(character));
-                cache
-                    .known_character_names
-                    .insert(character_id, packet.to_vec());
+                e.insert(packet.to_vec());
                 sessions.push((*session_id, packet));
             }
         }

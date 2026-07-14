@@ -21,7 +21,7 @@ impl World {
                     return None;
                 }
                 let target_item_id = self.map.tile(x, y)?.item;
-                let target_item = self.items.get(&ItemId(u32::from(target_item_id)))?;
+                let target_item = self.items.get(&ItemId(target_item_id))?;
                 (target_item.driver != 0 && target_item.driver != IDR_STEPTRAP).then_some((x, y))
             })
         });

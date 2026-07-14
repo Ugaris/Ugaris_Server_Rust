@@ -443,6 +443,7 @@ impl World {
     /// C `lydia_driver`'s `NT_TEXT` branch (`gwendylon.c:3581-3617`),
     /// wired through the generic `analyse_text_qa` matcher (same pattern
     /// as `world::nook`'s text handler).
+    #[allow(clippy::too_many_arguments)]
     fn lydia_handle_text_message(
         &mut self,
         lydia_id: CharacterId,

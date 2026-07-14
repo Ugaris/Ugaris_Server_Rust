@@ -396,6 +396,9 @@ fn warped_raise_scaled_value(index: usize, base: i32) -> i32 {
         i if i == Surround as usize || i == BodyControl as usize => (base - 20).max(1),
         i if i == SpeedSkill as usize || i == Percept as usize => (base - 10).max(1),
         i if i == Rage as usize => (base - 5).max(1),
+        // `max(1).min(60)` kept in C's own operation order rather than
+        // `clamp`: mirrors `val = min(60, max(1, base - 5))` (`warped.c:557`).
+        #[allow(clippy::manual_clamp)]
         i if i == Profession as usize => (base - 5).max(1).min(60),
         _ => (base - 40).max(1),
     }

@@ -234,7 +234,7 @@ fn nomad_1_give_exactly_100_salt_grants_tribe_membership() {
         nr: 1,
         new_state: 9,
     }));
-    assert!(world.items.get(&ItemId(50)).is_none());
+    assert!(!world.items.contains_key(&ItemId(50)));
     let texts = world.drain_pending_area_texts();
     assert!(texts.iter().any(|text| text
         .message
@@ -344,7 +344,7 @@ fn nomad_4_give_kirletter_completes_quest_33() {
         player_id: CharacterId(2),
         quest_id: 33,
     }));
-    assert!(world.items.get(&ItemId(50)).is_none());
+    assert!(!world.items.contains_key(&ItemId(50)));
 }
 
 #[test]
@@ -466,7 +466,7 @@ fn remove_salt_destroys_a_fully_consumed_stack_and_shrinks_a_partial_one() {
 
     world.remove_salt(CharacterId(2), 30);
 
-    assert!(world.items.get(&ItemId(50)).is_none());
+    assert!(!world.items.contains_key(&ItemId(50)));
     let remaining = world.items.get(&ItemId(51)).unwrap();
     assert_eq!(world.salt_amount(ItemId(51)), 80);
     assert_eq!(remaining.value, 800);

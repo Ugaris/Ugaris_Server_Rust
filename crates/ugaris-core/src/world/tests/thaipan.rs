@@ -173,7 +173,7 @@ fn give_scroll_while_turn_in_window_open_completes_quest_and_sets_state9() {
     assert!(texts
         .iter()
         .any(|text| text.message.contains("the story is true")));
-    assert!(world.items.get(&ItemId(50)).is_none());
+    assert!(!world.items.contains_key(&ItemId(50)));
 }
 
 #[test]
@@ -238,7 +238,7 @@ fn give_budda_with_negative_exp_and_cooldown_elapsed_grants_exp_and_stamps_coold
     // `v = min(exp_used - exp, exp_used/200) = min(200, 1) = 1`.
     let godmode = world.characters.get(&CharacterId(2)).unwrap();
     assert_eq!(godmode.exp, 101);
-    assert!(world.items.get(&ItemId(50)).is_none());
+    assert!(!world.items.contains_key(&ItemId(50)));
 }
 
 #[test]

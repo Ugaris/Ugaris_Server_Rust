@@ -462,6 +462,7 @@ impl World {
     /// C `sir_jones_driver`'s `NT_TEXT` branch (`area3.c:1983-2027`),
     /// wired through the generic `analyse_text_qa` matcher (same pattern
     /// as `world::thomas`'s text handler).
+    #[allow(clippy::too_many_arguments)]
     fn sir_jones_handle_text_message(
         &mut self,
         sir_jones_id: CharacterId,

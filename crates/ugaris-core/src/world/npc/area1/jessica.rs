@@ -250,6 +250,7 @@ impl World {
     }
 
     /// C `jessica_driver`'s `NT_CHAR` branch (`gwendylon.c:1825-1986`).
+    #[allow(clippy::too_many_arguments)]
     fn jessica_handle_char_message(
         &mut self,
         jessica_id: CharacterId,
@@ -437,11 +438,11 @@ impl World {
                 quest: QLOG_JESSICA_KILL,
             });
             new_state = JESSICA_STATE_DONE;
-        } else if new_state == JESSICA_STATE_DONE {
-            if now.saturating_sub(facts.seen_timer) > JESSICA_EXTEND_WAIT_TIME {
-                self.npc_quiet_say(jessica_id, &format!("Hello again {}.", player.name));
-                didsay = true;
-            }
+        } else if new_state == JESSICA_STATE_DONE
+            && now.saturating_sub(facts.seen_timer) > JESSICA_EXTEND_WAIT_TIME
+        {
+            self.npc_quiet_say(jessica_id, &format!("Hello again {}.", player.name));
+            didsay = true;
         }
         // Every other value: no-op, matching C's implicit empty default.
 
@@ -470,6 +471,7 @@ impl World {
     /// C `jessica_driver`'s `NT_TEXT` branch (`gwendylon.c:1989-2021`),
     /// wired through the generic `analyse_text_qa` matcher (same pattern
     /// as `world::camhermit`'s text handler).
+    #[allow(clippy::too_many_arguments)]
     fn jessica_handle_text_message(
         &mut self,
         jessica_id: CharacterId,

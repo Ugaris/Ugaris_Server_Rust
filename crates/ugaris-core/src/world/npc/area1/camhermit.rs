@@ -255,6 +255,7 @@ impl World {
     }
 
     /// C `camhermit_driver`'s `NT_CHAR` branch (`gwendylon.c:713-921`).
+    #[allow(clippy::too_many_arguments)]
     fn camhermit_handle_char_message(
         &mut self,
         camhermit_id: CharacterId,
@@ -514,6 +515,7 @@ impl World {
     /// C `camhermit_driver`'s `NT_TEXT` branch (`gwendylon.c:927-957`),
     /// wired through the generic `analyse_text_qa` matcher (same pattern
     /// as `world::gatekeeper::gate_welcome_handle_text_message`).
+    #[allow(clippy::too_many_arguments)]
     fn camhermit_handle_text_message(
         &mut self,
         camhermit_id: CharacterId,

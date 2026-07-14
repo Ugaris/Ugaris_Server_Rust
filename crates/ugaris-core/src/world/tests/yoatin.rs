@@ -240,7 +240,7 @@ fn give_bearhead_in_range_completes_quest39_and_jumps_to_9() {
     assert!(texts
         .iter()
         .any(|text| text.message.contains("take my belt")));
-    assert!(world.items.get(&ItemId(50)).is_none());
+    assert!(!world.items.contains_key(&ItemId(50)));
     assert!(world
         .characters
         .get(&CharacterId(1))

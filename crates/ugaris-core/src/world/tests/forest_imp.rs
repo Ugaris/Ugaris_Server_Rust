@@ -1,3 +1,6 @@
+// Test setups intentionally mirror the C sources' memset-then-assign
+// initialization pattern.
+#![allow(clippy::field_reassign_with_default)]
 use std::collections::HashMap;
 
 use super::*;
@@ -297,7 +300,7 @@ fn imp_give_message_silently_destroys_any_item() {
 
     let events = world.process_forest_imp_actions(&facts(CharacterId(2), 4, 0, false, false, 0), 1);
     assert!(events.is_empty());
-    assert!(world.items.get(&ItemId(50)).is_none());
+    assert!(!world.items.contains_key(&ItemId(50)));
     assert!(world
         .characters
         .get(&CharacterId(1))

@@ -280,7 +280,7 @@ fn give_pickaxe_at_state4_completes_quest45_and_jumps_to_5() {
         player_id: CharacterId(2),
         new_state: 5,
     }));
-    assert!(world.items.get(&ItemId(50)).is_none());
+    assert!(!world.items.contains_key(&ItemId(50)));
     assert!(world
         .characters
         .get(&CharacterId(1))
@@ -366,7 +366,7 @@ fn trade_gold_destroys_the_stack_when_fully_consumed() {
         player_id: CharacterId(2),
         reward: BroklinTradeReward::Silver4000,
     }));
-    assert!(world.items.get(&ItemId(50)).is_none());
+    assert!(!world.items.contains_key(&ItemId(50)));
 }
 
 #[test]

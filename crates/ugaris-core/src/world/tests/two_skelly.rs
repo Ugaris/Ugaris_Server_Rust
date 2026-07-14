@@ -1,3 +1,6 @@
+// Test setups intentionally mirror the C sources' memset-then-assign
+// initialization pattern.
+#![allow(clippy::field_reassign_with_default)]
 use std::collections::HashMap;
 
 use super::*;
@@ -264,9 +267,9 @@ fn skelly_receiving_cross_at_or_below_state2_completes_quest_and_cleans_up_keys(
     assert!(texts
         .iter()
         .any(|text| text.message.contains("I thank thee, Godmode")));
-    assert!(world.items.get(&ItemId(50)).is_none());
-    assert!(world.items.get(&greenkey_id).is_none());
-    assert!(world.items.get(&redkey_id).is_none());
+    assert!(!world.items.contains_key(&ItemId(50)));
+    assert!(!world.items.contains_key(&greenkey_id));
+    assert!(!world.items.contains_key(&redkey_id));
     assert_eq!(
         world.characters.get(&CharacterId(1)).unwrap().cursor_item,
         None
@@ -321,7 +324,7 @@ fn skelly_self_destructs_thirty_seconds_after_creation() {
 
     world.process_two_skelly_actions(&HashMap::new(), 17);
 
-    assert!(world.characters.get(&CharacterId(1)).is_none());
+    assert!(!world.characters.contains_key(&CharacterId(1)));
 }
 
 #[test]
@@ -341,5 +344,5 @@ fn skelly_does_not_self_destruct_before_thirty_seconds() {
 
     world.process_two_skelly_actions(&HashMap::new(), 17);
 
-    assert!(world.characters.get(&CharacterId(1)).is_some());
+    assert!(world.characters.contains_key(&CharacterId(1)));
 }

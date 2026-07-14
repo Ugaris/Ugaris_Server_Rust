@@ -243,8 +243,8 @@ fn alchemist_receiving_poison_at_or_below_state4_completes_quest() {
     // The cursor poison item and the matching inventory poison item are
     // both destroyed (C's belt-and-suspenders `destroy_item_byID` plus
     // `destroy_item(ch[cn].citem)`).
-    assert!(world.items.get(&ItemId(50)).is_none());
-    assert!(world.items.get(&poison_in_inventory_id).is_none());
+    assert!(!world.items.contains_key(&ItemId(50)));
+    assert!(!world.items.contains_key(&poison_in_inventory_id));
     assert_eq!(
         world.characters.get(&CharacterId(1)).unwrap().cursor_item,
         None

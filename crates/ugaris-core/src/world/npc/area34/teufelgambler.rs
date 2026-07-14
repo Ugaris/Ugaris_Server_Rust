@@ -412,7 +412,7 @@ impl World {
                 }
                 // C `if (n > 1) { ... }` (`teufel.c:1327-1400`): codes
                 // `2`/`3`/`4` are "bet one/two/five".
-                TextAnalysisOutcome::Matched(code @ (2 | 3 | 4)) => {
+                TextAnalysisOutcome::Matched(code @ (2..=4)) => {
                     let bet = match code {
                         2 => 1,
                         3 => 2,

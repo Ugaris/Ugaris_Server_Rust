@@ -42,6 +42,7 @@ const LAB3_PRISONER_TALK_STEP21_TICKS: u64 = TICKS_PER_SECOND * 2;
 /// C `TICKS * 5` (`lab3.c:491`): "BLUB" reset delay.
 const LAB3_PRISONER_BLUB_RESET_TICKS: u64 = TICKS_PER_SECOND * 5;
 /// C `TICKS * 1` (`lab3.c:495`): "REPEAT" reset delay.
+#[allow(clippy::identity_op)] // `* 1` kept to mirror C's `TICKS * 1` literally
 const LAB3_PRISONER_REPEAT_RESET_TICKS: u64 = TICKS_PER_SECOND * 1;
 /// C `char_dist(cn, co) > 10` (`lab3.c:383`).
 const LAB3_PRISONER_TALK_DISTANCE: i32 = 10;

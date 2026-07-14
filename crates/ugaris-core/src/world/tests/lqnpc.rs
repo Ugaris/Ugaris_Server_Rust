@@ -379,7 +379,7 @@ fn lqnpc_give_matching_key_queues_reward_and_destroys_cursor_item() {
     assert!(texts
         .iter()
         .any(|text| text.message.contains("Thanks, that's what I wanted.")));
-    assert!(world.items.get(&ItemId(50)).is_none());
+    assert!(!world.items.contains_key(&ItemId(50)));
     let npc = world.characters.get(&CharacterId(1)).unwrap();
     assert!(npc.cursor_item.is_none());
 }
@@ -415,7 +415,7 @@ fn lqnpc_give_wrong_key_destroys_item_without_a_reward_event() {
 
     let events = world.process_lqnpc_actions(20);
     assert!(events.is_empty());
-    assert!(world.items.get(&ItemId(51)).is_none());
+    assert!(!world.items.contains_key(&ItemId(51)));
     let npc = world.characters.get(&CharacterId(1)).unwrap();
     assert!(npc.cursor_item.is_none());
 }

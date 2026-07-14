@@ -484,6 +484,7 @@ pub(crate) async fn apply_clanmaster_events(
 ///   between the load and the save aborts the write exactly like C's
 ///   `UPDATE ... WHERE current_area = ...`), clan-log entry, and "Set
 ///   %s's rank to %d." feedback.
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn apply_offline_clan_rank(
     world: &mut World,
     character_repository: &Option<ugaris_db::PgCharacterRepository>,
@@ -583,6 +584,7 @@ pub(crate) async fn apply_offline_clan_rank(
 /// (`remove_member`'s effect) rather than setting a rank, with the
 /// clan-log prio-15 "was fired from clan by" shape (matching
 /// `ClanmasterEvent::MemberFired`).
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn apply_offline_clan_fire(
     world: &mut World,
     character_repository: &Option<ugaris_db::PgCharacterRepository>,

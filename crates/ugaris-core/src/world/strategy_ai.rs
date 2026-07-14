@@ -59,19 +59,19 @@
 //! - The seven `task_*` functions (`task_idle`/`task_take`/`task_guard`/
 //!   `task_mine`/`task_transfer`/`task_train`/`task_fight`, `:1865-1994`)
 //!   - each resolves one worker's next order given its current task/
-//!   target/place. `task_idle` is the one exception needing `&mut World`
-//!   rather than just `&World`: C's `restplace(cn, ..., dat)` reads *and
-//!   mutates* the live worker character's own persisted `struct
+//!     target/place. `task_idle` is the one exception needing `&mut World`
+//!     rather than just `&World`: C's `restplace(cn, ..., dat)` reads *and
+//!     mutates* the live worker character's own persisted `struct
 //!   strategy_data::restplace` field (already ported as
-//!   [`StrategyWorkerDriverData::restplace`]/[`World::
+//!     [`StrategyWorkerDriverData::restplace`]/[`World::
 //!   strategy_worker_rest_place`]) - this slice reuses that machinery
-//!   directly rather than duplicate it, auto-vivifying a default
-//!   `StrategyWorkerDriverData` on the live character exactly like C's
-//!   own `set_data` auto-allocates on first use (matching `crate::world::
+//!     directly rather than duplicate it, auto-vivifying a default
+//!     `StrategyWorkerDriverData` on the live character exactly like C's
+//!     own `set_data` auto-allocates on first use (matching `crate::world::
 //!   npc::area23_24::worker::process_strategy_worker_tick`'s own "missing
-//!   state defaults, doesn't early-return" precedent, since a live
-//!   AI-controlled worker's driver state is not guaranteed to have been
-//!   touched by a real tick yet the first time `ai_main` itself runs).
+//!     state defaults, doesn't early-return" precedent, since a live
+//!     AI-controlled worker's driver state is not guaranteed to have been
+//!     touched by a real tick yet the first time `ai_main` itself runs).
 //! - [`AiData::assign_npc`]/[`AiData::add_worker`]/[`AiData::
 //!   add_etguard`]/[`AiData::add_guard`]/[`AiData::remove_guard`]/
 //!   [`AiData::remove_worker`] (`:1996-2105`): the roster-bookkeeping
@@ -269,8 +269,9 @@ pub enum AiPlaceType {
 /// 5`/`T_IGNORE 6`/`T_TAKE 7` (`:1674-1681` - note C itself never defines
 /// a `T_3`, an intentional gap in the original numbering carried here
 /// only as a comment, not a variant).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum AiTask {
+    #[default]
     Idle,
     Mine,
     Transfer,
@@ -278,12 +279,6 @@ pub enum AiTask {
     EGuard,
     Ignore,
     Take,
-}
-
-impl Default for AiTask {
-    fn default() -> Self {
-        AiTask::Idle
-    }
 }
 
 /// C `#define WT_DIRECT 1`/`WT_UP 2`/`WT_DOWN 3` (`:1696-1698`): how
@@ -973,6 +968,10 @@ impl AiData {
                 continue;
             }
 
+            // The Transfer and Mine `continue` arms below are identical
+            // on purpose, mirroring C's two separate `else if` branches
+            // (`strategy.c:2738-2743`).
+            #[allow(clippy::if_same_then_else)]
             if self.places[m].threat != 0 || parent_threat || self.places[m].dist > mindist {
                 if self.npcs[n].used != -1 {
                     self.remove_worker(n);
@@ -1070,6 +1069,7 @@ impl AiData {
     /// guard)/[`AiTask::EGuard`] (`has_exp` or `level > 50`)/
     /// [`AiTask::Idle`] (everything else), and apply C's unconditional
     /// post-classification `used = -1` reset.
+    #[allow(clippy::too_many_arguments)]
     pub fn register_npc(
         &mut self,
         cn: CharacterId,

@@ -43,7 +43,7 @@ use crate::entity::Character;
 
 /// C `#define MAXCLUB 16384` (`club.h:4`). Club numbers are `1..MAX_CLUB`
 /// - slot `0` is part of C's static array but never assigned by
-/// `create_club`, whose free-slot scan starts at `n = 1` (`club.c:161`).
+///   `create_club`, whose free-slot scan starts at `n = 1` (`club.c:161`).
 pub const MAX_CLUB: usize = 16384;
 
 /// C `struct club`'s mutable fields (`club.h:7-12`; `serial` is tracked

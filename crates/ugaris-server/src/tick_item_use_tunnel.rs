@@ -23,6 +23,7 @@ use super::*;
 use ugaris_core::player::find_next_available_tunnel_level;
 use ugaris_core::world::{calc_exp, tunnel_build_fighter_stat_values, TunnelCreeperSpawnSpec};
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn dispatch_tunnel_outcome(
     world: &mut World,
     runtime: &mut ServerRuntime,

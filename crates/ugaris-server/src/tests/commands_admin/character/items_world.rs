@@ -661,7 +661,7 @@ pub(crate) fn clearmerchantstores_is_god_only_and_rejects_too_short_prefix() {
         1,
     )
     .is_none());
-    assert!(world.merchant_stores.get(&merchant_id).is_none());
+    assert!(!world.merchant_stores.contains_key(&merchant_id));
 }
 
 #[test]

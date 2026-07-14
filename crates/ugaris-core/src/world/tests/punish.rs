@@ -58,6 +58,9 @@ fn apply_punishment_level_zero_only_warns_no_loss() {
 }
 
 #[test]
+// The `(x + 3) / 4`-style entries intentionally mirror C `punish()`'s
+// switch formulas verbatim.
+#[allow(clippy::manual_div_ceil)]
 fn apply_punishment_matches_c_per_level_exp_and_karma_table() {
     // C `death_loss(10_000) == 400`; each level's (exp, karma) matches
     // `punish()`'s switch (`punish.c:56-89`).

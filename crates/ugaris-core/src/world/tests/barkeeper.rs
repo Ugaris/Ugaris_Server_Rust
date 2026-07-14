@@ -417,7 +417,7 @@ fn barkeeper_receiving_any_item_destroys_it() {
         17,
     );
     assert!(events.is_empty());
-    assert!(world.items.get(&ItemId(50)).is_none());
+    assert!(!world.items.contains_key(&ItemId(50)));
     assert_eq!(
         world.characters.get(&CharacterId(1)).unwrap().cursor_item,
         None

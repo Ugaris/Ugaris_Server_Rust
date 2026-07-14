@@ -515,6 +515,7 @@ impl World {
     /// as `world::camhermit`/`world::yoakin`'s text handlers). Unlike
     /// those two, C's own `terion_driver` has no `current_victim`/
     /// `last_talk` gate here - see the module doc comment.
+    #[allow(clippy::too_many_arguments)]
     fn terion_handle_text_message(
         &mut self,
         terion_id: CharacterId,

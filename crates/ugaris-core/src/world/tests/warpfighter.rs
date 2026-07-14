@@ -1,3 +1,6 @@
+// Test setups intentionally mirror the C sources' memset-then-assign
+// initialization pattern.
+#![allow(clippy::field_reassign_with_default)]
 use super::*;
 use crate::character_driver::{FightDriverData, CDR_WARPFIGHTER, NT_CHAR, NT_GOTHIT};
 use crate::world::npc::area25::{
@@ -56,7 +59,7 @@ fn self_destructs_when_the_owner_no_longer_exists() {
 
     world.process_warpfighter_actions(25);
 
-    assert!(world.characters.get(&CharacterId(1)).is_none());
+    assert!(!world.characters.contains_key(&CharacterId(1)));
 }
 
 #[test]
@@ -71,7 +74,7 @@ fn self_destructs_when_the_owner_leaves_the_room_bounds() {
 
     world.process_warpfighter_actions(25);
 
-    assert!(world.characters.get(&CharacterId(1)).is_none());
+    assert!(!world.characters.contains_key(&CharacterId(1)));
 }
 
 #[test]
@@ -86,7 +89,7 @@ fn self_destructs_when_the_owner_serial_no_longer_matches() {
 
     world.process_warpfighter_actions(25);
 
-    assert!(world.characters.get(&CharacterId(1)).is_none());
+    assert!(!world.characters.contains_key(&CharacterId(1)));
 }
 
 #[test]
@@ -101,7 +104,7 @@ fn stays_alive_and_tracks_the_owner_while_inside_the_room_bounds() {
 
     world.process_warpfighter_actions(25);
 
-    assert!(world.characters.get(&CharacterId(1)).is_some());
+    assert!(world.characters.contains_key(&CharacterId(1)));
 }
 
 #[test]

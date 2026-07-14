@@ -209,7 +209,7 @@ fn lab2_herald_give_ring_advances_talkstep_and_destroys_item() {
         player_id: CharacterId(2),
         new_value: 60,
     }));
-    assert!(world.items.get(&ItemId(50)).is_none());
+    assert!(!world.items.contains_key(&ItemId(50)));
     assert!(world
         .characters
         .get(&CharacterId(1))
@@ -235,5 +235,5 @@ fn lab2_herald_give_non_ring_item_is_destroyed_without_talkstep_change() {
 
     let events = world.process_lab2_herald_actions(&facts(CharacterId(2), 1), 1);
     assert!(events.is_empty());
-    assert!(world.items.get(&ItemId(51)).is_none());
+    assert!(!world.items.contains_key(&ItemId(51)));
 }

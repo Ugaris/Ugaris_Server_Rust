@@ -106,6 +106,8 @@ pub(crate) fn encode_legacy_achievement_data(data: &AccountAchievements) -> Vec<
     bytes
 }
 
+// Mirrors the C decoder's memset-then-assign field population.
+#[allow(clippy::field_reassign_with_default)]
 pub(crate) fn decode_legacy_achievement_data(bytes: &[u8]) -> Option<AccountAchievements> {
     if bytes.len() < LEGACY_ACHIEVEMENT_DATA_SIZE {
         return None;
@@ -1670,6 +1672,9 @@ pub(crate) async fn record_achievement_firsts_and_announce(
 }
 
 #[cfg(test)]
+// Test setups intentionally mirror the C sources' memset-then-assign
+// initialization pattern.
+#[allow(clippy::field_reassign_with_default)]
 mod send_tests {
     use super::*;
 

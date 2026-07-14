@@ -170,6 +170,10 @@ impl World {
                     &mut face_target,
                 ),
                 NT_GIVE => self.forest_imp_handle_give_message(imp_id),
+                // Kept nested: the seehit handler mutates world/driver
+                // state, so hoisting it into a match guard would hide the
+                // side effect.
+                #[allow(clippy::collapsible_match)]
                 NT_SEEHIT => {
                     // C `if (do_heal(cn, co)) { remove_message(cn, msg);
                     // return; }` (`forest.c:376-379`): success ends the
@@ -449,12 +453,12 @@ impl World {
                     });
                 }
             }
-            9 => {
+            9
                 // C `case 9: if (ppd->hermit_state > 4) { ppd->imp_state++;
                 // // fall thru... } else { break; } case 10: say(...);
                 // ppd->imp_state++; didsay = 1; break;` (`forest.c:329-
                 // 343`).
-                if facts.hermit_state > 4 {
+                if facts.hermit_state > 4 => {
                     self.npc_quiet_say(
                         imp_id,
                         &format!(
@@ -468,7 +472,6 @@ impl World {
                     });
                     didsay = true;
                 }
-            }
             // `imp_state == 8`/`10` (transient, never observed at the
             // start of a tick - `case 8`/`case 10` are only ever reached
             // via the `case 7`/`case 9` fallthroughs above, which always

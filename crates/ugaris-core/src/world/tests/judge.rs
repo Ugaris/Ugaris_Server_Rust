@@ -261,7 +261,7 @@ fn give_letter1_at_state0_is_a_silent_turn_in() {
         new_state: 1,
     }));
     assert!(world.drain_pending_area_texts().is_empty());
-    assert!(world.items.get(&ItemId(50)).is_none());
+    assert!(!world.items.contains_key(&ItemId(50)));
 }
 
 #[test]

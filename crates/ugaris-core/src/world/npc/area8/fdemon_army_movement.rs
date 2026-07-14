@@ -83,7 +83,7 @@ impl World {
     /// after 5 seconds with no progress revert the mission to
     /// `MIS_FOLLOW` and return `false`; before that, idle for half a
     /// second and return whether the idle was queued (C `return
-    /// do_idle(cn, TICKS/2)`).
+    ///      do_idle(cn, TICKS/2)`).
     pub fn army_back_driver(&mut self, character_id: CharacterId, area_id: u16) -> bool {
         let Some(character) = self.characters.get(&character_id) else {
             return false;
@@ -201,14 +201,14 @@ impl World {
     /// fails, the soldier says "cannot go there" and its mission reverts
     /// to `MIS_FOLLOW`, but - matching C's lack of an early return there
     /// - execution still falls through to the attack attempt below.
-    /// Returns whether an attack was queued (C's final `return
+    ///   Returns whether an attack was queued (C's final `return
     /// do_attack(cn, ch[co].dir, co)`), or `false` if the leader or `co`
-    /// can no longer be resolved. C's random `AC_ATTACK1 + RANDOM(3)`
-    /// variant pick is not reproduced (matching the pre-existing
-    /// `action::ATTACK1`-only simplification already used by every other
-    /// `do_attack` caller in this codebase, e.g.
-    /// `setup_simple_baddy_attack_driver`/`attack_driver_direct` in
-    /// `world/npc_fight.rs`).
+    ///   can no longer be resolved. C's random `AC_ATTACK1 + RANDOM(3)`
+    ///   variant pick is not reproduced (matching the pre-existing
+    ///   `action::ATTACK1`-only simplification already used by every other
+    ///   `do_attack` caller in this codebase, e.g.
+    ///   `setup_simple_baddy_attack_driver`/`attack_driver_direct` in
+    ///   `world/npc_fight.rs`).
     pub fn army_behind_driver(&mut self, character_id: CharacterId, area_id: u16) -> bool {
         let Some(character) = self.characters.get(&character_id) else {
             return false;

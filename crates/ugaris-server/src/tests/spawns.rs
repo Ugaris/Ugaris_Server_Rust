@@ -612,7 +612,7 @@ fn gate_enter_test_spawn_room_success_spawns_opponent_and_resets_player() {
     assert_eq!(player.endurance, POWERSCALE);
     assert_eq!(player.mana, POWERSCALE);
     assert!(player.inventory[12..30].iter().all(Option::is_none));
-    assert!(world.items.get(&ItemId(999)).is_none());
+    assert!(!world.items.contains_key(&ItemId(999)));
 
     let system_texts = world.drain_pending_system_texts();
     assert!(system_texts
@@ -638,6 +638,9 @@ fn gate_enter_test_spawn_room_refunds_when_every_room_is_busy() {
     assert!(world.spawn_character(player, 100, 100));
 
     let mut blocker_id = 900_u32;
+    // `blocker_id` doubles as a synthetic character-id sequence, not just
+    // a loop counter.
+    #[allow(clippy::explicit_counter_loop)]
     for (xs, ys) in GATE_TEST_ROOM_STARTS {
         let blocker = login_character(
             CharacterId(blocker_id),
@@ -664,7 +667,7 @@ fn gate_enter_test_spawn_room_refunds_when_every_room_is_busy() {
         5,
     ));
 
-    assert!(world.characters.get(&CharacterId(50)).is_none());
+    assert!(!world.characters.contains_key(&CharacterId(50)));
     let player = world.characters.get(&CharacterId(2)).unwrap();
     assert_eq!(player.gold, 20000);
     let system_texts = world.drain_pending_system_texts();
@@ -697,7 +700,7 @@ fn gate_enter_test_spawn_room_rejects_when_underfunded() {
         5,
     ));
 
-    assert!(world.characters.get(&CharacterId(50)).is_none());
+    assert!(!world.characters.contains_key(&CharacterId(50)));
     let player = world.characters.get(&CharacterId(2)).unwrap();
     assert_eq!(player.gold, 9999);
     let system_texts = world.drain_pending_system_texts();
@@ -808,7 +811,7 @@ fn respawn_npc_character_refuses_lampghost_while_palace_is_lit() {
         &mut runtime,
         &request,
     ));
-    assert!(world.characters.get(&CharacterId(300)).is_none());
+    assert!(!world.characters.contains_key(&CharacterId(300)));
 }
 
 #[test]

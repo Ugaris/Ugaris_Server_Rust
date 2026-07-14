@@ -71,7 +71,7 @@ pub(crate) fn ls_reports_no_one_by_that_name_when_target_is_offline() {
         result.messages,
         vec!["Sorry, no one by the name Nobody around."]
     );
-    assert!(runtime.tick_out.get(&2).is_none());
+    assert!(!runtime.tick_out.contains_key(&2));
 }
 
 #[test]
@@ -178,7 +178,7 @@ pub(crate) fn ls_produces_no_packet_when_dir_exceeds_two_hundred_bytes_but_still
         result.messages,
         vec![format!("ls {long_dir} scheduled on Target.")]
     );
-    assert!(runtime.tick_out.get(&2).is_none());
+    assert!(!runtime.tick_out.contains_key(&2));
 }
 
 // C's Anti-Cheat Admin Commands (`command.c:10148-10192`): `#achelp`/

@@ -31,8 +31,8 @@ pub(crate) async fn aclerk_driver_6(
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn clubmaster_driver_14(
-    mut world: &mut World,
-    mut runtime: &mut ServerRuntime,
+    world: &mut World,
+    runtime: &mut ServerRuntime,
     _zone_loader: &mut ZoneLoader,
     config: &ServerConfig,
     _args: &Args,
@@ -52,13 +52,8 @@ pub(crate) async fn clubmaster_driver_14(
     // C `clubmaster_driver`: the club foundations/
     // administration NPC (`src/system/clubmaster.c`).
     world.process_clubmaster_actions(config.area_id, current_unix_time());
-    let clubmaster_events_applied = apply_clubmaster_events(
-        &mut world,
-        &mut runtime,
-        &achievement_repository,
-        &character_repository,
-    )
-    .await;
+    let clubmaster_events_applied =
+        apply_clubmaster_events(world, runtime, achievement_repository, character_repository).await;
     if clubmaster_events_applied != 0 {
         info!(
             clubmaster_events_applied,
@@ -130,8 +125,8 @@ pub(crate) async fn fighter_driver_39(
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn manager_driver_40(
-    mut world: &mut World,
-    mut runtime: &mut ServerRuntime,
+    world: &mut World,
+    runtime: &mut ServerRuntime,
     _zone_loader: &mut ZoneLoader,
     config: &ServerConfig,
     _args: &Args,
@@ -153,7 +148,7 @@ pub(crate) async fn manager_driver_40(
     // within `World` (never touches `PlayerRuntime`).
     world.process_arena_manager_actions(config.area_id);
     let arena_master_events_applied =
-        apply_arena_master_events(&mut world, &mut runtime, current_unix_time());
+        apply_arena_master_events(world, runtime, current_unix_time());
     if arena_master_events_applied != 0 {
         info!(
             arena_master_events_applied,

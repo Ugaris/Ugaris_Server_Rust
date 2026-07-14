@@ -312,17 +312,17 @@ impl World {
                 };
                 let dx = (i32::from(worker.x) - i32::from(source.x)).abs();
                 let dy = (i32::from(worker.y) - i32::from(source.y)).abs();
-                if dx != 3 || dy != 3 {
-                    if self.setup_walk_toward(
+                if (dx != 3 || dy != 3)
+                    && self.setup_walk_toward(
                         worker_id,
                         usize::from(source.x),
                         usize::from(source.y),
                         3,
                         area_id,
                         false,
-                    ) {
-                        return true;
-                    }
+                    )
+                {
+                    return true;
                 }
                 return false;
             }

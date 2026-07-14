@@ -57,7 +57,7 @@ pub(crate) fn god_setrd_command_sets_continuity_on_self_and_resends_questlog_to_
         .expect("caller session got the questlog resend");
     assert_eq!(payloads.len(), 1);
     assert_eq!(payloads[0][0], ugaris_protocol::packet::SV_QUESTLOG);
-    assert!(runtime.tick_out.get(&91).is_none());
+    assert!(!runtime.tick_out.contains_key(&91));
 }
 
 #[test]

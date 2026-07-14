@@ -182,7 +182,12 @@ fn warp_trial_door_spawn_helper_instantiates_fighter_at_room_center() {
     assert_eq!(fighter.hp, 30 * POWERSCALE);
     assert_eq!(fighter.endurance, 30 * POWERSCALE);
     assert_eq!(fighter.mana, 0);
-    assert_eq!(fighter.lifeshield, 1 * POWERSCALE);
+    // Intentional `1 * POWERSCALE` mirror of the C template's
+    // `value * POWERSCALE` rescale with value=1.
+    #[allow(clippy::identity_op)]
+    {
+        assert_eq!(fighter.lifeshield, 1 * POWERSCALE);
+    }
 
     let Some(ugaris_core::character_driver::CharacterDriverState::WarpFighter(data)) =
         fighter.driver_state
@@ -476,6 +481,7 @@ fn lag_control_toggle_command_covers_every_family_member_with_legacy_minlen() {
     let character = login_character(CharacterId(7), &login_block("Tester"), 1, 10, 10);
     let mut player = PlayerRuntime::connected(1, 0);
 
+    #[allow(clippy::type_complexity)]
     let cases: &[(&str, fn(&PlayerRuntime) -> bool)] = &[
         ("noball", |p| p.no_ball),
         ("nobless", |p| p.no_bless),
@@ -784,7 +790,7 @@ fn complain_command_shows_the_one_time_disclaimer_and_stamps_complaint_date_to_o
 
 /// A non-`CF_GOD` caller retrying within 60 seconds is rate-limited, and
 /// - a genuine C quirk - `complaint_date` is restamped to the rejected
-/// attempt's own timestamp (`command.c:2306-2309`), not left alone.
+///   attempt's own timestamp (`command.c:2306-2309`), not left alone.
 #[test]
 fn complain_command_rate_limits_non_god_callers_and_restamps_on_rejection() {
     let mut world = World::default();

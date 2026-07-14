@@ -1,3 +1,6 @@
+// Test setups intentionally mirror the C sources' memset-then-assign
+// initialization pattern.
+#![allow(clippy::field_reassign_with_default)]
 use super::*;
 use crate::character_driver::{CharacterDriverState, CDR_STRATEGY};
 use crate::item_driver::{IDR_ENHANCE, IDR_NOSNOW, IDR_STR_TICKER};
@@ -47,6 +50,8 @@ fn missions_table_has_all_fourteen_rows_in_c_order() {
 }
 
 #[test]
+// The tuple layout intentionally mirrors C's `struct mission` columns.
+#[allow(clippy::type_complexity)]
 fn missions_table_matches_c_literal_values_digit_for_digit() {
     // struct mission mission[] (strategy.c:214-239)
     let expected: [(&str, i32, i32, i32, [i32; 4], i32, i32, i32, i32); 14] = [
@@ -117,6 +122,8 @@ fn ai_presets_table_has_all_twenty_four_rows_in_c_order() {
 }
 
 #[test]
+// The tuple layout intentionally mirrors C's `struct ai_preset` columns.
+#[allow(clippy::type_complexity)]
 fn ai_presets_table_matches_c_literal_values_digit_for_digit() {
     // struct ai_preset preset[64] (strategy.c:162-200); columns:
     // worker level trspeed income endur warc speed EGuards EGuardlevel

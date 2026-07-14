@@ -772,8 +772,8 @@ impl PlayerRuntime {
     /// made the same transition earlier. `DRD_DEPOT_PPD`'s "clear
     /// `IF_QUEST` flags from the 80 depot item slots" (`tool.c:4379-4387`
     /// - actually a full slot wipe, `ppd->itm[n].flags = 0`, not just
-    /// stripping one flag off a kept item) is ported below now that
-    /// `depot` has a typed Rust representation.
+    ///   stripping one flag off a kept item) is ported below now that
+    ///   `depot` has a typed Rust representation.
     pub fn clear_turn_seyan_ppd(&mut self) {
         for slot in self.depot.iter_mut() {
             if slot
@@ -945,7 +945,7 @@ impl PlayerRuntime {
 
     /// C `ppd->krenach_state++`/`ppd->krenach_time = realtime` write half
     /// - see [`ARKHATA_PPD_KRENACH_STATE_OFFSET`]'s doc comment.
-    /// `krenach_driver` itself is the only writer of either field.
+    ///   `krenach_driver` itself is the only writer of either field.
     pub fn set_arkhata_krenach_timer(&mut self, state: i32, realtime_seconds: i32) {
         if self.arkhata_ppd.len() < LEGACY_ARKHATA_PPD_SIZE {
             self.arkhata_ppd.resize(LEGACY_ARKHATA_PPD_SIZE, 0);

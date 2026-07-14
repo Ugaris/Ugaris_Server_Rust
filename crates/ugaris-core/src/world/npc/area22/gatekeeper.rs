@@ -336,6 +336,7 @@ impl World {
     /// C `gate_welcome_driver`'s `NT_TEXT` branch (`gatekeeper.c:552-590`),
     /// wired through the generic `analyse_text_qa` matcher (same pattern
     /// as `world/trader.rs::trader_qa_reply`).
+    #[allow(clippy::too_many_arguments)]
     fn gate_welcome_handle_text_message(
         &mut self,
         gate_id: CharacterId,

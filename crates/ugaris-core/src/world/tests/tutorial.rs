@@ -282,7 +282,7 @@ fn battle2_hint_fires_at_most_once() {
     facts.ppd.battle_cnt = 3; // exhausted, forces the battle2 branch
 
     let mut loader = torch_loader();
-    let outcomes = world.process_tutorial_hints(&facts_map(facts.clone()), &mut loader, 1, 4000);
+    let outcomes = world.process_tutorial_hints(&facts_map(facts), &mut loader, 1, 4000);
     assert_eq!(outcomes.len(), 1);
     assert_eq!(outcomes[0].fired, Some(TutorialHintKind::Battle2));
 
@@ -343,7 +343,7 @@ fn citem_start_is_recorded_then_the_hint_fires_after_thirty_seconds() {
     // Phase A: citem_start not yet tracked - gets initialized, no hint.
     // `now` stays under `TF_TIMEOUT` so the generic-hints tail can't
     // preempt.
-    let outcomes = world.process_tutorial_hints(&facts_map(facts.clone()), &mut loader, 2, 100);
+    let outcomes = world.process_tutorial_hints(&facts_map(facts), &mut loader, 2, 100);
     assert_eq!(outcomes.len(), 1);
     assert_eq!(outcomes[0].fired, None);
     assert_eq!(outcomes[0].citem_start, Some(100));

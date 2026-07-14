@@ -37,6 +37,7 @@ pub fn spell_average(
     (bless + heal + freeze + magic_shield + flash + fireball + pulse) as f64 / 8.0
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn attack_skill(
     has_attack_base: bool,
     fight_skill: i32,
@@ -56,6 +57,7 @@ pub fn attack_skill(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn parry_skill(
     has_parry_base: bool,
     fight_skill: i32,

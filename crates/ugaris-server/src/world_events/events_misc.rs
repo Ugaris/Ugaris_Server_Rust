@@ -35,7 +35,7 @@ impl PkRelationSnapshot {
             && self
                 .hate_by_character
                 .get(&source)
-                .is_some_and(|hate| hate.iter().any(|id| *id == target.0))
+                .is_some_and(|hate| hate.contains(&target.0))
     }
 }
 

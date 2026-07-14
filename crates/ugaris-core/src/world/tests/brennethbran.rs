@@ -268,7 +268,7 @@ fn give_dagger_at_state4_completes_quest41_and_jumps_to_5() {
     assert!(texts
         .iter()
         .any(|text| text.message.contains("so this was my dagger")));
-    assert!(world.items.get(&ItemId(50)).is_none());
+    assert!(!world.items.contains_key(&ItemId(50)));
     assert!(world
         .characters
         .get(&CharacterId(1))

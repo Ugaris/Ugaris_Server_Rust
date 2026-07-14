@@ -259,7 +259,7 @@ fn give_letter2_with_bit_unset_is_accepted_and_sets_the_bit() {
     assert!(texts
         .iter()
         .any(|text| text.message.contains("comfort and solution")));
-    assert!(world.items.get(&ItemId(50)).is_none());
+    assert!(!world.items.contains_key(&ItemId(50)));
 }
 
 #[test]

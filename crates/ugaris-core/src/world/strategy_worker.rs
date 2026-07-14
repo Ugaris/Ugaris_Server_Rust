@@ -82,10 +82,11 @@ use super::*;
 /// C `struct strategy_data.order`/`or1`/`or2` (`strategy.c:100-113`) -
 /// see this module's doc comment for why this is a typed enum instead of
 /// three raw `int`s.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, Default)]
 pub enum StrategyWorkerOrder {
     /// C `order == 0` (no `#define`; the zero-initialized default, and
     /// the "home" command's target state, `:827-833`).
+    #[default]
     None,
     /// C `OR_MINE` (`:800-805`): mine platinum from `mine_item`, haul it
     /// to `depot_item`.
@@ -118,12 +119,6 @@ pub enum StrategyWorkerOrder {
     /// never produces this variant, matching C exactly (no `strstr`
     /// keyword ever sets `OR_ETERNALGUARD`).
     EternalGuard { x: u16, y: u16 },
-}
-
-impl Default for StrategyWorkerOrder {
-    fn default() -> Self {
-        StrategyWorkerOrder::None
-    }
 }
 
 /// C `tool.c:1548-1556`: the capitalized worker-speech honorific by

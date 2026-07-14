@@ -230,7 +230,7 @@ fn give_forestmap_speaks_hint_for_current_forestbran_done_and_destroys_map() {
             "forestbran_done {forestbran_done} should speak {snippet:?}"
         );
         assert!(
-            world.items.get(&ItemId(50)).is_none(),
+            !world.items.contains_key(&ItemId(50)),
             "forestbran_done {forestbran_done} should always destroy the map"
         );
         assert!(world

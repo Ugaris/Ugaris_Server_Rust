@@ -224,7 +224,7 @@ pub const SOLDIER_PROFILES: [SoldierProfile; 14] = [
 /// four personality-tendency fields carried from `profile[nr]` into a fresh
 /// `struct emote` (`cuddly`/`angst`/`bore`/`bigmouth`; the "current" fields
 /// - `lonely`/`fear`/`boredom`/`praise` - and the `likes`/`talked`/
-/// `answer_*`/`last_emote` fields all start at `0` via C's `bzero`).
+///   `answer_*`/`last_emote` fields all start at `0` via C's `bzero`).
 pub struct SoldierEmoteBase {
     pub cuddly: i32,
     pub angst: i32,
@@ -610,6 +610,9 @@ impl World {
                     return false;
                 }
             }
+            // Kept nested: `army_front_driver` mutates world state, so
+            // hoisting it into a match guard would hide the side effect.
+            #[allow(clippy::collapsible_match)]
             MIS_FRONT => {
                 if self.army_front_driver(character_id, 10, area_id) {
                     return false;
@@ -669,6 +672,9 @@ impl World {
                     dat.closeup = false;
                 }
             }
+            // Kept nested: `army_front_driver` mutates world state, so
+            // hoisting it into a match guard would hide the side effect.
+            #[allow(clippy::collapsible_match)]
             MIS_FRONT => {
                 if self.army_front_driver(character_id, 3, area_id) {
                     return false;

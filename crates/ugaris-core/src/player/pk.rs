@@ -72,7 +72,7 @@ impl PlayerRuntime {
     }
 
     pub fn has_pk_hate_for(&self, character_id: u32) -> bool {
-        character_id != 0 && self.pk_hate.iter().any(|hate_id| *hate_id == character_id)
+        character_id != 0 && self.pk_hate.contains(&character_id)
     }
 
     pub fn add_pk_hate(&mut self, character_id: u32) -> bool {

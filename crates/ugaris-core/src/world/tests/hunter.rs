@@ -214,7 +214,7 @@ fn give_harpy_skin_within_range_completes_quest77_pays_gold_and_jumps_to_10() {
     }));
     let texts = world.drain_pending_area_texts();
     assert!(texts.iter().any(|text| text.message.contains("150 gold")));
-    assert!(world.items.get(&ItemId(50)).is_none());
+    assert!(!world.items.contains_key(&ItemId(50)));
     let godmode = world.characters.get(&CharacterId(2)).unwrap();
     assert_eq!(godmode.gold, starting_gold + 150 * 100);
 }

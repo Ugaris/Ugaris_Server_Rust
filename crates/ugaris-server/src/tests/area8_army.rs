@@ -202,7 +202,7 @@ async fn take_soldiers_recruits_nobody_below_rank_one() {
 
     crate::area8_army::take_soldiers(&mut world, &mut loader, &mut runtime, player_id);
 
-    assert!(world.characters.get(&CharacterId(50)).is_none());
+    assert!(!world.characters.contains_key(&CharacterId(50)));
     let player = runtime.player_for_character(player_id).unwrap();
     assert_eq!(player.farmy_soldier_type(0), 0);
 }

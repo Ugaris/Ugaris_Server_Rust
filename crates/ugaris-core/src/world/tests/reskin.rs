@@ -440,7 +440,7 @@ fn reskin_give_alchemy_ingredient_pays_and_destroys_item() {
     )));
     let godmode = world.characters.get(&CharacterId(2)).unwrap();
     assert_eq!(godmode.gold, 50);
-    assert!(world.items.get(&ItemId(50)).is_none());
+    assert!(!world.items.contains_key(&ItemId(50)));
     let texts = world.drain_pending_area_texts();
     assert!(texts
         .iter()
@@ -463,13 +463,13 @@ fn reskin_give_alchemy_ingredient_awards_achievement_on_last_bit() {
     }
 
     // Already has every bit except bit 1 (0x1FFFFFE with bit 1 cleared).
-    let almost_all_bits = 0x1FFF_FFEu32 & !0b10;
+    let almost_all_bits = 0x1FFFFFEu32 & !0b10;
     let player_facts = facts(CharacterId(2), 0, 0, 0, 0, almost_all_bits, false);
     let events = world.process_reskin_actions(&player_facts, 1, 1);
 
     assert!(events.contains(&ReskinOutcomeEvent::UpdateGotBits {
         player_id: CharacterId(2),
-        value: 0x1FFF_FFE,
+        value: 0x1FFFFFE,
     }));
     assert!(
         events.contains(&ReskinOutcomeEvent::WellPaidGathererAchievement {

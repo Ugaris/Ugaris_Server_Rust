@@ -70,7 +70,7 @@ fn give_keys_creates_and_gives_the_requested_key_count_then_consumes_the_ingredi
 
     assert_eq!(applied, 1);
     // The ingredient is consumed once at least one key was given.
-    assert!(world.items.get(&ItemId(500)).is_none());
+    assert!(!world.items.contains_key(&ItemId(500)));
     // The recipient now carries the created key (on the cursor, the
     // first free slot `World::give_char_item` fills).
     let recipient = world.characters.get(&CharacterId(2)).unwrap();

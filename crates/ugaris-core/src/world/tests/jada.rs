@@ -190,7 +190,7 @@ fn give_blade_while_turn_in_window_open_completes_quest_and_sets_state5() {
     assert!(texts
         .iter()
         .any(|text| text.message.contains("concentration of evil")));
-    assert!(world.items.get(&ItemId(50)).is_none());
+    assert!(!world.items.contains_key(&ItemId(50)));
 }
 
 #[test]

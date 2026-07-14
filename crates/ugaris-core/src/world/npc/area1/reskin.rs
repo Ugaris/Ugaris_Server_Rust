@@ -80,7 +80,7 @@ const TERION_STATE_HORDES_GREET: i32 = 4;
 const LOGAIN_STATE_RESKIN_UNLOCK: i32 = 8;
 /// C's `0x1FFFFFE` bitmask (`gwendylon.c:4350`): all alchemy-ingredient
 /// types 1-24 collected.
-const RESKIN_ALL_INGREDIENTS_MASK: u32 = 0x1FFF_FFE;
+const RESKIN_ALL_INGREDIENTS_MASK: u32 = 0x1FFFFFE;
 
 /// Reskin's bare `int` state values for `ppd->reskin_state` - no
 /// `#define` names exist in the C source, so these are named here purely
@@ -642,7 +642,7 @@ impl World {
                     // branches (`gwendylon.c:4301-4340`) - falls through
                     // to the generic hand-back below (no `return` in C
                     // here).
-                    let word = if matches!(ingredient_type, 21 | 22 | 23 | 24) {
+                    let word = if matches!(ingredient_type, 21..=24) {
                         "stone"
                     } else {
                         "mushroom"

@@ -126,6 +126,7 @@ pub(crate) fn c_scaled(power: i32, amount: u8, divi: f64, count: u8, divisor: f6
     (f64::from(power) * f64::from(amount) / divi / f64::from(count) / divisor) as i16
 }
 
+#[allow(clippy::type_complexity)]
 pub(crate) fn flask_skill_mix(
     item: &Item,
     character: &Character,

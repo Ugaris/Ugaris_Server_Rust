@@ -1,3 +1,6 @@
+// Test setups intentionally mirror the C sources' memset-then-assign
+// initialization pattern.
+#![allow(clippy::field_reassign_with_default)]
 use super::*;
 use crate::{
     character_driver::CDR_FDEMON_ARMY,
@@ -136,7 +139,7 @@ fn fdemon_army_tick_disintegrates_when_leader_lost() {
     world.characters.insert(soldier_id, soldier);
 
     assert!(world.fdemon_army_tick(soldier_id, 1));
-    assert!(world.characters.get(&soldier_id).is_none());
+    assert!(!world.characters.contains_key(&soldier_id));
 }
 
 #[test]
@@ -152,7 +155,7 @@ fn fdemon_army_tick_disintegrates_when_leader_group_differs() {
     world.characters.insert(soldier_id, soldier);
 
     assert!(world.fdemon_army_tick(soldier_id, 1));
-    assert!(world.characters.get(&soldier_id).is_none());
+    assert!(!world.characters.contains_key(&soldier_id));
 }
 
 #[test]

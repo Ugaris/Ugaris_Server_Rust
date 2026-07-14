@@ -15,9 +15,9 @@ use super::*;
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn process_queued_client_actions(
-    mut world: &mut World,
-    mut runtime: &mut ServerRuntime,
-    mut zone_loader: &mut ZoneLoader,
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    zone_loader: &mut ZoneLoader,
     config: &ServerConfig,
     achievement_repository: &Option<ugaris_db::PgAchievementRepository>,
     character_repository: &Option<ugaris_db::PgCharacterRepository>,
@@ -40,13 +40,11 @@ pub(crate) async fn process_queued_client_actions(
     let mut command_inventory_refresh = Vec::new();
     let mut command_container_refresh = Vec::new();
     let mut command_name_refresh = Vec::new();
-    for (character_id, message) in drain_expired_tell_feedback(&world, &mut runtime, world.tick.0) {
+    for (character_id, message) in drain_expired_tell_feedback(world, runtime, world.tick.0) {
         command_feedback_bytes.push((character_id, message));
     }
     let realtime_seconds = world.tick.0 / TICKS_PER_SECOND;
-    for (character_id, message) in
-        drain_expired_shutup_feedback(&mut world, &mut runtime, realtime_seconds)
-    {
+    for (character_id, message) in drain_expired_shutup_feedback(world, runtime, realtime_seconds) {
         command_feedback_bytes.push((character_id, message));
     }
     for (session_id, action) in queued {
@@ -88,12 +86,12 @@ pub(crate) async fn process_queued_client_actions(
                     continue;
                 }
                 if command.eq_ignore_ascii_case("sort") {
-                    inventory_sort(&mut world, character_id);
+                    inventory_sort(world, character_id);
                     command_inventory_refresh.push(character_id);
                     continue;
                 }
                 if command.eq_ignore_ascii_case("accountdepotsort") {
-                    if account_depot_sort_if_open(&mut world, &mut runtime, character_id) {
+                    if account_depot_sort_if_open(world, runtime, character_id) {
                         command_container_refresh.push(character_id);
                         command_feedback.push((character_id, "Account depot sorted.".to_string()));
                     } else {
@@ -112,7 +110,7 @@ pub(crate) async fn process_queued_client_actions(
                     // open and never sends a confirmation
                     // message - it unconditionally sorts the
                     // character's own `DRD_DEPOT_PPD` block.
-                    personal_depot_sort_command(&mut runtime, character_id);
+                    personal_depot_sort_command(runtime, character_id);
                     command_container_refresh.push(character_id);
                     continue;
                 }
@@ -122,19 +120,16 @@ pub(crate) async fn process_queued_client_actions(
                     .map(|character| character.flags)
                     .unwrap_or_else(CharacterFlags::empty);
                 let weather_before_admin_command = runtime.weather.clone();
-                if let Some(result) = apply_weather_admin_command(
-                    &world,
-                    character_id,
-                    &mut runtime.weather,
-                    &command,
-                ) {
+                if let Some(result) =
+                    apply_weather_admin_command(world, character_id, &mut runtime.weather, &command)
+                {
                     // C `cmd_setweather`/`cmd_clearweather`/
                     // `cmd_setareaweather` (`command.c`) each
                     // call `broadcast_weather_packet()`
                     // immediately on success (not just on the
                     // next `update_weather()` tick).
                     if runtime.weather != weather_before_admin_command {
-                        broadcast_weather_packet(&world, &mut runtime, config.area_id);
+                        broadcast_weather_packet(world, runtime, config.area_id);
                     }
                     for message in result.messages {
                         command_feedback.push((character_id, message));
@@ -142,7 +137,7 @@ pub(crate) async fn process_queued_client_actions(
                     continue;
                 }
                 if let Some(result) = apply_weather_command(
-                    &world,
+                    world,
                     character_id,
                     config.area_id,
                     &runtime.weather,
@@ -173,7 +168,7 @@ pub(crate) async fn process_queued_client_actions(
                     }
                     continue;
                 }
-                if let Some(result) = apply_color_command(&mut world, character_id, &command) {
+                if let Some(result) = apply_color_command(world, character_id, &command) {
                     for message in result.messages {
                         command_feedback.push((character_id, message));
                     }
@@ -182,15 +177,14 @@ pub(crate) async fn process_queued_client_actions(
                     }
                     continue;
                 }
-                if let Some(result) = apply_description_command(&mut world, character_id, &command)
-                {
+                if let Some(result) = apply_description_command(world, character_id, &command) {
                     for message in result.messages {
                         command_feedback.push((character_id, message));
                     }
                     continue;
                 }
                 if let Some(result) =
-                    apply_create_orb_command(&mut world, &mut zone_loader, character_id, &command)
+                    apply_create_orb_command(world, zone_loader, character_id, &command)
                 {
                     for message in result.messages {
                         command_feedback.push((character_id, message));
@@ -201,7 +195,7 @@ pub(crate) async fn process_queued_client_actions(
                     continue;
                 }
                 if let Some(result) =
-                    apply_create_command(&mut world, &mut zone_loader, character_id, &command)
+                    apply_create_command(world, zone_loader, character_id, &command)
                 {
                     for message in result.messages {
                         command_feedback.push((character_id, message));
@@ -211,13 +205,9 @@ pub(crate) async fn process_queued_client_actions(
                     }
                     continue;
                 }
-                if let Some(result) = apply_setseyan_command(
-                    &mut world,
-                    &zone_loader,
-                    &mut runtime,
-                    character_id,
-                    &command,
-                ) {
+                if let Some(result) =
+                    apply_setseyan_command(world, zone_loader, runtime, character_id, &command)
+                {
                     for message in result.messages {
                         command_feedback.push((character_id, message));
                     }
@@ -233,8 +223,8 @@ pub(crate) async fn process_queued_client_actions(
                     continue;
                 }
                 if let Some(result) = apply_admin_character_command(
-                    &mut world,
-                    &mut runtime,
+                    world,
+                    runtime,
                     character_id,
                     &command,
                     u32::from(config.area_id),
@@ -289,7 +279,7 @@ pub(crate) async fn process_queued_client_actions(
                                     save_character.x = character.rest_x;
                                     save_character.y = character.rest_y;
                                     let request = character_save_request(
-                                        &world,
+                                        world,
                                         player,
                                         &save_character,
                                         account_depot.as_ref(),
@@ -334,7 +324,7 @@ pub(crate) async fn process_queued_client_actions(
                         // ID, 1, ...)` when the optional
                         // `do_log` arg is nonzero.
                         clan_log::write_clan_log_entry(
-                            &clan_log_repository,
+                            clan_log_repository,
                             clan_nr,
                             serial,
                             character_id,
@@ -359,7 +349,7 @@ pub(crate) async fn process_queued_client_actions(
                                         let account_depot =
                                             runtime.account_depots.get(&target_id).cloned();
                                         let request = character_backup_save_request(
-                                            &world,
+                                            world,
                                             player,
                                             character,
                                             account_depot.as_ref(),
@@ -385,7 +375,7 @@ pub(crate) async fn process_queued_client_actions(
                             let merchant_ids: Vec<CharacterId> =
                                 world.merchant_stores.keys().copied().collect();
                             for merchant_id in merchant_ids {
-                                if let Some(snapshot) = merchant_store_snapshot(&world, merchant_id)
+                                if let Some(snapshot) = merchant_store_snapshot(world, merchant_id)
                                 {
                                     let name = snapshot.merchant_name.clone();
                                     match repository.save_store(&snapshot).await {
@@ -402,8 +392,8 @@ pub(crate) async fn process_queued_client_actions(
                         // C `/saveall` (`command.c:7470`):
                         // `save_pentagram_record_scheduled()`.
                         crate::pents::save_pentagram_record_scheduled(
-                            &world,
-                            &pentagram_record_repository,
+                            world,
+                            pentagram_record_repository,
                         )
                         .await;
                     }
@@ -412,12 +402,8 @@ pub(crate) async fn process_queued_client_actions(
                         // 7510-7538`): `save_merchant_inventory
                         // (merchant_cn)` persists the cleared
                         // store right after the mutation.
-                        save_merchant_store_if_configured(
-                            &world,
-                            &merchant_repository,
-                            merchant_id,
-                        )
-                        .await;
+                        save_merchant_store_if_configured(world, merchant_repository, merchant_id)
+                            .await;
                     }
                     if let Some((target_area, target_x, target_y)) = result.cross_area_transfer {
                         // C `/office` (`command.c:9670-9676`)
@@ -433,10 +419,10 @@ pub(crate) async fn process_queued_client_actions(
                         let target_mirror =
                             result.mirror_changed.unwrap_or(u32::from(config.mirror_id));
                         let transferred = attempt_cross_area_transfer(
-                            &mut world,
-                            &mut runtime,
-                            &character_repository,
-                            &area_repository,
+                            world,
+                            runtime,
+                            character_repository,
+                            area_repository,
                             config.area_id,
                             config.mirror_id,
                             character_id,
@@ -455,7 +441,7 @@ pub(crate) async fn process_queued_client_actions(
                     }
                     continue;
                 }
-                if let Some(result) = apply_logout_command(&world, character_id, &command) {
+                if let Some(result) = apply_logout_command(world, character_id, &command) {
                     if result.logout_requested {
                         // C `cmd_logout` (`player.c:4457-4471`):
                         // `exit_char` saves the character at its
@@ -474,7 +460,7 @@ pub(crate) async fn process_queued_client_actions(
                                     save_character.x = character.rest_x;
                                     save_character.y = character.rest_y;
                                     let request = character_save_request(
-                                        &world,
+                                        world,
                                         player,
                                         &save_character,
                                         account_depot.as_ref(),
@@ -519,9 +505,9 @@ pub(crate) async fn process_queued_client_actions(
                     continue;
                 }
                 if let Some(result) = apply_achievement_command(
-                    &mut world,
-                    &mut runtime,
-                    &achievement_repository,
+                    world,
+                    runtime,
+                    achievement_repository,
                     character_id,
                     &command,
                     current_unix_time(),
@@ -540,14 +526,14 @@ pub(crate) async fn process_queued_client_actions(
                     continue;
                 }
                 if let Some(result) =
-                    apply_demonlords_command(&world, &runtime, character_id, &command)
+                    apply_demonlords_command(world, runtime, character_id, &command)
                 {
                     for message in result.message_bytes {
                         command_feedback_bytes.push((character_id, message));
                     }
                     continue;
                 }
-                if let Some(result) = apply_orbs_command(&world, &runtime, character_id, &command) {
+                if let Some(result) = apply_orbs_command(world, runtime, character_id, &command) {
                     for message in result.messages {
                         command_feedback.push((character_id, message));
                     }
@@ -557,14 +543,21 @@ pub(crate) async fn process_queued_client_actions(
                     continue;
                 }
                 if let Some(result) =
-                    apply_treasures_command(&world, &runtime, character_id, &command)
+                    apply_treasures_command(world, runtime, character_id, &command)
                 {
                     for message in result.message_bytes {
                         command_feedback_bytes.push((character_id, message));
                     }
                     continue;
                 }
-                if let Some(result) = apply_tunnel_command(&world, &runtime, character_id, &command)
+                if let Some(result) = apply_tunnel_command(world, runtime, character_id, &command) {
+                    for message in result.message_bytes {
+                        command_feedback_bytes.push((character_id, message));
+                    }
+                    continue;
+                }
+                if let Some(result) =
+                    apply_tunnellist_command(world, runtime, character_id, &command)
                 {
                     for message in result.message_bytes {
                         command_feedback_bytes.push((character_id, message));
@@ -572,20 +565,8 @@ pub(crate) async fn process_queued_client_actions(
                     continue;
                 }
                 if let Some(result) =
-                    apply_tunnellist_command(&world, &runtime, character_id, &command)
+                    apply_shutup_command(world, runtime, character_id, &command, realtime_seconds)
                 {
-                    for message in result.message_bytes {
-                        command_feedback_bytes.push((character_id, message));
-                    }
-                    continue;
-                }
-                if let Some(result) = apply_shutup_command(
-                    &mut world,
-                    &mut runtime,
-                    character_id,
-                    &command,
-                    realtime_seconds,
-                ) {
                     for message in result.messages {
                         command_feedback.push((character_id, message));
                     }
@@ -594,13 +575,13 @@ pub(crate) async fn process_queued_client_actions(
                     }
                     continue;
                 }
-                if let Some(result) = apply_notells_command(&mut world, character_id, &command) {
+                if let Some(result) = apply_notells_command(world, character_id, &command) {
                     for message in result.messages {
                         command_feedback.push((character_id, message));
                     }
                     continue;
                 }
-                if let Some(result) = apply_thief_command(&mut world, character_id, &command) {
+                if let Some(result) = apply_thief_command(world, character_id, &command) {
                     for message in result.messages {
                         command_feedback.push((character_id, message));
                     }
@@ -627,25 +608,21 @@ pub(crate) async fn process_queued_client_actions(
                         continue;
                     }
                 }
-                if let Some(result) =
-                    apply_clearignore_command(&mut runtime, character_id, &command)
-                {
+                if let Some(result) = apply_clearignore_command(runtime, character_id, &command) {
                     for message in result.messages {
                         command_feedback.push((character_id, message));
                     }
                     continue;
                 }
-                if let Some(result) =
-                    apply_ignore_command(&world, &mut runtime, character_id, &command)
-                {
+                if let Some(result) = apply_ignore_command(world, runtime, character_id, &command) {
                     for message in result.messages {
                         command_feedback.push((character_id, message));
                     }
                     continue;
                 }
                 if let Some(result) = apply_tell_command(
-                    &world,
-                    &mut runtime,
+                    world,
+                    runtime,
                     character_id,
                     &command,
                     world.tick.0,
@@ -664,8 +641,8 @@ pub(crate) async fn process_queued_client_actions(
                 }
                 let current_tick = world.tick.0;
                 if let Some(result) = apply_local_speech_command(
-                    &mut world,
-                    &mut runtime,
+                    world,
+                    runtime,
                     character_id,
                     &command,
                     current_tick,
@@ -680,8 +657,8 @@ pub(crate) async fn process_queued_client_actions(
                     continue;
                 }
                 if let Some(result) = apply_chat_command(
-                    &world,
-                    &mut runtime,
+                    world,
+                    runtime,
                     character_id,
                     &command,
                     config.area_id,
@@ -695,14 +672,14 @@ pub(crate) async fn process_queued_client_actions(
                     }
                     continue;
                 }
-                if let Some(result) = apply_nowho_command(&mut world, character_id, &command) {
+                if let Some(result) = apply_nowho_command(world, character_id, &command) {
                     for message in result.messages {
                         command_feedback.push((character_id, message));
                     }
                     continue;
                 }
                 if let Some(result) =
-                    apply_who_command(&world, Some(&runtime), character_flags, &command)
+                    apply_who_command(world, Some(runtime), character_flags, &command)
                 {
                     for message in result.messages {
                         command_feedback.push((character_id, message));
@@ -713,26 +690,18 @@ pub(crate) async fn process_queued_client_actions(
                     continue;
                 };
                 let realtime_seconds = world.tick.0 / TICKS_PER_SECOND;
-                if let Some(result) = apply_pk_hate_command(
-                    &mut world,
-                    player,
-                    character_id,
-                    &command,
-                    realtime_seconds,
-                ) {
+                if let Some(result) =
+                    apply_pk_hate_command(world, player, character_id, &command, realtime_seconds)
+                {
                     for message in result.messages {
                         command_feedback.push((character_id, message));
                     }
                     command_name_refresh.extend(result.name_refresh);
                     continue;
                 }
-                if let Some(result) = apply_steal_command(
-                    &mut world,
-                    player,
-                    character_id,
-                    &command,
-                    realtime_seconds,
-                ) {
+                if let Some(result) =
+                    apply_steal_command(world, player, character_id, &command, realtime_seconds)
+                {
                     for message in result.messages {
                         command_feedback.push((character_id, message));
                     }
@@ -770,8 +739,7 @@ pub(crate) async fn process_queued_client_actions(
                         continue;
                     }
                 }
-                if let Some(result) = apply_swap_command(&mut world, player, character_id, &command)
-                {
+                if let Some(result) = apply_swap_command(world, player, character_id, &command) {
                     for message in result.messages {
                         command_feedback.push((character_id, message));
                     }
@@ -787,22 +755,21 @@ pub(crate) async fn process_queued_client_actions(
                         continue;
                     }
                 }
-                if let Some(result) = apply_lag_command(&mut world, player, character_id, &command)
-                {
+                if let Some(result) = apply_lag_command(world, player, character_id, &command) {
                     for message in result.messages {
                         command_feedback.push((character_id, message));
                     }
                     continue;
                 }
                 if let Some(result) =
-                    apply_allowbless_command(&mut world, player, character_id, &command)
+                    apply_allowbless_command(world, player, character_id, &command)
                 {
                     for message in result.messages {
                         command_feedback.push((character_id, message));
                     }
                     continue;
                 }
-                if let Some(result) = apply_killbless_command(&mut world, character_id, &command) {
+                if let Some(result) = apply_killbless_command(world, character_id, &command) {
                     for message in result.messages {
                         command_feedback.push((character_id, message));
                     }
@@ -811,7 +778,7 @@ pub(crate) async fn process_queued_client_actions(
                     }
                     continue;
                 }
-                if let Some(result) = apply_lastseen_command(&mut world, character_id, &command) {
+                if let Some(result) = apply_lastseen_command(world, character_id, &command) {
                     for message in result.messages {
                         command_feedback.push((character_id, message));
                     }
@@ -823,7 +790,7 @@ pub(crate) async fn process_queued_client_actions(
                         .get(&character_id)
                         .is_some_and(|character| character.flags.contains(CharacterFlags::GOD));
                     if let Some(result) = apply_complain_command(
-                        &mut world,
+                        world,
                         player,
                         character_id,
                         &command,
@@ -847,8 +814,7 @@ pub(crate) async fn process_queued_client_actions(
                         continue;
                     }
                 }
-                if let Some(result) =
-                    apply_gold_command(&mut world, &mut zone_loader, character_id, &command)
+                if let Some(result) = apply_gold_command(world, zone_loader, character_id, &command)
                 {
                     for message in result.messages {
                         command_feedback.push((character_id, message));
@@ -858,19 +824,15 @@ pub(crate) async fn process_queued_client_actions(
                     }
                     continue;
                 }
-                if let Some(result) = apply_laugh_command(&mut world, character_id, &command) {
+                if let Some(result) = apply_laugh_command(world, character_id, &command) {
                     for message in result.messages {
                         command_feedback.push((character_id, message));
                     }
                     continue;
                 }
-                if let Some(result) = apply_keyring_command(
-                    &mut world,
-                    &mut zone_loader,
-                    player,
-                    character_id,
-                    &command,
-                ) {
+                if let Some(result) =
+                    apply_keyring_command(world, zone_loader, player, character_id, &command)
+                {
                     for message in result.messages {
                         command_feedback.push((character_id, message));
                     }
@@ -880,8 +842,8 @@ pub(crate) async fn process_queued_client_actions(
                     continue;
                 }
                 if let Some(result) = auction::apply_auction_command(
-                    &mut world,
-                    &auction_repository,
+                    world,
+                    auction_repository,
                     character_id,
                     current_unix_time(),
                     &command,
@@ -902,8 +864,8 @@ pub(crate) async fn process_queued_client_actions(
                     }
                 }
                 if let Some(result) = clan_log::apply_clan_log_command(
-                    &mut world,
-                    &clan_log_repository,
+                    world,
+                    clan_log_repository,
                     character_id,
                     current_unix_time(),
                     &command,
@@ -918,7 +880,7 @@ pub(crate) async fn process_queued_client_actions(
                     }
                 }
                 if let Some(result) = clan_command::apply_clan_command(
-                    &mut world,
+                    world,
                     character_id,
                     &command,
                     current_unix_time(),
@@ -957,8 +919,8 @@ pub(crate) async fn process_queued_client_actions(
                                 ) {
                                     ugaris_core::world::LqQuestFileDispatch::NotMatched => {
                                         if !dispatch_lq_questend_or_xinfo(
-                                            &mut world,
-                                            &mut runtime,
+                                            world,
+                                            runtime,
                                             character_id,
                                             config.area_id,
                                             &command,
@@ -972,7 +934,7 @@ pub(crate) async fn process_queued_client_actions(
                                     }
                                     dispatch => {
                                         crate::area20::handle_lq_quest_file_dispatch(
-                                            &mut world,
+                                            world,
                                             character_id,
                                             dispatch,
                                             std::path::Path::new(crate::area20::LQ_QUEST_DIR),
@@ -984,9 +946,9 @@ pub(crate) async fn process_queued_client_actions(
                             ugaris_core::world::LqThrallDispatch::Requests(requests) => {
                                 for request in &requests {
                                     crate::spawns::spawn_lq_npc_character(
-                                        &mut world,
-                                        &mut zone_loader,
-                                        &mut runtime,
+                                        world,
+                                        zone_loader,
+                                        runtime,
                                         request,
                                     );
                                 }
@@ -998,9 +960,9 @@ pub(crate) async fn process_queued_client_actions(
                         let mut spawned = 0usize;
                         for request in &requests {
                             if crate::spawns::spawn_lq_npc_character(
-                                &mut world,
-                                &mut zone_loader,
-                                &mut runtime,
+                                world,
+                                zone_loader,
+                                runtime,
                                 request,
                             ) {
                                 spawned += 1;
@@ -1035,24 +997,16 @@ pub(crate) async fn process_queued_client_actions(
                     .get(&character_id)
                     .and_then(|character| character.merchant);
                 if let Some(merchant_id) = active_merchant {
-                    let result = apply_merchant_container_command(
-                        &mut world,
-                        character_id,
-                        merchant_id,
-                        &action,
-                    );
+                    let result =
+                        apply_merchant_container_command(world, character_id, merchant_id, &action);
                     for message in result.messages {
                         command_feedback.push((character_id, message));
                     }
                     if result.changed {
                         command_inventory_refresh.push(character_id);
                         command_container_refresh.push(character_id);
-                        save_merchant_store_if_configured(
-                            &world,
-                            &merchant_repository,
-                            merchant_id,
-                        )
-                        .await;
+                        save_merchant_store_if_configured(world, merchant_repository, merchant_id)
+                            .await;
                     }
                     continue;
                 }
@@ -1075,11 +1029,11 @@ pub(crate) async fn process_queued_client_actions(
                     });
                 let result = if is_account_depot {
                     let depot = runtime.ensure_account_depot(character_id);
-                    apply_account_depot_command(&mut world, depot, character_id, &action)
+                    apply_account_depot_command(world, depot, character_id, &action)
                 } else if is_personal_depot {
                     match runtime.player_for_character_mut(character_id) {
                         Some(player) => apply_personal_depot_command(
-                            &mut world,
+                            world,
                             &mut player.depot,
                             character_id,
                             &action,
@@ -1087,7 +1041,7 @@ pub(crate) async fn process_queued_client_actions(
                         None => AccountDepotCommandResult::Ignored,
                     }
                 } else {
-                    apply_item_container_command(&mut world, character_id, &action)
+                    apply_item_container_command(world, character_id, &action)
                 };
                 match result {
                     AccountDepotCommandResult::Changed => {
@@ -1104,7 +1058,7 @@ pub(crate) async fn process_queued_client_actions(
             ClientAction::FastSell { slot } => {
                 // C `cl_fastsell`: quick-sell an inventory slot
                 // straight to the active merchant.
-                let result = apply_fast_sell(&mut world, character_id, usize::from(slot));
+                let result = apply_fast_sell(world, character_id, usize::from(slot));
                 for message in result.messages {
                     command_feedback.push((character_id, message));
                 }
@@ -1118,12 +1072,8 @@ pub(crate) async fn process_queued_client_actions(
                         .get(&character_id)
                         .and_then(|character| character.merchant);
                     if let Some(merchant_id) = merchant_id {
-                        save_merchant_store_if_configured(
-                            &world,
-                            &merchant_repository,
-                            merchant_id,
-                        )
-                        .await;
+                        save_merchant_store_if_configured(world, merchant_repository, merchant_id)
+                            .await;
                     }
                 }
             }
@@ -1132,7 +1082,7 @@ pub(crate) async fn process_queued_client_actions(
             | ClientAction::LookInventory { .. }
             | ClientAction::LookItem { .. } => {
                 let result = apply_inventory_client_action(
-                    &mut world,
+                    world,
                     runtime.player_for_character(character_id),
                     character_id,
                     &action,
@@ -1145,9 +1095,9 @@ pub(crate) async fn process_queued_client_actions(
                     InventoryCommandResult::MoneyConverted { price } => {
                         command_inventory_refresh.push(character_id);
                         award_swap_money_converted_achievement(
-                            &mut world,
-                            &mut runtime,
-                            &achievement_repository,
+                            world,
+                            runtime,
+                            achievement_repository,
                             character_id,
                             price,
                         )
@@ -1167,12 +1117,12 @@ pub(crate) async fn process_queued_client_actions(
                 }
             }
             ClientAction::TakeGold { .. } | ClientAction::DropGold => {
-                if apply_gold_client_action(&mut world, &mut zone_loader, character_id, &action) {
+                if apply_gold_client_action(world, zone_loader, character_id, &action) {
                     command_inventory_refresh.push(character_id);
                 }
             }
             ClientAction::JunkItem => {
-                if apply_junk_item_client_action(&mut world, character_id) {
+                if apply_junk_item_client_action(world, character_id) {
                     command_inventory_refresh.push(character_id);
                 }
             }
@@ -1214,9 +1164,9 @@ pub(crate) async fn process_queued_client_actions(
                     // achievement_check_skill(cn, v,
                     // ch[cn].value[1][v]); }`.
                     award_skill_achievement(
-                        &mut world,
-                        &mut runtime,
-                        &achievement_repository,
+                        world,
+                        runtime,
+                        achievement_repository,
                         character_id,
                         value as i32,
                         bare as i32,
@@ -1319,8 +1269,8 @@ pub(crate) async fn process_queued_client_actions(
                                     runtime.send_to_session(sid, payload.clone());
                                 }
                                 record_achievement_firsts_and_announce(
-                                    &mut world,
-                                    &achievement_repository,
+                                    world,
+                                    achievement_repository,
                                     character_id,
                                     &name,
                                     &[AchievementType::Quester],
@@ -1449,7 +1399,7 @@ pub(crate) async fn process_queued_client_actions(
             let Some(character) = world.characters.get(&character_id) else {
                 continue;
             };
-            let payload = inventory_snapshot_payload(&world, character);
+            let payload = inventory_snapshot_payload(world, character);
             for (session_id, _) in runtime.sessions_for_character(character_id) {
                 if runtime.send_to_session(session_id, payload.clone()) {
                     inventory_sessions += 1;
@@ -1468,13 +1418,13 @@ pub(crate) async fn process_queued_client_actions(
                 .get(&character_id)
                 .is_some_and(|character| character.merchant.is_some())
             {
-                merchant_store_payload(&mut world, character_id)
+                merchant_store_payload(world, character_id)
             } else {
-                if !check_current_container(&mut world, character_id) {
+                if !check_current_container(world, character_id) {
                     continue;
                 }
                 current_container_payload(
-                    &world,
+                    world,
                     runtime.account_depots.get(&character_id),
                     runtime
                         .player_for_character(character_id)
@@ -1492,13 +1442,13 @@ pub(crate) async fn process_queued_client_actions(
         let mut name_sessions = 0;
         command_name_refresh.sort_unstable_by_key(|id| id.0);
         command_name_refresh.dedup();
-        let pk_relations = PkRelationSnapshot::from_runtime(&runtime);
+        let pk_relations = PkRelationSnapshot::from_runtime(runtime);
         for character_id in command_name_refresh {
             let Some(character) = world.characters.get(&character_id).cloned() else {
                 continue;
             };
             for (session_id, payload) in
-                runtime.refresh_known_character_name(&world, &pk_relations, &character)
+                runtime.refresh_known_character_name(world, &pk_relations, &character)
             {
                 if runtime.send_to_session(session_id, payload.clone()) {
                     name_sessions += 1;

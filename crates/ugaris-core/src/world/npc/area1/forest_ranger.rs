@@ -324,14 +324,13 @@ impl World {
                 new_state = FOREST_RANGER_STATE_GREET;
                 didsay = true;
             }
-            FOREST_RANGER_STATE_GREET => {
+            FOREST_RANGER_STATE_GREET
                 // C `case FOREST_RANGER_STATE_GREET:` (`gwendylon.c:2373-
                 // 2377`).
-                if now.saturating_sub(facts.seen_timer) > FOREST_RANGER_EXTEND_WAIT_TIME {
+                if now.saturating_sub(facts.seen_timer) > FOREST_RANGER_EXTEND_WAIT_TIME => {
                     self.npc_quiet_say(ranger_id, "Hail thee, adventurer.");
                     didsay = true;
                 }
-            }
             // Every other value: no-op, matching C's `switch` with no
             // matching `case`.
             _ => {}
@@ -363,6 +362,7 @@ impl World {
     /// 2422`), wired through the generic `analyse_text_qa` matcher (same
     /// pattern as `world::camhermit`/`world::yoakin`/`world::terion`'s
     /// text handlers).
+    #[allow(clippy::too_many_arguments)]
     fn forest_ranger_handle_text_message(
         &mut self,
         ranger_id: CharacterId,

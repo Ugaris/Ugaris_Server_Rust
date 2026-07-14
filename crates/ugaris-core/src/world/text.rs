@@ -50,7 +50,7 @@ pub struct WorldAreaText {
 /// `String`/`WorldAreaText` (same rationale as [`WorldSystemTextBytes`]).
 /// Produced by [`World::npc_say_bytes`]/[`World::npc_quiet_say_bytes`]/etc.
 /// - the byte-native counterparts of `npc_say`/`npc_quiet_say`/etc. - for
-/// dialogue lines that use [`crate::text::COL_STR_RESET`]-family sentinels.
+///   dialogue lines that use [`crate::text::COL_STR_RESET`]-family sentinels.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorldAreaTextBytes {
     pub x: u16,

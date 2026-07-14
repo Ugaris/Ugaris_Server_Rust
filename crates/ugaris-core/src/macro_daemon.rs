@@ -742,6 +742,9 @@ pub fn macro_xmas_reward_message(victim_name: &str) -> String {
 }
 
 #[cfg(test)]
+// Test setups intentionally mirror the C sources' memset-then-assign
+// initialization pattern.
+#[allow(clippy::field_reassign_with_default)]
 mod tests {
     use super::*;
     use crate::player::MacroPpd;

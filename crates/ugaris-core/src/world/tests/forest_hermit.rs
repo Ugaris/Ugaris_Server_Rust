@@ -185,7 +185,7 @@ fn hermit_give_message_silently_destroys_any_item() {
 
     let events = world.process_forest_hermit_actions(&facts(CharacterId(2), 4), 1);
     assert!(events.is_empty());
-    assert!(world.items.get(&ItemId(50)).is_none());
+    assert!(!world.items.contains_key(&ItemId(50)));
     assert!(world
         .characters
         .get(&CharacterId(1))

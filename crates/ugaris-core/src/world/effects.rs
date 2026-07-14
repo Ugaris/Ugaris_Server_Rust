@@ -312,6 +312,7 @@ impl World {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn create_map_effect(
         &mut self,
         effect_type: i32,

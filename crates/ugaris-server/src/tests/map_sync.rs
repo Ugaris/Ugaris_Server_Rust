@@ -844,6 +844,9 @@ fn cache_shift_replicates_client_memmove_and_drops_scrolled_in_cells() {
     let pk_relations = PkRelationSnapshot::default();
     let mut cache = visible_map_cache(&world, &character, &pk_relations, 1);
     let side = 3u16;
+    // Intentional `1 + 1 * side` mirror of the client's `x + y * side`
+    // cell-index formula at (x=1, y=1).
+    #[allow(clippy::identity_op)]
     let center = 1 + 1 * side; // pos 4
     let center_cell = cache.cells.get(&center).cloned().unwrap();
     assert_eq!(center_cell.tile.gsprite, 777);

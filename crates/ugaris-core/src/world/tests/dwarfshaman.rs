@@ -115,7 +115,7 @@ fn giving_teeth_below_target_increments_count_and_reports_progress() {
     assert!(texts
         .iter()
         .any(|text| text.message.contains("4 done, 5 to go")));
-    assert!(world.items.get(&ItemId(50)).is_none());
+    assert!(!world.items.contains_key(&ItemId(50)));
 }
 
 #[test]

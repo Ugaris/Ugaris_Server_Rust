@@ -479,6 +479,9 @@ pub(crate) fn account_depot_sort_if_open(
 /// dispatch entry, called for `CL_CONTAINER`/`CL_CONTAINER_FAST`/
 /// `CL_LOOK_CONTAINER` whenever the open container item has the
 /// `IF_DEPOT` flag (`player.c:1090/1121/1154/3282-3283`).
+// Keeps `&mut Vec` to match the stored `PlayerRuntime` depot field type;
+// no callers benefit from a slice signature here.
+#[allow(clippy::ptr_arg)]
 pub(crate) fn apply_personal_depot_command(
     world: &mut World,
     depot: &mut Vec<Option<Item>>,

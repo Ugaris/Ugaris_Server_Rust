@@ -554,14 +554,14 @@ mod tests {
         // off from everything else - a fully deterministic hand-built
         // case, independent of `build_maze`'s randomness.
         let mut cells = walled_grid();
-        for x in 1..MAZE_XSIZE {
-            cells[x].left_wall = false;
+        for cell in cells.iter_mut().take(MAZE_XSIZE).skip(1) {
+            cell.left_wall = false;
         }
 
         special_fill(&mut cells, 0, 1);
 
-        for x in 0..MAZE_XSIZE {
-            assert_eq!(cells[x].special, (x + 1) as i32, "cell at x={x}");
+        for (x, cell) in cells.iter().enumerate().take(MAZE_XSIZE) {
+            assert_eq!(cell.special, (x + 1) as i32, "cell at x={x}");
         }
         // Cells outside the corridor are unreached (still 0).
         assert_eq!(cells[MAZE_XSIZE].special, 0);
@@ -570,8 +570,8 @@ mod tests {
     #[test]
     fn special_fill_stops_at_a_999_preserved_path_sentinel() {
         let mut cells = walled_grid();
-        for x in 1..MAZE_XSIZE {
-            cells[x].left_wall = false;
+        for cell in cells.iter_mut().take(MAZE_XSIZE).skip(1) {
+            cell.left_wall = false;
         }
         cells[3].special = 999;
 

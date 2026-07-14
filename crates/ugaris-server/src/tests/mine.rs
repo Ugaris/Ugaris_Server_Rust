@@ -522,7 +522,7 @@ async fn apply_mine_wall_reward_golem_branch_spawns_a_character() {
     )
     .await;
 
-    assert!(world.characters.get(&CharacterId(90)).is_some());
+    assert!(world.characters.contains_key(&CharacterId(90)));
 }
 
 #[tokio::test]

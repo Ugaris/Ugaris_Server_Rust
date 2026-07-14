@@ -105,7 +105,7 @@ impl PlayerRuntime {
 
     /// C `struct staffer_ppd::carlos2_state` (`src/common/staffer_ppd.h:43`)
     /// - `carlos_driver`'s Imperial Vault ritual quest state, separate from
-    /// the dragon-staff quest's `carlos_state` above.
+    ///   the dragon-staff quest's `carlos_state` above.
     pub fn staffer_carlos2_state(&self) -> i32 {
         self.read_staffer_i32(STAFFER_PPD_CARLOS2_STATE_OFFSET)
     }
@@ -211,11 +211,11 @@ impl PlayerRuntime {
 
     /// C `struct staffer_ppd::centinel_count` (`src/common/staffer_ppd.h:35`)
     /// - the sentinel kill counter consumed by `centinel_dead`
-    /// (`src/area/29/brannington.c:2725-2758`).
-    /// C `struct staffer_ppd::grinnich_state` (`src/common/staffer_ppd.h:
+    ///   (`src/area/29/brannington.c:2725-2758`).
+    ///   C `struct staffer_ppd::grinnich_state` (`src/common/staffer_ppd.h:
     /// 33`) - `grinnich_driver`'s (`src/area/29/brannington.c:2397-2534`)
-    /// tower-entrance hint dialogue state, consumed by
-    /// `world::npc::area29::grinnich`.
+    ///   tower-entrance hint dialogue state, consumed by
+    ///   `world::npc::area29::grinnich`.
     pub fn staffer_grinnich_state(&self) -> i32 {
         self.read_staffer_i32(STAFFER_PPD_GRINNICH_STATE_OFFSET)
     }
@@ -226,10 +226,10 @@ impl PlayerRuntime {
 
     /// C `struct staffer_ppd::shanra_state` (`src/common/staffer_ppd.h:34`)
     /// - `shanra_driver`'s (`src/area/29/brannington.c:2560-2691`) tower-
-    /// basement reward/teleport dialogue state, consumed by
-    /// `world::npc::area29::shanra`. Also read (but not written) by
-    /// [`Self::mark_staffer_animation_book_seen`] above for the unrelated
-    /// animation-book item pickup.
+    ///   basement reward/teleport dialogue state, consumed by
+    ///   `world::npc::area29::shanra`. Also read (but not written) by
+    ///   [`Self::mark_staffer_animation_book_seen`] above for the unrelated
+    ///   animation-book item pickup.
     pub fn staffer_shanra_state(&self) -> i32 {
         self.read_staffer_i32(STAFFER_PPD_SHANRA_STATE_OFFSET)
     }
@@ -297,8 +297,8 @@ impl PlayerRuntime {
 
     /// C `struct staffer_ppd::rouven_state` (`src/common/staffer_ppd.h:44`)
     /// - `rouven_driver`'s Imperial Vault guard quest state, also read by
-    /// `vault_skull` (`IDR_STAFFER` `drdata[0]==4`) via
-    /// `ItemDriverContext::rouven_state`.
+    ///   `vault_skull` (`IDR_STAFFER` `drdata[0]==4`) via
+    ///   `ItemDriverContext::rouven_state`.
     pub fn staffer_rouven_state(&self) -> i32 {
         self.read_staffer_i32(STAFFER_PPD_ROUVEN_STATE_OFFSET)
     }

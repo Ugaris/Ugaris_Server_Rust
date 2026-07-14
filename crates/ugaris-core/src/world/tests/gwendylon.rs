@@ -237,9 +237,9 @@ fn gwendylon_give_skelskull_completes_quest_and_rewards_gold_first_time() {
         .any(|event| matches!(event, GwendylonOutcomeEvent::GoldEarned { amount: 125, .. })));
 
     // Held skull destroyed.
-    assert!(world.items.get(&ItemId(50)).is_none());
+    assert!(!world.items.contains_key(&ItemId(50)));
     // Leftover key swept from the player's own inventory.
-    assert!(world.items.get(&ItemId(51)).is_none());
+    assert!(!world.items.contains_key(&ItemId(51)));
     assert_eq!(world.characters.get(&CharacterId(2)).unwrap().gold, 125);
     assert!(world
         .characters

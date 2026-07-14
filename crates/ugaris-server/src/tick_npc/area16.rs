@@ -5,8 +5,8 @@ use super::*;
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn forest_imp_driver_94(
-    mut world: &mut World,
-    mut runtime: &mut ServerRuntime,
+    world: &mut World,
+    runtime: &mut ServerRuntime,
     _zone_loader: &mut ZoneLoader,
     config: &ServerConfig,
     _args: &Args,
@@ -27,7 +27,7 @@ pub(crate) async fn forest_imp_driver_94(
     // (`src/area/16/forest.c`).
     let imp_facts = forest_imp_player_facts(world, runtime);
     let imp_events = world.process_forest_imp_actions(&imp_facts, config.area_id);
-    let imp_events_applied = apply_forest_imp_events(&mut world, &mut runtime, imp_events);
+    let imp_events_applied = apply_forest_imp_events(world, runtime, imp_events);
     if imp_events_applied != 0 {
         info!(
             imp_events_applied,
@@ -39,8 +39,8 @@ pub(crate) async fn forest_imp_driver_94(
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn forest_william_driver_95(
-    mut world: &mut World,
-    mut runtime: &mut ServerRuntime,
+    world: &mut World,
+    runtime: &mut ServerRuntime,
     _zone_loader: &mut ZoneLoader,
     config: &ServerConfig,
     _args: &Args,
@@ -61,13 +61,8 @@ pub(crate) async fn forest_william_driver_95(
     // (`src/area/16/forest.c`).
     let william_facts = forest_william_player_facts(runtime);
     let william_events = world.process_forest_william_actions(&william_facts, config.area_id);
-    let william_events_applied = apply_forest_william_events(
-        &mut world,
-        &mut runtime,
-        achievement_repository,
-        william_events,
-    )
-    .await;
+    let william_events_applied =
+        apply_forest_william_events(world, runtime, achievement_repository, william_events).await;
     if william_events_applied != 0 {
         info!(
             william_events_applied,
@@ -79,8 +74,8 @@ pub(crate) async fn forest_william_driver_95(
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn forest_hermit_driver_96(
-    mut world: &mut World,
-    mut runtime: &mut ServerRuntime,
+    world: &mut World,
+    runtime: &mut ServerRuntime,
     _zone_loader: &mut ZoneLoader,
     config: &ServerConfig,
     _args: &Args,
@@ -101,7 +96,7 @@ pub(crate) async fn forest_hermit_driver_96(
     // (`src/area/16/forest.c`).
     let hermit_facts = forest_hermit_player_facts(runtime);
     let hermit_events = world.process_forest_hermit_actions(&hermit_facts, config.area_id);
-    let hermit_events_applied = apply_forest_hermit_events(&mut world, &mut runtime, hermit_events);
+    let hermit_events_applied = apply_forest_hermit_events(world, runtime, hermit_events);
     if hermit_events_applied != 0 {
         info!(
             hermit_events_applied,

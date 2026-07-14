@@ -42,7 +42,7 @@ fn vampire2_is_killed_by_a_hit_from_the_right_dagger() {
 
     let vampire2 = world.characters.get(&CharacterId(1)).unwrap();
     assert!(vampire2.flags.contains(CharacterFlags::DEAD));
-    assert!(world.items.get(&ItemId(9)).is_none());
+    assert!(!world.items.contains_key(&ItemId(9)));
     assert_eq!(
         world.characters.get(&CharacterId(2)).unwrap().inventory[worn_slot::RIGHT_HAND],
         None
@@ -80,7 +80,7 @@ fn vampire2_survives_the_wrong_dagger_but_it_shatters() {
 
     let vampire2 = world.characters.get(&CharacterId(1)).unwrap();
     assert!(!vampire2.flags.contains(CharacterFlags::DEAD));
-    assert!(world.items.get(&ItemId(9)).is_none());
+    assert!(!world.items.contains_key(&ItemId(9)));
     assert_eq!(
         world.characters.get(&CharacterId(2)).unwrap().inventory[worn_slot::RIGHT_HAND],
         None

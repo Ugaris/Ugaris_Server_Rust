@@ -98,9 +98,9 @@ pub(crate) async fn thomas_driver_78(
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn sir_jones_driver_79(
-    mut world: &mut World,
-    mut runtime: &mut ServerRuntime,
-    mut zone_loader: &mut ZoneLoader,
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    zone_loader: &mut ZoneLoader,
     config: &ServerConfig,
     _args: &Args,
     _completed_actions: &[WorldActionCompletion],
@@ -121,7 +121,7 @@ pub(crate) async fn sir_jones_driver_79(
     let sir_jones_facts = sir_jones_player_facts(runtime);
     let sir_jones_events = world.process_sir_jones_actions(&sir_jones_facts, config.area_id);
     let sir_jones_events_applied =
-        apply_sir_jones_events(&mut world, &mut runtime, &mut zone_loader, sir_jones_events).await;
+        apply_sir_jones_events(world, runtime, zone_loader, sir_jones_events).await;
     if sir_jones_events_applied != 0 {
         info!(
             sir_jones_events_applied,
@@ -167,9 +167,9 @@ pub(crate) async fn seymour_driver_81(
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn kelly_driver_82(
-    mut world: &mut World,
-    mut runtime: &mut ServerRuntime,
-    mut zone_loader: &mut ZoneLoader,
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    zone_loader: &mut ZoneLoader,
     config: &ServerConfig,
     _args: &Args,
     _completed_actions: &[WorldActionCompletion],
@@ -190,9 +190,9 @@ pub(crate) async fn kelly_driver_82(
     let kelly_facts = kelly_player_facts(runtime);
     let kelly_events = world.process_kelly_actions(&kelly_facts, config.area_id);
     let kelly_events_applied = apply_kelly_events(
-        &mut world,
-        &mut runtime,
-        &mut zone_loader,
+        world,
+        runtime,
+        zone_loader,
         achievement_repository,
         kelly_events,
     )
@@ -208,9 +208,9 @@ pub(crate) async fn kelly_driver_82(
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn carlos_driver_83(
-    mut world: &mut World,
-    mut runtime: &mut ServerRuntime,
-    mut zone_loader: &mut ZoneLoader,
+    world: &mut World,
+    runtime: &mut ServerRuntime,
+    zone_loader: &mut ZoneLoader,
     config: &ServerConfig,
     _args: &Args,
     _completed_actions: &[WorldActionCompletion],
@@ -232,9 +232,9 @@ pub(crate) async fn carlos_driver_83(
     let carlos_facts = carlos_player_facts(world, runtime);
     let carlos_events = world.process_carlos_actions(&carlos_facts, config.area_id);
     let carlos_events_applied = apply_carlos_events(
-        &mut world,
-        &mut runtime,
-        &mut zone_loader,
+        world,
+        runtime,
+        zone_loader,
         achievement_repository,
         carlos_events,
     )

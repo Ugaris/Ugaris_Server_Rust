@@ -144,6 +144,11 @@ impl World {
                 val -= amount as i32;
                 self.destroy_item(item_id);
             } else {
+                // C divides unguarded (`price = it[in].value / (*(unsigned
+                // int *)(it[in].drdata))`, `nomad.c:256`); this branch only
+                // runs with `amount > val >= 1`, so the `== 0` arm is
+                // defensive-only dead code kept for safety.
+                #[allow(clippy::manual_checked_ops)]
                 let price = if amount == 0 { 0 } else { item.value / amount };
                 let new_amount = amount - val as u32;
                 if let Some(item) = self.items.get_mut(&item_id) {

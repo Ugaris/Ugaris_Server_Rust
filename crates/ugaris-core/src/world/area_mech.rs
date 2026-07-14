@@ -1355,7 +1355,7 @@ impl World {
         };
         let gsprite = target.ground_sprite;
         let wrong_sprite =
-            (gsprite < 20291 || gsprite > 20299) && gsprite != 13154 && gsprite > 13156;
+            !(20291..=20299).contains(&gsprite) && gsprite != 13154 && gsprite > 13156;
         if target
             .flags
             .intersects(MapFlags::MOVEBLOCK | MapFlags::TMOVEBLOCK)

@@ -176,7 +176,7 @@ pub(crate) fn mine_gateway_driver(
     let x = drdata_u16(item, 0);
     let y = drdata_u16(item, 2);
     let area_id = drdata_u16(item, 4);
-    if x < 1 || x > 254 || y < 1 || y > 254 || area_id == 0 {
+    if !(1..=254).contains(&x) || !(1..=254).contains(&y) || area_id == 0 {
         return ItemDriverOutcome::MineGatewayBug {
             item_id: item.id,
             character_id: character.id,

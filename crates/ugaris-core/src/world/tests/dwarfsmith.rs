@@ -105,7 +105,7 @@ fn giving_mold_remembers_type_and_advances_to_2() {
             new_type: 2,
         })
     );
-    assert!(world.items.get(&ItemId(50)).is_none());
+    assert!(!world.items.contains_key(&ItemId(50)));
 }
 
 #[test]
@@ -144,7 +144,7 @@ fn giving_exactly_5000_silver_at_state2_forges_the_remembered_key() {
     assert!(texts
         .iter()
         .any(|text| text.message.contains("one key for the adventurer")));
-    assert!(world.items.get(&ItemId(50)).is_none());
+    assert!(!world.items.contains_key(&ItemId(50)));
 }
 
 #[test]

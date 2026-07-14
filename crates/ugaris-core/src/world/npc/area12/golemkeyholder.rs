@@ -8,7 +8,7 @@
 //! gold to open the door. `mine.c`'s own `ch_died_driver` case for this
 //! driver is `return 1;` with no body - a "claimed, no reward" declaration
 //! - so no death hook exists for this NPC, unlike `CDR_GATE_FIGHT`'s
-//! `gate_fight_dead`.
+//!   `gate_fight_dead`.
 //!
 //! Deviations/gaps (documented, not silent):
 //! - C's `keyhold_fight_driver` is *byte-for-byte* identical to

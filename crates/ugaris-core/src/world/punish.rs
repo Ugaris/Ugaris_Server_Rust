@@ -41,9 +41,9 @@
 //!   elsewhere in this file, e.g. `world/clanmaster.rs`'s clan-log write).
 //! - `write_scrollback`/`server_chat(31, ...)` (moderation-evidence email
 //!   + cross-server broadcast, `command.c:2398-2404`) have no Rust
-//!   equivalent and are skipped, matching the established
-//!   skip-untracked-C-side-effect convention (see `/kick`'s Progress Log
-//!   entry in `PORTING_TODO.md`).
+//!     equivalent and are skipped, matching the established
+//!     skip-untracked-C-side-effect convention (see `/kick`'s Progress Log
+//!     entry in `PORTING_TODO.md`).
 //! - C's `kick_player` (`punish_player`'s lock/kick disconnect,
 //!   `player.c:174-202`) both detaches the socket *and* leaves the
 //!   character lingering under `CDR_LOSTCON` for reconnect - this
@@ -127,8 +127,8 @@ fn death_loss(total_exp: u32) -> u32 {
 fn punishment_losses(level: u8, current_exp: u32) -> (u32, i32) {
     match level {
         0 => (0, 0),
-        1 => ((death_loss(current_exp) + 3) / 4, 1),
-        2 => ((death_loss(current_exp) + 1) / 2, 2),
+        1 => (death_loss(current_exp).div_ceil(4), 1),
+        2 => (death_loss(current_exp).div_ceil(2), 2),
         3 => (death_loss(current_exp), 4),
         4 => (death_loss(current_exp) * 2, 6),
         5 => (death_loss(current_exp) * 4, 8),

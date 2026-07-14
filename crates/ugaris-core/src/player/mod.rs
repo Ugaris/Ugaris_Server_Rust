@@ -412,10 +412,10 @@ pub struct PlayerRuntime {
     /// chestbox item's own [`ItemId`] instead of C's lazily-assigned
     /// sequential `drdata[2]` index (`count_chestboxes`, `lab5.c:973-998`)
     /// - a documented deviation: this port has no boot-time "scan the
-    /// whole map and number every `IDR_LAB5_ITEM` chestbox" pass, and
-    /// `drdata[2]` is write-only in C (nothing else ever reads it), so an
-    /// `ItemId`-keyed set is behaviorally equivalent without needing one.
-    /// Only 9 chestboxes exist in the zone (`ugaris_data/zones/22/
+    ///   whole map and number every `IDR_LAB5_ITEM` chestbox" pass, and
+    ///   `drdata[2]` is write-only in C (nothing else ever reads it), so an
+    ///   `ItemId`-keyed set is behaviorally equivalent without needing one.
+    ///   Only 9 chestboxes exist in the zone (`ugaris_data/zones/22/
     /// lab5.itm`), so an unbounded `Vec` never grows meaningfully.
     #[serde(default)]
     pub lab5_chestbox_opened: Vec<u32>,
@@ -1086,6 +1086,9 @@ impl PlayerRuntime {
                         return false;
                     }
                 }
+                // Kept nested: the decode call mutates `self`, so hoisting
+                // it into a match guard would hide the side effect.
+                #[allow(clippy::collapsible_match)]
                 DRD_DEPOT_PPD => {
                     if !self.decode_legacy_depot_ppd(block.data) {
                         return false;
@@ -1368,23 +1371,25 @@ impl PlayerRuntime {
             }
         }
 
-        if !had_keyring && (existing_was_valid || existing.is_empty()) {
-            if !self.keyring.is_empty() || self.keyring_auto_add {
-                write_ppd_block(
-                    &mut encoded,
-                    DRD_KEYRING_PPD,
-                    &self.encode_legacy_keyring_ppd(),
-                );
-            }
+        if !had_keyring
+            && (existing_was_valid || existing.is_empty())
+            && (!self.keyring.is_empty() || self.keyring_auto_add)
+        {
+            write_ppd_block(
+                &mut encoded,
+                DRD_KEYRING_PPD,
+                &self.encode_legacy_keyring_ppd(),
+            );
         }
-        if !had_treasure_chest && (existing_was_valid || existing.is_empty()) {
-            if !self.chest_last_access_seconds.is_empty() {
-                write_ppd_block(
-                    &mut encoded,
-                    DRD_TREASURE_CHEST_PPD,
-                    &self.encode_legacy_treasure_chest_ppd(),
-                );
-            }
+        if !had_treasure_chest
+            && (existing_was_valid || existing.is_empty())
+            && !self.chest_last_access_seconds.is_empty()
+        {
+            write_ppd_block(
+                &mut encoded,
+                DRD_TREASURE_CHEST_PPD,
+                &self.encode_legacy_treasure_chest_ppd(),
+            );
         }
         if !had_transport && (existing_was_valid || existing.is_empty()) && self.transport_seen != 0
         {
@@ -1400,86 +1405,89 @@ impl PlayerRuntime {
         {
             write_ppd_block(&mut encoded, DRD_LAB_PPD, &self.encode_legacy_lab_ppd());
         }
-        if !had_warp && (existing_was_valid || existing.is_empty()) {
-            if self.warp_base != 0
+        if !had_warp
+            && (existing_was_valid || existing.is_empty())
+            && (self.warp_base != 0
                 || self.warp_points != 0
                 || self.warp_nostepexp != 0
                 || self.warp_bonus_ids.iter().any(|value| *value != 0)
                 || self.warp_bonus_last_used.iter().any(|value| *value != 0)
-                || !self.warp_ppd.is_empty()
-            {
-                write_ppd_block(&mut encoded, DRD_WARP_PPD, &self.encode_legacy_warp_ppd());
-            }
+                || !self.warp_ppd.is_empty())
+        {
+            write_ppd_block(&mut encoded, DRD_WARP_PPD, &self.encode_legacy_warp_ppd());
         }
-        if !had_gate && (existing_was_valid || existing.is_empty()) {
-            if self.gate_welcome_state != 0
+        if !had_gate
+            && (existing_was_valid || existing.is_empty())
+            && (self.gate_welcome_state != 0
                 || self.gate_target_class != 0
                 || self.gate_step != 0
-                || !self.gate_ppd.is_empty()
-            {
-                write_ppd_block(&mut encoded, DRD_GATE_PPD, &self.encode_legacy_gate_ppd());
-            }
+                || !self.gate_ppd.is_empty())
+        {
+            write_ppd_block(&mut encoded, DRD_GATE_PPD, &self.encode_legacy_gate_ppd());
         }
-        if !had_pk && (existing_was_valid || existing.is_empty()) {
-            if self.pk_kills != 0
+        if !had_pk
+            && (existing_was_valid || existing.is_empty())
+            && (self.pk_kills != 0
                 || self.pk_deaths != 0
                 || self.pk_last_kill != 0
                 || self.pk_last_death != 0
-                || self.has_any_pk_hate()
-            {
-                write_ppd_block(&mut encoded, DRD_PK_PPD, &self.encode_legacy_pk_ppd());
-            }
+                || self.has_any_pk_hate())
+        {
+            write_ppd_block(&mut encoded, DRD_PK_PPD, &self.encode_legacy_pk_ppd());
         }
-        if !had_randchest && (existing_was_valid || existing.is_empty()) {
-            if !self.random_chests.is_empty() {
-                write_ppd_block(
-                    &mut encoded,
-                    DRD_RANDCHEST_PPD,
-                    &self.encode_legacy_randchest_ppd(),
-                );
-            }
+        if !had_randchest
+            && (existing_was_valid || existing.is_empty())
+            && !self.random_chests.is_empty()
+        {
+            write_ppd_block(
+                &mut encoded,
+                DRD_RANDCHEST_PPD,
+                &self.encode_legacy_randchest_ppd(),
+            );
         }
-        if !had_ratchest && (existing_was_valid || existing.is_empty()) {
-            if !self.rat_chests.is_empty()
+        if !had_ratchest
+            && (existing_was_valid || existing.is_empty())
+            && (!self.rat_chests.is_empty()
                 || self.rat_chest_treasure_x != 0
                 || self.rat_chest_treasure_y != 0
-                || self.rat_chest_last_treasure_seconds != 0
-            {
-                write_ppd_block(
-                    &mut encoded,
-                    DRD_RATCHEST_PPD,
-                    &self.encode_legacy_ratchest_ppd(),
-                );
-            }
+                || self.rat_chest_last_treasure_seconds != 0)
+        {
+            write_ppd_block(
+                &mut encoded,
+                DRD_RATCHEST_PPD,
+                &self.encode_legacy_ratchest_ppd(),
+            );
         }
-        if !had_demonshrine && (existing_was_valid || existing.is_empty()) {
-            if !self.demonshrines.is_empty() {
-                write_ppd_block(
-                    &mut encoded,
-                    DRD_DEMONSHRINE_PPD,
-                    &self.encode_legacy_demonshrine_ppd(),
-                );
-            }
+        if !had_demonshrine
+            && (existing_was_valid || existing.is_empty())
+            && !self.demonshrines.is_empty()
+        {
+            write_ppd_block(
+                &mut encoded,
+                DRD_DEMONSHRINE_PPD,
+                &self.encode_legacy_demonshrine_ppd(),
+            );
         }
-        if !had_randomshrine && (existing_was_valid || existing.is_empty()) {
-            if self.random_shrine_used_words.iter().any(|word| *word != 0)
-                || self.random_shrine_continuity != 0
-            {
-                write_ppd_block(
-                    &mut encoded,
-                    DRD_RANDOMSHRINE_PPD,
-                    &self.encode_legacy_randomshrine_ppd(),
-                );
-            }
+        if !had_randomshrine
+            && (existing_was_valid || existing.is_empty())
+            && (self.random_shrine_used_words.iter().any(|word| *word != 0)
+                || self.random_shrine_continuity != 0)
+        {
+            write_ppd_block(
+                &mut encoded,
+                DRD_RANDOMSHRINE_PPD,
+                &self.encode_legacy_randomshrine_ppd(),
+            );
         }
-        if !had_orbspawn && (existing_was_valid || existing.is_empty()) {
-            if !self.orb_spawns.is_empty() {
-                write_ppd_block(
-                    &mut encoded,
-                    DRD_ORBSPAWN_PPD,
-                    &self.encode_legacy_orbspawn_ppd(),
-                );
-            }
+        if !had_orbspawn
+            && (existing_was_valid || existing.is_empty())
+            && !self.orb_spawns.is_empty()
+        {
+            write_ppd_block(
+                &mut encoded,
+                DRD_ORBSPAWN_PPD,
+                &self.encode_legacy_orbspawn_ppd(),
+            );
         }
         if !had_lostcon
             && (existing_was_valid || existing.is_empty())
@@ -1560,56 +1568,57 @@ impl PlayerRuntime {
         if !had_stats && (existing_was_valid || existing.is_empty()) && !self.stats_ppd.is_empty() {
             write_ppd_block(&mut encoded, DRD_STATS_PPD, &self.encode_legacy_stats_ppd());
         }
-        if !had_teufelrat && (existing_was_valid || existing.is_empty()) {
-            if self.teufel_rat_kills != 0 || self.teufel_rat_score != 0 {
-                write_ppd_block(
-                    &mut encoded,
-                    DRD_TEUFELRAT_PPD,
-                    &self.encode_legacy_teufelrat_ppd(),
-                );
-            }
+        if !had_teufelrat
+            && (existing_was_valid || existing.is_empty())
+            && (self.teufel_rat_kills != 0 || self.teufel_rat_score != 0)
+        {
+            write_ppd_block(
+                &mut encoded,
+                DRD_TEUFELRAT_PPD,
+                &self.encode_legacy_teufelrat_ppd(),
+            );
         }
         if !had_bank && (existing_was_valid || existing.is_empty()) && self.bank_gold != 0 {
             write_ppd_block(&mut encoded, DRD_BANK_PPD, &self.encode_legacy_bank_ppd());
         }
-        if !had_twocity && (existing_was_valid || existing.is_empty()) {
-            if !self.twocity_ppd.is_empty()
+        if !had_twocity
+            && (existing_was_valid || existing.is_empty())
+            && (!self.twocity_ppd.is_empty()
                 || self.twocity_goodtile.iter().any(|color| *color != 0)
-                || self.twocity_solved_library
-            {
-                write_ppd_block(
-                    &mut encoded,
-                    DRD_TWOCITY_PPD,
-                    &self.encode_legacy_twocity_ppd(),
-                );
-            }
+                || self.twocity_solved_library)
+        {
+            write_ppd_block(
+                &mut encoded,
+                DRD_TWOCITY_PPD,
+                &self.encode_legacy_twocity_ppd(),
+            );
         }
-        if !had_saltmine && (existing_was_valid || existing.is_empty()) {
-            if self
+        if !had_saltmine
+            && (existing_was_valid || existing.is_empty())
+            && (self
                 .saltmine_ladder_last_seconds
                 .iter()
                 .any(|seconds| *seconds != 0)
-                || self.saltmine_pending_salt != 0
-            {
-                write_ppd_block(
-                    &mut encoded,
-                    DRD_SALTMINE_PPD,
-                    &self.encode_legacy_saltmine_ppd(),
-                );
-            }
+                || self.saltmine_pending_salt != 0)
+        {
+            write_ppd_block(
+                &mut encoded,
+                DRD_SALTMINE_PPD,
+                &self.encode_legacy_saltmine_ppd(),
+            );
         }
-        if !had_treasure_dig && (existing_was_valid || existing.is_empty()) {
-            if self
+        if !had_treasure_dig
+            && (existing_was_valid || existing.is_empty())
+            && self
                 .treasure_dig_last_seconds
                 .iter()
                 .any(|seconds| *seconds != 0)
-            {
-                write_ppd_block(
-                    &mut encoded,
-                    DRD_TREASURE_DIG_PPD,
-                    &self.encode_legacy_treasure_dig_ppd(),
-                );
-            }
+        {
+            write_ppd_block(
+                &mut encoded,
+                DRD_TREASURE_DIG_PPD,
+                &self.encode_legacy_treasure_dig_ppd(),
+            );
         }
         if !had_misc && (existing_was_valid || existing.is_empty()) && !self.misc_ppd.is_empty() {
             write_ppd_block(&mut encoded, DRD_MISC_PPD, &self.encode_legacy_misc_ppd());
@@ -1653,12 +1662,12 @@ impl PlayerRuntime {
                 &self.encode_legacy_gorwin_ppd(),
             );
         }
-        if !had_rune && (existing_was_valid || existing.is_empty()) {
-            if self.rune_used_words.iter().any(|word| *word != 0)
-                || self.rune_special_exec.iter().any(|value| *value != 0)
-            {
-                write_ppd_block(&mut encoded, DRD_RUNE_PPD, &self.encode_legacy_rune_ppd());
-            }
+        if !had_rune
+            && (existing_was_valid || existing.is_empty())
+            && (self.rune_used_words.iter().any(|word| *word != 0)
+                || self.rune_special_exec.iter().any(|value| *value != 0))
+        {
+            write_ppd_block(&mut encoded, DRD_RUNE_PPD, &self.encode_legacy_rune_ppd());
         }
         if !had_alias && (existing_was_valid || existing.is_empty()) && !self.aliases.is_empty() {
             write_ppd_block(&mut encoded, DRD_ALIAS_PPD, &self.encode_legacy_alias_ppd());
