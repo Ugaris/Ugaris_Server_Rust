@@ -306,6 +306,19 @@ impl World {
     /// module's doc comment for why this needs `&self` (live character
     /// reads for `THREAT`/HP-readiness, unlike every other function in
     /// this file).
+    ///
+    /// Deviation: when C's `attarget == 0` staging redirect (below) fires
+    /// for a place whose `parent` is `-1` (only storage itself, which the
+    /// place-graph BFS never gives a real parent), C would write that `-1`
+    /// straight into `an[m].target`/`an[m].used` and later read `ap[-1]`
+    /// out of bounds; this port keeps dispatching such guards to `place`
+    /// itself instead, the same "-1 parent means nothing to walk to"
+    /// convention as [`Self::assign_tasks_to_workers`]'s own deviation
+    /// note.
+    // Index-based loops kept throughout: they mirror C's `for (n = 0;
+    // n < MAXGUARD; n++)` passes indexing the parallel `ad->guard[n]`/
+    // `use[n]` arrays with one shared index (`strategy.c:2120-2190`).
+    #[allow(clippy::needless_range_loop)]
     pub fn ai_assign_guards(
         &self,
         ad: &mut AiData,
@@ -315,7 +328,16 @@ impl World {
         ragnarok: bool,
     ) -> bool {
         let mut have = 0.0f64;
-        let mut used = [false; AI_MAXGUARD];
+        // C `char use[MAXGUARD]` (`strategy.c:2114`): `2` = counted as
+        // already assigned to `place`, `1` = counted as a free pickup,
+        // `0` = not counted.
+        let mut used = [0u8; AI_MAXGUARD];
+        // C `attarget` (`strategy.c:2112`, initialized `1`): stays set
+        // only while every counted guard is already standing at `place`
+        // or at its parent; cleared otherwise so the dispatch below
+        // stages the whole group at the parent first.
+        let mut attarget = true;
+        let parent = ad.places[place].parent;
 
         // Already-assigned guards: keep them if still needed/qualified,
         // otherwise recall them to standby.
@@ -332,7 +354,10 @@ impl World {
                     ad.npcs[mu].used = 0;
                 } else {
                     have += self.ai_threat(ad.npcs[mu].cn);
-                    used[n] = true;
+                    used[n] = 2;
+                    if ad.npcs[mu].current as i32 != parent && ad.npcs[mu].current != place {
+                        attarget = false;
+                    }
                 }
             }
         }
@@ -357,53 +382,59 @@ impl World {
                     && self.ai_guard_ready(ad.npcs[mu].cn));
             if qualifies {
                 have += self.ai_threat(ad.npcs[mu].cn);
-                used[n] = true;
+                used[n] = 1;
+                if ad.npcs[mu].current as i32 != parent && ad.npcs[mu].current != place {
+                    attarget = false;
+                }
             }
         }
 
         if have > count || ragnarok {
             // We have enough (or must send everyone): dispatch every
-            // picked guard to `place`.
+            // picked guard - straight to `place` if the whole group is
+            // already there or at its parent, otherwise staged at the
+            // parent (C `strategy.c:2165-2182`; see the deviation note
+            // above for `parent == -1`).
+            let walk_target = if attarget || parent < 0 {
+                place
+            } else {
+                parent as usize
+            };
             let mut sent = 0.0f64;
             for n in 0..AI_MAXGUARD {
                 if !ragnarok && sent >= count {
                     break;
                 }
                 let m = ad.guard[n];
-                if m == -1 || !used[n] {
+                if m == -1 || used[n] == 0 {
                     continue;
                 }
                 let mu = m as usize;
                 ad.npcs[mu].ftarget = place as i32;
-                ad.npcs[mu].target = place;
-                ad.npcs[mu].used = place as i32;
+                ad.npcs[mu].target = walk_target;
+                ad.npcs[mu].used = walk_target as i32;
                 sent += self.ai_threat(ad.npcs[mu].cn);
             }
             true
         } else {
-            // Not enough: recall the already-assigned ones we counted
-            // above back to standby.
-            let mut recalled = 0.0f64;
-            for n in 0..AI_MAXGUARD {
-                if recalled >= count {
-                    break;
+            // Not enough: recall the *already-assigned* (`use[n] == 2`)
+            // guards we counted above back to standby; free pickups that
+            // never got dispatched simply stay free. C's recall loop
+            // (`strategy.c:2184-2190`) guards on `have < count` without
+            // ever modifying `have` inside it, so it is an all-or-nothing
+            // gate: recall every `use[n] == 2` entry, or (when `have ==
+            // count` exactly) none at all.
+            if have < count {
+                for n in 0..AI_MAXGUARD {
+                    let m = ad.guard[n];
+                    if m == -1 || used[n] != 2 {
+                        continue;
+                    }
+                    let mu = m as usize;
+                    ad.npcs[mu].target = 0;
+                    ad.npcs[mu].ftarget = 0;
+                    ad.npcs[mu].used = 0;
                 }
-                let m = ad.guard[n];
-                if m == -1 || !used[n] {
-                    continue;
-                }
-                let mu = m as usize;
-                // Only the *already-assigned* branch's `used[n]` entries
-                // are eligible for recall here (C's own `use[n] == 2`
-                // distinction, collapsed in this port since - unlike C -
-                // nothing else reads `used[n]`'s "how" after this point;
-                // a free-guard pickup that never got dispatched this call
-                // simply stays on standby, matching C's `use[n] == 1`
-                // entries being silently ignored by this final loop too).
-                ad.npcs[mu].target = 0;
-                ad.npcs[mu].ftarget = 0;
-                ad.npcs[mu].used = 0;
-                recalled += self.ai_threat(ad.npcs[mu].cn);
             }
             false
         }
@@ -1334,7 +1365,7 @@ fn tcomp(places: &[AiPlace], a: &AiThreat, b: &AiThreat) -> std::cmp::Ordering {
     }
 
     let (pa, pb) = (a.place as usize, b.place as usize);
-    if places[pa].dist > places[pb].dist || places[pa].dist < places[pb].dist {
+    if places[pa].dist != places[pb].dist {
         return Ordering::Less;
     }
 
